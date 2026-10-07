@@ -5,7 +5,7 @@
 // No Docker, no network — Tier A never self-skips (a tooling-absent env must fail RED).
 //
 // Golden regeneration: `UPDATE_GOLDEN=1 bun test stack/alerting/tests/transform.test.ts` rewrites the
-// committed `fixtures/<name>/{alertmanager,deep-health,backup}.yml` from the current transform; the
+// committed `fixtures/<name>/{alertmanager,deep-health,backup,synthetic}.yml` from the current transform; the
 // committed goldens are diff-reviewed like any source (§5.1).
 /// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
@@ -27,11 +27,12 @@ const FIXTURES = [
   "telegram",
 ] as const;
 
-/** The three golden output files committed per fixture (06 §11.2). */
+/** The four golden output files committed per fixture (06 §11.2; synthetic.yml — issue #1). */
 const GOLDEN_FILES = [
   ["alertmanager.yml", "alertmanagerConfig"],
   ["deep-health.yml", "deepHealthRules"],
   ["backup.yml", "backupRules"],
+  ["synthetic.yml", "syntheticRules"],
 ] as const;
 
 /** Env-gated golden regeneration convenience (§5.1). */
@@ -45,12 +46,13 @@ function hasMatcher(route: { matchers?: unknown }, matcher: string): boolean {
 // ── §5.1 Determinism ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildAlertingConfig determinism (§5.1)", () => {
-  test("identical input → byte-identical output (all three families)", () => {
+  test("identical input → byte-identical output (all four outputs)", () => {
     const a = buildAlertingConfig(loadFixtureInput("multi-service"));
     const b = buildAlertingConfig(loadFixtureInput("multi-service"));
     expect(a.alertmanagerConfig).toBe(b.alertmanagerConfig);
     expect(a.deepHealthRules).toBe(b.deepHealthRules);
     expect(a.backupRules).toBe(b.backupRules);
+    expect(a.syntheticRules).toBe(b.syntheticRules);
   });
 });
 
@@ -145,6 +147,7 @@ describe("whole-or-nothing & findings (§5.5)", () => {
     expect(out.alertmanagerConfig).toBe("");
     expect(out.deepHealthRules).toBe("");
     expect(out.backupRules).toBe("");
+    expect(out.syntheticRules).toBe("");
   });
 
   test("webhook-only estate yields WEBHOOK_ONLY_CRITICAL (improvement) and a valid config", () => {
@@ -250,7 +253,12 @@ describe("secret-safety scan of generated YAML (§5.10)", () => {
   test("no generated YAML embeds a credential literal or real-provider host", () => {
     for (const name of FIXTURES) {
       const out = buildAlertingConfig(loadFixtureInput(name));
-      const blob = [out.alertmanagerConfig, out.deepHealthRules, out.backupRules].join("\n");
+      const blob = [
+        out.alertmanagerConfig,
+        out.deepHealthRules,
+        out.backupRules,
+        out.syntheticRules,
+      ].join("\n");
       for (const [label, pattern] of DENY) {
         expect(pattern.test(blob), `${name}: generated YAML must not contain a ${label}`).toBe(false);
       }
@@ -275,6 +283,7 @@ describe("runbook links (issue #16)", () => {
     const out = buildAlertingConfig(loadFixtureInput("multi-service"));
     expect(out.deepHealthRules).toContain("runbook_url: https://runbooks.pulse.local/deep-health");
     expect(out.backupRules).toContain("runbook_url: https://runbooks.pulse.local/backup-freshness");
+    expect(out.syntheticRules).toContain("runbook_url: https://runbooks.pulse.local/synthetic");
   });
 
   test("the AM config registers the notification templates glob", () => {

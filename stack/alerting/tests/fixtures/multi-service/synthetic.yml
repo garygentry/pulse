@@ -1,0 +1,16 @@
+groups:
+  - name: synthetic-checks
+    rules:
+      - alert: GatusCheckFailed
+        annotations:
+          description: Portal ingress synthetic check failing
+          runbook_url: https://runbooks.pulse.local/synthetic
+          summary: Gatus check host-alpha/portal is failing
+          url: https://portal.fixture.invalid/
+        expr: (sum by (name, group) (increase(gatus_results_total{name="host-alpha/portal",success="false"}[3m])) > 0) unless on (name) (sum by (name) (increase(gatus_results_total{name="host-alpha/portal",success="true"}[3m])) > 0)
+        keep_firing_for: 1m
+        labels:
+          endpoint: host-alpha/portal
+          group: host-alpha
+          severity: critical
+          source: gatus

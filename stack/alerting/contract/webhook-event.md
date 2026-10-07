@@ -48,7 +48,7 @@ Each element of `alerts[]`. Required: `status`, `labels`, `annotations`, `starts
 - **`startsAt`** — RFC 3339 firing timestamp.
 - **`endsAt`** — RFC 3339 resolve timestamp; the zero time `0001-01-01T00:00:00Z`
   while firing (optional; corroborates `status`).
-- **`generatorURL`** — source query URL (vmalert/Gatus); no credential material (optional).
+- **`generatorURL`** — source query URL (vmalert, which evaluates every rule family, including the Gatus synthetic checks); no credential material (optional).
 
 **Human ⇄ structured parity (REQ-A11Y-02).** Every human-readable field
 (`annotations.summary`, `annotations.description`) has a structured equivalent in

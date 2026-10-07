@@ -1,11 +1,11 @@
 // stack/alerting/tests/render.test.ts
 // Tier-A unit tests for the transform harness (03 §2, item 008):
-//   - buildAlertingConfig (pure) whole-or-nothing: any error finding → all three YAML fields "".
-//   - buildAlertingConfig on a valid input serializes all three families.
+//   - buildAlertingConfig (pure) whole-or-nothing: any error finding → all four YAML fields "".
+//   - buildAlertingConfig on a valid input serializes all four outputs.
 //   - renderToDisk aborts BEFORE the transform on estate-load failure (nothing written).
 //   - renderToDisk treats a missing/unparseable rendered input as INVALID_ROUTE (nothing written).
 //   - renderToDisk whole-or-nothing: an error-producing estate writes ZERO files (tree untouched).
-//   - renderToDisk on a valid estate stages temps then renames all three atomically.
+//   - renderToDisk on a valid estate stages temps then renames all four atomically.
 /// <reference path="./bun-test.d.ts" />
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -76,17 +76,35 @@ function model(over: Partial<EstateModel> = {}): EstateModel {
   };
 }
 
+/** A service whose Gatus ingress check carries an alerts: binding (synthetic-check rule, issue #1). */
+function portalService(): EstateModel["services"][number] {
+  return {
+    name: "portal",
+    host: "web-01",
+    kind: "http",
+    managed: true,
+    ingressUrl: "https://portal.example/",
+    alerts: [{ type: "custom" }],
+    provenance: PROV,
+  };
+}
+
 function input(over: Partial<TransformInput> = {}): TransformInput {
   return { estate: model(), routing: renderedRouting(), prober: proberConfig(), ...over };
 }
 
 describe("buildAlertingConfig (pure, 03 §2.2)", () => {
-  test("a valid input serializes all three families", () => {
-    const out = buildAlertingConfig(input());
+  test("a valid input serializes all four outputs", () => {
+    const out = buildAlertingConfig(input({ estate: model({ services: [portalService()] }) }));
     expect(out.findings.some((f) => f.severity === "error")).toBe(false);
     expect(out.alertmanagerConfig).toContain("resolve_timeout");
     expect(out.deepHealthRules).toContain("DeepHealthFailed");
     expect(out.backupRules).toContain("BackupStale");
+    expect(out.syntheticRules).toContain("GatusCheckFailed");
+  });
+
+  test("an estate with no alerts: binding renders an empty synthetic ruleset", () => {
+    expect(buildAlertingConfig(input()).syntheticRules).toBe("groups: []\n");
   });
 
   test("is deterministic: identical input → byte-identical output", () => {
@@ -95,26 +113,33 @@ describe("buildAlertingConfig (pure, 03 §2.2)", () => {
     expect(a.alertmanagerConfig).toBe(b.alertmanagerConfig);
     expect(a.deepHealthRules).toBe(b.deepHealthRules);
     expect(a.backupRules).toBe(b.backupRules);
+    expect(a.syntheticRules).toBe(b.syntheticRules);
   });
 
-  test("whole-or-nothing: any error finding blanks ALL three YAML fields", () => {
+  test("whole-or-nothing: any error finding blanks ALL four YAML fields", () => {
     // No channels → NO_HUMAN_CHANNEL (error) from routing (007).
-    const out = buildAlertingConfig(input({ estate: model({ channels: [] }) }));
+    const out = buildAlertingConfig(
+      input({ estate: model({ channels: [], services: [portalService()] }) }),
+    );
     expect(out.findings.some((f) => f.code === "NO_HUMAN_CHANNEL" && f.severity === "error")).toBe(true);
     expect(out.alertmanagerConfig).toBe("");
     expect(out.deepHealthRules).toBe("");
     expect(out.backupRules).toBe("");
+    expect(out.syntheticRules).toBe("");
   });
 
-  test("whole-or-nothing: a malformed prober entry (INVALID_RULE) blanks ALL three fields", () => {
+  test("whole-or-nothing: a malformed prober entry (INVALID_RULE) blanks ALL four fields", () => {
     const badProber: ProberConfigRendered = {
       probes: [{ name: "not-a-svc-name", target: "x", kind: "deep-health", alertExpression: "up < 1" }],
     };
-    const out = buildAlertingConfig(input({ prober: badProber }));
+    const out = buildAlertingConfig(
+      input({ prober: badProber, estate: model({ services: [portalService()] }) }),
+    );
     expect(out.findings.some((f) => f.code === "INVALID_RULE" && f.severity === "error")).toBe(true);
     expect(out.alertmanagerConfig).toBe("");
     expect(out.deepHealthRules).toBe("");
     expect(out.backupRules).toBe("");
+    expect(out.syntheticRules).toBe("");
   });
 });
 
@@ -197,6 +222,16 @@ function writeValidEstate(estateDir: string): void {
     "    exporter_ports:",
     "      - 9100",
     "",
+    "services:",
+    "  - name: portal",
+    "    host: web-01",
+    "    kind: http",
+    "    managed: true",
+    "    ingress_url: https://portal.example/",
+    "    alerts:",
+    "      - type: custom",
+    "        failure_threshold: 2",
+    "",
     "channels:",
     "  - name: ops-chat",
     "    kind: chat",
@@ -256,10 +291,11 @@ const OUTPUT_PATHS = (renderedDir: string): string[] => [
   join(renderedDir, "alertmanager", "alertmanager.yml"),
   join(renderedDir, "vmalert", "rules", "deep-health.yml"),
   join(renderedDir, "vmalert", "rules", "backup.yml"),
+  join(renderedDir, "vmalert", "rules", "synthetic.yml"),
 ];
 
 describe("renderToDisk (03 §2.3)", () => {
-  test("a valid estate stages temps then renames all three outputs atomically", () => {
+  test("a valid estate stages temps then renames all four outputs atomically", () => {
     const estateDir = mkTmp("alerting-estate-");
     const renderedDir = mkTmp("alerting-rendered-");
     writeValidEstate(estateDir);
@@ -273,6 +309,10 @@ describe("renderToDisk (03 §2.3)", () => {
     for (const path of OUTPUT_PATHS(renderedDir)) expect(existsSync(path)).toBe(true);
     expect(readFileSync(OUTPUT_PATHS(renderedDir)[1]!, "utf8")).toContain("DeepHealthFailed");
     expect(readFileSync(OUTPUT_PATHS(renderedDir)[2]!, "utf8")).toContain("BackupStale");
+    // The estate's alerts: binding (snake_case, through the real loader) reaches the synthetic rule.
+    const synthetic = readFileSync(OUTPUT_PATHS(renderedDir)[3]!, "utf8");
+    expect(synthetic).toContain("GatusCheckFailed");
+    expect(synthetic).toContain('gatus_results_total{name="web-01/portal",success="false"}[2m]');
     // No staging temp survives a successful rename.
     const amDir = readdirSync(join(renderedDir, "alertmanager"));
     expect(amDir.some((f) => f.endsWith(".tmp"))).toBe(false);

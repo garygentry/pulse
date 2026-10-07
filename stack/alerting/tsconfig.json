@@ -4,6 +4,6 @@
     "noEmit": true,
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
-  "references": [{ "path": "../../packages/core" }],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/renderer" }],
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

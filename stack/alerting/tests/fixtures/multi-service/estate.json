@@ -48,6 +48,17 @@
       "managed": true,
       "backupFreshness": { "signal": "restic", "threshold": "24h" },
       "provenance": { "file": "estate.yaml", "path": "services[1]", "line": 40, "col": 1 }
+    },
+    {
+      "name": "portal",
+      "host": "host-alpha",
+      "kind": "http",
+      "managed": true,
+      "ingressUrl": "https://portal.fixture.invalid/",
+      "alerts": [
+        { "type": "custom", "description": "Portal ingress synthetic check failing", "failureThreshold": 3 }
+      ],
+      "provenance": { "file": "estate.yaml", "path": "services[2]", "line": 45, "col": 1 }
     }
   ],
   "channels": [

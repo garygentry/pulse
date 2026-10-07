@@ -1,6 +1,6 @@
 // stack/alerting/src/transform/rules-yaml.ts
-// The single deterministic vmalert rule-group serializer shared by both inventory-derived
-// rule builders (deep-health-rules.ts, backup-rules.ts) so key ordering and formatting are
+// The single deterministic vmalert rule-group serializer shared by every inventory-derived
+// rule builder (deep-health-rules.ts, backup-rules.ts, synthetic-rules.ts) so key ordering and formatting are
 // identical and golden-stable. Canonical shape: 03-transform-and-rendered-rules.md §3.3.
 import { stringify as stringifyYaml } from "yaml";
 
@@ -9,6 +9,7 @@ export interface AlertRuleYaml {
   alert: string;                          // PascalCase alert name (REQ-RULE-02)
   expr: string;                           // PromQL expression
   for?: string;                           // detection/grace window (REQ-RULE-05 for NoData)
+  keep_firing_for?: string;               // hold a resolving alert this long (synthetic checks, #1)
   labels: Record<string, string>;         // severity (+ any rule-static labels)
   annotations: Record<string, string>;    // summary/description (REQ-RULE-04)
 }

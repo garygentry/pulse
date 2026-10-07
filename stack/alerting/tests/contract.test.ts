@@ -227,13 +227,14 @@ function staticRules(): RuleExpr[] {
   );
 }
 
-/** Static + per-estate rendered (deep-health + backup) rule expressions for a fixture. */
+/** Static + per-estate rendered (deep-health + backup + synthetic) rule expressions for a fixture. */
 function allRules(input: TransformInput): RuleExpr[] {
   const out = buildAlertingConfig(input);
   return [
     ...staticRules(),
     ...flattenRules("deep-health.yml", out.deepHealthRules),
     ...flattenRules("backup.yml", out.backupRules),
+    ...flattenRules("synthetic.yml", out.syntheticRules),
   ];
 }
 
@@ -459,10 +460,15 @@ describe("§7.4 secret-literal & no-real-target scan (REQ-SEC-01/02, REQ-TEST-01
     }
   });
 
-  test("no generated artifact embeds a credential literal (all fixtures, all three families)", () => {
+  test("no generated artifact embeds a credential literal (all fixtures, all four outputs)", () => {
     for (const fixture of CONFIG_FIXTURES) {
       const out = buildAlertingConfig(loadFixtureInput(fixture));
-      const blob = [out.alertmanagerConfig, out.deepHealthRules, out.backupRules].join("\n");
+      const blob = [
+        out.alertmanagerConfig,
+        out.deepHealthRules,
+        out.backupRules,
+        out.syntheticRules,
+      ].join("\n");
       for (const [label, pattern] of DENY) {
         expect(pattern.test(blob), `${fixture} generated artifact: matched "${label}"`).toBe(false);
       }

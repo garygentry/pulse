@@ -66,6 +66,25 @@ export const METRICS = {
    *  REQUIRED-but-undelivered; the backup-freshness rule family now selects live data. */
   backupAgeSeconds: "pulse_backup_freshness_age_seconds",
   backupUp: "pulse_backup_freshness_up",
+  /** Gatus's per-check result counter (`{group,key,name,success,type}`), scraped by the `gatus`
+   *  job. The synthetic-check rule family pages on it (issue #1). Gatus v5.13.1 exposes no
+   *  per-endpoint success gauge, so the rules work from `increase()` over this counter. */
+  gatusResults: "gatus_results_total",
+} as const;
+
+/** Synthetic-check (Gatus) rule timing (issue #1) — the ONE place the check cadence and the
+ *  binding threshold defaults live. The renderer sets no per-endpoint `interval`, so every Gatus
+ *  ingress check runs at Gatus's default 60s; a rule's look-back window is
+ *  `failureThreshold × checkIntervalSeconds` and its `keep_firing_for` is
+ *  `(successThreshold − 1) × checkIntervalSeconds`. The threshold defaults are the ones the retired
+ *  Gatus provider's `default-alert` applied, so an existing binding keeps its timing. */
+export const GATUS_CHECKS = {
+  /** Gatus's default endpoint interval (the renderer emits none). */
+  checkIntervalSeconds: 60,
+  /** Consecutive failed checks before firing when a binding omits `failureThreshold`. */
+  defaultFailureThreshold: 3,
+  /** Consecutive successful checks before resolving when a binding omits `successThreshold`. */
+  defaultSuccessThreshold: 2,
 } as const;
 
 /** The DeadMansSwitch internal label value (NOT in the `Severity` union — §3). */
@@ -91,6 +110,7 @@ export const RUNBOOK_BASE_URL = "https://runbooks.pulse.local" as const;
 export const RUNBOOK_SLUGS = {
   deepHealth: "deep-health",
   backupFreshness: "backup-freshness",
+  synthetic: "synthetic",
 } as const;
 
 /** Compose the full runbook URL for a family slug (issue #16). */

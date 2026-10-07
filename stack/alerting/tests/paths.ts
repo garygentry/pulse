@@ -16,7 +16,8 @@ export const PKG_ROOT = resolve(TESTS_DIR, "..");
 export const REPO_ROOT = resolve(TESTS_DIR, "..", "..", "..");
 
 /** The estate/golden fixture tree. Each `<name>/` holds `estate.json`, `alertmanager/routing.yaml`,
- *  `prober/config.yaml`, and the committed goldens `alertmanager.yml`/`deep-health.yml`/`backup.yml`. */
+ *  `prober/config.yaml`, and the committed goldens `alertmanager.yml`/`deep-health.yml`/`backup.yml`/
+ *  `synthetic.yml`. */
 export const FIXTURE_DIR = resolve(TESTS_DIR, "fixtures");
 
 /** Golden outputs live alongside their fixture inputs under `fixtures/<name>/` (06 §5.1/§11.2). */
