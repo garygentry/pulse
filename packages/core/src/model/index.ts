@@ -153,11 +153,13 @@ export interface EndpointAlert {
   enabled?: boolean;
   /** Human-readable description carried as the alert's `description` annotation. */
   description?: string;
-  /** Consecutive failed checks before firing; omitted → 3. Rendered as the rule's look-back window
-   *  (`failureThreshold` × the Gatus check interval). */
+  /** Failed checks needed to fire (1–60); omitted → 3. The rule fires once there were at least this
+   *  many failed checks in a window of 4 × this many minutes AND no passing check in the last
+   *  this-many minutes — at Gatus's nominal 60s cadence, this many consecutive failures. */
   failureThreshold?: number;
-  /** Consecutive successful checks before resolving; omitted → 2. Rendered as the rule's
-   *  `keep_firing_for` ((`successThreshold` − 1) × the Gatus check interval). */
+  /** Passing checks needed to resolve (1–60); omitted → 2. A firing alert resolves once there
+   *  were at least this many passing checks and no failed check in the last (this + 1) minutes;
+   *  with no fresh results (Gatus down) it keeps firing. */
   successThreshold?: number;
   /** Retained for compatibility; has no effect. Resolve notifications are governed by each
    *  Alertmanager receiver's `send_resolved`; `false` draws an advisory alerting finding. */

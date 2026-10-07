@@ -16,8 +16,10 @@ import {
   checkNasApiCompleteness,
   checkTelegramOptions,
   checkHostLocalProbeHost,
+  checkGatusNames,
   checkCrossReferences,
 } from "../src/validate/invariants.js";
+import { endpointAlertSchema } from "../src/schema/service.js";
 import { FindingCollector } from "../src/findings/collect.js";
 import { loadAndValidate } from "../src/loader/index.js";
 import { FINDING_CODES } from "../src/findings/codes.js";
@@ -205,6 +207,64 @@ describe("host-local probe host class (HOST_LOCAL_PROBE_HOST, issue #8)", () => 
 
   test("an unresolved host is left to UNRESOLVED_HOST (no finding here)", () => {
     expect(run(checkHostLocalProbeHost, svc("ghost", true))).toHaveLength(0);
+  });
+});
+
+describe("names rendered into Gatus (GATUS_UNSAFE_NAME, issue #1)", () => {
+  const ingress = (name: string, host: string, extra: Record<string, unknown> = {}) => ({
+    services: [{ name, host, kind: "http", managed: true, ingress_url: "https://w.example", ...extra }],
+  });
+
+  test("plain names → no finding", () => {
+    expect(run(checkGatusNames, ingress("web-app", "web01"))).toHaveLength(0);
+  });
+
+  for (const [label, bad] of [
+    ["double quote", 'we"b'],
+    ["backslash", "we\\b"],
+    ["newline", "we\nb"],
+    ["carriage return", "we\rb"],
+  ] as const) {
+    test(`a ${label} in an ingress service name → one GATUS_UNSAFE_NAME error`, () => {
+      const out = run(checkGatusNames, ingress(bad, "web01"));
+      expect(out).toHaveLength(1);
+      expect(out[0]!.code).toBe(FINDING_CODES.GATUS_UNSAFE_NAME);
+      expect(out[0]!.severity).toBe("error");
+      expect(out[0]!.path).toBe("services[0].name");
+    });
+  }
+
+  test("an unsafe host name on an ingress service is flagged at services[i].host", () => {
+    const out = run(checkGatusNames, ingress("web", 'h"1'));
+    expect(out.map((f) => f.path)).toEqual(["services[0].host"]);
+  });
+
+  test("an unsafe probe-only host name is flagged; other host classes are not rendered", () => {
+    const out = run(checkGatusNames, {
+      hosts: [
+        { name: 'edge"1', collection_class: "probe-only", probe: { kind: "http", target: "https://e" } },
+        { name: 'box"2', collection_class: "managed-linux", addresses: ["10.0.0.5"] },
+      ],
+    });
+    expect(out.map((f) => f.path)).toEqual(["hosts[0].name"]);
+  });
+
+  test("a service that renders no check (no ingress_url, or suppressed) is not flagged", () => {
+    expect(run(checkGatusNames, { services: [{ name: 'a"b', host: "h" }] })).toHaveLength(0);
+    expect(
+      run(checkGatusNames, ingress('a"b', "h", { suppressed: { class: "excluded", rationale: "x" } })),
+    ).toHaveLength(0);
+  });
+});
+
+describe("alerts: binding threshold bounds (issue #1)", () => {
+  test("failure/success thresholds accept 1..60 and reject 0 and 61", () => {
+    for (const key of ["failure_threshold", "success_threshold"]) {
+      expect(endpointAlertSchema.safeParse({ type: "custom", [key]: 1 }).success).toBe(true);
+      expect(endpointAlertSchema.safeParse({ type: "custom", [key]: 60 }).success).toBe(true);
+      expect(endpointAlertSchema.safeParse({ type: "custom", [key]: 0 }).success).toBe(false);
+      expect(endpointAlertSchema.safeParse({ type: "custom", [key]: 61 }).success).toBe(false);
+    }
   });
 });
 

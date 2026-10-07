@@ -45,8 +45,10 @@ export const backupFreshnessSchema = z
 /** Per-endpoint alert binding (issue #15). Declaring a binding on a service makes its synthetic
  *  (blackbox) Gatus ingress check page: stack/alerting renders a `GatusCheckFailed` vmalert rule
  *  over the check's `gatus_results_total` series (issue #1 retired the Gatus→Alertmanager push
- *  provider, which could not resolve alerts correctly). `failure_threshold` / `success_threshold`
- *  tune the rule (defaults 3 / 2); `enabled: false` renders no rule; `description` becomes the alert
+ *  provider, which could not resolve alerts correctly). `failure_threshold` F (default 3) fires the
+ *  rule after ≥F failed checks in 4·F minutes with no pass in the last F minutes;
+ *  `success_threshold` S (default 2) resolves it after ≥S passes and no failure in the last S+1
+ *  minutes (each 1–60; see EndpointAlert). `enabled: false` renders no rule; `description` becomes the alert
  *  annotation. `type` and `send_on_resolved` are retained for compatibility and select/affect
  *  nothing (resolve notifications follow each Alertmanager receiver's `send_resolved`).
  *  Additive/optional → schema_version stays 1. A binding only takes effect on a service that
@@ -57,8 +59,10 @@ export const endpointAlertSchema = z
     type: z.string().min(1),
     enabled: z.boolean().optional(),
     description: z.string().min(1).optional(),
-    failure_threshold: z.number().int().positive().optional(),
-    success_threshold: z.number().int().positive().optional(),
+    // Capped at 60 checks (an hour at Gatus's 60s cadence): the rendered rule's windows scale with
+    // the thresholds, and an unbounded value would render an unbounded look-back.
+    failure_threshold: z.number().int().positive().max(60).optional(),
+    success_threshold: z.number().int().positive().max(60).optional(),
     send_on_resolved: z.boolean().optional(),
   })
   .strict();
