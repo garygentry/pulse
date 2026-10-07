@@ -61,8 +61,10 @@ describe("cell helpers", () => {
     expect(formatAge("", now)).toBe("—");
   });
 
-  test("formatTarget is kind:id or '—' for null", () => {
-    expect(formatTarget({ kind: "host", id: "web-01" })).toBe("host:web-01");
+  test("formatTarget shows the canonical id with its kind once (GitHub #10), or '—' for null", () => {
+    expect(formatTarget({ kind: "host", id: "host:web-01" })).toBe("host:web-01");
+    expect(formatTarget({ kind: "service", id: "svc:web-01/backup" })).toBe("svc:web-01/backup");
+    expect(formatTarget({ kind: "endpoint", id: "web-01/grafana" })).toBe("endpoint:web-01/grafana");
     expect(formatTarget(null)).toBe("—");
   });
 

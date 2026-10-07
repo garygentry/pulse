@@ -6,6 +6,7 @@
 import type { RouteMatch } from "../../router.js";
 import type { ActiveAlert, AlertsPayload } from "@pulse/web-data/wire";
 import { firingRows } from "./model.js";
+import { normalizeTargetRef, targetRef } from "../../target-ref.js";
 
 /** The facets (00 §4.1, plus `ack`). Multi-select; union within a facet, AND across
  *  (REQ-FACET-01/03). */
@@ -100,7 +101,9 @@ export function decodeTriageState(query: RouteMatch["query"]): TriageUrlState {
       // Unvalidated cast: a bogus hand-typed state degrades to matching no rows (02 §3.2).
       state: split(query[QUERY_KEYS.state]) as ("firing" | "silenced" | "inhibited")[],
       group: split(query[QUERY_KEYS.group]),
-      hostService: split(query[QUERY_KEYS.hostService]),
+      // Canonical target refs (`host:web01`, `svc:web01/nginx`); pre-#10 double-prefixed links
+      // (`host:host:web01`) are mapped to that form so shared links keep filtering.
+      hostService: [...new Set(split(query[QUERY_KEYS.hostService]).map(normalizeTargetRef))],
       ruleFamily: split(query[QUERY_KEYS.ruleFamily]),
       // Validated: only the two ack literals survive; anything else is dropped.
       ack: split(query[QUERY_KEYS.ack]).filter(
@@ -120,12 +123,24 @@ export const TARGET_ALIAS_KEY = "target";
 export const TARGET_ALIAS_KINDS = ["host", "service", "endpoint"] as const;
 
 /**
+ * The hostService facet values a `?target=<id>` alias can mean: `targetRef` of the id under each of
+ * `TARGET_ALIAS_KINDS`, de-duplicated. Host and service ids are already canonical (`host:web01`,
+ * `svc:web01/nginx`), so both yield the id itself; the endpoint reading adds `endpoint:<id>`.
+ *
+ * @param id - The alias value (a `TargetIdentity.id`).
+ * @returns The candidate facet values, in `TARGET_ALIAS_KINDS` order.
+ */
+export function targetAliasValues(id: string): readonly string[] {
+  return [...new Set(TARGET_ALIAS_KINDS.map((kind) => targetRef({ kind, id })))];
+}
+
+/**
  * Decode a full `RouteMatch` (path params + query) into the triage state. Extends
  * `decodeTriageState` with the two overview deep-link forms (charter 04 §2 carve-out, V-001):
  *   - `/alerts/:fingerprint` — `params.fingerprint` selects the alert when `sel` is absent/empty
  *     (`sel` wins when both are present);
- *   - `?target=<id>` — adds `host:<id>`, `service:<id>` and `endpoint:<id>` to the hostService facet,
- *     merged with any `hs` values and de-duplicated (first-seen order).
+ *   - `?target=<id>` — adds `targetAliasValues(id)` (the id itself, and `endpoint:<id>`) to the
+ *     hostService facet, merged with any `hs` values and de-duplicated (first-seen order).
  *
  * A `TargetIdentity` has exactly one kind, so at most one expanded value can match. When the
  * caller knows the payload's host/service values (`available`) and at least one expanded value is
@@ -143,7 +158,7 @@ export function decodeTriageRoute(match: RouteMatch, available?: readonly string
   const selected = base.selected ?? (param === undefined || param === "" ? null : param);
   const target = match.query[TARGET_ALIAS_KEY];
   if (target === undefined || target === "") return { ...base, selected };
-  const expanded = TARGET_ALIAS_KINDS.map((k) => `${k}:${target}`);
+  const expanded = targetAliasValues(target);
   const matching = available == null ? [] : expanded.filter((v) => available.includes(v));
   const alias = matching.length > 0 ? matching : expanded;
   const hostService = [...new Set([...base.facets.hostService, ...alias])];
