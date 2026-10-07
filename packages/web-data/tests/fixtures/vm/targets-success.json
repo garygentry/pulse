@@ -1,0 +1,28 @@
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": { "__address__": "harbor-1:8428", "job": "victoriametrics" },
+        "labels": { "job": "victoriametrics", "instance": "harbor-1:8428" },
+        "scrapePool": "victoriametrics",
+        "scrapeUrl": "http://harbor-1:8428/metrics",
+        "lastError": "",
+        "lastScrape": "2026-09-16T00:00:00.000Z",
+        "lastScrapeDuration": 0.004,
+        "health": "up"
+      },
+      {
+        "discoveredLabels": { "__address__": "harbor-2:9100", "job": "node" },
+        "labels": { "job": "node", "instance": "harbor-2:9100" },
+        "scrapePool": "node",
+        "scrapeUrl": "http://harbor-2:9100/metrics",
+        "lastError": "connection refused",
+        "lastScrape": "2026-09-16T00:00:00.000Z",
+        "lastScrapeDuration": 0.5,
+        "health": "down"
+      }
+    ],
+    "droppedTargets": []
+  }
+}

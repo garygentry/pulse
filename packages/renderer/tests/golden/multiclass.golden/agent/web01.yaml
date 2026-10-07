@@ -1,0 +1,7 @@
+cadvisor: false
+deliveryForm: compose
+heartbeat: true
+host: web01
+scrapePorts:
+  heartbeat: 9110
+  node: 9100

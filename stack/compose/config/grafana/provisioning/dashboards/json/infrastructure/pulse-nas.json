@@ -1,0 +1,123 @@
+{
+  "uid": "pulse-nas",
+  "title": "Pulse — NAS",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "nas", "infrastructure"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "NAS",
+        "datasource": "${DS}",
+        "query": "label_values(nas_up, instance)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "NAS up",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "mappings": [] }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "up",
+          "expr": "nas_up{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Pool capacity used %",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{pool}}",
+          "expr": "nas_pool_used_bytes{instance=\"$instance\"} / nas_pool_size_bytes{instance=\"$instance\"} * 100"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Pool health",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{pool}}",
+          "expr": "nas_pool_health{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Disk temperature / SMART",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{device}}",
+          "expr": "nas_disk_temperature_celsius{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "alertGroups",
+      "title": "Firing alerts (this NAS)",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "options": {
+        "labels": "instance=\"$instance\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

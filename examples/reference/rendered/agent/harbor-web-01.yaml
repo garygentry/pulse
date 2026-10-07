@@ -1,0 +1,8 @@
+cadvisor: true
+deliveryForm: compose
+heartbeat: true
+host: harbor-web-01
+scrapePorts:
+  cadvisor: 8080
+  heartbeat: 9110
+  node: 9100

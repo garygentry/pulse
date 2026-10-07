@@ -1,0 +1,125 @@
+{
+  "bundleId": "sha256:829375f31afc7dcac2fbee67d993fa5c7d3b045c35689525328053dfc91f1fa3",
+  "covered": [
+    {
+      "artifacts": [
+        "agent/app02.yaml",
+        "agent/app02/prober/config.yaml",
+        "scrape/file_sd/cadvisor.json",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux-prober.json",
+        "scrape/file_sd/managed-linux.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "app02",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "agent/app02/prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "app02/nvr",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "agent/dns01.yaml",
+        "scrape/file_sd/managed-linux.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "dns01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml",
+        "scrape/file_sd/probe-only.json"
+      ],
+      "collectionClass": "probe-only",
+      "kind": "host",
+      "name": "edge01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "scrape/file_sd/nas-api.json"
+      ],
+      "collectionClass": "nas-api",
+      "kind": "host",
+      "name": "nas1",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "scrape/file_sd/hypervisor-api.json"
+      ],
+      "collectionClass": "hypervisor-api",
+      "kind": "host",
+      "name": "pve1",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "agent/web01.yaml",
+        "command-exporter/web01.yaml",
+        "scrape/file_sd/managed-linux-command-exporter.json",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json",
+        "scrape/file_sd/process-exporter.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "web01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "command-exporter/web01.yaml",
+        "prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "web01/frigate",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "web01/grafana",
+      "suppressed": null
+    }
+  ],
+  "formatVersion": 2,
+  "gaps": [],
+  "suppressed": [
+    {
+      "artifacts": [],
+      "collectionClass": "excluded",
+      "kind": "host",
+      "name": "old01",
+      "suppressed": {
+        "class": "excluded",
+        "rationale": "decommissioned 2026-01"
+      }
+    },
+    {
+      "artifacts": [],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "web01/staging",
+      "suppressed": {
+        "class": "known-expected",
+        "rationale": "flaky staging box"
+      }
+    }
+  ]
+}

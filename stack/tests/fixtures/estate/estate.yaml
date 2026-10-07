@@ -1,0 +1,103 @@
+# stack/tests/fixtures/estate/estate.yaml — committed SOURCE estate for the stack rendered
+# fixture (rendered-model-v2, 07 §3.1). The formerly hand-seeded `stack/tests/fixtures/rendered/`
+# tree is now GENERATED from this estate by the source CLI via `bun run golden:update`; never
+# hand-edit `rendered/`. Fictional names/addresses only; every credential is a ${ENV} SecretRef so
+# a clean render never trips SECRET_LITERAL. Exercises all five collection classes, a deep-health
+# service, a backup-freshness service, a suppressed service, channels, and a routing override, so
+# the smoke tier's mount sources (scrape/file_sd, gatus/config.yaml, alertmanager/routing.yaml,
+# prober/config.yaml) all render.
+estate:
+  schema_version: 1
+  name: home-estate
+  domains:
+    - example.com
+    - internal.example.com
+  timezone: UTC
+  deadman_hook: https://deadman.example.com/ping/home   # plain URL (not a SecretRef)
+
+hosts:
+  # managed-linux, compose delivery; node_exporter + process-exporter, default heartbeat true.
+  - name: web01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.4
+    exporter_ports:
+      - 9100
+      - 9256
+
+  # hypervisor-api, ${ENV} credential.
+  - name: pve1
+    collection_class: hypervisor-api
+    addresses:
+      - 10.0.0.5
+    api_endpoint: https://pve1:8006
+    credential: ${PVE_TOKEN}
+
+  # nas-api — direct node_exporter scrape (no api_endpoint/credential).
+  - name: nas1
+    collection_class: nas-api
+    addresses:
+      - 10.0.0.6
+
+  # probe-only — synthetic reachability probe.
+  - name: edge01
+    collection_class: probe-only
+    addresses:
+      - 10.0.0.9
+    probe:
+      kind: icmp
+      target: 10.0.0.9
+
+  # excluded — requires a suppression rationale, renders no scrape file.
+  - name: old01
+    collection_class: excluded
+    addresses:
+      - 10.0.0.99
+    suppressed:
+      class: excluded
+      rationale: Decommissioned 2026-01.
+
+services:
+  # deep-health service — response_mapping, alert_expression, ingress endpoint.
+  - name: grafana
+    host: web01
+    kind: http
+    managed: true
+    ingress_url: https://grafana.example.com
+    deep_health:
+      endpoint: https://grafana.example.com/api/health
+      response_mapping:
+        db_ok: "$.database"
+      alert_expression: db_ok == 0
+
+  # backup-freshness service.
+  - name: frigate
+    host: web01
+    kind: backup
+    managed: true
+    backup_freshness:
+      signal: pulse_backup_freshness_age_seconds
+      threshold: "26h"
+
+  # suppressed service — deliberate, known-expected.
+  - name: staging
+    host: web01
+    kind: http
+    managed: false
+    suppressed:
+      class: known-expected
+      rationale: Flaky staging box.
+
+channels:
+  - name: oncall
+    kind: push
+    credential: ${OPSGENIE_WEBHOOK}
+  - name: team-chat
+    kind: chat
+    credential: ${SLACK_TOKEN}
+
+routing_overrides:
+  - severity: critical
+    channels:
+      - oncall

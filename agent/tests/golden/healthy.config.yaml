@@ -1,0 +1,26 @@
+# Golden input — a mixed-kind estate prober config (02-deep-health-prober.md §3).
+# Exercises: healthy JSON mapping across TWO hosts/services, multi-metric ordering,
+# numeric-string coercion (grafana db_connections), and non-deep-health kinds that MUST
+# be ignored (the backup-freshness + icmp entries emit no series). Regenerate the expected
+# exposition with `bun agent/tests/golden-update.ts` and review the diff before committing.
+probes:
+  - name: svc:web01/frigate
+    target: http://web01:5000/api/health
+    kind: deep-health
+    responseMapping:
+      camera_count: $.cameras.recording
+    alertExpression: camera_count < 6
+  - name: svc:app02/grafana
+    target: http://app02:3000/api/health
+    kind: deep-health
+    responseMapping:
+      db_connections: $.database.connections
+      dashboards: $.dashboards.count
+  - name: svc:web01/postgres#backup
+    target: s3://backups/web01/postgres
+    kind: backup-freshness
+    threshold: 24h
+  - name: host:web01
+    target: 10.0.0.4
+    kind: icmp
+    note: ping

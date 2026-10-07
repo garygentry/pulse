@@ -1,0 +1,15 @@
+route:
+  receiver: solo-ops
+  routes:
+    - match:
+        severity: critical
+      receiver: solo-ops
+    - match:
+        severity: warning
+      receiver: solo-ops
+receivers:
+  - name: solo-ops
+    config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}
+          channel: "#solo-alerts"

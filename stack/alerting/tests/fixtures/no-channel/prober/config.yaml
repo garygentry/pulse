@@ -1,0 +1,7 @@
+probes:
+  - name: svc:orphan-host/orphan-web
+    target: https://orphan-web.orphan.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      web_up: $.up
+    alertExpression: web_up < 1

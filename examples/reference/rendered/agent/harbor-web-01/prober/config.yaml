@@ -1,0 +1,7 @@
+probes:
+  - alertExpression: detectors < 1
+    kind: deep-health
+    name: svc:harbor-web-01/frigate
+    responseMapping:
+      detectors: $.detectors.count
+    target: http://127.0.0.1:5000/api/stats

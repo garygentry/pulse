@@ -1,0 +1,6 @@
+receivers:
+  - config: {}
+    name: pulse-default
+route:
+  receiver: pulse-default
+  routes: []

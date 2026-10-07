@@ -1,0 +1,9 @@
+{
+  "estate": {
+    "domains": ["empty.example.com"],
+    "name": "empty-estate"
+  },
+  "formatVersion": 2,
+  "hosts": [],
+  "services": []
+}

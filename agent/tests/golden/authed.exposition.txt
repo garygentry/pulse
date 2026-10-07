@@ -1,0 +1,6 @@
+# TYPE pulse_deep_health gauge
+# TYPE pulse_deep_health_up gauge
+# TYPE pulse_deep_health_last_scrape_seconds gauge
+pulse_deep_health{host="nvr01",service="api",metric="cameras_online"} 6
+pulse_deep_health_up{host="nvr01",service="api"} 1
+pulse_deep_health_last_scrape_seconds{host="nvr01",service="api"} 1734300000

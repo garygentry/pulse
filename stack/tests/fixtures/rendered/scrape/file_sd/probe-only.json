@@ -1,0 +1,12 @@
+[
+  {
+    "labels": {
+      "__pulse_probe_kind__": "icmp",
+      "collection_class": "probe-only",
+      "host": "edge01"
+    },
+    "targets": [
+      "10.0.0.9"
+    ]
+  }
+]

@@ -1,0 +1,118 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "deadman",
+        "file": "/etc/vmalert/rules/deadman.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "DeadMansSwitch",
+            "query": "vector(1)",
+            "state": "firing",
+            "health": "ok",
+            "lastError": "",
+            "duration": 0,
+            "labels": { "severity": "none", "estate": "reference-estate" },
+            "annotations": { "summary": "vmalert alerting pipeline is delivering (always-firing canary)" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0004,
+            "alerts": [
+              {
+                "state": "firing",
+                "labels": { "alertname": "DeadMansSwitch", "severity": "none", "estate": "reference-estate" },
+                "annotations": { "summary": "vmalert alerting pipeline is delivering (always-firing canary)" },
+                "activeAt": "2025-12-31T00:00:00.000Z",
+                "value": "1e+00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "harbor-alerts",
+        "file": "/etc/vmalert/rules/hosts.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "HypervisorUnreachable",
+            "query": "up{job=\"hypervisor-api\"} == 0",
+            "state": "firing",
+            "health": "ok",
+            "lastError": "",
+            "duration": 300,
+            "labels": { "severity": "critical", "estate": "reference-estate" },
+            "annotations": { "summary": "A hypervisor API scrape target has been unreachable for 5m" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0013,
+            "alerts": [
+              {
+                "state": "firing",
+                "labels": { "alertname": "HypervisorUnreachable", "severity": "critical", "estate": "reference-estate", "host": "harbor-hv-01", "instance": "harbor-hv-01:9633", "job": "hypervisor-api" },
+                "annotations": { "summary": "harbor-hv-01 hypervisor API has not answered for 5m" },
+                "activeAt": "2025-12-31T23:41:00.000Z",
+                "value": "0e+00"
+              }
+            ]
+          },
+          {
+            "type": "alerting",
+            "name": "NasCapacityHigh",
+            "query": "nas_pool_used_ratio > 0.85",
+            "state": "pending",
+            "health": "ok",
+            "lastError": "",
+            "duration": 600,
+            "labels": { "severity": "warning", "estate": "reference-estate" },
+            "annotations": { "summary": "A NAS volume pool is above 85% capacity" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0008,
+            "alerts": [
+              {
+                "state": "pending",
+                "labels": { "alertname": "NasCapacityHigh", "severity": "warning", "estate": "reference-estate", "host": "harbor-nas-01", "instance": "harbor-nas-01:9101", "job": "nas-api" },
+                "annotations": { "summary": "harbor-nas-01 volume pool is above 85% capacity" },
+                "activeAt": "2025-12-31T23:55:00.000Z",
+                "value": "8.7e-01"
+              }
+            ]
+          },
+          {
+            "type": "alerting",
+            "name": "PortalErrorBudgetBurn",
+            "query": "portal_error_ratio > bool 0.05",
+            "state": "inactive",
+            "health": "err",
+            "lastError": "cannot execute query: unknown metric name \"portal_error_ratio\"",
+            "duration": 120,
+            "labels": { "severity": "warning", "estate": "reference-estate" },
+            "annotations": { "summary": "portal-web error budget burn rate elevated" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0021,
+            "alerts": []
+          },
+          {
+            "type": "alerting",
+            "name": "NodeDiskPressure",
+            "query": "node_filesystem_avail_ratio < 0.1",
+            "state": "inactive",
+            "health": "ok",
+            "lastError": "",
+            "duration": 300,
+            "labels": { "severity": "warning", "estate": "reference-estate" },
+            "annotations": { "summary": "A node filesystem is below 10% free" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0007,
+            "alerts": []
+          }
+        ]
+      }
+    ],
+    "groupNextEvaluationHint": "additive-upstream-field-ignored-by-consumers"
+  }
+}

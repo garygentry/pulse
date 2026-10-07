@@ -1,0 +1,37 @@
+{
+  "version": "4",
+  "status": "firing",
+  "groupKey": "{}/{severity=\"critical\"}:{estate=\"fixture-estate\", host=\"host-alpha\", service=\"camera-svc\", alertname=\"DeepHealthFailed\"}",
+  "receiver": "pulse-webhook-mirror",
+  "externalURL": "http://alertmanager.fixture.invalid",
+  "commonLabels": {
+    "alertname": "DeepHealthFailed",
+    "severity": "critical",
+    "estate": "fixture-estate",
+    "host": "host-alpha",
+    "service": "camera-svc"
+  },
+  "commonAnnotations": {
+    "summary": "Deep-health functional check failed for camera-svc on host-alpha"
+  },
+  "alerts": [
+    {
+      "status": "firing",
+      "fingerprint": "b6a9c1f0e3d24857",
+      "labels": {
+        "alertname": "DeepHealthFailed",
+        "severity": "critical",
+        "estate": "fixture-estate",
+        "host": "host-alpha",
+        "service": "camera-svc"
+      },
+      "annotations": {
+        "summary": "Deep-health functional check failed for camera-svc on host-alpha",
+        "description": "The functional expression for camera-svc evaluated false; severity critical (text, not color)."
+      },
+      "startsAt": "2026-08-21T14:32:10.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://vmalert.fixture.invalid/vmalert/alert?group_id=1&alert_id=1"
+    }
+  ]
+}

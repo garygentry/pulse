@@ -1,0 +1,12 @@
+[
+  {
+    "labels": {
+      "__pulse_credential__": "${PVE_TOKEN}",
+      "collection_class": "hypervisor-api",
+      "host": "pve1"
+    },
+    "targets": [
+      "https://pve1:8006"
+    ]
+  }
+]

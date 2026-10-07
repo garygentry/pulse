@@ -1,0 +1,20 @@
+{
+  "cluster": {
+    "status": "ready",
+    "name": "01HJXAMPLECLUSTER",
+    "peers": [
+      { "name": "01HJXAMPLEPEER1", "address": "10.0.0.1:9094" },
+      { "name": "01HJXAMPLEPEER2", "address": "10.0.0.2:9094" }
+    ]
+  },
+  "versionInfo": {
+    "version": "0.27.0",
+    "revision": "abcdef",
+    "branch": "HEAD",
+    "buildUser": "ci",
+    "goVersion": "go1.21.7"
+  },
+  "uptime": "2026-09-16T00:00:00.000Z",
+  "config": { "original": "REDACTED-CONFIG-BODY-MUST-NOT-SURFACE" },
+  "configYAML": "REDACTED-CONFIG-BODY-MUST-NOT-SURFACE"
+}

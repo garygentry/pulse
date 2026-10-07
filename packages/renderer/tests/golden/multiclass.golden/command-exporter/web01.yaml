@@ -1,0 +1,25 @@
+signals:
+  - command:
+      - /opt/pulse/backup-age
+      - /var/backups/frigate
+    intervalMs: 900000
+    labels:
+      service: frigate
+    metric: pulse_backup_freshness_age_seconds
+    name: backup:frigate
+    output: scalar
+    upMetric: pulse_backup_freshness_up
+  - command:
+      - /opt/pulse/drift-count
+    intervalMs: 300000
+    labels:
+      scope: estate
+    metric: pulse_config_drift_count
+    name: drift
+    output: scalar
+    upMetric: pulse_config_drift_up
+  - command:
+      - /opt/pulse/gpu-metrics.sh
+    intervalMs: 30000
+    name: gpu
+    output: exposition

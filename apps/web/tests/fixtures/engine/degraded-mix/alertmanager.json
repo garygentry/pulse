@@ -1,0 +1,32 @@
+[
+  {
+    "labels": { "alertname": "HypervisorUnreachable", "severity": "critical", "estate": "reference-estate", "host": "harbor-hv-01", "instance": "harbor-hv-01:9633", "job": "hypervisor-api" },
+    "annotations": { "summary": "harbor-hv-01 hypervisor API has not answered for 5m", "description": "The hypervisor API scrape target has been down since 23:41 estate time." },
+    "startsAt": "2025-12-31T23:41:00.000Z",
+    "endsAt": "2026-12-31T23:41:00.000Z",
+    "updatedAt": "2025-12-31T23:59:40.000Z",
+    "fingerprint": "3f2a91c47b0de511",
+    "status": { "state": "active", "silencedBy": [], "inhibitedBy": [] },
+    "receivers": [{ "name": "default" }]
+  },
+  {
+    "labels": { "alertname": "NasCapacityHigh", "severity": "warning", "estate": "reference-estate", "host": "harbor-nas-01", "instance": "harbor-nas-01:9101", "job": "nas-api" },
+    "annotations": { "summary": "harbor-nas-01 volume pool is above 85% capacity" },
+    "startsAt": "2025-12-31T23:20:00.000Z",
+    "endsAt": "2026-12-31T23:20:00.000Z",
+    "updatedAt": "2025-12-31T23:59:40.000Z",
+    "fingerprint": "8c14ad6209fe7b32",
+    "status": { "state": "active", "silencedBy": [], "inhibitedBy": [] },
+    "receivers": [{ "name": "default" }]
+  },
+  {
+    "labels": { "alertname": "PortalLatencyElevated", "severity": "info", "estate": "reference-estate", "host": "harbor-web-01", "service": "portal-web", "instance": "harbor-web-01:9100", "job": "node" },
+    "annotations": { "summary": "portal-web p95 latency above 400ms (silenced for the maintenance window)" },
+    "startsAt": "2025-12-31T22:55:00.000Z",
+    "endsAt": "2026-12-31T22:55:00.000Z",
+    "updatedAt": "2025-12-31T23:59:40.000Z",
+    "fingerprint": "b0d5e7712a4c8f96",
+    "status": { "state": "suppressed", "silencedBy": ["b7c9e2f1-4a6d-4a11-9f3e-2c5d7e8a1b04"], "inhibitedBy": [] },
+    "receivers": [{ "name": "default" }]
+  }
+]

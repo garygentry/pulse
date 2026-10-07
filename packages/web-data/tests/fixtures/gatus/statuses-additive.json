@@ -1,0 +1,22 @@
+[
+  {
+    "name": "harbor-web-01/portal-web",
+    "group": "harbor-web-01",
+    "key": "harbor-web-01_portal-web",
+    "hourlyAverageResponseTime": { "13": 118 },
+    "results": [
+      {
+        "success": true,
+        "timestamp": "2025-12-31T23:59:30.000Z",
+        "duration": 118000000,
+        "status": 200,
+        "hostname": "portal.internal.invalid",
+        "ip": "10.0.0.0",
+        "conditionResults": [
+          { "condition": "[STATUS] == 200", "success": true, "displayCondition": "[STATUS] == 200" }
+        ],
+        "errors": []
+      }
+    ]
+  }
+]

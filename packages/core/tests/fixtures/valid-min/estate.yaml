@@ -1,0 +1,66 @@
+# valid-min — a small, fully VALID estate. Loads to ok:true.
+# Spans 3 collection classes (managed-linux, hypervisor-api, excluded), a deep-health
+# service, a channel with an ${ENV} credential reference, and one suppression of EACH
+# class (excluded via the excluded host; expected-churn + known-expected standalone).
+estate:
+  schema_version: 1
+  name: acme-core
+  domains:
+    - acme.internal
+  dns_resolver: 10.0.0.53
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN_URL}"
+  retention: 30d
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    exporter_ports:
+      - 9100
+  - name: vcenter-01
+    collection_class: hypervisor-api
+    addresses:
+      - 10.0.0.20
+    api_endpoint: https://vcenter-01.acme.internal
+    credential: "op://infra/vcenter/token"
+  - name: legacy-box
+    collection_class: excluded
+    addresses:
+      - 10.0.0.99
+    suppressed:
+      class: excluded
+      rationale: Decommissioned host; retained in inventory for completeness.
+
+services:
+  - name: web-app
+    host: web-01
+    kind: http
+    managed: true
+    ingress_url: https://web-app.acme.internal
+    deep_health:
+      endpoint: /healthz
+      credential: "${WEB_HEALTH_TOKEN}"
+      response_mapping:
+        status: ok
+      alert_expression: status != "ok"
+
+channels:
+  - name: ops-chat
+    kind: chat
+    credential: "${SLACK_TOKEN}"
+
+routing_overrides:
+  - severity: critical
+    channels:
+      - ops-chat
+
+suppressions:
+  - class: expected-churn
+    target: batch-runner-*
+    rationale: Ephemeral batch workers churn hourly by design.
+  - class: known-expected
+    target: nightly-maintenance
+    rationale: Nightly maintenance window drops metrics briefly.

@@ -1,0 +1,12 @@
+groups:
+  - name: deep-health-functional
+    rules:
+      - alert: DeepHealthFailed
+        annotations:
+          description: Declared deep-health expression is failing for service {{ $labels.service }} on host {{ $labels.host }} in estate {{ $labels.estate }}.
+          runbook_url: https://runbooks.pulse.local/deep-health
+          summary: Deep-health functional check failed for {{ $labels.service }}
+        expr: pulse_deep_health{service="solo-web",metric="web_up"} < 1
+        for: 2m
+        labels:
+          severity: critical

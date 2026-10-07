@@ -1,0 +1,4 @@
+# examples/reference/pulse.config.yaml — pins CLI defaults (apps/cli/src/config.ts).
+estateDir: estate
+outputRoot: rendered
+strict: false

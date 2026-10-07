@@ -1,0 +1,60 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "deadman",
+        "file": "/etc/vmalert/rules/deadman.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "DeadMansSwitch",
+            "query": "vector(1)",
+            "state": "firing",
+            "health": "ok",
+            "lastError": "",
+            "duration": 0,
+            "labels": { "severity": "none", "estate": "reference-estate" },
+            "annotations": { "summary": "vmalert alerting pipeline is delivering (always-firing canary)" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0004,
+            "alerts": [
+              {
+                "state": "firing",
+                "labels": { "alertname": "DeadMansSwitch", "severity": "none", "estate": "reference-estate" },
+                "annotations": { "summary": "vmalert alerting pipeline is delivering (always-firing canary)" },
+                "activeAt": "2025-12-31T00:00:00.000Z",
+                "value": "1e+00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "harbor-hosts",
+        "file": "/etc/vmalert/rules/hosts.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "HypervisorUnreachable",
+            "query": "up{job=\"hypervisor-api\"} == 0",
+            "state": "inactive",
+            "health": "ok",
+            "lastError": "",
+            "duration": 300,
+            "labels": { "severity": "critical", "estate": "reference-estate" },
+            "annotations": { "summary": "A hypervisor API scrape target has been unreachable for 5m" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0011,
+            "alerts": []
+          }
+        ]
+      }
+    ],
+    "groupNextEvaluationHint": "additive-upstream-field-ignored-by-consumers"
+  }
+}

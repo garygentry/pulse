@@ -1,0 +1,122 @@
+{
+  "uid": "pulse-deephealth",
+  "title": "Pulse — Deep-Health services",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "deep-health"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "label": "Service",
+        "datasource": "${DS}",
+        "query": "label_values(pulse_deep_health_up, service)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Service probe up/down",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "mappings": [] }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "up",
+          "expr": "pulse_deep_health_up{service=\"$service\"}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Probe latency",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "duration",
+          "expr": "pulse_deep_health_probe_duration_seconds{service=\"$service\"}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Probe success rate",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "success/s",
+          "expr": "rate(pulse_deep_health_checks_total{service=\"$service\",result=\"success\"}[5m])"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Last-success age",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "age",
+          "expr": "time() - pulse_deep_health_last_success_timestamp_seconds{service=\"$service\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "alertGroups",
+      "title": "Firing alerts (this service)",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "options": {
+        "labels": "service=\"$service\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

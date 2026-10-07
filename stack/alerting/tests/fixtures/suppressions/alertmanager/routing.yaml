@@ -1,0 +1,15 @@
+route:
+  receiver: quiet-ops
+  routes:
+    - match:
+        severity: critical
+      receiver: quiet-ops
+    - match:
+        severity: warning
+      receiver: quiet-ops
+receivers:
+  - name: quiet-ops
+    config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}
+          channel: "#quiet-alerts"

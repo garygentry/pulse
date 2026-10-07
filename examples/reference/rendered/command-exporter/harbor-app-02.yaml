@@ -1,0 +1,11 @@
+signals:
+  - command:
+      - /opt/pulse/backup-age
+      - /mnt/backups
+    intervalMs: 900000
+    labels:
+      service: nas-backups
+    metric: pulse_backup_freshness_age_seconds
+    name: backup:nas-backups
+    output: scalar
+    upMetric: pulse_backup_freshness_up

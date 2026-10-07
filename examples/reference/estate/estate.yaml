@@ -1,0 +1,184 @@
+# examples/reference/estate/estate.yaml — full reference estate (REQ-FIX-01).
+# Exercises all five collection classes, deep-health, backup-freshness, all five
+# channel kinds, all three suppression classes, ≥2 domains, an internal DNS resolver,
+# retention, and both secret grammars. Fictional names/addresses only (REQ-FIX-04, REQ-NFSEC-01). Every credential
+# is a ${ENV} or op:// SecretRef — never a literal (REQ-SEC-02).
+estate:
+  schema_version: 1
+  name: reference-estate
+  domains:                                # ≥2 domains
+    - nimbus.example
+    - aurora.example
+  dns_resolver: 10.20.0.53                # internal/split-horizon DNS server (issue #20)
+  timezone: America/Chicago               # IANA zone
+  deadman_hook: ${DEADMAN_URL}            # env SecretRef (deploy-time supplied)
+  retention: 6mo                          # VM retention window (anchors sizing, 04)
+
+hosts:
+  # 1) managed-linux, cadvisor:true, compose delivery. Also runs a command-exporter (issue #1):
+  #    a GPU-contention signal in `exposition` mode — the command prints Prometheus text (per-GPU
+  #    utilization/VRAM/temp + per-process VRAM), which the exporter passes through and wraps with
+  #    a pulse_command_signal_up{signal="gpu"} liveness. Correlation surface only; no alert.
+  - name: harbor-web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    cadvisor: true
+    addresses:
+      - 10.20.0.11
+    exporter_ports:
+      - 9100                              # node_exporter
+      - 9256                              # process-exporter
+    command_signals:
+      - name: gpu
+        command: ["/opt/pulse/gpu-metrics.sh"]   # host-provided; prints Prometheus text
+        interval: 30s
+        output: exposition
+
+  # 2) managed-linux, systemd delivery (cadvisor defaults false). Hosts the backup orchestrator,
+  #    so the nas-backups service (below) delivers its freshness metric through this host's
+  #    command-exporter (issue #3) — a `scalar` command signal synthesized from backup_freshness.
+  - name: harbor-app-02
+    collection_class: managed-linux
+    delivery_form: systemd
+    addresses:
+      - 10.20.0.12
+    exporter_ports:
+      - 9100
+
+  # 3) hypervisor-api, op:// credential
+  - name: harbor-hv-01
+    collection_class: hypervisor-api
+    addresses:
+      - 10.20.0.5
+    api_endpoint: https://harbor-hv-01.nimbus.example/api
+    credential: op://infra/hypervisor/token   # op://vault/item/field
+
+  # 4) nas-api — direct node_exporter scrape (issue #4). No api_endpoint/credential: the
+  #    shipped default is a node_exporter target on :9100. The opt-in TrueNAS-API-exporter
+  #    override (both api_endpoint + credential) is documented but not exercised here; the
+  #    hypervisor-api host above already covers the API-credential / secret-ref path.
+  - name: harbor-nas-01
+    collection_class: nas-api
+    addresses:
+      - 10.20.0.6
+
+  # 5) probe-only, synthetic reachability probe
+  - name: harbor-edge-01
+    collection_class: probe-only
+    addresses:
+      - 10.20.0.20
+    probe:
+      kind: http
+      target: https://status.aurora.example/healthz
+      expect: "200"
+
+  # 6) excluded, requires a suppression rationale
+  - name: harbor-lab-01
+    collection_class: excluded
+    addresses:
+      - 10.20.0.99
+    suppressed:
+      class: excluded
+      rationale: Ephemeral lab bench; intentionally not collected in v1.
+
+services:
+  # deep_health service — ${ENV} credential, response_mapping, alert_expression
+  - name: portal-web
+    host: harbor-web-01
+    kind: http
+    managed: true
+    ingress_url: https://portal.aurora.example
+    deep_health:
+      endpoint: https://portal.aurora.example/api/health
+      response_mapping:                    # metric name → JSON path (the key is the emitted `metric` label)
+        status: "$.status"
+        version: "$.build.version"
+      # The alerting transform binds the metric NAME (the response_mapping key) into the deep-health
+      # series selector, so the expression references `status`, not a bare `pulse_deep_health_status`.
+      alert_expression: status == 0
+      credential: ${WEB_HEALTH_TOKEN}     # env SecretRef
+    # Per-endpoint alert binding (issue #15, V-002). Binds this service's synthetic ingress check to
+    # the Gatus→Alertmanager provider (type: custom) so a red blackbox check PAGES. Omitted fields
+    # inherit the provider's default-alert thresholds; here we override the failure threshold and set
+    # a description carried into the alert payload.
+    alerts:
+      - type: custom
+        description: "Portal ingress synthetic check failing"
+        failure_threshold: 3
+        send_on_resolved: true
+
+  # backup_freshness service — DELIVERED via the command-exporter (issue #3). `command` prints the
+  # newest-backup AGE IN SECONDS; the renderer synthesizes a scalar command signal on the service's
+  # (managed-linux) host emitting pulse_backup_freshness_age_seconds{service} + _up (the series
+  # stack/alerting selects). Hosted on harbor-app-02 (managed-linux) — the command-exporter runs in
+  # the agent bundle, so a backup `command` requires a managed-linux host.
+  - name: nas-backups
+    host: harbor-app-02
+    kind: backup
+    managed: true
+    backup_freshness:
+      signal: pulse_backup_freshness_age_seconds   # the emitted series (documentary)
+      threshold: "24h"
+      command: ["/opt/pulse/backup-age", "/mnt/backups"]  # prints newest-backup age (seconds)
+      interval: "15m"
+
+  # deep_health service — HOST-LOCAL (issue #8). The health API is loopback-only, so the CENTRAL
+  # prober (a container elsewhere) cannot reach it — 127.0.0.1 there is the central container itself.
+  # `host_local: true` routes this probe to a prober that runs ON harbor-web-01
+  # (agent/harbor-web-01/prober/config.yaml, network_mode: host), where 127.0.0.1 is the host's own
+  # loopback. Contrast portal-web above (a public endpoint the central prober handles). A host_local
+  # probe must resolve to a managed-linux host — the only class that runs the agent bundle.
+  - name: frigate
+    host: harbor-web-01
+    kind: http
+    managed: true
+    deep_health:
+      endpoint: http://127.0.0.1:5000/api/stats
+      host_local: true
+      response_mapping:
+        detectors: "$.detectors.count"
+      # References the mapped metric name (`detectors`) so the alerting transform binds it into a
+      # rule — a host-local probe's alert is generated centrally from its per-host prober config.
+      alert_expression: detectors < 1
+
+channels:                                 # all five kinds; every credential a SecretRef
+  - name: ops-chat
+    kind: chat
+    credential: ${CHAT_WEBHOOK_URL}       # env SecretRef
+  - name: ops-email
+    kind: email
+    credential: ${SMTP_PASSWORD}          # env SecretRef
+  - name: oncall-push
+    kind: push
+    credential: op://infra/pager/routing-key   # op:// SecretRef
+  # telegram (issue #2): bot token is the SecretRef credential; the non-secret chat_id rides
+  # in the generic per-kind `options` map (a Telegram int64 chat id here — fictional).
+  - name: ops-telegram
+    kind: telegram
+    credential: ${TELEGRAM_BOT_TOKEN}     # env SecretRef (bot token)
+    options:
+      chat_id: -1002001002003             # non-secret Telegram chat id (int64)
+  - name: mirror-hook
+    kind: webhook
+    credential: ${WEBHOOK_MIRROR_TOKEN}   # env SecretRef
+
+routing_overrides:
+  - severity: critical
+    channels:
+      - oncall-push
+      - ops-chat
+  - severity: warning
+    channels:
+      - ops-chat
+      - ops-email
+
+suppressions:                             # standalone entries: class, rationale, target
+  - class: expected-churn
+    rationale: Autoscaled worker pool; targets appear and disappear by design.
+    target: harbor-app-02/ephemeral-worker
+  - class: known-expected
+    rationale: Self-signed cert on the edge probe is expected in the lab tier.
+    # A known-expected target is one or more AM matchers (label="value"), comma-separated — the
+    # alerting transform lifts them into an inhibit rule. A bare `<host>/<name>` string is neither a
+    # matcher nor a host identity and is rejected as INVALID_SUPPRESSION.
+    target: host="harbor-edge-01",alertname="TlsCertWarning"

@@ -1,0 +1,11 @@
+# Repo-root Docker build context excludes (web-app 07-slot-reconciliation.md §3.8, verify note V-005).
+# The web image builds with context=repo-root (apps/web/Dockerfile, 01 §5); keep the context small.
+node_modules
+**/node_modules
+**/dist
+.git
+specs
+# scratch / test working dirs
+**/.tsbuildinfo
+scratchpad
+tmp

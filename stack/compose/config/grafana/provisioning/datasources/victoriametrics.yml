@@ -1,0 +1,31 @@
+# stack/compose/config/grafana/provisioning/datasources/victoriametrics.yml
+#
+# VictoriaMetrics datasource provisioning (REQ-GRAF-01). stack-core provisions ONLY this
+# datasource — folder taxonomy and dashboard JSON are the `dashboards` feature's (REQ-GRAF-02),
+# dropped into the same provisioning tree stack-core mounts (stack/grafana/, 01-architecture-
+# layout.md §1). Estate-agnostic (CON-04): the URL is the in-stack DNS address, no estate literal.
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    # STABLE handle for the DS datasource variable to resolve to (mirrors alertmanager.yml's
+    # `pulse-alertmanager`). Boards default their ${DS} var to this uid so they render without a
+    # manual datasource pick; panels still select it via ${DS}, never this literal (REQ-TMPL-02).
+    uid: pulse-victoriametrics
+    # VictoriaMetrics exposes the Prometheus query API, so Grafana treats it as a prometheus DS.
+    type: prometheus
+    # Grafana proxies queries server-side (browser never contacts victoriametrics directly).
+    access: proxy
+    # engine-apis address (00-core-definitions.md §2). Stable; dashboards build against it.
+    url: http://victoriametrics:8428
+    # Default DS so dashboard panels with no explicit datasource resolve to VictoriaMetrics.
+    isDefault: true
+    # Provisioned DS is managed by this file, not editable in the UI (reproducibility, REPRO-01).
+    editable: false
+    jsonData:
+      # VictoriaMetrics recommends POST for long queries; Prometheus-compatible.
+      httpMethod: POST
+      # Identify the backend flavor for Grafana's query editor niceties.
+      prometheusType: Prometheus
+    # No credential block: the datasource is reached over the trusted in-stack `pulse` network
+    # (REQ-API-01). Any future auth would arrive as a ${VAR} secret ref (REQ-SEC-01), never a literal.

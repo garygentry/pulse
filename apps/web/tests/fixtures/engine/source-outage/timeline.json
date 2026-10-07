@@ -1,0 +1,5 @@
+{
+  "steps": [
+    { "atMs": 0, "step": { "op": "outage-begin", "source": "gatus" } }
+  ]
+}

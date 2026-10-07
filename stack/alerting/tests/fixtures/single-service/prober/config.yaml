@@ -1,0 +1,7 @@
+probes:
+  - name: svc:solo-host/solo-web
+    target: https://solo-web.solo.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      web_up: $.up
+    alertExpression: web_up < 1

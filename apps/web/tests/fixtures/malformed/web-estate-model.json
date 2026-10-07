@@ -1,0 +1,12 @@
+{
+  "estate": {
+    "domains": ["broken.example.com"],
+    "name": "broken-estate"
+  },
+  "formatVersion": 1,
+  "hosts": [
+    {
+      "addresses": ["10.0.0.8"],
+      "collectionClass": "managed-linux",
+      "drilldownId": "host:trunc",
+      "name": "trunc",

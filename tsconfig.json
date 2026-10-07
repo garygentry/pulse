@@ -1,0 +1,23 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/core/tsconfig.tests.json" },
+    { "path": "packages/renderer" },
+    { "path": "packages/web-data" },
+    { "path": "packages/web-data/tsconfig.tests.json" },
+    { "path": "apps/cli" },
+    { "path": "apps/cli/tsconfig.tests.json" },
+    { "path": "apps/web" },
+    { "path": "apps/web/tsconfig.tests.json" },
+    { "path": "stack/tests" },
+    { "path": "tests/deploy-toolkit" },
+    { "path": "stack/alerting" },
+    { "path": "stack/grafana" },
+    { "path": "agent/prober" },
+    { "path": "agent/heartbeat" },
+    { "path": "agent/command-exporter" },
+    { "path": "agent/tests" },
+    { "path": "agent-kit" }
+  ]
+}

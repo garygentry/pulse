@@ -1,0 +1,12 @@
+# Golden input — an AUTHENTICATED deep-health probe (02-deep-health-prober.md §5).
+# The credential is a SecretRef.raw `${ENV}` reference only, never a literal; the prober
+# resolves it from the injected env map and sends `Authorization: Bearer <resolved>`. The
+# expected exposition proves the resolved sample lands AND that neither the raw reference
+# nor the resolved token appears in any emitted series (REQ-SEC-01).
+probes:
+  - name: svc:nvr01/api
+    target: http://nvr01:8080/health
+    kind: deep-health
+    responseMapping:
+      cameras_online: $.status.cameras_online
+    credential: ${NVR_TOKEN}

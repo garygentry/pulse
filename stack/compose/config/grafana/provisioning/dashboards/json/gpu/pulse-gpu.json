@@ -1,0 +1,128 @@
+{
+  "uid": "pulse-gpu",
+  "title": "Pulse — GPU",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "gpu"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Host",
+        "datasource": "${DS}",
+        "query": "label_values(pulse_command_signal_up{signal=\"gpu\"}, instance)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "GPU signal up",
+      "datasource": "${DS}",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "blind" }, "1": { "text": "up" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}}",
+          "expr": "pulse_command_signal_up{instance=~\"$instance\",signal=\"gpu\"}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "GPU utilization %",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}}",
+          "expr": "pulse_gpu_utilization_ratio{instance=~\"$instance\"} * 100"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "GPU memory used",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}}",
+          "expr": "pulse_gpu_memory_used_bytes{instance=~\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "GPU temperature",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}}",
+          "expr": "pulse_gpu_temperature_celsius{instance=~\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Top GPU processes by VRAM",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{process}} · pid {{pid}}",
+          "expr": "topk(20, pulse_gpu_process_memory_bytes{instance=~\"$instance\"})"
+        }
+      ]
+    }
+  ]
+}

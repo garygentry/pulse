@@ -1,0 +1,15 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "matrix",
+    "result": [
+      {
+        "metric": { "__name__": "node_load1", "host": "harbor-1" },
+        "values": [
+          [1726440120, "0.42"],
+          [1726440060, "0.51"]
+        ]
+      }
+    ]
+  }
+}

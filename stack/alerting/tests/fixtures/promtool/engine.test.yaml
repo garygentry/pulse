@@ -1,0 +1,44 @@
+# stack/alerting/tests/fixtures/promtool/engine.test.yaml
+# Engine self-monitoring (02 §engine, REQ-ENGINE-01/02): an alert-path component down is critical
+# (AlertPathDown, for 2m); an always-on ancillary component down is warning (AncillaryDown, for 5m).
+# Drives `up == 0` for a metrics-source and an exporter job. Fictional names; estate explicit.
+rule_files:
+  - engine.yml
+evaluation_interval: 30s
+tests:
+  # AlertPathDown (critical): victoriametrics scrape fails ≥ 2m
+  - interval: 30s
+    input_series:
+      - series: 'up{job="victoriametrics", instance="vm:8428", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0 0" # down from t=90s
+    alert_rule_test:
+      - eval_time: 3m30s
+        alertname: AlertPathDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: victoriametrics
+              instance: vm:8428
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/engine"
+              summary: "Alert-path component victoriametrics is DOWN (critical)"
+              description: "Engine component victoriametrics (vm:8428) — required to evaluate or deliver alerts — has been unreachable for 2m. The alerting pipeline is compromised. NOTE: vmalert evaluates this rule, so it detects victoriametrics/alertmanager loss; loss of vmalert or victoriametrics ITSELF is caught externally by DeadMansSwitch (deadman.yml, 04-alertmanager-config.md), which stops arriving when evaluation stops."
+  # AncillaryDown (warning): engine-cadvisor scrape fails ≥ 5m
+  - interval: 30s
+    input_series:
+      - series: 'up{job="engine-cadvisor", instance="cadvisor:8080", estate="fixture-estate"}'
+        values: "0+0x14" # down for the whole window (7m)
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: AncillaryDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: engine-cadvisor
+              instance: cadvisor:8080
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/engine"
+              summary: "Ancillary component engine-cadvisor is DOWN (warning)"
+              description: "Ancillary engine component engine-cadvisor (cadvisor:8080) has been unreachable for 5m. Not on the critical alert-delivery path; investigate at leisure. If an alert-path or availability condition is also firing, that critical takes precedence (04-alertmanager-config.md §Inhibit)."

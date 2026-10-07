@@ -1,0 +1,67 @@
+# stack/compose/config/vmalert/rules/pipeline-health.yml
+# Static, estate-agnostic. Distinguishes a running-but-degraded alert path from a healthy one
+# (REQ-OBS-03). Self-monitoring series from the vmalert/alertmanager engine jobs.
+groups:
+  - name: pipeline-health
+    rules:
+      # REQ-OBS-01/03: vmalert is UP but rule-group evaluation is erroring.
+      - alert: AlertRuleEvalErrors
+        expr: increase(vmalert_execution_errors_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vmalert rule evaluation is erroring (warning)"
+          description: >-
+            vmalert has recorded rule-group execution errors over the last 10m
+            ({{ $value | printf "%.0f" }} in window). The evaluator is running but degraded —
+            some rules may not be evaluating. Process liveness alone does not prove a healthy path.
+          runbook_url: "https://runbooks.pulse.local/pipeline-health"
+
+      # REQ-OBS-01/03 + alert-delivery path: Alertmanager is UP but notification delivery is failing.
+      # Critical because failed delivery means alerts are NOT reaching recipients.
+      - alert: AlertNotificationsFailing
+        expr: increase(alertmanager_notifications_failed_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager notification delivery is failing (critical)"
+          description: >-
+            Alertmanager has recorded failed notifications over the last 10m
+            ({{ $value | printf "%.0f" }} in window) for integration {{ $labels.integration }}.
+            The router is running but alerts are not reaching recipients — the delivery path is
+            broken. Per-receiver retry/backoff is Alertmanager-native (tech-spec §3.7).
+          runbook_url: "https://runbooks.pulse.local/pipeline-health"
+
+      # REQ-OBS-01/03: notification latency high — delivery is slow (backlog forming).
+      - alert: AlertNotificationLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, integration) (rate(alertmanager_notification_latency_seconds_bucket[5m]))
+          ) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alertmanager notification latency high (warning)"
+          description: >-
+            p99 notification latency for integration {{ $labels.integration }} has exceeded 10s for
+            10m (current {{ $value | printf "%.1f" }}s). Delivery is degraded though the router is up.
+          runbook_url: "https://runbooks.pulse.local/pipeline-health"
+
+      # REQ-OBS-01/03: vmalert remote-write backlog — ALERTS/recording series are not being persisted
+      # to VictoriaMetrics, so downstream views and self-monitoring lag. A backlog/degraded signal.
+      - alert: AlertRemoteWriteBacklog
+        expr: increase(vmalert_remotewrite_packets_dropped_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vmalert remote-write is dropping packets (warning)"
+          description: >-
+            vmalert has dropped remote-write packets to VictoriaMetrics over the last 10m
+            ({{ $value | printf "%.0f" }} in window). The alert write-back path is backlogged;
+            self-monitoring and recording series may be incomplete.
+          runbook_url: "https://runbooks.pulse.local/pipeline-health"

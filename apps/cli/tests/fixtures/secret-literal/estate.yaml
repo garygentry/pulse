@@ -1,0 +1,25 @@
+# secret-literal — a channel credential is a bare literal, not a ${ENV}/op:// reference.
+# Core's semantic layer refuses it with a SECRET_LITERAL error finding (defense-in-depth
+# against a plaintext secret, REQ-RND-09/REQ-SEC-02), so `render` surfaces the secret_literal
+# error finding (exit 1) and writes nothing.
+estate:
+  schema_version: 1
+  name: secret-estate
+  domains:
+    - example.com
+  timezone: UTC
+  deadman_hook: https://example.com/deadman
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    exporter_ports:
+      - 9100
+
+channels:
+  - name: ops-chat
+    kind: chat
+    credential: xoxb-plaintext-token # SECRET_LITERAL — not ${ENV} / op://

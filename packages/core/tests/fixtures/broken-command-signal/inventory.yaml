@@ -1,0 +1,49 @@
+# broken-command-signal — shape-CLEAN but semantically broken in two command-signal ways
+# (issue #3/#1), the covering case for both new codes in meta.test.ts's anti-rot guard (07 §4):
+#   1. DUPLICATE_COMMAND_SIGNAL — a managed-linux host declares two command_signals named "gpu".
+#      The name is the liveness `signal` label + the exporter's per-signal key, so it must be
+#      unique per host (checkCommandSignals).
+#   2. BACKUP_COMMAND_HOST — a backup service declares a delivery `command`, but its host is a
+#      nas-api host, not managed-linux. The command-exporter that delivers it runs only in the
+#      managed-linux agent bundle (checkBackupCommandHost).
+# Both are semantic invariants (a discriminated-union arm and a generic map carry no cross-field
+# shape), so the document shape-validates and the pipeline reaches the semantic layer.
+estate:
+  schema_version: 1
+  name: command-signal-broken
+  domains:
+    - cs.example
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: gpu-host
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.9.0.11
+    exporter_ports:
+      - 9100
+    command_signals: # DUPLICATE_COMMAND_SIGNAL — two signals named "gpu"
+      - name: gpu
+        command: ["/opt/pulse/gpu-metrics.sh"]
+        interval: 30s
+        output: exposition
+      - name: gpu
+        command: ["/opt/pulse/gpu-metrics-2.sh"]
+        interval: 30s
+        output: exposition
+  - name: nas-host
+    collection_class: nas-api
+    addresses:
+      - 10.9.0.6
+
+services:
+  - name: nas-backups
+    host: nas-host # BACKUP_COMMAND_HOST — a backup command on a nas-api host
+    kind: backup
+    managed: true
+    backup_freshness:
+      signal: pulse_backup_freshness_age_seconds
+      threshold: "24h"
+      command: ["/opt/pulse/backup-age", "/mnt/backups"]

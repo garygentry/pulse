@@ -1,0 +1,5 @@
+probes:
+  - name: svc:hook-host/hook-db#backup
+    target: hook-host
+    kind: backup-freshness
+    threshold: 12h

@@ -1,0 +1,13 @@
+{
+  "name": "@pulse/alerting",
+  "private": true,
+  "type": "module",
+  "//": "NOT added to root workspaces; resolved for imports via node_modules symlink only.",
+  "dependencies": {
+    "@pulse/core": "*",
+    "@pulse/renderer": "*"
+  },
+  "devDependencies": {
+    "yaml": "^2.5.0"
+  }
+}

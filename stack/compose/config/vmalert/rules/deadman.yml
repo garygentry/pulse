@@ -1,0 +1,21 @@
+# stack/compose/config/vmalert/rules/deadman.yml
+# Static, estate-agnostic. Always-firing heartbeat proving the eval+delivery path is alive.
+# The ROUTE (pulse-deadman receiver, repeat_interval 5m, external isolation) is
+# 04-alertmanager-config.md — this file authors only the always-firing RULE.
+groups:
+  - name: deadman
+    rules:
+      # REQ-DEAD-01: an always-firing alert. alertname is set from the `alert:` field to
+      # DeadMansSwitch; the route in 04 matches alertname="DeadMansSwitch". No `for` — fires
+      # immediately and continuously while vmalert evaluates.
+      - alert: DeadMansSwitch
+        expr: vector(1)
+        labels:
+          severity: deadman
+        annotations:
+          summary: "DeadMansSwitch heartbeat (always firing)"
+          description: >-
+            This alert is always firing. Its ABSENCE at the external dead-man receiver — expected
+            every 5 minutes — means Pulse's evaluation or delivery path has stopped. The external
+            service alarms after ~15m without a heartbeat (three missed 5m sends).
+          runbook_url: "https://runbooks.pulse.local/deadman"

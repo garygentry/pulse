@@ -1,0 +1,45 @@
+{
+  "schemaMajor": 1,
+  "estate": {
+    "name": "solo-fixture",
+    "domains": ["solo.invalid"],
+    "timezone": "UTC",
+    "deadmanHook": "${PULSE_DEADMANSSWITCH_URL}",
+    "provenance": { "file": "estate.yaml", "path": "estate", "line": 1, "col": 1 }
+  },
+  "hosts": [
+    {
+      "name": "solo-host",
+      "collectionClass": "managed-linux",
+      "addresses": ["10.0.1.10"],
+      "exporterPorts": [9100],
+      "cadvisor": false,
+      "deliveryForm": "systemd",
+      "provenance": { "file": "estate.yaml", "path": "hosts[0]", "line": 10, "col": 1 }
+    }
+  ],
+  "services": [
+    {
+      "name": "solo-web",
+      "host": "solo-host",
+      "kind": "app",
+      "managed": true,
+      "deepHealth": {
+        "endpoint": "https://solo-web.solo.invalid/healthz",
+        "responseMapping": { "web_up": "$.up" },
+        "alertExpression": "web_up < 1"
+      },
+      "provenance": { "file": "estate.yaml", "path": "services[0]", "line": 20, "col": 1 }
+    }
+  ],
+  "channels": [
+    {
+      "name": "solo-chat",
+      "kind": "chat",
+      "credential": { "kind": "env", "raw": "${SLACK_TOKEN}", "varName": "SLACK_TOKEN" },
+      "provenance": { "file": "estate.yaml", "path": "channels[0]", "line": 30, "col": 1 }
+    }
+  ],
+  "routingOverrides": [],
+  "suppressions": []
+}

@@ -1,0 +1,32 @@
+# broken-host-local-probe — shape-CLEAN but semantically broken (issue #8), the covering case for
+# HOST_LOCAL_PROBE_HOST in meta.test.ts's anti-rot guard (07 §4):
+#   HOST_LOCAL_PROBE_HOST — a service declares a `deep_health.host_local` probe, but its host is a
+#   nas-api host, not managed-linux. A host-local probe runs from a per-host prober in the
+#   managed-linux agent bundle, so it must resolve to a managed-linux host (checkHostLocalProbeHost).
+# It is a semantic invariant (a discriminated-union arm carries no cross-element shape), so the
+# document shape-validates and the pipeline reaches the semantic layer.
+estate:
+  schema_version: 1
+  name: host-local-probe-broken
+  domains:
+    - hl.example
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: nas-host
+    collection_class: nas-api
+    addresses:
+      - 10.9.0.6
+
+services:
+  - name: nvr
+    host: nas-host # HOST_LOCAL_PROBE_HOST — a host_local probe on a nas-api host
+    kind: http
+    managed: true
+    deep_health:
+      endpoint: http://127.0.0.1:5000/api/stats
+      host_local: true
+      response_mapping:
+        detectors: "$.detectors.count"
+      alert_expression: pulse_deep_health_up == 0

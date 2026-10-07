@@ -1,0 +1,5 @@
+[
+  { "name": "team-a", "integrations": [{ "name": "slack" }, { "name": "email" }] },
+  { "name": "team-b" },
+  { "name": "team-catchall", "integrations": [], "extraReceiverField": "ignored" }
+]

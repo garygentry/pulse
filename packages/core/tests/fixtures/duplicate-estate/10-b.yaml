@@ -1,0 +1,9 @@
+# duplicate-estate (2/2) — a SECOND estate block. Content-based merge keeps the first
+# occurrence and emits exactly one DUPLICATE_ESTATE finding naming BOTH files (03 §4.5).
+estate:
+  schema_version: 1
+  name: estate-two
+  domains:
+    - two.example
+  timezone: UTC
+  deadman_hook: "${DEADMAN}"

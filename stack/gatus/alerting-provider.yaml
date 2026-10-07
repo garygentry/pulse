@@ -1,0 +1,65 @@
+# stack/gatus/alerting-provider.yaml  →  mounted at /config/00-alerting.yaml
+#
+# Estate-agnostic Gatus config: the Gatus→Alertmanager wiring (REQ-GATUS-02, OQ-A4) plus the
+# top-level `metrics` toggle. Routes Gatus synthetic-check alerts THROUGH Alertmanager so the
+# estate has ONE routing/silence/deadman brain (charter 02, 05 §A4). Gatus merges this with the
+# rendered /config/10-endpoints.yaml (§4.1).
+#
+# NAMES NO ESTATE: every dynamic value is a Gatus placeholder resolved per-check at runtime.
+#
+# GAP (V-002): the alerting provider fires ONLY for endpoints that declare an `alerts:` block. The
+# rendered gatus/config.yaml does NOT yet emit one (§4.4), so this is DEFINED-BUT-NOT-YET-FIRING
+# pending an additive renderer change. The definition is specced now so paging works the moment
+# the renderer emits per-endpoint bindings.
+
+# Expose the Prometheus `/metrics` endpoint on :8080 (issue #31). Gatus serves /metrics ONLY when
+# this top-level toggle is set; without it, /metrics 404s, the `gatus` scrape job's `up` series is
+# permanently 0, and the `AncillaryDown{job="gatus"}` rule (in stack/compose/config/vmalert/rules/) is a
+# permanent false positive on a healthy gatus. Enabling it satisfies both, and additionally
+# surfaces `gatus_results_*` per-endpoint series for dashboards. Estate-agnostic (04 §4).
+metrics: true
+
+alerting:
+  custom:
+    # Alertmanager v2 alerts ingestion API (the single routing brain, engine-apis §2).
+    url: "http://alertmanager:9093/api/v2/alerts"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    # AM v2 payload: an ARRAY of alert objects. `alertname` is mandatory for AM. Gatus expands
+    # the [PLACEHOLDER] tokens per check before POSTing. startsAt is intentionally omitted:
+    # Alertmanager stamps startsAt = ingestion time when absent, and Gatus exposes no timestamp
+    # placeholder — relying on AM's default is the correct, estate-agnostic choice (see §4.3).
+    body: |
+      [
+        {
+          "labels": {
+            "alertname": "GatusCheckFailed",
+            "severity": "critical",
+            "source": "gatus",
+            "endpoint": "[ENDPOINT_NAME]",
+            "group": "[ENDPOINT_GROUP]"
+          },
+          "annotations": {
+            "summary": "Gatus check [ENDPOINT_NAME] ([ALERT_TRIGGERED_OR_RESOLVED])",
+            "description": "[ALERT_DESCRIPTION]",
+            "url": "[ENDPOINT_URL]"
+          },
+          "generatorURL": "http://gatus:8080/"
+        }
+      ]
+    # Maps Gatus's TRIGGERED/RESOLVED state into the [ALERT_TRIGGERED_OR_RESOLVED] token used in
+    # the annotation above. (Full resolve semantics — setting AM `endsAt` on recovery — are
+    # refined jointly with `alerting`; see §4.3.)
+    placeholders:
+      ALERT_TRIGGERED_OR_RESOLVED:
+        TRIGGERED: "firing"
+        RESOLVED: "resolved"
+    # `default-alert` supplies the trigger/resolve thresholds an endpoint inherits when it binds
+    # this provider WITHOUT restating them. This is the estate-agnostic engine default; the
+    # per-endpoint `alerts:` binding itself is emitted by the renderer (V-002, §4.4).
+    default-alert:
+      enabled: true
+      failure-threshold: 3
+      success-threshold: 2
+      send-on-resolved: true

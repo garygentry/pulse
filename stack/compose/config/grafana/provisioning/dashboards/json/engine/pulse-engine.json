@@ -1,0 +1,236 @@
+{
+  "uid": "pulse-engine",
+  "title": "Pulse — Engine self-health",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "engine"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About this board",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Whole-engine self-health for Pulse's own stack. Queries are bounded to engine `job` labels, not a per-target variable. Note: the 'Grafana self-metrics' panel loads as **No data** by design — the engine has no `grafana` scrape job as-built, so `grafana_*` series are not collected. This is intentional and does not indicate an outage."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Component up/down",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "mappings": [] }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{job}}",
+          "expr": "up{job=~\"victoriametrics|vmalert|alertmanager|gatus|engine-cadvisor|pve-exporter\"}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "VictoriaMetrics ingestion rate",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "rows inserted",
+          "expr": "rate(vm_rows_inserted_total{job=\"victoriametrics\"}[5m])"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "VictoriaMetrics free disk",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "free",
+          "expr": "vm_free_disk_space_bytes{job=\"victoriametrics\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "vmalert rule health",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "rule errors",
+          "expr": "vmalert_alerting_rules_errors_total{job=\"vmalert\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "iteration duration",
+          "expr": "vmalert_iteration_duration_seconds{job=\"vmalert\"}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Alertmanager notifications",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "sent {{integration}}",
+          "expr": "rate(alertmanager_notifications_total{job=\"alertmanager\"}[5m])"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "failed {{integration}}",
+          "expr": "alertmanager_notifications_failed_total{job=\"alertmanager\"}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Gatus results",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{key}}",
+          "expr": "rate(gatus_results_total{job=\"gatus\"}[5m])"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Grafana self-metrics",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 22 },
+      "description": "No data by design: the engine has no `grafana` scrape job as-built, so `grafana_*` series are not collected. Loads gracefully as No-data; not an outage.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — grafana_* not scraped (see board note)"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "http request rate",
+          "expr": "rate(grafana_http_request_duration_seconds_count{job=\"grafana\"}[5m])"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Per-container CPU (cAdvisor)",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{name}}",
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{job=\"cadvisor\",name!=\"\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Per-container memory (cAdvisor)",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{name}}",
+          "expr": "container_memory_usage_bytes{job=\"cadvisor\",name!=\"\"}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Container restarts (1h)",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{name}}",
+          "expr": "changes(container_start_time_seconds{job=\"engine-cadvisor\",name!=\"\"}[1h])"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "alertGroups",
+      "title": "Firing engine alerts",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "options": {
+        "labels": "job=~\"victoriametrics|vmalert|alertmanager|gatus|engine-cadvisor|pve-exporter\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

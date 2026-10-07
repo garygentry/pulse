@@ -1,0 +1,7 @@
+cadvisor: false
+deliveryForm: systemd
+heartbeat: true
+host: harbor-app-02
+scrapePorts:
+  heartbeat: 9110
+  node: 9100

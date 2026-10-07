@@ -1,0 +1,69 @@
+{
+  "schemaMajor": 1,
+  "estate": {
+    "name": "probe-fixture",
+    "domains": ["probe.invalid"],
+    "timezone": "Australia/Sydney",
+    "deadmanHook": "${PULSE_DEADMANSSWITCH_URL}",
+    "provenance": { "file": "estate.yaml", "path": "estate", "line": 1, "col": 1 }
+  },
+  "hosts": [
+    {
+      "name": "probe-host",
+      "collectionClass": "managed-linux",
+      "addresses": ["10.0.6.10"],
+      "exporterPorts": [9100],
+      "cadvisor": true,
+      "deliveryForm": "compose",
+      "provenance": { "file": "estate.yaml", "path": "hosts[0]", "line": 10, "col": 1 }
+    }
+  ],
+  "services": [
+    {
+      "name": "cameras",
+      "host": "probe-host",
+      "kind": "app",
+      "managed": true,
+      "deepHealth": {
+        "endpoint": "https://cameras.probe.invalid/healthz",
+        "responseMapping": { "camera_count": "$.cameras" },
+        "alertExpression": "camera_count < 6"
+      },
+      "provenance": { "file": "estate.yaml", "path": "services[0]", "line": 20, "col": 1 }
+    },
+    {
+      "name": "ingest",
+      "host": "probe-host",
+      "kind": "app",
+      "managed": true,
+      "deepHealth": {
+        "endpoint": "https://ingest.probe.invalid/healthz",
+        "responseMapping": { "ingest_lag": "$.lag_seconds" },
+        "alertExpression": "ingest_lag > 120"
+      },
+      "provenance": { "file": "estate.yaml", "path": "services[1]", "line": 30, "col": 1 }
+    },
+    {
+      "name": "encoder",
+      "host": "probe-host",
+      "kind": "app",
+      "managed": true,
+      "deepHealth": {
+        "endpoint": "https://encoder.probe.invalid/healthz",
+        "responseMapping": { "active_streams": "$.streams" },
+        "alertExpression": "active_streams < 1"
+      },
+      "provenance": { "file": "estate.yaml", "path": "services[2]", "line": 40, "col": 1 }
+    }
+  ],
+  "channels": [
+    {
+      "name": "probe-chat",
+      "kind": "chat",
+      "credential": { "kind": "env", "raw": "${SLACK_TOKEN}", "varName": "SLACK_TOKEN" },
+      "provenance": { "file": "estate.yaml", "path": "channels[0]", "line": 50, "col": 1 }
+    }
+  ],
+  "routingOverrides": [],
+  "suppressions": []
+}

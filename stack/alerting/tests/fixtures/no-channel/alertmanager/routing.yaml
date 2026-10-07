@@ -1,0 +1,11 @@
+route:
+  receiver: orphan-ops
+  routes:
+    - match:
+        severity: warning
+      receiver: orphan-ops
+receivers:
+  - name: orphan-ops
+    config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}

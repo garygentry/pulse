@@ -1,0 +1,15 @@
+route:
+  receiver: churn-ops
+  routes:
+    - match:
+        severity: critical
+      receiver: churn-ops
+    - match:
+        severity: warning
+      receiver: churn-ops
+receivers:
+  - name: churn-ops
+    config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}
+          channel: "#churn-alerts"

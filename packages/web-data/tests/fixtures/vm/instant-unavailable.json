@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      { "metric": { "__name__": "pulse_web_engine_ingestion_rows_per_second" }, "value": [1726450000, ""] },
+      { "metric": { "__name__": "pulse_web_engine_hourly_active_series" }, "value": [1726450000, "NaN"] },
+      { "metric": { "__name__": "pulse_web_engine_notification_failures_per_second", "integration": "webhook" }, "value": [1726450000, "+Inf"] },
+      { "metric": { "__name__": "pulse_web_engine_free_disk_bytes" }, "value": [1726450000, "-Inf"] },
+      { "metric": { "__name__": "pulse_web_engine_data_bytes" }, "value": [1726450000, "0"] }
+    ]
+  }
+}

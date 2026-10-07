@@ -1,0 +1,28 @@
+estate:
+  schema_version: 1
+  name: host-agent-literal
+  domains:
+    - example.test
+  timezone: UTC
+  deadman_hook: "${DEADMAN_URL}"
+
+hosts:
+  - name: app-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.10
+    exporter_ports:
+      - 9100
+
+services:
+  - name: private-health
+    host: app-01
+    kind: http
+    managed: true
+    deep_health:
+      endpoint: /health
+      response_mapping:
+        ready: $.ready
+      alert_expression: ready != 1
+      credential: literal-secret

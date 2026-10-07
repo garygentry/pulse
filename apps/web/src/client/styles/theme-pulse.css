@@ -1,0 +1,45 @@
+/*
+ * pulse — extensions to the design tokens in theme.css (deck's file, verbatim).
+ *
+ * - Wallboard density: `[data-density="wallboard"]` (kiosk, or the density control) scales
+ *   Tailwind's spacing and type scale for 3–4 m legibility. Desk density is theme.css as is.
+ * - Canvas tokens: uPlot draws to <canvas>, which cannot resolve var(); the chart reads these
+ *   names through getComputedStyle. Status strokes use the tone each TargetStatus maps to.
+ * - Motion tokens for the few animated state changes.
+ *
+ * Keep colours here as references to theme.css tokens: no literal colour values.
+ */
+
+:root[data-density="wallboard"] {
+  --spacing: 0.3125rem;
+  --text-xs: 0.875rem;
+  --text-sm: 1rem;
+  --text-base: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+}
+
+:root {
+  --canvas-axis: var(--border);
+  --canvas-grid: var(--border);
+  --canvas-text: var(--muted-foreground);
+  --canvas-series: var(--chart-1);
+  --canvas-status-ok: var(--status-ok-fg);
+  --canvas-status-warning: var(--status-warn-fg);
+  --canvas-status-critical: var(--status-danger-fg);
+  --canvas-status-unknown: var(--status-neutral-fg);
+  --canvas-status-suppressed: var(--status-neutral-fg);
+
+  /* Motion: durations and easing for the few animated changes (the overview change marker and
+     grid fade). The reduced-motion rule in app.css overrides them. */
+  --motion-base: 160ms;
+  --motion-slow: 280ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@layer base {
+  :root[data-density="wallboard"] body {
+    font-size: 18px;
+  }
+}

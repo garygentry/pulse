@@ -1,0 +1,32 @@
+# agent/systemd/pulse-command-exporter.service — installed ONLY on a host that declares ≥1 command
+# signal (issue #3/#1; deploy-toolkit gates installation on the rendered command-exporter config).
+#
+# Estate-agnostic template (REQ-BUNDLE-04): no host/estate/domain/credential literal — the `host`
+# label is scrape-applied (like heartbeat/node), never baked. Runs the SAME pinned command-exporter
+# image as the compose form via the host container runtime. Serves GET /metrics + /healthz on :9130
+# only (no write/control surface). UNLIKE the heartbeat unit, the exporter PARSES its rendered config
+# at runtime, so the config bind mount is load-bearing (not parity).
+#
+# The rendered per-host config is expected at %h-independent path
+# /etc/pulse/rendered/command-exporter/config.yaml (deploy-toolkit places the host's
+# command-exporter/<host>.yaml there). Host-provided signal commands live under /opt/pulse.
+[Unit]
+Description=Pulse managed-linux agent — command-exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Pinned command-exporter image. Serves GET /metrics + /healthz on :9130 only. The rendered config
+# is mounted read-only to the fixed in-container path the loader reads; PULSE_RENDERED_DIR defaults
+# to /rendered. Host command scripts are mounted read-only under /opt/pulse.
+ExecStartPre=-/usr/bin/podman rm -f pulse-command-exporter
+ExecStart=/usr/bin/podman run --rm --name pulse-command-exporter \
+  -p 9130:9130 \
+  -v /etc/pulse/rendered/command-exporter/config.yaml:/rendered/command-exporter/config.yaml:ro \
+  -v /opt/pulse:/opt/pulse:ro \
+  pulse/command-exporter:1.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

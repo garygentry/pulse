@@ -1,0 +1,19 @@
+# multi-file (1/3) — estate metadata + one host. Sections are split across three
+# differently-named files to exercise content-based merge (REQ-LOAD-01/02). `shared-host`
+# is declared here AND again in 20-more-hosts.yaml — a cross-file DUPLICATE_IDENTITY.
+estate:
+  schema_version: 1
+  name: multi-estate
+  domains:
+    - multi.example
+  timezone: UTC
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: shared-host
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.2.0.1
+    exporter_ports:
+      - 9100

@@ -1,0 +1,325 @@
+{
+  "bundleId": "sha256:001318933516f6d71e613de990a22c683b1507e1c8dccfe159e64fd9f9b934ba",
+  "channels": [
+    {
+      "credential": {
+        "display": "${OPSGENIE_WEBHOOK}",
+        "kind": "env"
+      },
+      "kind": "push",
+      "name": "oncall",
+      "options": null,
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 93,
+        "path": "channels[0]"
+      }
+    },
+    {
+      "credential": {
+        "display": "${SLACK_TOKEN}",
+        "kind": "env"
+      },
+      "kind": "chat",
+      "name": "team-chat",
+      "options": null,
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 96,
+        "path": "channels[1]"
+      }
+    }
+  ],
+  "estate": {
+    "deadman": {
+      "configured": true,
+      "kind": "plain"
+    },
+    "dnsResolver": null,
+    "domains": [
+      "example.com",
+      "internal.example.com"
+    ],
+    "name": "home-estate",
+    "retention": null,
+    "schemaMajor": 1,
+    "timezone": "UTC"
+  },
+  "formatVersion": 2,
+  "hosts": [
+    {
+      "addresses": [
+        "10.0.0.9"
+      ],
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml",
+        "scrape/file_sd/probe-only.json"
+      ],
+      "collectionClass": "probe-only",
+      "detail": {
+        "probe": {
+          "expect": null,
+          "kind": "icmp",
+          "target": "10.0.0.9"
+        }
+      },
+      "drilldownId": "host:edge01",
+      "expectedChurn": false,
+      "name": "edge01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 44,
+        "path": "hosts[3]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.0.0.9",
+          "job": "probe-only"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.0.0.6"
+      ],
+      "artifacts": [
+        "scrape/file_sd/nas-api.json"
+      ],
+      "collectionClass": "nas-api",
+      "detail": {
+        "apiEndpoint": null,
+        "credential": null
+      },
+      "drilldownId": "host:nas1",
+      "expectedChurn": false,
+      "name": "nas1",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 38,
+        "path": "hosts[2]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.0.0.6:9100",
+          "job": "nas-api"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.0.0.99"
+      ],
+      "artifacts": [],
+      "collectionClass": "excluded",
+      "detail": {},
+      "drilldownId": "host:old01",
+      "expectedChurn": false,
+      "name": "old01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 53,
+        "path": "hosts[4]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [],
+      "suppressed": {
+        "class": "excluded",
+        "rationale": "Decommissioned 2026-01."
+      }
+    },
+    {
+      "addresses": [
+        "10.0.0.5"
+      ],
+      "artifacts": [
+        "scrape/file_sd/hypervisor-api.json"
+      ],
+      "collectionClass": "hypervisor-api",
+      "detail": {
+        "apiEndpoint": "https://pve1:8006",
+        "credential": {
+          "display": "${PVE_TOKEN}",
+          "kind": "env"
+        }
+      },
+      "drilldownId": "host:pve1",
+      "expectedChurn": false,
+      "name": "pve1",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 30,
+        "path": "hosts[1]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "https://pve1:8006",
+          "job": "hypervisor-api"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.0.0.4"
+      ],
+      "artifacts": [
+        "agent/web01.yaml",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json",
+        "scrape/file_sd/process-exporter.json"
+      ],
+      "collectionClass": "managed-linux",
+      "detail": {
+        "cadvisor": false,
+        "commandSignals": [],
+        "deliveryForm": "compose",
+        "exporterPorts": [
+          9100,
+          9256
+        ],
+        "heartbeat": true
+      },
+      "drilldownId": "host:web01",
+      "expectedChurn": false,
+      "name": "web01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 20,
+        "path": "hosts[0]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.0.0.4:9100",
+          "job": "managed-linux"
+        },
+        {
+          "instance": "10.0.0.4:9110",
+          "job": "managed-linux-heartbeat"
+        },
+        {
+          "instance": "10.0.0.4:9256",
+          "job": "process-exporter"
+        }
+      ],
+      "suppressed": null
+    }
+  ],
+  "routingOverrides": [
+    {
+      "channels": [
+        "oncall"
+      ],
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 101,
+        "path": "routing_overrides[0]"
+      },
+      "severity": "critical"
+    }
+  ],
+  "services": [
+    {
+      "alerts": [],
+      "artifacts": [
+        "prober/config.yaml"
+      ],
+      "backupFreshness": {
+        "hasCommand": false,
+        "interval": "15m",
+        "signal": "pulse_backup_freshness_age_seconds",
+        "threshold": "26h"
+      },
+      "deepHealth": false,
+      "deepHealthDetail": null,
+      "drilldownId": "svc:web01/frigate",
+      "gatusEndpoints": [],
+      "host": "web01",
+      "kind": "backup",
+      "managed": true,
+      "name": "frigate",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 75,
+        "path": "services[1]"
+      },
+      "suppressed": null
+    },
+    {
+      "alerts": [],
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml"
+      ],
+      "backupFreshness": null,
+      "deepHealth": true,
+      "deepHealthDetail": {
+        "alertExpression": "db_ok == 0",
+        "credential": null,
+        "endpoint": "https://grafana.example.com/api/health",
+        "hostLocal": false,
+        "metrics": [
+          "db_ok"
+        ],
+        "responseMapping": {
+          "db_ok": "$.database"
+        }
+      },
+      "drilldownId": "svc:web01/grafana",
+      "gatusEndpoints": [
+        "web01/grafana"
+      ],
+      "host": "web01",
+      "ingressUrl": "https://grafana.example.com",
+      "kind": "http",
+      "managed": true,
+      "name": "grafana",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 63,
+        "path": "services[0]"
+      },
+      "suppressed": null
+    },
+    {
+      "alerts": [],
+      "artifacts": [],
+      "backupFreshness": null,
+      "deepHealth": false,
+      "deepHealthDetail": null,
+      "drilldownId": "svc:web01/staging",
+      "gatusEndpoints": [],
+      "host": "web01",
+      "kind": "http",
+      "managed": false,
+      "name": "staging",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 84,
+        "path": "services[2]"
+      },
+      "suppressed": {
+        "class": "known-expected",
+        "rationale": "Flaky staging box."
+      }
+    }
+  ],
+  "suppressions": []
+}

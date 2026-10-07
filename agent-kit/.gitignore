@@ -1,0 +1,8 @@
+# Compiled artifacts from a stray non-noEmit tsc run over scripts/*.ts.
+# scripts/{generate,verify-generated}.ts are bun-run sources only — their .js/.d.ts
+# outputs must never be tracked (Bun resolves ./x.js to a committed x.js over the .ts,
+# silently shadowing the source). See backlog item 011.
+scripts/*.js
+scripts/*.js.map
+scripts/*.d.ts
+scripts/*.d.ts.map

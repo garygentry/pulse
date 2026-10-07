@@ -1,0 +1,18 @@
+[
+  {
+    "severity": "error",
+    "code": "missing_field",
+    "file": "inventory.yaml",
+    "path": "hosts[0].exporter_ports",
+    "message": "Required field is missing (expected array).",
+    "fix": "Add \"hosts[0].exporter_ports\" with a array value."
+  },
+  {
+    "severity": "error",
+    "code": "unknown_field",
+    "file": "inventory.yaml",
+    "path": "hosts[0].role",
+    "message": "Unknown field \"role\" is not part of the schema.",
+    "fix": "Remove \"role\", or rename it to the intended schema field (check for a typo)."
+  }
+]

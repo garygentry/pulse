@@ -1,0 +1,39 @@
+# stack/compose/config/vmalert/rules/engine.yml
+# Static, estate-agnostic engine self-monitoring. Job names are stack-core scrape jobs (scrape.yml §2).
+groups:
+  - name: engine
+    rules:
+      # REQ-ENGINE-01: failure of a component required to EVALUATE or DELIVER alerts is critical —
+      # the metrics source (victoriametrics), rule evaluator (vmalert), routing manager (alertmanager).
+      - alert: AlertPathDown
+        expr: up{job=~"victoriametrics|vmalert|alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alert-path component {{ $labels.job }} is DOWN (critical)"
+          description: >-
+            Engine component {{ $labels.job }} ({{ $labels.instance }}) — required to evaluate or
+            deliver alerts — has been unreachable for 2m. The alerting pipeline is compromised.
+            NOTE: vmalert evaluates this rule, so it detects victoriametrics/alertmanager loss; loss
+            of vmalert or victoriametrics ITSELF is caught externally by DeadMansSwitch (deadman.yml,
+            04-alertmanager-config.md), which stops arriving when evaluation stops.
+          runbook_url: "https://runbooks.pulse.local/engine"
+
+      # REQ-ENGINE-02: failure of an ANCILLARY component (dashboard/synthetic/exporter) is warning,
+      # unless a more specific critical condition also fires. Enumerates only ALWAYS-ON scraped
+      # ancillary jobs to avoid false positives — grafana has no scrape job, and the prober is
+      # profile-gated OFF by default (DOWN-by-design), so both are excluded (§6 WARNING).
+      - alert: AncillaryDown
+        expr: up{job=~"gatus|engine-cadvisor|pve-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ancillary component {{ $labels.job }} is DOWN (warning)"
+          description: >-
+            Ancillary engine component {{ $labels.job }} ({{ $labels.instance }}) has been unreachable
+            for 5m. Not on the critical alert-delivery path; investigate at leisure. If an alert-path
+            or availability condition is also firing, that critical takes precedence
+            (04-alertmanager-config.md §Inhibit).
+          runbook_url: "https://runbooks.pulse.local/engine"

@@ -1,0 +1,409 @@
+// src/server/assets.ts — the built client-bundle loader (manifest-driven).
+//
+// The router serves the SPA shell and its content-hashed assets from `dist/client`, whose contents
+// `scripts/build-client.ts` publishes together with a `manifest.json` describing entries + chunks.
+// In production the manifest is read ONCE at boot (immutable, content-hashed names); in dev the
+// mtime is checked on every `shell()` call and on `get()` misses, so a rebuild is picked up. When
+// the manifest is absent, unparseable, or shape-invalid the loader falls back to today's directory
+// scan (REQ-BUILD-04) so the server still boots and the operational routes work.
+
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { resolve, join, extname } from "node:path";
+
+import { log } from "./log.js";
+
+/** The manifest file name inside the client output directory. */
+export const MANIFEST_FILENAME = "manifest.json" as const;
+
+/** The public URL prefix every served client file lives under. */
+export const ASSET_PREFIX = "/assets/" as const;
+
+/**
+ * Names of the markers the shell carries for the client. Deliberately duplicated in
+ * `src/client/api/client.ts` because the client graph must not import from `src/server/**`; a test
+ * pins the two copies as deep-equal.
+ */
+export const SHELL_MARKERS = {
+  /** `<meta name="pulse-build-id" content="<buildId>">` — present whenever a manifest loaded. */
+  buildIdMeta: "pulse-build-id",
+  /** `<meta name="pulse-dev" content="1">` — present only under `{ dev: true }`. */
+  devMeta: "pulse-dev",
+  /** `<script type="application/json" id="pulse-chunk-css">` — the inert `chunkCss` island. */
+  chunkCssIsland: "pulse-chunk-css",
+} as const;
+
+/**
+ * The client build manifest written to `<outdir>/manifest.json` by `buildClient` and read by
+ * `loadStaticAssets`. Every path is a public asset path (`/assets/<basename>`), never a filesystem
+ * path. Sourcemaps are never listed.
+ */
+export interface ClientManifest {
+  /** 12-hex deterministic build id. */
+  buildId: string;
+  /** Entry-point outputs the shell injects. */
+  entries: {
+    /** JS entry points, injected as `<script type="module">` before `</body>`. */
+    js: string[];
+    /** Entry stylesheets, injected as `<link rel="stylesheet">` before `</head>`. */
+    css: string[];
+  };
+  /** Every non-entry JS chunk and every non-entry CSS output. Served under `/assets/`, never
+   *  injected by the shell. */
+  chunks: string[];
+  /** Lazily imported module key → chunk stylesheets that module owns. Optional so an older build
+   *  without the field still parses; consumers treat absence as `{}`. */
+  chunkCss?: Record<string, string[]>;
+}
+
+/** One served static asset: its raw bytes and its content type. */
+export interface StaticAsset {
+  /** The asset bytes (an `ArrayBuffer` so it is a valid `BodyInit` under both DOM and Bun libs). */
+  body: ArrayBuffer;
+  /** The `content-type` header value. */
+  contentType: string;
+}
+
+/** Why the loader fell back to directory-scan injection (REQ-BUILD-04). */
+export type ManifestFallbackReason = "missing" | "unparseable" | "shape";
+
+/** The loaded static client bundle — a per-request asset lookup + the SPA shell. */
+export interface StaticAssets {
+  /** Return the asset registered for a request pathname (`/assets/<name>`), or `undefined`. In dev
+   *  mode a miss re-checks the manifest mtime once before returning `undefined`. */
+  get(pathname: string): StaticAsset | undefined;
+  /** The SPA shell HTML with entry tags injected. In dev mode the manifest mtime is checked on
+   *  every call. */
+  shell(): string;
+  /** The manifest's `buildId`, or `null` in fallback mode. OPTIONAL so a plain literal (see
+   *  `tests/routes.test.ts`) still satisfies the interface; the loader always implements it. */
+  buildId?(): string | null;
+}
+
+/** Options for `loadStaticAssets`. */
+export interface StaticAssetsOptions {
+  /** `true`: re-read `manifest.json` when its mtime changes and stamp the dev meta into the shell.
+   *  Default `false` (production: load once at boot, immutable). */
+  dev?: boolean;
+}
+
+/** Content type by file extension (the small set the client bundle emits). */
+const CONTENT_TYPES: Record<string, string> = {
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+};
+
+/** The absolute path of the built client tree, relative to this compiled module (dist/server/…). */
+const DEFAULT_CLIENT_DIR = resolve(import.meta.dir, "..", "client");
+
+/** A minimal fallback shell used when no built `index.html` is present. */
+const FALLBACK_SHELL = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>Pulse — Estate Overview</title></head>
+<body><div id="app"></div></body></html>
+`;
+
+/** Plain (non-null, non-array) object. */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** A `string[]` whose every element starts with `ASSET_PREFIX`. */
+function isAssetPathArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((p) => typeof p === "string" && p.startsWith(ASSET_PREFIX));
+}
+
+/**
+ * Structural validation of a manifest document. Returns `null` on any shape error and NEVER throws.
+ * Accepts a missing `chunkCss` (older build) by defaulting it to `{}`. Enumerated in
+ * `03-asset-injection.md §2` as rules R1–R8.
+ */
+export function parseClientManifest(text: string): ClientManifest | null {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return null; // R1
+  }
+  if (!isRecord(doc)) return null; // R2
+  if (typeof doc["buildId"] !== "string") return null; // R3
+  const entries = doc["entries"];
+  if (!isRecord(entries)) return null; // R4
+  if (!isAssetPathArray(entries["js"])) return null; // R5/R8
+  if (!isAssetPathArray(entries["css"])) return null; // R5/R8
+  if (!isAssetPathArray(doc["chunks"])) return null; // R6/R8
+
+  const chunkCss: Record<string, string[]> = {};
+  const raw = doc["chunkCss"];
+  if (raw !== undefined) {
+    if (!isRecord(raw)) return null; // R7
+    for (const [key, value] of Object.entries(raw)) {
+      if (!isAssetPathArray(value)) return null; // R7/R8
+      chunkCss[key] = [...value];
+    }
+  }
+  return {
+    buildId: doc["buildId"],
+    entries: { js: [...entries["js"]], css: [...entries["css"]] },
+    chunks: [...doc["chunks"]],
+    chunkCss,
+  };
+}
+
+/**
+ * Splice the built bundle's `<link rel="stylesheet">` / `<script type="module">` tags into the SPA
+ * shell — stylesheets before `</head>`, module scripts before `</body>` (appended if that tag is
+ * absent). Retained verbatim from the pre-manifest world as the REQ-BUILD-04 fallback path.
+ */
+function injectBundleTags(shell: string, scripts: string[], styles: string[]): string {
+  const splice = (
+    html: string,
+    names: string[],
+    render: (name: string) => string,
+    anchors: string[],
+  ): string => {
+    const tags = [...names]
+      .sort()
+      .filter((name) => !html.includes(`/assets/${name}"`))
+      .map(render)
+      .join("");
+    if (!tags) return html;
+    const anchor = anchors.find((a) => html.includes(a));
+    return anchor ? html.replace(anchor, `${tags}  ${anchor}`) : html + tags;
+  };
+
+  let out = shell;
+  out = splice(out, styles, (name) => `    <link rel="stylesheet" href="/assets/${name}" />\n`, ["</head>", "</body>"]);
+  out = splice(out, scripts, (name) => `    <script type="module" src="/assets/${name}"></script>\n`, ["</body>"]);
+  return out;
+}
+
+/** Insert `tags` immediately before the first present anchor; if none present, append at end. */
+function splice(html: string, tags: string, anchors: readonly string[]): string {
+  if (!tags) return html;
+  const anchor = anchors.find((a) => html.includes(a));
+  return anchor !== undefined ? html.replace(anchor, `${tags}  ${anchor}`) : html + tags;
+}
+
+/**
+ * Make a JSON document safe as a `<script>` element's text: neutralise the two byte sequences the
+ * HTML tokenizer would otherwise treat as script-data breakers, while keeping the result valid JSON.
+ */
+function escapeJsonForScript(json: string): string {
+  return json.replaceAll("</", "<\\/").replaceAll("<!--", "<\\u0021--");
+}
+
+/**
+ * Pure: splice the manifest's entry tags into `shell` (CSS before `</head>`, JS before `</body>`),
+ * then the shell markers (build-id meta, `chunkCss` island, and dev meta under `opts.dev`). Emitted
+ * order is manifest array order — no alphabetical sort. Idempotent via the quoted attribute test.
+ */
+export function injectEntryTags(
+  shell: string,
+  manifest: ClientManifest,
+  opts: { dev: boolean },
+): string {
+  // CSS entry tags — skip a path already referenced in a full quoted-attribute form.
+  const cssTags = manifest.entries.css
+    .filter((path) => !shell.includes(`"${path}"`))
+    .map((path) => `    <link rel="stylesheet" href="${path}" />\n`)
+    .join("");
+
+  // Build-id meta — skip when the shell already has it.
+  const buildIdTag = shell.includes(`name="${SHELL_MARKERS.buildIdMeta}"`)
+    ? ""
+    : `    <meta name="${SHELL_MARKERS.buildIdMeta}" content="${manifest.buildId}">\n`;
+
+  // Chunk-css island — skip when already present. Payload is `chunkCss` (`{}` when absent).
+  const island = shell.includes(`id="${SHELL_MARKERS.chunkCssIsland}"`)
+    ? ""
+    : `    <script type="application/json" id="${SHELL_MARKERS.chunkCssIsland}">${escapeJsonForScript(
+        JSON.stringify(manifest.chunkCss ?? {}),
+      )}</script>\n`;
+
+  // Dev meta — only in dev mode; skip when already present.
+  const devTag =
+    opts.dev && !shell.includes(`name="${SHELL_MARKERS.devMeta}"`)
+      ? `    <meta name="${SHELL_MARKERS.devMeta}" content="1">\n`
+      : "";
+
+  const headBlock = `${cssTags}${buildIdTag}${island}${devTag}`;
+
+  // JS entry tags — skip a path already referenced.
+  const jsTags = manifest.entries.js
+    .filter((path) => !shell.includes(`"${path}"`))
+    .map((path) => `    <script type="module" src="${path}"></script>\n`)
+    .join("");
+
+  let out = shell;
+  out = splice(out, headBlock, ["</head>", "</body>"]);
+  out = splice(out, jsTags, ["</body>"]);
+  return out;
+}
+
+/** Everything one loader derives from a single read of `dir`. Replaced wholesale by `reload()`. */
+interface LoaderState {
+  /** The parsed manifest, or `null` in directory-scan fallback mode. */
+  manifest: ClientManifest | null;
+  /** `manifest.buildId`, or `null` in fallback mode. */
+  buildId: string | null;
+  /** Public path → asset; every regular file except `index.html` / `manifest.json`. */
+  assets: Map<string, StaticAsset>;
+  /** The fully composed shell HTML `shell()` returns. */
+  shell: string;
+  /** `statSync(<dir>/manifest.json).mtimeMs` at load time, or `null` when absent/unreadable. */
+  mtimeMs: number | null;
+}
+
+/** Result of one manifest read attempt. */
+type ManifestRead =
+  | { ok: true; manifest: ClientManifest; mtimeMs: number }
+  | { ok: false; reason: ManifestFallbackReason; mtimeMs: number | null };
+
+function readManifest(dir: string): ManifestRead {
+  const path = join(dir, MANIFEST_FILENAME);
+  let mtimeMs: number;
+  let text: string;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+    text = readFileSync(path, "utf8");
+  } catch {
+    return { ok: false, reason: "missing", mtimeMs: null };
+  }
+  try {
+    JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "unparseable", mtimeMs };
+  }
+  const manifest = parseClientManifest(text);
+  return manifest === null
+    ? { ok: false, reason: "shape", mtimeMs }
+    : { ok: true, manifest, mtimeMs };
+}
+
+/**
+ * Load the built client bundle from `dir` (default `dist/client`). Never throws.
+ *
+ * @param dir - The built client directory (test seam; default resolves to `dist/client`).
+ * @param opts - Options bag; `dev: true` enables per-request manifest re-read and the dev meta.
+ * @returns The in-memory `StaticAssets` handle the router serves from.
+ */
+export function loadStaticAssets(
+  dir: string = DEFAULT_CLIENT_DIR,
+  opts: StaticAssetsOptions = {},
+): StaticAssets {
+  let state: LoaderState = emptyState();
+  let loggedFallback = false;
+
+  const reload = (): void => {
+    const read = readManifest(dir);
+    const assets = new Map<string, StaticAsset>();
+    let shellTemplate = FALLBACK_SHELL;
+    let shellFromBuild = false;
+    const scanScripts: string[] = [];
+    const scanStyles: string[] = [];
+
+    if (existsSync(dir)) {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        let bytes: Buffer;
+        try {
+          bytes = readFileSync(full);
+        } catch {
+          continue; // a directory entry or unreadable file — skip
+        }
+        if (name === "index.html") {
+          shellTemplate = bytes.toString("utf8");
+          shellFromBuild = true;
+          continue;
+        }
+        if (name === MANIFEST_FILENAME) continue; // loader input, not a served asset
+        const ext = extname(name).toLowerCase();
+        const contentType = CONTENT_TYPES[ext] ?? "application/octet-stream";
+        const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        assets.set(`/assets/${name}`, { body, contentType });
+        if (ext === ".js" || ext === ".mjs") scanScripts.push(name);
+        else if (ext === ".css") scanStyles.push(name);
+      }
+    }
+
+    let shellHtml: string;
+    let buildId: string | null;
+    let manifest: ClientManifest | null;
+    let mtimeMs: number | null;
+
+    if (read.ok) {
+      manifest = read.manifest;
+      buildId = manifest.buildId;
+      mtimeMs = read.mtimeMs;
+      shellHtml = injectEntryTags(shellTemplate, manifest, { dev: opts.dev === true });
+      log({
+        event: "assets_manifest_loaded",
+        ok: true,
+        buildId,
+        entries: manifest.entries.js.length + manifest.entries.css.length,
+        chunks: manifest.chunks.length,
+      });
+    } else {
+      manifest = null;
+      buildId = null;
+      mtimeMs = read.mtimeMs;
+      shellHtml =
+        shellFromBuild && (scanScripts.length || scanStyles.length)
+          ? injectBundleTags(shellTemplate, scanScripts, scanStyles)
+          : shellTemplate;
+      if (!loggedFallback) {
+        loggedFallback = true;
+        log({ event: "assets_manifest_fallback", ok: false, reason: read.reason, dir });
+      }
+    }
+
+    state = { manifest, buildId, assets, shell: shellHtml, mtimeMs };
+  };
+
+  const checkForReload = (): void => {
+    if (opts.dev !== true) return;
+    let mtimeMs: number | null;
+    try {
+      mtimeMs = statSync(join(dir, MANIFEST_FILENAME)).mtimeMs;
+    } catch {
+      mtimeMs = null;
+    }
+    if (mtimeMs !== state.mtimeMs) reload();
+  };
+
+  reload();
+
+  return {
+    get(pathname) {
+      const hit = state.assets.get(pathname);
+      if (hit !== undefined) return hit;
+      if (opts.dev !== true) return undefined;
+      checkForReload();
+      return state.assets.get(pathname);
+    },
+    shell() {
+      checkForReload();
+      return state.shell;
+    },
+    buildId() {
+      return state.buildId;
+    },
+  };
+}
+
+/** An empty starting state so the first `reload()` has something to replace. */
+function emptyState(): LoaderState {
+  return { manifest: null, buildId: null, assets: new Map(), shell: FALLBACK_SHELL, mtimeMs: null };
+}

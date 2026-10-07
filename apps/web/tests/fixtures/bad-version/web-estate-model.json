@@ -1,0 +1,17 @@
+{
+  "estate": {
+    "domains": ["future.example.com"],
+    "name": "future-estate"
+  },
+  "formatVersion": 1,
+  "hosts": [
+    {
+      "addresses": ["10.0.0.7"],
+      "collectionClass": "managed-linux",
+      "drilldownId": "host:app1",
+      "name": "app1",
+      "suppressed": null
+    }
+  ],
+  "services": []
+}

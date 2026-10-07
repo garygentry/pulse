@@ -1,0 +1,89 @@
+{
+  "bundleId": "sha256:001318933516f6d71e613de990a22c683b1507e1c8dccfe159e64fd9f9b934ba",
+  "covered": [
+    {
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml",
+        "scrape/file_sd/probe-only.json"
+      ],
+      "collectionClass": "probe-only",
+      "kind": "host",
+      "name": "edge01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "scrape/file_sd/nas-api.json"
+      ],
+      "collectionClass": "nas-api",
+      "kind": "host",
+      "name": "nas1",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "scrape/file_sd/hypervisor-api.json"
+      ],
+      "collectionClass": "hypervisor-api",
+      "kind": "host",
+      "name": "pve1",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "agent/web01.yaml",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json",
+        "scrape/file_sd/process-exporter.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "web01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "web01/frigate",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "web01/grafana",
+      "suppressed": null
+    }
+  ],
+  "formatVersion": 2,
+  "gaps": [],
+  "suppressed": [
+    {
+      "artifacts": [],
+      "collectionClass": "excluded",
+      "kind": "host",
+      "name": "old01",
+      "suppressed": {
+        "class": "excluded",
+        "rationale": "Decommissioned 2026-01."
+      }
+    },
+    {
+      "artifacts": [],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "web01/staging",
+      "suppressed": {
+        "class": "known-expected",
+        "rationale": "Flaky staging box."
+      }
+    }
+  ]
+}

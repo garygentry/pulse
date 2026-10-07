@@ -1,0 +1,58 @@
+# agnostic-min — a STRUCTURALLY DIFFERENT valid estate than valid-min (different names,
+# domains, collection classes, and service shapes). It must load to ok:true with ZERO
+# changes to src/ — its mere existence over a different estate is the estate-agnostic
+# assertion (SC-01, REQ-MODEL-02). Spans probe-only + nas-api + excluded classes, an
+# op:// deadman hook, a push channel, and both remaining suppression classes.
+estate:
+  schema_version: 1
+  name: helios-lab
+  domains:
+    - lab.helios.example
+    - helios.example
+  timezone: Europe/Berlin
+  deadman_hook: "op://ops/deadman/url"
+
+hosts:
+  - name: sensor-gw
+    collection_class: probe-only
+    addresses:
+      - 192.168.5.2
+    probe:
+      kind: icmp
+      target: 192.168.5.2
+      expect: reachable
+  - name: vault-nas
+    collection_class: nas-api
+    addresses:
+      - 192.168.5.10
+    api_endpoint: https://vault-nas.lab.helios.example
+    credential: "${NAS_API_KEY}"
+  - name: retired-sensor
+    collection_class: excluded
+    addresses:
+      - 192.168.5.99
+    suppressed:
+      class: excluded
+      rationale: Sensor physically removed; retained for the audit trail.
+
+services:
+  - name: telemetry-sink
+    host: sensor-gw
+    kind: udp
+    managed: false
+    backup_freshness:
+      signal: last_snapshot_ts
+      threshold: 24h
+
+channels:
+  - name: pager
+    kind: push
+    credential: "op://ops/pager/token"
+
+suppressions:
+  - class: expected-churn
+    target: lab-vm-*
+    rationale: Lab VMs are recreated each test cycle.
+  - class: known-expected
+    target: weekly-reboot
+    rationale: Weekly maintenance reboot is expected downtime.

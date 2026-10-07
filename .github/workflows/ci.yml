@@ -1,0 +1,90 @@
+# .github/workflows/ci.yml — thin wrapper; ALL gate logic lives in `bun run ci` (D4).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+# A newer push to the same PR (or ref) cancels the in-flight run; main always runs to completion.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  # Notes-only changes skip `ci` via its `if:` rather than an `on.paths` filter: a job skipped by
+  # `if:` still reports the required `ci` check (as skipped = passing), a filtered-out workflow
+  # reports nothing and blocks the PR.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BEFORE: ${{ github.event.before }}
+          # Paths no test, build or docs:build reads. docs/** stays in (docs:build syncs
+          # docs/architecture); `*.md` here is repo-root markdown only.
+          NOTES: '^\.claude/|^[^/]+\.md$'
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only "$BASE...$HEAD")
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only "$BEFORE..$HEAD")
+          else
+            files=""   # new ref or unknown range: run everything
+          fi
+          # Empty diffs (e.g. an empty re-trigger commit) also run the suite.
+          if [ -z "$files" ] \
+            || grep -qvE "$NOTES" <<<"$files"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Notes-only change; skipping ci:"; echo "$files"
+          fi
+  ci:
+    needs: changes
+    # Run unless `changes` succeeded AND found notes only: if `changes` itself fails, the suite
+    # still runs, so a broken detector can never turn into a skipped (= passing) check.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
+    runs-on: ubuntu-latest   # Docker available → bootstrap smoke runs for real (REQ-VER-04)
+    timeout-minutes: 25      # ~2× a normal run (8–12 min); without it a hang bills up to 6 h
+    env:
+      # A missing Chromium is FATAL in CI — the browser suite must never silently skip
+      # (REQ-CI-01, REQ-TEST-04). Job-level so `bun run ci`, and every child process it
+      # spawns, sees it.
+      PULSE_REQUIRE_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"   # mirrors apps/web/Dockerfile:11 (FROM oven/bun:1.3.9 AS build)
+      - run: bun install
+      - id: pw
+        name: Read the pinned playwright-core version
+        # The `require`-form one-liner from spec 09 §7.1. If this is ever untested on the
+        # CI Bun (TRACEABILITY refinement 10), the recorded fallback is:
+        #   run: echo "version=$(bun -e 'console.log(JSON.parse(await Bun.file(\"./package.json\").text()).devDependencies[\"playwright-core\"])')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(bun -e 'console.log(require("./package.json").devDependencies["playwright-core"])')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          # Key derives from the pinned playwright-core version so a bump invalidates the
+          # cache (REQ-CI-01, REQ-DEPS-01). No restore-keys: a partial restore of a
+          # different revision would populate the directory without the wanted revision,
+          # so the probe would fail under PULSE_REQUIRE_BROWSER=1.
+          key: pw-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: bunx playwright-core install chromium
+      # OS libraries are NOT in the cached directory — `install-deps` apt-installs into
+      # /usr/lib on the runner image, which `actions/cache` does not capture. So it runs
+      # UNCONDITIONALLY, warm runs included; it is idempotent and fast when the packages
+      # are already present.
+      - run: bunx playwright-core install-deps chromium
+      - run: bun run ci      # typecheck → bun test (now incl. the browser suite) → docs:build

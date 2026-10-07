@@ -1,0 +1,6 @@
+# examples/minimal/pulse.config.yaml — pins the CLI defaults (apps/cli/src/config.ts)
+# so `pulse <verb>` targets examples/minimal/estate and examples/minimal/rendered when
+# run with this directory as the working dir.
+estateDir: estate      # input estate YAML
+outputRoot: rendered   # committed golden tree (the `render --check` target)
+strict: false          # default --strict

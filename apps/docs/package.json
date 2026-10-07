@@ -1,0 +1,16 @@
+{
+  "name": "@pulse/docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run sync-architecture.mjs && astro dev",
+    "build": "bun run sync-architecture.mjs && astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^7.2.4",
+    "@astrojs/starlight": "^0.41.7",
+    "starlight-links-validator": "^0.25.3"
+  }
+}

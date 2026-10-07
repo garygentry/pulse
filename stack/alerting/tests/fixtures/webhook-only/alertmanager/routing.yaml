@@ -1,0 +1,15 @@
+route:
+  receiver: hook-sink
+  routes:
+    - match:
+        severity: critical
+      receiver: hook-sink
+    - match:
+        severity: warning
+      receiver: hook-sink
+receivers:
+  - name: hook-sink
+    config:
+      webhook_configs:
+        - url: ${AUTOMATION_WEBHOOK_URL}
+          send_resolved: true

@@ -1,0 +1,27 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "harbor-hosts",
+        "file": "/etc/vmalert/rules/hosts.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "HypervisorUnreachable",
+            "query": "up{job=\"hypervisor-api\"} == 0",
+            "state": "firing",
+            "lastError": "",
+            "duration": 300,
+            "labels": { "severity": "critical" },
+            "annotations": { "summary": "unreachable" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0013
+          }
+        ]
+      }
+    ]
+  }
+}

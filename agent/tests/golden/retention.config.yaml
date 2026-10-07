@@ -1,0 +1,11 @@
+# Golden input — the fail-visible last-good retention case (02-deep-health-prober.md §6.2).
+# Two cycles are folded into ONE MetricStore: cycle 1 succeeds (camera_count → 4), cycle 2
+# is unreachable. The expected exposition proves `_up` flips to 0 while the last-good value
+# AND `_last_scrape_seconds` are NOT refreshed (they stay at the cycle-1 values).
+probes:
+  - name: svc:web01/frigate
+    target: http://web01:5000/api/health
+    kind: deep-health
+    responseMapping:
+      camera_count: $.cameras.recording
+    alertExpression: camera_count < 6

@@ -1,0 +1,40 @@
+# broken-min — deliberately broken to exercise one-pass multi-finding (SC-02).
+# schema_version:1 and valid YAML so body validation runs. It carries the five defects
+# item 013's golden asserts:
+#   (1) UNKNOWN_FIELD    — `role:` typo'd/unknown key on a managed-linux host
+#   (2) MISSING_FIELD    — that same managed-linux host is MISSING exporter_ports
+#   (3) SECRET_LITERAL   — the channel credential is a bare literal, not a reference
+#   (4) MISSING_RATIONALE— a suppression with an empty rationale
+#   (5) UNRESOLVED_HOST  — a service pointing at a host that is not declared
+estate:
+  schema_version: 1
+  name: broken-estate
+  domains:
+    - broken.example
+  timezone: America/New_York
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: app-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.0.5
+    role: web # (1) UNKNOWN_FIELD — not part of the managed-linux arm
+    # (2) MISSING_FIELD — exporter_ports is absent on this managed-linux host
+
+services:
+  - name: api
+    host: ghost-host # (5) UNRESOLVED_HOST — no host named "ghost-host" is declared
+    kind: http
+    managed: true
+
+channels:
+  - name: alerts
+    kind: chat
+    credential: xoxb-literal-token # (3) SECRET_LITERAL — not ${ENV} / op://
+
+suppressions:
+  - class: expected-churn
+    target: some-target
+    rationale: "" # (4) MISSING_RATIONALE — empty rationale

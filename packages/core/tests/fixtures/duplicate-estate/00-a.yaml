@@ -1,0 +1,9 @@
+# duplicate-estate (1/2) — the FIRST estate block. The merge treats `estate` as a singleton;
+# a second block in another file is a DUPLICATE_ESTATE finding naming both locations (03 §4.5).
+estate:
+  schema_version: 1
+  name: estate-one
+  domains:
+    - one.example
+  timezone: UTC
+  deadman_hook: "${DEADMAN}"

@@ -1,0 +1,10 @@
+# malformed — a YAML SYNTAX error (unclosed flow sequence). The parser reports it as a
+# MALFORMED_YAML finding with line/col, never a throw (REQ-OBS-01, 03 §4.4). Because the whole
+# document is unparseable, no estate is recovered, so the version gate also fires
+# (MISSING_VERSION) — both are collected; the coverage this fixture owns is MALFORMED_YAML.
+estate:
+  schema_version: 1
+  name: broken-yaml
+  domains: [one.example
+  timezone: UTC
+  deadman_hook: "${DEADMAN}"

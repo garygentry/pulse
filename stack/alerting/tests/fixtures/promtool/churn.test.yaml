@@ -1,0 +1,63 @@
+# stack/alerting/tests/fixtures/promtool/churn.test.yaml
+# Churn family (02 §churn, REQ-SUPP-03): container_start_time_seconds is workload telemetry only —
+# the ONLY family an expected-churn suppression targets, NEVER a service-liveness signal. A rising
+# start-time series (each restart bumps the value) makes changes() count restarts: > 0 in 15m fires
+# ContainerRestarting (warning), ≥ 3 in 1h fires ContainerChurn (warning). instance→host; estate set.
+rule_files:
+  - churn.yml
+evaluation_interval: 5m
+tests:
+  - interval: 5m
+    input_series:
+      - series: 'container_start_time_seconds{job="cadvisor",name="app-x",instance="host-churn",estate="fixture-estate"}'
+        values: "100 200 300 400 500 600 700 800 900 1000 1100 1200 1300" # restarts every 5m for 1h
+      # issue #25 liveness gate: cadvisor already running before t=0, so its uptime clears both the
+      # 15m (>900s) and 1h (>3600s) gates at eval_time 1h (time()=3600 → 3600-(-300)=3900).
+      - series: 'process_start_time_seconds{job="cadvisor",instance="host-churn"}'
+        values: "-300+0x12"
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: ContainerRestarting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cadvisor
+              name: app-x
+              host: host-churn
+              instance: host-churn
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/churn"
+              summary: "Container app-x on host-churn restarted (warning)"
+              description: "Container app-x on host host-churn restarted 3 time(s) in the last 15m. Workload telemetry only — this is never a service liveness signal (REQ-AVAIL-04)."
+      - eval_time: 1h
+        alertname: ContainerChurn
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cadvisor
+              name: app-x
+              host: host-churn
+              instance: host-churn
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/churn"
+              summary: "Container app-x on host-churn is churning (warning)"
+              description: "Container app-x on host host-churn restarted 12 times in the last hour (flapping). Workload telemetry only."
+
+  # issue #25 regression: a FRESH cadvisor. Every container_start_time_seconds series just appeared —
+  # the first-scrape edge (0 → real value) reads as changes()==1 — while cadvisor uptime is still under
+  # the 15m gate. This is the ~39-alert storm we hit on rollout; the liveness gate must suppress it.
+  - interval: 5m
+    input_series:
+      - series: 'container_start_time_seconds{job="cadvisor",name="app-fresh",instance="host-fresh",estate="fixture-estate"}'
+        values: "0 900 900 900" # first-scrape appearance edge → changes()==1 in 15m
+      - series: 'process_start_time_seconds{job="cadvisor",instance="host-fresh"}'
+        values: "0 0 0 0"       # cadvisor just started → uptime <= 900s at every eval, gate stays shut
+    alert_rule_test:
+      - eval_time: 15m # time()=900, uptime 900-0=900 is NOT > 900 → gated off despite changes()==1
+        alertname: ContainerRestarting
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ContainerChurn
+        exp_alerts: []

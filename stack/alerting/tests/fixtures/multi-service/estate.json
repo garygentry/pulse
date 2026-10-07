@@ -1,0 +1,75 @@
+{
+  "schemaMajor": 1,
+  "estate": {
+    "name": "acme-fixture",
+    "domains": ["fixture.invalid"],
+    "timezone": "America/New_York",
+    "deadmanHook": "${PULSE_DEADMANSSWITCH_URL}",
+    "quietHours": { "start": "22:00", "end": "08:00" },
+    "provenance": { "file": "estate.yaml", "path": "estate", "line": 1, "col": 1 }
+  },
+  "hosts": [
+    {
+      "name": "host-alpha",
+      "collectionClass": "managed-linux",
+      "addresses": ["10.0.0.11"],
+      "exporterPorts": [9100],
+      "cadvisor": true,
+      "deliveryForm": "compose",
+      "provenance": { "file": "estate.yaml", "path": "hosts[0]", "line": 10, "col": 1 }
+    },
+    {
+      "name": "host-beta",
+      "collectionClass": "managed-linux",
+      "addresses": ["10.0.0.12"],
+      "exporterPorts": [9100],
+      "cadvisor": true,
+      "deliveryForm": "compose",
+      "provenance": { "file": "estate.yaml", "path": "hosts[1]", "line": 20, "col": 1 }
+    }
+  ],
+  "services": [
+    {
+      "name": "camera-svc",
+      "host": "host-alpha",
+      "kind": "app",
+      "managed": true,
+      "deepHealth": {
+        "endpoint": "https://camera-svc.fixture.invalid/healthz",
+        "responseMapping": { "camera_count": "$.cameras" },
+        "alertExpression": "camera_count < 6"
+      },
+      "provenance": { "file": "estate.yaml", "path": "services[0]", "line": 30, "col": 1 }
+    },
+    {
+      "name": "postgres",
+      "host": "host-beta",
+      "kind": "database",
+      "managed": true,
+      "backupFreshness": { "signal": "restic", "threshold": "24h" },
+      "provenance": { "file": "estate.yaml", "path": "services[1]", "line": 40, "col": 1 }
+    }
+  ],
+  "channels": [
+    {
+      "name": "ops-chat",
+      "kind": "chat",
+      "credential": { "kind": "env", "raw": "${SLACK_TOKEN}", "varName": "SLACK_TOKEN" },
+      "provenance": { "file": "estate.yaml", "path": "channels[0]", "line": 50, "col": 1 }
+    },
+    {
+      "name": "ops-mail",
+      "kind": "email",
+      "credential": { "kind": "env", "raw": "${SMTP_PASSWORD}", "varName": "SMTP_PASSWORD" },
+      "provenance": { "file": "estate.yaml", "path": "channels[1]", "line": 55, "col": 1 }
+    },
+    {
+      "name": "automation",
+      "kind": "webhook",
+      "credential": { "kind": "env", "raw": "${AUTOMATION_WEBHOOK_URL}", "varName": "AUTOMATION_WEBHOOK_URL" },
+      "provenance": { "file": "estate.yaml", "path": "channels[2]", "line": 60, "col": 1 }
+    }
+  ],
+  "routingOverrides": [],
+  "suppressions": []
+}

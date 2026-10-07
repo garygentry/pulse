@@ -1,0 +1,93 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "deadman",
+        "file": "/etc/vmalert/rules/deadman.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "concurrency": 1,
+        "type": "prometheus",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "DeadMansSwitch",
+            "query": "vector(1)",
+            "state": "firing",
+            "health": "ok",
+            "lastError": "",
+            "duration": 0,
+            "labels": { "severity": "none", "estate": "reference-estate" },
+            "annotations": { "summary": "vmalert alerting pipeline is delivering (always-firing canary)" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0004,
+            "alerts": []
+          }
+        ]
+      },
+      {
+        "name": "harbor-hosts",
+        "file": "/etc/vmalert/rules/hosts.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "concurrency": 1,
+        "type": "prometheus",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "HypervisorUnreachable",
+            "query": "up{job=\"hypervisor-api\"} == 0",
+            "state": "firing",
+            "health": "ok",
+            "lastError": "",
+            "duration": 300,
+            "labels": { "severity": "critical", "estate": "reference-estate", "team_owner": "platform" },
+            "annotations": { "summary": "A hypervisor API scrape target has been unreachable for 5m", "internal_note": "paging enabled" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0013,
+            "alerts": []
+          },
+          {
+            "type": "alerting",
+            "name": "NasCapacityHigh",
+            "query": "nas_pool_used_ratio > 0.85",
+            "state": "pending",
+            "health": "ok",
+            "lastError": "",
+            "duration": 600,
+            "labels": { "severity": "warning", "estate": "reference-estate" },
+            "annotations": { "summary": "A NAS volume pool is above 85% capacity" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0008,
+            "alerts": []
+          },
+          {
+            "type": "alerting",
+            "name": "PortalErrorBudgetBurn",
+            "query": "portal_error_ratio > bool 0.05",
+            "state": "inactive",
+            "health": "err",
+            "lastError": "cannot execute query: unknown metric name \"portal_error_ratio\"",
+            "duration": 120,
+            "labels": { "severity": "warning", "estate": "reference-estate" },
+            "annotations": { "summary": "portal-web error budget burn rate elevated" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0021,
+            "alerts": []
+          },
+          {
+            "type": "recording",
+            "name": "job:harbor_up:ratio",
+            "query": "avg by (job) (up)",
+            "health": "ok",
+            "lastError": "",
+            "labels": { "estate": "reference-estate" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0005
+          }
+        ]
+      }
+    ]
+  }
+}

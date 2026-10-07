@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {"@/*": ["./src/client/*"]},
+    "rootDir": "../..",
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["bun-types"]
+  },
+  "references": [{ "path": "../../packages/web-data" }, { "path": "." }],
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "scripts/*.ts"]
+}

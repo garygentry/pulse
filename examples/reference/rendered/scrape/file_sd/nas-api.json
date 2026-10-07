@@ -1,0 +1,11 @@
+[
+  {
+    "labels": {
+      "collection_class": "nas-api",
+      "host": "harbor-nas-01"
+    },
+    "targets": [
+      "10.20.0.6:9100"
+    ]
+  }
+]

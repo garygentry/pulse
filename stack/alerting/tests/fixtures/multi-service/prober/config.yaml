@@ -1,0 +1,11 @@
+probes:
+  - name: svc:host-alpha/camera-svc
+    target: https://camera-svc.fixture.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      camera_count: $.cameras
+    alertExpression: camera_count < 6
+  - name: svc:host-beta/postgres#backup
+    target: host-beta
+    kind: backup-freshness
+    threshold: 24h

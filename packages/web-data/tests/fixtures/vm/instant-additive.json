@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "isPartial": false,
+  "stats": { "seriesFetched": "11" },
+  "data": {
+    "resultType": "vector",
+    "unknownHint": "ignore-me",
+    "result": [
+      { "metric": { "__name__": "up", "job": "victoriametrics", "instance": "harbor-1:8428" }, "value": [1726450000, "1"], "extraField": "discarded" },
+      { "metric": { "__name__": "pulse_web_engine_data_bytes" }, "value": [1726450000, "10737418240"] }
+    ]
+  }
+}

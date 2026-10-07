@@ -1,0 +1,6 @@
+signals:
+  - command:
+      - /opt/pulse/gpu-metrics.sh
+    intervalMs: 30000
+    name: gpu
+    output: exposition

@@ -1,0 +1,33 @@
+# gap — a covered host, a deliberately-suppressed (excluded) host, and an unmonitored
+# managed service. The service maps to NO artifact (no ingress/deep-health/backup-freshness)
+# and is not suppressed, so it lands in `gaps` (exit 1); the excluded host is `suppressed`.
+estate:
+  schema_version: 1
+  name: gap-estate
+  domains:
+    - example.com
+  timezone: UTC
+  deadman_hook: https://example.com/deadman
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    exporter_ports:
+      - 9100
+  - name: legacy-box
+    collection_class: excluded
+    addresses:
+      - 10.0.0.99
+    suppressed:
+      class: excluded
+      rationale: Decommissioned host; retained in inventory for completeness.
+
+services:
+  - name: orphan-svc
+    host: web-01
+    kind: http
+    managed: true
+    # No ingress_url / deep_health / backup_freshness — maps to no artifact ⇒ a gap.

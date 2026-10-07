@@ -1,0 +1,12 @@
+[
+  {
+    "labels": {
+      "__pulse_probe_kind__": "http",
+      "collection_class": "probe-only",
+      "host": "harbor-edge-01"
+    },
+    "targets": [
+      "https://status.aurora.example/healthz"
+    ]
+  }
+]

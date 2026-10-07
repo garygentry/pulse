@@ -1,0 +1,8 @@
+# Golden input — a MALFORMED prober config (02-deep-health-prober.md §3.1). It parses as
+# valid YAML but does NOT have the required `{ probes: [] }` top-level shape, so
+# `loadProberConfig` throws a ProberConfigError (FATAL at startup → failed healthcheck),
+# distinct from an ABSENT file (a non-event). There is no expected exposition — this fixture
+# never reaches the probe pipeline.
+not_probes:
+  - name: svc:web01/frigate
+    kind: deep-health

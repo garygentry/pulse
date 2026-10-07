@@ -1,0 +1,19 @@
+{
+  "bundleId": "sha256:e39dfc639faf4181837e38904552ca5b53811f537f69ad55dd6e38e25a7d3dd4",
+  "covered": [
+    {
+      "artifacts": [
+        "agent/monitor-host-01.yaml",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "monitor-host-01",
+      "suppressed": null
+    }
+  ],
+  "formatVersion": 2,
+  "gaps": [],
+  "suppressed": []
+}

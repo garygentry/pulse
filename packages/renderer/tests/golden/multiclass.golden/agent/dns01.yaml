@@ -1,0 +1,6 @@
+cadvisor: false
+deliveryForm: systemd
+heartbeat: false
+host: dns01
+scrapePorts:
+  node: 9100

@@ -1,0 +1,25 @@
+{
+  "files": [
+    "agent/app02.yaml",
+    "agent/app02/prober/config.yaml",
+    "agent/dns01.yaml",
+    "agent/web01.yaml",
+    "alertmanager/routing.yaml",
+    "command-exporter/web01.yaml",
+    "gatus/config.yaml",
+    "prober/config.yaml",
+    "scrape/file_sd/cadvisor.json",
+    "scrape/file_sd/hypervisor-api.json",
+    "scrape/file_sd/managed-linux-command-exporter.json",
+    "scrape/file_sd/managed-linux-heartbeat.json",
+    "scrape/file_sd/managed-linux-prober.json",
+    "scrape/file_sd/managed-linux.json",
+    "scrape/file_sd/nas-api.json",
+    "scrape/file_sd/probe-only.json",
+    "scrape/file_sd/process-exporter.json",
+    "web-coverage.json",
+    "web-estate-model.json",
+    "web-findings.json"
+  ],
+  "formatVersion": 2
+}

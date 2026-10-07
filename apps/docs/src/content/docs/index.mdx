@@ -1,0 +1,27 @@
+---
+title: Pulse Documentation
+description: Operator and architecture documentation for the Pulse stack.
+template: splash
+hero:
+  tagline: Config-as-code observability — declare your estate once, render the whole monitoring stack.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+Welcome to the **Pulse** documentation. Everything the operator needs to size,
+stand up, and run the stack lives here, alongside the per-feature architecture docs.
+
+<CardGrid>
+  <Card title="Operator guide" icon="open-book">
+    Start at the [getting-started guide](/getting-started/), then size the host at
+    [sizing](/sizing/).
+  </Card>
+  <Card title="Runbooks" icon="rocket">
+    Stand the stack up with the [bootstrap runbook](/bootstrap/); the full index
+    is at [runbooks](/runbooks/).
+  </Card>
+</CardGrid>

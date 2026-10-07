@@ -1,0 +1,9 @@
+{
+  "status": "success",
+  "data": {
+    "version": "1.102.1",
+    "revision": "sanitized-revision",
+    "goVersion": "go1.22.5",
+    "buildDate": "2026-01-01T00:00:00Z"
+  }
+}

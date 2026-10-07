@@ -1,0 +1,24 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "matrix",
+    "result": [
+      {
+        "metric": { "__name__": "node_load1", "host": "harbor-1", "instance": "harbor-1:9100" },
+        "values": [
+          [1726440000, "0.42"],
+          [1726440060, "0.51"],
+          [1726440120, "NaN"],
+          [1726440180, "0.37"]
+        ]
+      },
+      {
+        "metric": { "__name__": "node_load1", "host": "harbor-2", "instance": "harbor-2:9100" },
+        "values": [
+          [1726440000, "1.10"],
+          [1726440060, "1.05"]
+        ]
+      }
+    ]
+  }
+}

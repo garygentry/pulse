@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": ["bun-types"]
+  },
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/renderer" }],
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "labels": {
+      "collection_class": "managed-linux",
+      "host": "app02"
+    },
+    "targets": [
+      "10.0.0.7:9100"
+    ]
+  },
+  {
+    "labels": {
+      "collection_class": "managed-linux",
+      "host": "dns01"
+    },
+    "targets": [
+      "10.0.0.8:9100"
+    ]
+  },
+  {
+    "labels": {
+      "collection_class": "managed-linux",
+      "host": "web01"
+    },
+    "targets": [
+      "10.0.0.4:9100"
+    ]
+  }
+]

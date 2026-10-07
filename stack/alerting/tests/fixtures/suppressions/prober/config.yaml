@@ -1,0 +1,5 @@
+probes:
+  - name: svc:quiet-host/quiet-db#backup
+    target: quiet-host
+    kind: backup-freshness
+    threshold: 24h

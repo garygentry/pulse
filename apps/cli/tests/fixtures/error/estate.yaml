@@ -1,0 +1,17 @@
+# error — a managed-linux host MISSING its required exporter_ports (MISSING_FIELD error
+# finding). Loads ok:false, so render/coverage stop at the validation front and write nothing.
+estate:
+  schema_version: 1
+  name: error-estate
+  domains:
+    - example.com
+  timezone: UTC
+  deadman_hook: https://example.com/deadman
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    # exporter_ports is absent — MISSING_FIELD on this managed-linux host.

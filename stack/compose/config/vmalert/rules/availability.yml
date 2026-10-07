@@ -1,0 +1,58 @@
+# stack/compose/config/vmalert/rules/availability.yml
+# Static, estate-agnostic host/probe availability. Estate identity arrives via the engine
+# -external.label=estate=${PULSE_ESTATE_NAME} (00-core-definitions.md §6); NOT set here.
+groups:
+  - name: availability
+    rules:
+      # REQ-AVAIL-01: a managed host is DOWN after three consecutive missed 30s scrapes.
+      # Keys on up==0 (scrape failure of a configured managed-linux target), NOT on
+      # pulse_agent_up (which only ever emits 1 — REQ-RULE-05, §2.3). instance→host normalized.
+      - alert: HostDown
+        expr: |
+          label_replace(up{job="managed-linux"}, "host", "$1", "instance", "(.*)") == 0
+        for: 90s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host {{ $labels.host }} is DOWN (critical)"
+          description: >-
+            No successful metric scrape from managed host {{ $labels.host }} for at least 90s
+            (three consecutive missed 30s scrapes). The host agent is unreachable or the host is
+            down. Missing data is treated as failure, never as healthy.
+          runbook_url: "https://runbooks.pulse.local/availability"
+
+      # REQ-AVAIL-03: the deep-health PROBE failed (unreachable/malformed/errored). Distinct from
+      # the per-service FUNCTIONAL expression rule (critical), which lives in
+      # 03-transform-and-rendered-rules.md. _up==0 means the probe ran and failed.
+      - alert: DeepHealthProbeFailed
+        expr: pulse_deep_health_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deep-health probe failed for {{ $labels.service }} on {{ $labels.host }} (warning)"
+          description: >-
+            The deep-health probe for service {{ $labels.service }} on host {{ $labels.host }} has
+            been failing for at least 2m (unreachable, malformed response, or probe error). This is
+            the probe-reachability signal — distinct from the declared functional-health expression
+            (03-transform-and-rendered-rules.md). While the probe is failing, mapped pulse_deep_health
+            values are STALE and must not be read as healthy (see DeepHealthProbeStale).
+          runbook_url: "https://runbooks.pulse.local/availability"
+
+      # REQ-AVAIL-03 / REQ-RULE-05 (safe-mode trap): a silently-failing probe leaves the mapped
+      # value stale-but-present. Age of the last SUCCESSFUL probe > 5m ⇒ stale, even if _up is
+      # itself stale. Closes the gap a value-only functional rule would miss.
+      - alert: DeepHealthProbeStale
+        expr: |
+          time() - pulse_deep_health_last_scrape_seconds > 300
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deep-health data stale for {{ $labels.service }} on {{ $labels.host }} (warning)"
+          description: >-
+            No successful deep-health probe of service {{ $labels.service }} on host
+            {{ $labels.host }} for over 5m. Mapped values are stale; functional-health evaluation
+            cannot be trusted until a fresh probe succeeds. Stale input is never treated as healthy
+            (REQ-RULE-05).
+          runbook_url: "https://runbooks.pulse.local/availability"

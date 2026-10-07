@@ -1,0 +1,38 @@
+{
+  "schemaMajor": 1,
+  "estate": {
+    "name": "orphan-fixture",
+    "domains": ["orphan.invalid"],
+    "timezone": "UTC",
+    "deadmanHook": "${PULSE_DEADMANSSWITCH_URL}",
+    "provenance": { "file": "estate.yaml", "path": "estate", "line": 1, "col": 1 }
+  },
+  "hosts": [
+    {
+      "name": "orphan-host",
+      "collectionClass": "managed-linux",
+      "addresses": ["10.0.3.10"],
+      "exporterPorts": [9100],
+      "cadvisor": false,
+      "deliveryForm": "compose",
+      "provenance": { "file": "estate.yaml", "path": "hosts[0]", "line": 10, "col": 1 }
+    }
+  ],
+  "services": [
+    {
+      "name": "orphan-web",
+      "host": "orphan-host",
+      "kind": "app",
+      "managed": true,
+      "deepHealth": {
+        "endpoint": "https://orphan-web.orphan.invalid/healthz",
+        "responseMapping": { "web_up": "$.up" },
+        "alertExpression": "web_up < 1"
+      },
+      "provenance": { "file": "estate.yaml", "path": "services[0]", "line": 20, "col": 1 }
+    }
+  ],
+  "channels": [],
+  "routingOverrides": [],
+  "suppressions": []
+}

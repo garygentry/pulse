@@ -1,0 +1,18 @@
+{
+  "name": "@pulse/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pulse": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "build:bin": "bun run scripts/build-bin.ts"
+  },
+  "dependencies": {
+    "@pulse/core": "workspace:*",
+    "@pulse/renderer": "workspace:*",
+    "yaml": "^2.5.0"
+  }
+}

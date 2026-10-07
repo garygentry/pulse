@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "types": ["bun-types"]
+  },
+  "include": ["bun-test.d.ts", "helpers.ts", "*.test.ts", "../../stack/tests/harness.ts"]
+}

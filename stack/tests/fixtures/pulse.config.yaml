@@ -1,0 +1,6 @@
+# stack/tests/fixtures/pulse.config.yaml — pins the CLI defaults (apps/cli/src/config.ts) so
+# `pulse render` (run with this directory as cwd) targets stack/tests/fixtures/estate and writes
+# stack/tests/fixtures/rendered. Matches the example config contract (07 §3.1).
+estateDir: estate      # input estate YAML
+outputRoot: rendered   # committed generated tree (the `render --check` target)
+strict: false          # default --strict

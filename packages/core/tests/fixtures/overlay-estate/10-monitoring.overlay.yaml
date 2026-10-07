@@ -1,0 +1,20 @@
+# overlay-estate/10-monitoring.overlay.yaml — the hand-authored OVERLAY layer (issue #7).
+# Refines the generated base host `app-01` by identity: turns on cadvisor, widens the exporter
+# set, and tags the scrape cadence. The overlay wins conflicting scalars, replaces the
+# exporter_ports array whole, and adds overlay-only fields; base-only facts (addresses,
+# delivery_form) are retained. It also adds monitoring-only inventory the generator does not know
+# about (a channel), which simply unions in.
+layer: overlay
+hosts:
+  - name: app-01
+    collection_class: managed-linux
+    cadvisor: true
+    exporter_ports:
+      - 9100
+      - 9256
+    scrape_interval_class: fast
+
+channels:
+  - name: ops-chat
+    kind: chat
+    credential: "${CHAT_WEBHOOK_URL}"

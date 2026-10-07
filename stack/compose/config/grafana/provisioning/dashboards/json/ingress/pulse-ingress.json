@@ -1,0 +1,156 @@
+{
+  "uid": "pulse-ingress",
+  "title": "Pulse — Ingress",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "ingress"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Ingress controller",
+        "datasource": "${DS}",
+        "query": "label_values(nginx_ingress_controller_build_info, instance)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About this board",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Per-controller ingress health, scoped by the `instance` variable. Metric names follow the **ingress-nginx** controller exposition (`nginx_ingress_controller_requests`, `nginx_ingress_controller_ssl_expire_time_seconds`, `nginx_ingress_controller_config_last_reload_successful`); the standalone **nginx-prometheus-exporter** equivalents (`nginx_http_requests_total`, `nginx_up`) are documented per panel. The virtual host is read from the `host` label and the response class from `status`; every series is expected to carry an `instance` label. Panels load as No-data until the matching exporter is scraped."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Per-vhost request rate",
+      "datasource": "${DS}",
+      "description": "Request rate broken out by virtual host. ingress-nginx: nginx_ingress_controller_requests (labels instance, host, status, method). nginx-prometheus-exporter: nginx_http_requests_total.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{host}}",
+          "expr": "sum by (host) (rate(nginx_ingress_controller_requests{instance=~\"$instance\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Response class split (2xx / 4xx / 5xx)",
+      "datasource": "${DS}",
+      "description": "Request rate by HTTP response class, from the status label of nginx_ingress_controller_requests. 2xx/4xx/5xx matched with status=~\"2..\"/\"4..\"/\"5..\".",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "2xx",
+          "expr": "sum(rate(nginx_ingress_controller_requests{instance=~\"$instance\",status=~\"2..\"}[5m]))"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "4xx",
+          "expr": "sum(rate(nginx_ingress_controller_requests{instance=~\"$instance\",status=~\"4..\"}[5m]))"
+        },
+        {
+          "refId": "C",
+          "datasource": "${DS}",
+          "legendFormat": "5xx",
+          "expr": "sum(rate(nginx_ingress_controller_requests{instance=~\"$instance\",status=~\"5..\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "TLS certificate time-to-expiry",
+      "datasource": "${DS}",
+      "description": "Seconds until each served certificate expires, per virtual host. ingress-nginx: nginx_ingress_controller_ssl_expire_time_seconds (labels instance, host) minus wall clock. A value approaching zero means imminent expiry.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{host}}",
+          "expr": "min by (host) (nginx_ingress_controller_ssl_expire_time_seconds{instance=~\"$instance\"}) - time()"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Upstream up / down",
+      "datasource": "${DS}",
+      "description": "Reachability of the ingress controller / upstream backends. nginx-prometheus-exporter: nginx_up (1 = last stub_status scrape succeeded). ingress-nginx: nginx_ingress_controller_config_last_reload_successful as a config-health proxy.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "down" }, "1": { "text": "up" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}}",
+          "expr": "nginx_up{instance=~\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "alertGroups",
+      "title": "Firing alerts (this controller)",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+      "options": {
+        "labels": "instance=~\"$instance\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

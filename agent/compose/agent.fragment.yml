@@ -1,0 +1,113 @@
+# agent/compose/agent.fragment.yml — the per-host managed-linux bundle (Docker hosts).
+#
+# Placed by 01-architecture-layout.md; body specified in 03-bundle-and-heartbeat.md §6.
+# Estate-agnostic (REQ-BUNDLE-04): no host/estate/domain/credential literal appears. Every
+# per-host specific (delivery form, cAdvisor opt-in, scrape ports) lives in the ONE rendered
+# config rendered/agent/<host>.yaml (AgentHostConfig, 00 §4), consumed at ASSEMBLY time by
+# deploy-toolkit — the single-config seam both delivery forms share (REQ-CFG-03; the systemd
+# units in agent/systemd/*.service read the same file). host-agent ships the estate-agnostic
+# template; render ≠ deploy (CON-02).
+#
+# Image tags are the concrete PINNED patches (agent/contract/constants.ts §3) — never
+# latest/floating/placeholder (REQ-BUNDLE-06, REQ-DET-01). All exposed ports are local,
+# read-only metric endpoints only — no write/control surface (REQ-SEC-02, §8). Every service
+# self-restarts (restart: unless-stopped), matching the shipped stack convention
+# (stack/compose/docker-compose.yml).
+
+services:
+  node-exporter:                                   # always present (REQ-NODE-01, §3)
+    image: prom/node-exporter:v1.8.2               # PINNED.nodeExporter (00 §3)
+    command:
+      - "--path.rootfs=/host"                       # read the host rootfs read-only
+    pid: host
+    network_mode: host                              # observe true host network stats
+    volumes:
+      - /:/host:ro,rslave                           # read-only host mount (no write surface)
+    restart: unless-stopped                         # self-restart on crash (Error Handling)
+    # node_exporter listens on :9100 (NODE_EXPORTER_PORT, 00 §3). With network_mode: host the
+    # listen port IS the published port; deploy-toolkit owns firewalling (§8, tech-spec §6.4).
+
+  cadvisor:                                        # present-but-GATED (REQ-CONT-01, §6.2)
+    image: gcr.io/cadvisor/cadvisor:v0.49.1         # PINNED.cadvisor (00 §3) — engine-stack tag
+    profiles: ["cadvisor"]                          # activated iff rendered cadvisor: true
+    command:
+      - "--housekeeping_interval=10s"
+      - "--docker_only=true"
+    privileged: true                                # container introspection (as engine stack)
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro                                # read-only host introspection (§4.2)
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8080:8080"                                 # CADVISOR_PORT (00 §3, §8)
+    restart: unless-stopped
+
+  # Bundle member gated by the estate `heartbeat` opt-out (issue #30/#33), symmetric with cAdvisor.
+  # The `heartbeat` profile is activated iff the rendered config has heartbeat: true — the estate
+  # default (packages/core schema) is heartbeat: true, so deploy-toolkit activates this profile for
+  # every bundle host EXCEPT a node-exporter-only one (heartbeat: false), which then runs no :9110.
+  heartbeat:                                       # REQ-HB-01, §5
+    image: pulse/agent-heartbeat:1.0.0             # PINNED.heartbeatBase build (00 §3, §5.5) — concrete pinned tag
+    profiles: ["heartbeat"]                         # activated iff rendered heartbeat: true (default-on; issue #33)
+    ports:
+      - "9110:9110"                                 # HEARTBEAT_PORT (00 §3, §8)
+    volumes:
+      # Rendered per-host config, READ-ONLY, following the shipped ${PULSE_RENDERED_DIR} bind
+      # convention (stack/compose/docker-compose.yml). NOTE: no bundled process PARSES this at
+      # runtime — it is authoritative at ASSEMBLY time (deploy-toolkit reads
+      # deliveryForm/cadvisor/scrapePorts from it, §6.2). Mounted for on-host self-description /
+      # parity; the heartbeat serves a fixed exposition (§5.3). This is the single-config seam.
+      - ${PULSE_RENDERED_DIR:-../rendered}/agent/${PULSE_AGENT_HOST}.yaml:/rendered/agent/host.yaml:ro
+    restart: unless-stopped
+
+  command-exporter:                                # present-but-GATED (issue #3/#1, §profile)
+    build:
+      context: ../../agent                          # build context is the agent/ tree (WS-E, #5)
+      dockerfile: command-exporter/Dockerfile       # contract/ + command-exporter/src/ land under /app
+    image: pulse/command-exporter:1.0.0            # PINNED.commandExporterBase build — concrete pinned tag
+    profiles: ["command-exporter"]                  # activated iff the host runs ≥1 command signal
+    ports:
+      - "9130:9130"                                 # COMMAND_EXPORTER_PORT (00 §3, §8)
+    volumes:
+      # Rendered per-host command-exporter config, READ-ONLY. UNLIKE the heartbeat mount, the
+      # exporter PARSES this at runtime (config.ts reads it from PULSE_RENDERED_DIR). Bound to the
+      # fixed in-container path the loader expects (/rendered/command-exporter/config.yaml).
+      - ${PULSE_RENDERED_DIR:-../rendered}/command-exporter/${PULSE_AGENT_HOST}.yaml:/rendered/command-exporter/config.yaml:ro
+      # Host-provided signal commands (a nvidia-smi wrapper, a backup-age helper, …). DEPLOY-TIME:
+      # the operator populates /opt/pulse with the scripts the estate's command_signals name; the
+      # image is command-agnostic. For nvidia-smi, add the NVIDIA container runtime + devices here.
+      # See docs/operator/command-exporter.md.
+      - /opt/pulse:/opt/pulse:ro
+    restart: unless-stopped
+
+  prober:                                          # present-but-GATED (issue #8, §profile)
+    # PER-HOST deep-health prober for LOCAL targets the CENTRAL prober can't reach: a loopback or
+    # bridge-local endpoint (127.0.0.1 in the central container is the central container itself).
+    # Same pinned prober image + loader as the central prober (agent/prober/) — it reads
+    # /rendered/prober/config.yaml, so binding THIS host's agent/<host>/prober/config.yaml there
+    # needs no code change. Activated iff a rendered per-host prober config exists for the host
+    # (deploy-toolkit gates on its presence, mirroring command-exporter). See
+    # docs/runbooks/agent-install.md.
+    build:
+      context: ../../agent                          # build context is the agent/ tree (WS-E, #5)
+      dockerfile: prober/Dockerfile                 # contract/ + prober/src/ land under /app
+    image: pulse/prober:1.0.0                       # PINNED.proberBase build — concrete pinned tag
+    profiles: ["deep-health"]                       # activated iff the host owns host-local probes
+    # network_mode: host so 127.0.0.1 / bridge-local targets resolve on the HOST (like node-exporter
+    # above) — the whole point of a per-host prober. The listen port IS the published port under host
+    # networking (no `ports:` mapping); :9120 uses this host's managed-linux-prober scrape group.
+    network_mode: host
+    environment:
+      # Per-host mode: omit the self-set `host` label so the scrape-time file_sd `host` label owns it
+      # (probing-host == target-host for a local probe). The central prober leaves this unset.
+      PULSE_PROBER_SUPPRESS_HOST_LABEL: "1"
+    volumes:
+      # THIS host's per-host prober config, READ-ONLY, bound to the fixed path the loader reads
+      # (/rendered/prober/config.yaml, PULSE_RENDERED_DIR default /rendered). Same single-file bind
+      # convention as command-exporter above; deploy-toolkit gates activation on its presence.
+      - ${PULSE_RENDERED_DIR:-../rendered}/agent/${PULSE_AGENT_HOST}/prober/config.yaml:/rendered/prober/config.yaml:ro
+    restart: unless-stopped

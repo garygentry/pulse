@@ -1,0 +1,90 @@
+/*
+ * pulse — stylesheet entry point. Tailwind v4 (cascade layers) in deck's file order: the
+ * shadcn/deck design tokens in theme.css, pulse's extensions in theme-pulse.css, and the base
+ * rules below. The Geist faces are registered from styles/fonts.ts rather than imported here (see
+ * there: Bun would inline the font files into this sheet).
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@import "./theme.css";
+@import "./theme-pulse.css";
+
+/* The dev-only /_ui workbench never ships; keep its classes out of the production sheet. */
+@source not "../views/_ui";
+
+/*
+ * shadcn's base defaults (Tailwind v4 borders are `currentColor` unless told
+ * otherwise), plus deck's document defaults: 14px body text (13px on narrow
+ * phones) on the theme background.
+ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  @media (max-width: 480px) {
+    body {
+      font-size: 13px;
+    }
+  }
+  /* Pulse: long data strings (host, job and rule names) wrap instead of widening the page. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p {
+    overflow-wrap: break-word;
+  }
+  /* Pulse: a solid focus ring for focusable elements without their own focus styles (plain
+     links, the timeline tracks); components that style focus override it with utilities. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* Tailwind v4 Preflight dropped the pointer cursor on buttons; keep it. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/*
+ * A modal Radix overlay locks page scroll through react-remove-scroll-bar, which sets this property
+ * on `body[data-scroll-locked]`. Unregistered, a custom property inherits, so every open would
+ * restyle the whole document (tens of ms on a big grid or table). Nothing reads it below <body>.
+ */
+@property --removed-body-scroll-bar-size {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/*
+ * Reduced motion: honour the OS preference app-wide. Status is always conveyed by
+ * icon and text as well as colour, so no meaning is lost when motion stops.
+ */
+@layer base {
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

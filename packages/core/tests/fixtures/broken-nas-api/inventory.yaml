@@ -1,0 +1,20 @@
+# broken-nas-api — shape-CLEAN but semantically broken: a nas-api host declares one of the
+# optional API-override fields (api_endpoint) without the other (credential). Both-or-neither
+# is a semantic invariant (checkNasApiCompleteness, issue #4), not a shape rule — a
+# discriminatedUnion arm cannot carry a cross-field refine — so this document shape-validates
+# and the pipeline reaches the semantic layer, which emits exactly one INCOMPLETE_NAS_API.
+# This is the covering case for that code in meta.test.ts's anti-rot guard (07 §4).
+estate:
+  schema_version: 1
+  name: nas-broken
+  domains:
+    - nas.example
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: nas-partial
+    collection_class: nas-api
+    addresses:
+      - 10.0.0.6
+    api_endpoint: https://nas.example/api/v2 # INCOMPLETE_NAS_API — credential omitted

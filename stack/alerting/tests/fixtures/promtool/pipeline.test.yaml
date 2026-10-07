@@ -1,0 +1,43 @@
+# stack/alerting/tests/fixtures/promtool/pipeline.test.yaml
+# Pipeline-health family (02 §pipeline-health, REQ-OBS-01/03): a running-but-degraded alert path is
+# distinguishable from a healthy one. vmalert rule-eval errors → warning; Alertmanager notification
+# delivery failing → critical. Counters rise so `increase(...[10m]) > 0`. Fictional; estate explicit.
+rule_files:
+  - pipeline-health.yml
+evaluation_interval: 1m
+tests:
+  # AlertRuleEvalErrors (warning): vmalert is up but rule evaluation errors accrue
+  - interval: 1m
+    input_series:
+      - series: 'vmalert_execution_errors_total{instance="vmalert:8880", estate="fixture-estate"}'
+        values: "0+1x25" # +1/min
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AlertRuleEvalErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: vmalert:8880
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/pipeline-health"
+              summary: "vmalert rule evaluation is erroring (warning)"
+              description: "vmalert has recorded rule-group execution errors over the last 10m (10 in window). The evaluator is running but degraded — some rules may not be evaluating. Process liveness alone does not prove a healthy path."
+  # AlertNotificationsFailing (critical): Alertmanager is up but delivery fails
+  - interval: 1m
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{integration="webhook", instance="alertmanager:9093", estate="fixture-estate"}'
+        values: "0+1x25" # +1/min
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AlertNotificationsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              integration: webhook
+              instance: alertmanager:9093
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/pipeline-health"
+              summary: "Alertmanager notification delivery is failing (critical)"
+              description: "Alertmanager has recorded failed notifications over the last 10m (10 in window) for integration webhook. The router is running but alerts are not reaching recipients — the delivery path is broken. Per-receiver retry/backoff is Alertmanager-native (tech-spec §3.7)."

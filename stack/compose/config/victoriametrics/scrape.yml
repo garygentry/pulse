@@ -1,0 +1,182 @@
+# stack-core — VictoriaMetrics -promscrape.config (estate-agnostic).
+# Names no estate host/domain/credential; estate data arrives via the read-only
+# /rendered/scrape/file_sd/*.json mounts (00-core-definitions.md §6) and via exporter
+# env secret refs (03-scrape-and-exporters.md §5). Spec: 03-scrape-and-exporters.md.
+
+global:
+  scrape_interval: 30s      # IMPL: default cadence; tune per component budget
+  scrape_timeout: 10s
+
+scrape_configs:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 1. ESTATE TARGETS (file_sd) — one job per collection/exporter class (REQ-EXP-01/03)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # 1a. managed-linux — node_exporter ONLY. Exactly one target per managed host makes
+  #     up{job="managed-linux"} an accurate host-liveness signal for HostDown (issue #22).
+  - job_name: managed-linux
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/managed-linux.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  # 1b. Managed-host auxiliary exporters. Each class has its own job so an auxiliary failure
+  #     cannot masquerade as host failure. Every job preserves the estate-wide instance==host
+  #     contract used by alerting and dashboards.
+  - job_name: cadvisor
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/cadvisor.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  - job_name: process-exporter
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/process-exporter.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  - job_name: managed-linux-heartbeat
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/managed-linux-heartbeat.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  - job_name: managed-linux-prober
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/managed-linux-prober.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  - job_name: managed-linux-command-exporter
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/managed-linux-command-exporter.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  - job_name: managed-linux-exporters
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/managed-linux-exporters.json
+    relabel_configs:
+      - source_labels: [host]
+        target_label: instance
+
+  # 1c. hypervisor-api — RELABEL-THROUGH pve-exporter (REQ-EXP-01/03).
+  #     The rendered target is the PVE *API* endpoint; VM must NOT connect to it directly.
+  #     It passes the endpoint to pve-exporter as ?target=, and scrapes the exporter instead.
+  - job_name: hypervisor-api
+    metrics_path: /pve
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/hypervisor-api.json
+    relabel_configs:
+      # (1) rendered target (the PVE endpoint) becomes the ?target= query param
+      - source_labels: [__address__]
+        target_label: __param_target
+      # (2) keep a readable instance = the real PVE host, not the exporter
+      - source_labels: [__param_target]
+        target_label: instance
+      # (3) rewrite the scrape address to the EXPORTER: VM connects to pve-exporter, not PVE
+      - target_label: __address__
+        replacement: pve-exporter:9221
+      # IMPL WARNING — __param_target value format: the golden target is a full URL
+      # (https://pve1:8006). prometheus-pve-exporter conventionally expects the ?target=
+      # value to be the bare PVE host (it builds https://<target>:8006 itself), so the URL
+      # form may need a normalizing relabel before step (1). Confirm the accepted form
+      # against the pinned pve-exporter version; the relabel-through SHAPE is stable either way.
+      # NOTE: __pulse_credential__ (${PVE_TOKEN}) is a __-prefixed meta label — dropped
+      # post-relabel; the real token reaches the exporter via its env (§5), never here.
+
+  # 1d. nas-api — DIRECT node_exporter scrape (issue #4). TrueNAS Scale runs node_exporter
+  #     directly, so nas-api ships as a direct node scrape (mirrors 1a managed-linux), NOT a
+  #     relabel-through: the rendered target is already `<addr>:9100`. Against fictional
+  #     fixtures the target is expected-DOWN (§8). An operator who instead runs a TrueNAS-API
+  #     exporter follows the documented opt-in override recipe (their own exporter service +
+  #     scrape-job snippet); the shipped tree carries no exporter image or credential here.
+  - job_name: nas-api
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/nas-api.json
+    relabel_configs:
+      # Promote the rendered `host` label to `instance` for a stable series identity.
+      - source_labels: [host]
+        target_label: instance
+    # metrics_path defaults to /metrics; scheme defaults to http — correct for node_exporter.
+
+  # probe-only — DELIBERATELY NOT WIRED to any VM job in v1 (§6). No file_sd_configs
+  # reference /rendered/scrape/file_sd/probe-only.json. Probe-only edges are covered by
+  # Gatus (rendered gatus/config.yaml) and the deferred prober slot (tech-spec §3.9).
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 2. ENGINE SELF-OBSERVABILITY — native /metrics of each component (REQ-SELF-02)
+  #    Static, estate-agnostic, always present: monitors the STACK, not the estate.
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - job_name: victoriametrics
+    static_configs:
+      - targets: ["victoriametrics:8428"]
+
+  - job_name: vmalert
+    static_configs:
+      - targets: ["vmalert:8880"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  # Gatus exposes /metrics only when metrics are enabled in its config — see
+  # 04-bootstrap-and-wiring.md §4 (Gatus config must set `metrics: true`).
+  - job_name: gatus
+    static_configs:
+      - targets: ["gatus:8080"]
+
+  # pve-exporter's OWN process metrics (distinct from the /pve target scrape in 1b).
+  # (nas-api is a direct node_exporter scrape now — issue #4 — so there is no nas-exporter
+  # self-metrics job; its process metrics arrive via the 1c node scrape itself.)
+  - job_name: pve-exporter
+    static_configs:
+      - targets: ["pve-exporter:9221"]
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 3. cADVISOR — per-container CPU/mem/restarts of the stack's OWN containers (REQ-SELF-01)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - job_name: engine-cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    # cadvisor mounts the Docker socket + host /sys,/var/lib/docker read-only to observe the
+    # stack's containers — mount detail is the service body in 02-compose-services.md.
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 4. CENTRAL DEEP-HEALTH PROBER — one target per stack (host-agent, tech-spec §3.7 V-004)
+  #    Static, NOT per-host: the central prober serves /metrics on :9120 for the whole estate
+  #    (05-config-schema-and-integration.md §5.2b). Emits pulse_deep_health* with self-set
+  #    host/service labels — no per-host relabel (contrast the file_sd managed-linux job, §1a).
+  #    The prober service is profiles:["deep-health"]-gated OFF by default; this target is DOWN
+  #    until that profile is active. Wiring shape is stable.
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - job_name: prober
+    static_configs:
+      - targets: ["prober:9120"]
+
+  # web overview app self-metrics (web-app 07-slot-reconciliation.md §3.5, REQ-OBS-03). The `web`
+  # service is profiles:["web"]-gated OFF by default, so this target is DOWN under the default
+  # profile — exactly like the prober (§4) — and is scraped only once `--profile web` is
+  # active. Wiring shape is stable regardless. Port = the app's fixed LISTEN_PORT (00 §1).
+  - job_name: web
+    static_configs:
+      - targets: ["web:8080"]

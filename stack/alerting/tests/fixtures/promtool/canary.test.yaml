@@ -1,0 +1,28 @@
+# stack/alerting/tests/fixtures/promtool/canary.test.yaml
+# Alert-path delivery canary (issue #17): fires for a ~2-minute window every 6 hours (UTC clock)
+# then auto-resolves. promtool's clock starts at Unix epoch 0 (1970-01-01T00:00:00Z), so hour()=0 /
+# minute()=elapsed. A trivial input series satisfies the harness; the rule references none.
+rule_files:
+  - canary.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="canary-fixture"}'
+        values: "1x10"
+    alert_rule_test:
+      # t=1m: hour()=0, minute()=1 → firing (info, synthetic)
+      - eval_time: 1m
+        alertname: PulseAlertPathCanary
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              synthetic: "true"
+            exp_annotations:
+              summary: "Pulse alert-path canary (synthetic delivery self-test)"
+              description: "SYNTHETIC delivery self-test. This alert fires on a schedule and auto-resolves; if it is NOT arriving through email/Telegram on cadence, a notification channel is silently broken. Safe to silence during maintenance. This is never a real incident."
+              runbook_url: "https://runbooks.pulse.local/canary"
+      # t=5m: minute()=5 → resolved (no alert), proving the auto-resolve half of the cycle
+      - eval_time: 5m
+        alertname: PulseAlertPathCanary
+        exp_alerts: []

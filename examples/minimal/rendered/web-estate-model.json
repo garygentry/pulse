@@ -1,0 +1,65 @@
+{
+  "bundleId": "sha256:e39dfc639faf4181837e38904552ca5b53811f537f69ad55dd6e38e25a7d3dd4",
+  "channels": [],
+  "estate": {
+    "deadman": {
+      "configured": true,
+      "kind": "plain"
+    },
+    "dnsResolver": null,
+    "domains": [
+      "lab.example"
+    ],
+    "name": "quickstart-estate",
+    "retention": null,
+    "schemaMajor": 1,
+    "timezone": "UTC"
+  },
+  "formatVersion": 2,
+  "hosts": [
+    {
+      "addresses": [
+        "10.10.0.10"
+      ],
+      "artifacts": [
+        "agent/monitor-host-01.yaml",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json"
+      ],
+      "collectionClass": "managed-linux",
+      "detail": {
+        "cadvisor": false,
+        "commandSignals": [],
+        "deliveryForm": "compose",
+        "exporterPorts": [
+          9100
+        ],
+        "heartbeat": true
+      },
+      "drilldownId": "host:monitor-host-01",
+      "expectedChurn": false,
+      "name": "monitor-host-01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 13,
+        "path": "hosts[0]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.10.0.10:9100",
+          "job": "managed-linux"
+        },
+        {
+          "instance": "10.10.0.10:9110",
+          "job": "managed-linux-heartbeat"
+        }
+      ],
+      "suppressed": null
+    }
+  ],
+  "routingOverrides": [],
+  "services": [],
+  "suppressions": []
+}

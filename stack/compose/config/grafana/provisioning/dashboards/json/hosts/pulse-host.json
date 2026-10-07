@@ -1,0 +1,200 @@
+{
+  "uid": "pulse-host",
+  "title": "Pulse — Host",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "hosts", "node"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Host",
+        "datasource": "${DS}",
+        "query": "label_values(node_uname_info, instance)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "CPU utilization",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "cpu",
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{instance=\"$instance\",mode=\"idle\"}[5m])) * 100)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Memory used",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "used",
+          "expr": "node_memory_MemTotal_bytes{instance=\"$instance\"} - node_memory_MemAvailable_bytes{instance=\"$instance\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "total",
+          "expr": "node_memory_MemTotal_bytes{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Filesystem used %",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{mountpoint}}",
+          "expr": "100 - (node_filesystem_avail_bytes{instance=\"$instance\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{instance=\"$instance\",fstype!~\"tmpfs|overlay\"} * 100)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Disk I/O",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "read {{device}}",
+          "expr": "rate(node_disk_read_bytes_total{instance=\"$instance\"}[5m])"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "write {{device}}",
+          "expr": "rate(node_disk_written_bytes_total{instance=\"$instance\"}[5m])"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Network throughput",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "rx {{device}}",
+          "expr": "rate(node_network_receive_bytes_total{instance=\"$instance\"}[5m])"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "tx {{device}}",
+          "expr": "rate(node_network_transmit_bytes_total{instance=\"$instance\"}[5m])"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Load average",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "1m",
+          "expr": "node_load1{instance=\"$instance\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "5m",
+          "expr": "node_load5{instance=\"$instance\"}"
+        },
+        {
+          "refId": "C",
+          "datasource": "${DS}",
+          "legendFormat": "15m",
+          "expr": "node_load15{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Uptime",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "uptime",
+          "expr": "node_time_seconds{instance=\"$instance\"} - node_boot_time_seconds{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "alertGroups",
+      "title": "Firing alerts (this host)",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 24 },
+      "options": {
+        "labels": "instance=\"$instance\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

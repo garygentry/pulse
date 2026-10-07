@@ -1,0 +1,26 @@
+# agent/systemd/pulse-node-exporter.service — always installed (REQ-NODE-01, 03 §7.1).
+#
+# Estate-agnostic template (REQ-BUNDLE-04): no host/estate/domain/credential literal — the
+# `host` label is scrape-applied (03 §5.1), never baked. Runs the SAME pinned image as the
+# compose form via the host container runtime (podman/docker), preserving the single-artifact /
+# pinned-image story (REQ-BUNDLE-06). Consumes the ONE rendered config
+# rendered/agent/<host>.yaml at install time (REQ-CFG-03, §7.2) — deploy-toolkit installs this
+# unit when deliveryForm: "systemd"; the unit itself does NOT parse the YAML.
+[Unit]
+Description=Pulse managed-linux agent — node_exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Pinned image (REQ-BUNDLE-06) — PINNED.nodeExporter (00 §3). No write/control surface (REQ-SEC-02).
+ExecStartPre=-/usr/bin/podman rm -f pulse-node-exporter
+ExecStart=/usr/bin/podman run --rm --name pulse-node-exporter \
+  --network host --pid host \
+  -v /:/host:ro,rslave \
+  prom/node-exporter:v1.8.2 \
+  --path.rootfs=/host
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

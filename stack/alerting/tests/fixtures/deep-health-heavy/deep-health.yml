@@ -1,0 +1,30 @@
+groups:
+  - name: deep-health-functional
+    rules:
+      - alert: DeepHealthFailed
+        annotations:
+          description: Declared deep-health expression is failing for service {{ $labels.service }} on host {{ $labels.host }} in estate {{ $labels.estate }}.
+          runbook_url: https://runbooks.pulse.local/deep-health
+          summary: Deep-health functional check failed for {{ $labels.service }}
+        expr: pulse_deep_health{service="cameras",metric="camera_count"} < 6
+        for: 2m
+        labels:
+          severity: critical
+      - alert: DeepHealthFailed
+        annotations:
+          description: Declared deep-health expression is failing for service {{ $labels.service }} on host {{ $labels.host }} in estate {{ $labels.estate }}.
+          runbook_url: https://runbooks.pulse.local/deep-health
+          summary: Deep-health functional check failed for {{ $labels.service }}
+        expr: pulse_deep_health{service="encoder",metric="active_streams"} < 1
+        for: 2m
+        labels:
+          severity: critical
+      - alert: DeepHealthFailed
+        annotations:
+          description: Declared deep-health expression is failing for service {{ $labels.service }} on host {{ $labels.host }} in estate {{ $labels.estate }}.
+          runbook_url: https://runbooks.pulse.local/deep-health
+          summary: Deep-health functional check failed for {{ $labels.service }}
+        expr: pulse_deep_health{service="ingest",metric="ingest_lag"} > 120
+        for: 2m
+        labels:
+          severity: critical

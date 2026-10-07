@@ -1,0 +1,41 @@
+receivers:
+  - config:
+      webhook_configs:
+        - url: ${WEBHOOK_MIRROR_TOKEN}
+    name: mirror-hook
+  - config:
+      webhook_configs:
+        - url: op://infra/pager/routing-key
+    name: oncall-push
+  - config:
+      slack_configs:
+        - api_url: ${CHAT_WEBHOOK_URL}
+    name: ops-chat
+  - config:
+      email_configs:
+        - auth_password: ${SMTP_PASSWORD}
+    name: ops-email
+  - config:
+      telegram_configs:
+        - bot_token: ${TELEGRAM_BOT_TOKEN}
+          chat_id: -1002001002003
+    name: ops-telegram
+route:
+  receiver: mirror-hook
+  routes:
+    - continue: true
+      match:
+        severity: critical
+      receiver: oncall-push
+    - continue: true
+      match:
+        severity: critical
+      receiver: ops-chat
+    - continue: true
+      match:
+        severity: warning
+      receiver: ops-chat
+    - continue: true
+      match:
+        severity: warning
+      receiver: ops-email

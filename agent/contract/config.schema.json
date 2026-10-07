@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://pulse.dev/schemas/agent/config.schema.json",
+  "title": "AgentHostConfig",
+  "description": "The rendered per-host bundle config (rendered/agent/<host>.yaml). Authored by host-agent (REQ-CFG-01); pulse-cli's emitAgent() renders values to it (REQ-CFG-02). Both delivery forms consume this one config (REQ-CFG-03). Matches AgentHostConfig in 00-core-definitions.md §4.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["host", "deliveryForm", "cadvisor", "heartbeat", "scrapePorts"],
+  "properties": {
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Host identity — matches the estate host `name`."
+    },
+    "deliveryForm": {
+      "type": "string",
+      "enum": ["compose", "systemd"],
+      "description": "Which delivery form this host installs (REQ-BUNDLE-02). Selects the compose fragment vs the systemd units from one shared config."
+    },
+    "cadvisor": {
+      "type": "boolean",
+      "description": "cAdvisor opt-in for this host (REQ-CONT-01). When true, scrapePorts.cadvisor MUST be present."
+    },
+    "heartbeat": {
+      "type": "boolean",
+      "description": "heartbeat exporter opt-in for this host (issue #30/#33; defaults true in the estate). When true, scrapePorts.heartbeat MUST be present and deploy-toolkit installs the heartbeat container/unit; when false it is a node-exporter-only host."
+    },
+    "scrapePorts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node"],
+      "description": "Local scrape ports the central engine reaches (REQ-BUNDLE-03). Local metric endpoints only — no control/write surface (REQ-SEC-02).",
+      "properties": {
+        "node": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "node_exporter port — always present (REQ-NODE-01). Conventional 9100 (tech-spec §3.7)."
+        },
+        "cadvisor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "cAdvisor port — present only when the host declares cadvisor: true (REQ-CONT-01). Conventional 8080 (tech-spec §3.7)."
+        },
+        "heartbeat": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "heartbeat exporter port — present IFF the host declares heartbeat: true (issue #30/#33). Absent for a node-exporter-only host. Conventional 9110 (tech-spec §3.7)."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "cAdvisor coherence (REQ-CONT-01): scrapePorts.cadvisor is present IFF cadvisor is true.",
+      "if": { "properties": { "cadvisor": { "const": true } } },
+      "then": { "properties": { "scrapePorts": { "required": ["cadvisor"] } } },
+      "else": {
+        "properties": {
+          "scrapePorts": {
+            "not": { "required": ["cadvisor"] }
+          }
+        }
+      }
+    },
+    {
+      "description": "heartbeat coherence (issue #30/#33): scrapePorts.heartbeat is present IFF heartbeat is true.",
+      "if": { "properties": { "heartbeat": { "const": true } } },
+      "then": { "properties": { "scrapePorts": { "required": ["heartbeat"] } } },
+      "else": {
+        "properties": {
+          "scrapePorts": {
+            "not": { "required": ["heartbeat"] }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+# web-sanitize — a VALID estate that loads ok:true but drives a renderer web-safety WARNING:
+# the channel's sensitive `password` option is omitted from the web artifacts and a
+# web_sensitive_channel_option_omitted finding is raised. Used to prove the CLI threads findings
+# into the coordinated web findings artifact (and the command result) exactly once.
+estate:
+  schema_version: 1
+  name: sanitize-estate
+  domains:
+    - example.com
+  timezone: UTC
+  deadman_hook: https://example.com/deadman
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    exporter_ports:
+      - 9100
+
+channels:
+  - name: alerts
+    kind: webhook
+    credential: ${ALERTS_HOOK}
+    options:
+      password: omitMe
+      room: ops

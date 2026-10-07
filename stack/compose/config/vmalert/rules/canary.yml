@@ -1,0 +1,27 @@
+# stack/compose/config/vmalert/rules/canary.yml
+# Static, estate-agnostic. End-to-end alert-path DELIVERY self-test (issue #17).
+#
+# The deadman (deadman.yml) proves rule-eval + the pipeline is alive, but it routes to an opaque
+# webhook — it does NOT prove delivery through the real human channels. This canary fires on a
+# schedule and auto-resolves, and its ROUTE (04-alertmanager-config.md / routing.ts) sends it to the
+# LIVE human receivers (email/Telegram), so a silently-broken channel (expired Telegram token, SMTP
+# auth failure) is caught proactively — not at the next real incident. Matched by alertname (like the
+# deadman), so it carries a normal low severity (`info`) and never invents a new severity class.
+groups:
+  - name: canary
+    rules:
+      # Fires for a ~2-minute window every 6 hours (UTC clock), then auto-resolves — four delivery
+      # proofs per day. `synthetic: "true"` marks it filterable/silenceable; the route (matched on
+      # alertname) delivers it to the live human receivers with send-on-resolve. NOT a real incident.
+      - alert: PulseAlertPathCanary
+        expr: (hour() % 6 == 0) and (minute() < 2)
+        labels:
+          severity: info
+          synthetic: "true"
+        annotations:
+          summary: "Pulse alert-path canary (synthetic delivery self-test)"
+          description: >-
+            SYNTHETIC delivery self-test. This alert fires on a schedule and auto-resolves; if it is
+            NOT arriving through email/Telegram on cadence, a notification channel is silently broken.
+            Safe to silence during maintenance. This is never a real incident.
+          runbook_url: "https://runbooks.pulse.local/canary"

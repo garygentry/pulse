@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sil-1",
+    "matchers": [{ "name": "alertname", "value": "HighCpu", "isEqual": true }],
+    "createdBy": "operator-one",
+    "comment": "matcher is missing the required isRegex flag",
+    "startsAt": "2026-09-16T00:00:00.000Z",
+    "endsAt": "2026-09-16T04:00:00.000Z",
+    "status": { "state": "active" }
+  }
+]

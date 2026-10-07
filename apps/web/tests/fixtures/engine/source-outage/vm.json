@@ -1,0 +1,16 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      { "metric": { "__name__": "up", "job": "node", "instance": "harbor-app-02:9100", "host": "harbor-app-02", "collection_class": "managed-linux" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "pulse_agent_up", "job": "pulse-agent", "host": "harbor-app-02" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "up", "job": "hypervisor-api", "instance": "harbor-hv-01:9633", "host": "harbor-hv-01", "collection_class": "hypervisor-api" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "up", "job": "nas-api", "instance": "harbor-nas-01:9101", "host": "harbor-nas-01", "collection_class": "nas-api" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "up", "job": "node", "instance": "harbor-web-01:9100", "host": "harbor-web-01", "collection_class": "managed-linux" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "pulse_agent_up", "job": "pulse-agent", "host": "harbor-web-01" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "pulse_deep_health_up", "job": "pulse-deep-health", "host": "harbor-web-01", "service": "frigate" }, "value": [1767225600, "1"] },
+      { "metric": { "__name__": "pulse_deep_health_up", "job": "pulse-deep-health", "host": "harbor-web-01", "service": "portal-web" }, "value": [1767225600, "1"] }
+    ]
+  }
+}

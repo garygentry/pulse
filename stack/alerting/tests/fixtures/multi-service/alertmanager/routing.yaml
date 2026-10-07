@@ -1,0 +1,25 @@
+route:
+  receiver: pulse-ops
+  routes:
+    - match:
+        severity: critical
+      receiver: pulse-critical
+    - match:
+        severity: warning
+      receiver: pulse-ops
+receivers:
+  - name: pulse-critical
+    config:
+      slack_configs:
+        - api_url: ${SLACK_CRITICAL_WEBHOOK}
+          channel: "#alerts-critical"
+  - name: pulse-ops
+    config:
+      email_configs:
+        - to: ops@fixture.invalid
+          auth_password: ${SMTP_PASSWORD}
+  - name: pulse-automation
+    config:
+      webhook_configs:
+        - url: ${AUTOMATION_WEBHOOK_URL}
+          send_resolved: true

@@ -1,0 +1,42 @@
+[
+  {
+    "severity": "error",
+    "code": "secret_literal",
+    "file": "inventory.yaml",
+    "path": "channels[0].credential",
+    "message": "Channel \"alerts\" credential is not a secret reference.",
+    "fix": "Replace the literal with a reference: \"${ENV_VAR}\" (env substitution) or \"op://vault/item/field\" (1Password). core-contract never resolves the value; it only validates the reference syntax (REQ-SECR-03)."
+  },
+  {
+    "severity": "error",
+    "code": "invalid_timezone",
+    "file": "inventory.yaml",
+    "path": "estate.timezone",
+    "message": "Estate timezone \"Not/AZone\" is not a valid IANA time zone.",
+    "fix": "Use a canonical IANA zone name such as \"America/Chicago\" or \"UTC\"."
+  },
+  {
+    "severity": "error",
+    "code": "unresolved_channel",
+    "file": "inventory.yaml",
+    "path": "routing_overrides[0].channels[0]",
+    "message": "Routing override for severity \"critical\" references channel \"ghost-channel\", which is not declared.",
+    "fix": "Declare a channel named \"ghost-channel\", or correct routing_overrides[0].channels[0] to an existing channel name."
+  },
+  {
+    "severity": "error",
+    "code": "unresolved_host",
+    "file": "inventory.yaml",
+    "path": "services[0].host",
+    "message": "Service \"api\" references host \"ghost-host\", which is not declared.",
+    "fix": "Declare a host named \"ghost-host\", or correct services[0].host to an existing host name."
+  },
+  {
+    "severity": "error",
+    "code": "missing_rationale",
+    "file": "inventory.yaml",
+    "path": "suppressions[0].rationale",
+    "message": "Suppression of \"some-target\" (class \"expected-churn\") has no rationale.",
+    "fix": "Add a \"rationale:\" explaining why this is deliberately silenced — a silence without a reason is a validation error (charter §invariant 6)."
+  }
+]

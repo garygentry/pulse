@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulse.dev/contracts/alerting/webhook-event.schema.json",
+  "title": "Pulse alerting automation-webhook event",
+  "description": "Alertmanager-native webhook payload exposed as Pulse's automation-webhook event contract. Every human-readable field has a structured equivalent (REQ-A11Y-02); payloads carry no credentials, secret-reference strings, or raw probe bodies (REQ-SEC-02).",
+  "type": "object",
+  "required": ["version", "status", "groupKey", "commonLabels", "alerts"],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "4",
+      "description": "Alertmanager webhook payload schema version. Pinned to the v0.27.0 native value."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["firing", "resolved"],
+      "description": "Group-level lifecycle state (REQ-HOOK-02)."
+    },
+    "groupKey": {
+      "type": "string",
+      "description": "Stable key of the alert group as grouped by [estate, host, service, alertname] (REQ-ROUTE-02). Identifies the group whose firing-before-resolved order is preserved (REQ-HOOK-03)."
+    },
+    "receiver": {
+      "type": "string",
+      "description": "Emitting receiver name; for the mirror this is 'pulse-webhook-mirror'."
+    },
+    "commonLabels": {
+      "type": "object",
+      "description": "Labels common to every alert in the group (structured equivalent of the group summary).",
+      "additionalProperties": { "type": "string" }
+    },
+    "commonAnnotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "externalURL": {
+      "type": "string",
+      "description": "Alertmanager base URL (no credential material)."
+    },
+    "alerts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["status", "labels", "annotations", "startsAt", "fingerprint"],
+        "additionalProperties": true,
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "description": "Retry-stable per-identity event ID (REQ-HOOK-04). Reused across redeliveries so consumers dedupe idempotently."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["firing", "resolved"],
+            "description": "Per-alert lifecycle state (REQ-HOOK-02)."
+          },
+          "labels": {
+            "type": "object",
+            "required": ["alertname", "severity", "estate"],
+            "additionalProperties": { "type": "string" },
+            "description": "Structured alert identity/context (REQ-RULE-04, REQ-A11Y-02).",
+            "properties": {
+              "alertname": { "type": "string", "description": "PascalCase stable alert name (REQ-RULE-02)." },
+              "severity": { "type": "string", "enum": ["critical", "warning", "info"], "description": "Response-oriented severity (REQ-SEV-01). Never 'deadman' on the mirror." },
+              "estate": { "type": "string", "description": "Engine-injected estate identity (REQ-RULE-04; dep §5.3)." },
+              "host": { "type": "string", "description": "Affected host, when host-scoped." },
+              "service": { "type": "string", "description": "Affected service, when service-scoped." }
+            }
+          },
+          "annotations": {
+            "type": "object",
+            "required": ["summary"],
+            "additionalProperties": { "type": "string" },
+            "description": "Human-readable text; each has a structured label equivalent above (REQ-A11Y-02).",
+            "properties": {
+              "summary": { "type": "string", "description": "One-line human summary (REQ-RULE-04, REQ-A11Y-01)." },
+              "description": { "type": "string", "description": "Longer human description." }
+            }
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 firing timestamp (REQ-HOOK-02)."
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 resolve timestamp; the zero time '0001-01-01T00:00:00Z' while firing (REQ-HOOK-02, REQ-SEV-05)."
+          },
+          "generatorURL": {
+            "type": "string",
+            "description": "Source query URL (vmalert/Gatus). No credential material (REQ-SEC-02)."
+          }
+        }
+      }
+    }
+  }
+}

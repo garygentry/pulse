@@ -1,0 +1,291 @@
+# stack/compose/docker-compose.yml — the Pulse monitoring engine (stack-core).
+#
+# Architecture: docs/architecture/stack-core/ (service bodies, service registry, engine-apis,
+# profiles, mount map, healthcheck
+# budget). All relative bind paths resolve from stack/compose/. Estate-specific values enter
+# ONLY via ${PULSE_RENDERED_DIR} read-only binds and ${VAR} refs — no host/domain/credential
+# literal appears here (CON-04, REQ-SEC-01).
+#
+# Image tags are concrete patches pinned on the decided families (00 §1 / 02 §2). Never a
+# floating/rolling tag, never digest-only (REQ-COMPOSE-04). The seven always-on services carry no
+# `profiles:` key and constitute DEFAULT_PROFILE_SERVICES (the REQ-PERF-01 green bar); web and
+# prober are profile-gated OFF. (There is no nas-exporter service: nas-api is a direct
+# node_exporter scrape — issue #4.)
+
+name: pulse                # REQ-COMPOSE-02 — fixed project name (COMPOSE_PROJECT, 00 §1)
+
+networks:
+  pulse:                   # the one user-defined bridge; stable in-stack DNS (REQ-API-01)
+    driver: bridge
+
+volumes:
+  victoria-metrics-data:   # VM TSDB → /victoria-metrics-data (§3.1). Months of retention.
+  grafana-data:            # Grafana state → /var/lib/grafana (§3.5). Survives restart.
+  pulse-web-data: {}       # web write-path root → /data (audit, acks, proposals). Single replica only.
+
+services:
+  # === always-on services (DEFAULT_PROFILE_SERVICES — no profiles: key) ==================
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.102.1   # REQ-COMPOSE-04 — concrete patch on v1.102.x family
+    command:
+      - "-promscrape.config=/etc/victoriametrics/scrape.yml"   # config owned by 03-*
+      - "-storageDataPath=/victoria-metrics-data"
+      - "-retentionPeriod=${PULSE_VM_RETENTION:-6}"            # months; consumer-set (01 §4, charter 05 §B5)
+      - "-httpListenAddr=:8428"
+      - "-promscrape.configCheckInterval=30s"                  # pick up re-rendered file_sd without restart
+    networks: [pulse]
+    volumes:
+      - victoria-metrics-data:/victoria-metrics-data           # REQ-PERSIST-01 — durable TSDB
+      - ./config/victoriametrics/scrape.yml:/etc/victoriametrics/scrape.yml:ro   # 03-* owns contents
+      - ${PULSE_RENDERED_DIR:-../rendered}/scrape/file_sd:/rendered/scrape/file_sd:ro   # RENDERED_MOUNTS (00 §6)
+    healthcheck:
+      # GET /health → 200 (HEALTH_PROBES, 00 §7). Probe via wget, which the pinned
+      # victoria-metrics image provides; path+port are fixed.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.102.1            # REQ-COMPOSE-04 — concrete patch on v1.102.x family
+    command:
+      - "-rule=/etc/vmalert/rules/*.yml"               # glob over alerting's mount slot (04-* §3.2); a bare dir path is read as a single file and fatals
+      - "-datasource.url=http://victoriametrics:8428"   # engine-apis (00 §2)
+      - "-remoteWrite.url=http://victoriametrics:8428"  # ALERTS/recording series back to VM
+      - "-notifier.url=http://alertmanager:9093"        # engine-apis (00 §2)
+      - "-external.label=estate=${PULSE_ESTATE_NAME}"   # web-app 07-* §3.6 defect fix: stamp estate on every
+                                                        #   vmalert alert/series (estate-external-label + alerting webhook labels.estate)
+      - "-httpListenAddr=:8880"
+    networks: [pulse]
+    volumes:
+      - ./config/vmalert/rules:/etc/vmalert/rules:ro    # alerting's mount slot (04-* §3.2)
+    depends_on:
+      victoriametrics: { condition: service_healthy }   # needs the datasource live
+      alertmanager:    { condition: service_healthy }   # needs the notifier live
+    healthcheck:
+      # GET /health → 200 (00 §7). Probe via wget, which the pinned vmalert image provides;
+      # path+port are fixed.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8880/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0                    # REQ-COMPOSE-04
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"   # native bootstrap (04-* §2), NOT the rendered file
+      - "--storage.path=/alertmanager"
+      - "--web.listen-address=:9093"
+    networks: [pulse]
+    volumes:
+      # stack-core's native bootstrap config (04-* owns contents):
+      - ./config/alertmanager/alertmanager.bootstrap.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Notification templates (issue #16): the runbook-link partials the rendered config's
+      # `templates:` glob loads and the email/telegram receiver bodies reference. Estate-agnostic and
+      # credential-free, so safe to mount for both the bootstrap and the rendered config.
+      - ./config/alertmanager/templates:/etc/alertmanager/templates:ro
+      # Rendered abstract routing — SLOT ONLY (RENDERED_MOUNTS, 00 §6). AM does NOT read this;
+      # mounted for the `alerting` feature's abstract→native transform (00 §4.3, 04-*):
+      - ${PULSE_RENDERED_DIR:-../rendered}/alertmanager/routing.yaml:/rendered/alertmanager/routing.yaml:ro
+    healthcheck:
+      # GET /-/healthy → 200 (00 §7). Probe via wget, which the pinned alertmanager image
+      # provides; path+port are fixed.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  gatus:
+    image: twinproduction/gatus:v5.13.1                 # REQ-COMPOSE-04
+    environment:
+      GATUS_CONFIG_PATH: /config                         # merge every YAML in the dir (tech-spec §3.7)
+    networks: [pulse]
+    volumes:
+      # stack-core's estate-agnostic Gatus→Alertmanager webhook provider (04-* §4.2, REQ-GATUS-02):
+      - ../gatus/alerting-provider.yaml:/config/00-alerting.yaml:ro
+      # rendered endpoints — what to check (RENDERED_MOUNTS, 00 §6; renderer owns content):
+      - ${PULSE_RENDERED_DIR:-../rendered}/gatus/config.yaml:/config/10-endpoints.yaml:ro
+    depends_on:
+      alertmanager: { condition: service_healthy }       # posts alerts to AM /api/v2/alerts
+    # No container healthcheck: the pinned gatus image ships only the /gatus binary — no shell,
+    # wget, curl, or one-shot health subcommand — so no in-container command can probe GET /health.
+    # Gatus readiness is asserted out-of-band by the Tier-2 smoke's in-stack HTTP probe against
+    # /api/v1/endpoints/statuses (bringup.smoke.test.ts §5.4), the same curl-sidecar pattern the
+    # smoke uses for the other shell-less images. gatus is therefore the one default-profile
+    # service exempt from the REQ-COMPOSE-03 healthcheck-presence rule (config.test.ts §4.6).
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0                       # REQ-COMPOSE-04
+    environment:
+      # Non-secret placeholders for local bring-up; real values via .env (REQ-SEC-01/02, 01 §4):
+      GF_SECURITY_ADMIN_USER: "${GF_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GF_ADMIN_PASSWORD:-admin}"
+    networks: [pulse]
+    volumes:
+      - grafana-data:/var/lib/grafana                    # REQ-PERSIST-01 — durable Grafana state
+      # stack-core-owned provisioning: the VM datasource only (04-* §5 owns contents).
+      # The `dashboards` feature extends this same /etc/grafana/provisioning tree (01 §1):
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      victoriametrics: { condition: service_healthy }    # datasource endpoint must be live (00 §2)
+    healthcheck:
+      # GET /api/health → 200 (00 §7). Probe via wget, which the pinned grafana image provides;
+      # path+port are fixed.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1             # REQ-COMPOSE-04
+    command:
+      - "--housekeeping_interval=10s"
+      - "--docker_only=true"                             # only the stack's own containers (REQ-SELF-01)
+    networks: [pulse]
+    privileged: true                                     # required for container introspection on most hosts
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    healthcheck:
+      # GET /healthz → 200 (00 §7). Probe via wget, which the pinned cadvisor image provides;
+      # path+port are fixed.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  pve-exporter:
+    image: prompve/prometheus-pve-exporter:3.5.5        # REQ-COMPOSE-04
+    environment:
+      # Read-only credential as a secret reference (REQ-SEC-01/03, 00 §5). Full credential/config
+      # contract (env var names, config-file vs env form) is 03-scrape-and-exporters.md §5.
+      # prometheus-pve-exporter 3.x REQUIRES config: with no /etc/prometheus/pve.yml it reads
+      # its NATIVE env pair (PVE_USER + PVE_TOKEN_NAME + PVE_TOKEN_VALUE + PVE_VERIFY_SSL) and
+      # boots off env alone — the spec §5 "decompose the single ${VAR} into the exporter's
+      # native env" path. The only SECRET is the token VALUE, kept as a ${VAR} ref; the user and
+      # token-name are non-secret identifiers with estate-agnostic defaults so a fixture bring-up
+      # boots green (no real PVE is ever contacted — the /pve scrape is ?target=-driven, and the
+      # fictional estate targets are expected-DOWN, 06 §7). Operator overrides via .env.
+      PVE_TOKEN: "${PVE_TOKEN}"                       # documented .env key (EXPORTER_TOKEN_ENV, 00 §5)
+      PVE_USER: "${PVE_USER:-pulse@pve}"              # non-secret identifier; overridable
+      PVE_TOKEN_NAME: "${PVE_TOKEN_NAME:-pulse}"      # non-secret token id; overridable
+      PVE_TOKEN_VALUE: "${PVE_TOKEN}"                 # the read-only secret VALUE (same ${VAR})
+      PVE_VERIFY_SSL: "${PVE_VERIFY_SSL:-false}"      # engine default; overridable
+    networks: [pulse]
+    healthcheck:
+      # / reachable on :9221 → 200 (HEALTH_PROBES, 00 §7). The /pve scrape path needs a ?target=;
+      # the health probe hits root reachability. Probe via wget, which the pinned pve-exporter
+      # image provides; path+port are fixed.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9221/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  # === profile-gated slots (inert under a default `compose up`, 00 §3) ==================
+  #
+  # NOTE (issue #4): there is NO `nas-exporter` service. A `nas-api` host is scraped as a
+  # DIRECT node_exporter target (scrape.yml job 1c), so the shipped tree needs no TrueNAS
+  # exporter image. An operator who wants pool/dataset health from the TrueNAS API adds their
+  # own exporter service + scrape-job snippet per the documented opt-in override recipe.
+
+  web:
+    build:                                               # repo-root context (07-slot-reconciliation.md §3.4,
+      context: ../../                                    #   CON-01 item e): reach sibling @pulse/core + @pulse/renderer
+      dockerfile: apps/web/Dockerfile                    #   (tech-spec §3.2/§6.1). Paired with repo-root .dockerignore (§3.8).
+    profiles: ["web"]                                    # gated OFF by default (REQ-WEB-02, 00 §3) — RETAINED
+    expose:
+      - "8080"                                           # declared in-stack listen port → web:8080 (00 §1)
+    environment:
+      # Injected engine-apis addresses (ENGINE_API_URLS, 00 §2) — the slot's stable contract:
+      PULSE_VM_URL: "http://victoriametrics:8428"
+      PULSE_ALERTMANAGER_URL: "http://alertmanager:9093"
+      PULSE_GATUS_URL: "http://gatus:8080"
+      PULSE_VMALERT_URL: "http://vmalert:8880"     # fourth fixed engine origin (00 §3/§5): the internal vmalert
+                                                   #   service DNS, no credentials. loadServerConfig hard-requires it;
+                                                   #   the vmalert source client scrapes /api/v1/rules each cycle.
+      # Grafana stays OPTIONAL: PULSE_GRAFANA_URL is deliberately unset here, so browser deep links are
+      # disabled and no server-side /api/health call is made. Setting it never makes Grafana a startup
+      # dependency (it is not in this service's depends_on) — a Grafana outage degrades only Grafana.
+      # web-app slot reconciliation (07-slot-reconciliation.md §3.1/§3.2, CON-01 ECR items a,d):
+      PULSE_WEB_ESTATE_MODEL: "/rendered/web-estate-model.json"   # in-container model path (REQ-PKG-04)
+      PULSE_ESTATE_TZ: "${PULSE_ESTATE_TZ}"                       # estate declared TZ (REQ-LIVE-02)
+      # Write path (inert while the auth mode stays unset = `none`; see docs/operator/write-path.md):
+      PULSE_WEB_DATA_DIR: /data                                   # write-path root (audit/acks/proposals)
+      PULSE_PROPOSAL_SECRET: ${PULSE_PROPOSAL_SECRET:-}           # ≥32 bytes; empty → proposeEstateEdit false
+    volumes:
+      # Read-only rendered tree — the model artifact is delivered by mount, never baked (REQ-PKG-04,
+      # REQ-MODEL-04). Same ${PULSE_RENDERED_DIR:-../rendered} pattern as the other consumers.
+      - ${PULSE_RENDERED_DIR:-../rendered}:/rendered:ro
+      - pulse-web-data:/data                                      # writable write-path volume (REQ-CFG-04)
+    networks: [pulse]
+    depends_on:
+      victoriametrics: { condition: service_healthy }
+      alertmanager:    { condition: service_healthy }
+      # gatus has NO container healthcheck (its pinned image is shell-less, see the gatus service),
+      # so `service_healthy` here makes `up --wait` fail with "has no healthcheck configured". It is
+      # gated to `service_started` — the web app polls Gatus as a data source and reports its
+      # reachability via /healthz per-source health, so it tolerates Gatus starting a beat behind.
+      gatus:           { condition: service_started }
+    healthcheck:
+      # web-app confirmed ready path (07-slot-reconciliation.md §3.3, REQ-OBS-01): the dedicated
+      # /healthz endpoint returns 200 whenever the process can serve (00 §2 HealthBody).
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  prober:
+    # host-agent's central deep-health prober (agent/prober/, 02-deep-health-prober.md), filling
+    # stack-core's reserved slot (05-config-schema-and-integration.md §5.2, CON-07 — no ECR). The
+    # real pinned tag replaces the placeholder; built from agent/prober/Dockerfile on the pinned
+    # oven/bun:1.3.9 base (PINNED.proberBase, 00 §3 / REQ-BUNDLE-06). One image per stack.
+    build:                                               # local build path so `--profile deep-health build`
+      context: ../../agent                               #   produces the image on a clean host (issue #5). The
+      dockerfile: prober/Dockerfile                      #   Dockerfile expects the agent/ tree so contract/ +
+                                                         #   prober/src land under /app (agent/prober/Dockerfile §8).
+    image: pulse/prober:1.0.0                            # REQ-COMPOSE-04 — concrete pinned patch tag (never floating);
+                                                         #   also the tag `build` writes, so pull-or-build both resolve here.
+    profiles: ["deep-health"]                            # gated OFF by default (00 §3, OQ-A6)
+    networks: [pulse]
+    # No `command:` override — the prober parses no argv; it reads its config path from
+    # PULSE_RENDERED_DIR (default /rendered/prober/config.yaml) and serves on PROBER_PORT (9120),
+    # both from the 00 §3 constants (02 §2/§7). The image CMD needs no flags.
+    expose:
+      - "9120"                                           # in-stack only → prober:9120; scraped via job_name: prober
+    volumes:
+      # Mount the directory so an absent optional config remains ENOENT instead of Docker
+      # creating a directory at the config-file path.
+      - ${PULSE_RENDERED_DIR:-../rendered}/prober:/rendered/prober:ro
+    healthcheck:
+      # GET /metrics → 200 on :9120 (00 §7). HEALTHY when config is absent (the prober idles healthy,
+      # serving empty exposition — tech-spec §3.4). FAILS when config is malformed: index.ts exits
+      # nonzero on a ProberConfigError, so the server never binds and the probe cannot connect — a
+      # legible failed healthcheck, never a silent stop (05 §5.2a / §6). Probed via `bun` (fetch),
+      # which the pinned base guarantees — the oven/bun image ships no wget the other services use.
+      test: ["CMD", "bun", "-e", "if(!(await fetch('http://127.0.0.1:9120/metrics')).ok)process.exit(1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped

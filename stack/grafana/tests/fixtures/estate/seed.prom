@@ -1,0 +1,53 @@
+# stack/grafana/tests/fixtures/estate/seed.prom
+#
+# Seeded metric series for the Tier B provisioning smoke test (05-testing-strategy.md §4).
+#
+# These adopt stack-core's fixture LABEL SHAPES (web01 / pve1 / nas1 / a deep-health service) so the
+# hand-authored/pruned boards' target variables populate from real VictoriaMetrics label_values() at
+# view time (SUCCESS-02) WITHOUT a cross-feature dependency on the not-yet-existing examples/ estate.
+#
+# The smoke test's beforeAll pushes this file into VictoriaMetrics via POST
+# /api/v1/import/prometheus (Prometheus text exposition; VM stamps each sample at ingest time), so a
+# freshly-provisioned Grafana resolves:
+#   pulse-host       instance  <- label_values(node_uname_info, instance)   => web01
+#   pulse-hypervisor instance  <- label_values(pve_up, instance)            => pve1
+#   pulse-deephealth service   <- label_values(pulse_deep_health_up, service)  (deep probes deferred, §3.4)
+#   pulse-nas        instance  <- label_values(nas_up, instance)            (NAS series deferred, §3.4)
+#
+# This is SEED DATA, not a shipped artifact: it lives under tests/fixtures/ (never under
+# stack/compose/**), so it is out of Tier A's estate-literal scan AND stack-core's Guard B secret
+# scan by construction. The fixture hostnames web01/pve1/nas1 are therefore allowed ONLY here — a
+# committed board that named a host would be an estate-literal failure.
+
+# ── managed Linux host (web01) — pulse-host target variable + a few Node Exporter families ──
+node_uname_info{job="managed-linux",instance="web01",nodename="web01",sysname="Linux",machine="x86_64"} 1
+node_time_seconds{job="managed-linux",instance="web01"} 1700000000
+node_boot_time_seconds{job="managed-linux",instance="web01"} 1699990000
+node_load1{job="managed-linux",instance="web01"} 0.42
+node_load5{job="managed-linux",instance="web01"} 0.37
+node_memory_MemTotal_bytes{job="managed-linux",instance="web01"} 8589934592
+node_memory_MemAvailable_bytes{job="managed-linux",instance="web01"} 4294967296
+node_filesystem_size_bytes{job="managed-linux",instance="web01",mountpoint="/",fstype="ext4"} 53687091200
+node_filesystem_avail_bytes{job="managed-linux",instance="web01",mountpoint="/",fstype="ext4"} 26843545600
+node_cpu_seconds_total{job="managed-linux",instance="web01",cpu="0",mode="idle"} 123456
+node_cpu_seconds_total{job="managed-linux",instance="web01",cpu="0",mode="system"} 2345
+node_cpu_seconds_total{job="managed-linux",instance="web01",cpu="0",mode="user"} 6789
+node_network_receive_bytes_total{job="managed-linux",instance="web01",device="eth0"} 987654321
+node_network_transmit_bytes_total{job="managed-linux",instance="web01",device="eth0"} 123456789
+node_disk_read_bytes_total{job="managed-linux",instance="web01",device="sda"} 55555555
+node_disk_written_bytes_total{job="managed-linux",instance="web01",device="sda"} 44444444
+
+# ── hypervisor (pve1) — pulse-hypervisor target variable ──
+pve_up{job="hypervisor-api",instance="pve1"} 1
+pve_node_info{job="hypervisor-api",instance="pve1",id="node/pve1"} 1
+pve_cpu_usage_ratio{job="hypervisor-api",instance="pve1",id="node/pve1"} 0.17
+pve_memory_size_bytes{job="hypervisor-api",instance="pve1",id="node/pve1"} 34359738368
+pve_memory_usage_bytes{job="hypervisor-api",instance="pve1",id="node/pve1"} 12884901888
+pve_guest_info{job="hypervisor-api",instance="pve1",id="qemu/100",name="db"} 1
+
+# ── deep-health probe target (service label shape; deep probes deferred, §3.4) ──
+pulse_deep_health_up{job="probe-only",service="web-frontend"} 1
+pulse_deep_health_up{job="probe-only",service="api-gateway"} 1
+
+# ── NAS host (nas1) label shape (NAS exporter/series deferred, §3.4) ──
+nas_up{job="nas-api",instance="nas1"} 1

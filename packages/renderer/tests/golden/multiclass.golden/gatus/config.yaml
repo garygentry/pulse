@@ -1,0 +1,25 @@
+endpoints:
+  - conditions:
+      - "[DNS_RCODE] == NOERROR"
+    dns:
+      query-name: example.com
+      query-type: A
+    name: dns:example.com
+    url: 1.1.1.1
+  - conditions:
+      - "[DNS_RCODE] == NOERROR"
+    dns:
+      query-name: internal.example.com
+      query-type: A
+    name: dns:internal.example.com
+    url: 1.1.1.1
+  - conditions:
+      - "[CONNECTED] == true"
+    group: edge01
+    name: host:edge01
+    url: icmp://10.0.0.9
+  - conditions:
+      - "[STATUS] == 200"
+    group: web01
+    name: web01/grafana
+    url: https://grafana.example.com

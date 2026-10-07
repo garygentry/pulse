@@ -1,0 +1,7 @@
+probes:
+  - name: svc:tg-host/tg-web
+    target: https://tg-web.telegram.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      web_up: $.up
+    alertExpression: web_up < 1

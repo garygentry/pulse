@@ -1,0 +1,46 @@
+# Rauf runtime — transient files that must never be tracked
+**/.rauf/.loop.lock
+**/.rauf/state.json
+**/.rauf/DONE
+**/.rauf/CANCEL
+**/.rauf/iteration-status.json
+**/.rauf/rauf.log
+**/.rauf/events.ndjson
+**/backlog.json.bak
+
+# Claude Code local session config
+.claude/
+# ...except the agent-kit generator's committed output, which legitimately emits a generated
+# `.claude/` tree (the claude ecosystem bundle). It MUST be committed — the generated-drift gate
+# compares the committed generated/** set to a fresh regeneration, so an ignored (uncommitted)
+# subtree fails CI on a clean checkout. Re-include exactly that path (root `.claude/` stays ignored).
+!agent-kit/generated/claude/.claude/
+!agent-kit/generated/claude/.claude/**
+
+# Node / TypeScript build artifacts
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment secrets — commit only .env.example, never a real .env (e.g. stack/compose/.env)
+.env
+
+# Operator-local compose layer + resolved configs. The override is the operator's own layer
+# (host-port exposure, activation mounts — see the bootstrap/rollout-session runbooks); a
+# *.resolved.yml is a native config with SecretRefs expanded to PLAINTEXT (alerting activation,
+# docs/runbooks/rollout-session.md). Neither is ever tracked.
+docker-compose.override.yml
+*.resolved.yml
+
+# Local browser screenshots (CLAUDE.md: always under ./screenshots); never committed.
+screenshots/
+
+# Private planning and agent-loop state live outside this public repo.
+specs/
+.rauf/
+.rauf.json
+forge.config.json
+.claude/
+.remember/
+.handoff/
+.system1/

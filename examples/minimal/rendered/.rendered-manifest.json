@@ -1,0 +1,13 @@
+{
+  "files": [
+    "agent/monitor-host-01.yaml",
+    "alertmanager/routing.yaml",
+    "gatus/config.yaml",
+    "scrape/file_sd/managed-linux-heartbeat.json",
+    "scrape/file_sd/managed-linux.json",
+    "web-coverage.json",
+    "web-estate-model.json",
+    "web-findings.json"
+  ],
+  "formatVersion": 2
+}

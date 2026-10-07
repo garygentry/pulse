@@ -1,0 +1,33 @@
+# stack/compose/config/grafana/provisioning/dashboards/pulse.yaml
+#
+# Single Grafana dashboard file-provider for the `dashboards` feature (REQ-PROV-01/03,
+# REQ-FOLDER-01). Additive to stack-core's existing provisioning mount (CON-01/02) — stack-core
+# provisions only the VM datasource; this feature adds this provider + the board JSON tree it scans.
+# Models DashboardProviderConfig (00-core-definitions.md §5).
+apiVersion: 1
+
+providers:
+  # A single `file` provider. Folder taxonomy is the on-disk directory layout (§3), so adding the
+  # deferred DNS/Ingress boards later (REQ-LIB-05) is a new subdir — never a provider edit.
+  - name: pulse
+    # `file` provider: Grafana loads dashboard JSON from disk (config-as-code, CON-05) rather than
+    # from the HTTP API or grafana.com (no live external reference, REQ-CUR-03).
+    type: file
+    # REQ-PROV-03 / CON-05: a board deleted from disk is NOT deleted from Grafana automatically;
+    # the committed tree is authoritative, and removals are deliberate source edits.
+    disableDeletion: true
+    # REQ-PROV-03 / CON-05: UI edits are transient. Operators cannot save over the provisioned board;
+    # committed JSON is the source of truth and reprovisions on restart.
+    allowUiUpdates: false
+    # How often Grafana rescans the path for changes. 30s gives prompt pickup after a restart/redeploy
+    # without hammering disk; the tree is otherwise static (REQ-CONC-01).
+    updateIntervalSeconds: 30
+    options:
+      # Absolute IN-CONTAINER scan path. Maps to host
+      # stack/compose/config/grafana/provisioning/dashboards/json/ via the mount (§1).
+      # CRITICAL: ONLY board JSON may live under this path — the provider treats every .json here as a
+      # dashboard (§5, the file-provider gotcha). provenance.json/tests/fixtures live in stack/grafana/.
+      path: /etc/grafana/provisioning/dashboards/json
+      # REQ-FOLDER-01: each immediate subdirectory of `json/` becomes a Grafana folder (§3). The
+      # directory layout IS the folder taxonomy — no folder is named in this file.
+      foldersFromFilesStructure: true

@@ -1,0 +1,43 @@
+{
+  "contractVersion": 1,
+  "severities": [
+    {
+      "name": "critical",
+      "response": "immediate human action",
+      "routing": {
+        "channels": "critical-human + webhook-mirror",
+        "repeatInterval": "30m",
+        "groupWindow": null,
+        "bypassesQuietHours": true,
+        "sendsResolved": true
+      }
+    },
+    {
+      "name": "warning",
+      "response": "timely investigation",
+      "routing": {
+        "channels": "non-paging ops",
+        "repeatInterval": null,
+        "groupWindow": "15m",
+        "bypassesQuietHours": false,
+        "sendsResolved": true
+      }
+    },
+    {
+      "name": "info",
+      "response": "digest-only awareness",
+      "routing": {
+        "channels": "daily digest 09:00 estate-tz",
+        "repeatInterval": null,
+        "groupWindow": null,
+        "bypassesQuietHours": false,
+        "sendsResolved": false
+      }
+    }
+  ],
+  "webhookMirror": {
+    "critical": "always",
+    "warning": "if-selected",
+    "info": "never"
+  }
+}

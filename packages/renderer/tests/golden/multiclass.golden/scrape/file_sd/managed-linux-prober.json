@@ -1,0 +1,11 @@
+[
+  {
+    "labels": {
+      "collection_class": "managed-linux",
+      "host": "app02"
+    },
+    "targets": [
+      "10.0.0.7:9120"
+    ]
+  }
+]

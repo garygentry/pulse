@@ -1,0 +1,30 @@
+# shape-bad — two INDEPENDENT shape defects in one document, exercising the Zod-issue → Finding
+# mapper's WRONG_TYPE and INVALID_ENUM paths in a single one-pass safeParse (05 §5.1). Version
+# is 1 and the estate is well-formed so the pipeline reaches Phase 5 (shape).
+estate:
+  schema_version: 1
+  name: shape-bad
+  domains:
+    - shape.example
+  timezone: UTC
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: h1
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.4.0.1
+    exporter_ports:
+      - 9100
+
+services:
+  - name: s1
+    host: h1
+    kind: http
+    managed: "yes" # WRONG_TYPE — boolean expected, string given (invalid_type, received "string")
+
+channels:
+  - name: c1
+    kind: carrier-pigeon # INVALID_ENUM — not one of chat/email/push/webhook (invalid_enum_value)
+    credential: "${TOKEN}"

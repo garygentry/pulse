@@ -1,0 +1,23 @@
+[
+  {
+    "fingerprint": "fp-overbound",
+    "labels": {
+      "alertname": "HighCpu",
+      "severity": "warning",
+      "host": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+    },
+    "annotations": {
+      "summary": "over-bound host label"
+    },
+    "startsAt": "2026-09-16T00:00:00.000Z",
+    "endsAt": "2026-09-16T01:00:00.000Z",
+    "status": {
+      "state": "active"
+    },
+    "receivers": [
+      {
+        "name": "team-a"
+      }
+    ]
+  }
+]

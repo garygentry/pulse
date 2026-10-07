@@ -1,0 +1,27 @@
+# agent/systemd/pulse-cadvisor.service — installed ONLY when cadvisor: true (REQ-CONT-01, 03 §7.2).
+#
+# The unit file always EXISTS in the estate-agnostic template set, but deploy-toolkit installs &
+# `systemctl enable --now` it only when the ONE rendered config rendered/agent/<host>.yaml has
+# cadvisor: true (REQ-CFG-03, §7.2). Estate-agnostic (REQ-BUNDLE-04): no host literal. Runs the
+# SAME pinned image as the compose form (REQ-BUNDLE-06). Read-only host introspection mounts
+# mirror the shipped engine cAdvisor service (§4.2) — that is telemetry, not a write/control API.
+[Unit]
+Description=Pulse managed-linux agent — cAdvisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# PINNED.cadvisor (00 §3) — engine-stack tag. Read-only host introspection; no write surface (REQ-SEC-02).
+ExecStartPre=-/usr/bin/podman rm -f pulse-cadvisor
+ExecStart=/usr/bin/podman run --rm --name pulse-cadvisor \
+  --privileged --device /dev/kmsg \
+  -p 8080:8080 \
+  -v /:/rootfs:ro -v /var/run:/var/run:ro -v /sys:/sys:ro \
+  -v /var/lib/docker/:/var/lib/docker:ro -v /dev/disk/:/dev/disk:ro \
+  gcr.io/cadvisor/cadvisor:v0.49.1 \
+  --housekeeping_interval=10s --docker_only=true
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

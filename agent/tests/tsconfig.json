@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "./.tsbuildinfo"
+  },
+  "include": [
+    "bun-test.d.ts",
+    "harness.ts",
+    "golden/**/*.ts",
+    "*.test.ts",
+    "../contract/*.ts",
+    "../prober/src/**/*.ts",
+    "../heartbeat/src/**/*.ts",
+    "../command-exporter/src/**/*.ts"
+  ]
+}

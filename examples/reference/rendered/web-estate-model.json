@@ -1,0 +1,505 @@
+{
+  "bundleId": "sha256:0b06fc951d495f111015f7b78c9e6b3bab87ac3da8d101b2c76a86bbbfadbd3c",
+  "channels": [
+    {
+      "credential": {
+        "display": "${WEBHOOK_MIRROR_TOKEN}",
+        "kind": "env"
+      },
+      "kind": "webhook",
+      "name": "mirror-hook",
+      "options": null,
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 161,
+        "path": "channels[4]"
+      }
+    },
+    {
+      "credential": {
+        "display": "op://infra/pager/routing-key",
+        "kind": "op"
+      },
+      "kind": "push",
+      "name": "oncall-push",
+      "options": null,
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 151,
+        "path": "channels[2]"
+      }
+    },
+    {
+      "credential": {
+        "display": "${CHAT_WEBHOOK_URL}",
+        "kind": "env"
+      },
+      "kind": "chat",
+      "name": "ops-chat",
+      "options": null,
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 145,
+        "path": "channels[0]"
+      }
+    },
+    {
+      "credential": {
+        "display": "${SMTP_PASSWORD}",
+        "kind": "env"
+      },
+      "kind": "email",
+      "name": "ops-email",
+      "options": null,
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 148,
+        "path": "channels[1]"
+      }
+    },
+    {
+      "credential": {
+        "display": "${TELEGRAM_BOT_TOKEN}",
+        "kind": "env"
+      },
+      "kind": "telegram",
+      "name": "ops-telegram",
+      "options": {
+        "chat_id": -1002001002003
+      },
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 156,
+        "path": "channels[3]"
+      }
+    }
+  ],
+  "estate": {
+    "deadman": {
+      "configured": true,
+      "kind": "secret-ref"
+    },
+    "dnsResolver": "10.20.0.53",
+    "domains": [
+      "aurora.example",
+      "nimbus.example"
+    ],
+    "name": "reference-estate",
+    "retention": "6mo",
+    "schemaMajor": 1,
+    "timezone": "America/Chicago"
+  },
+  "formatVersion": 2,
+  "hosts": [
+    {
+      "addresses": [
+        "10.20.0.12"
+      ],
+      "artifacts": [
+        "agent/harbor-app-02.yaml",
+        "scrape/file_sd/managed-linux-command-exporter.json",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json"
+      ],
+      "collectionClass": "managed-linux",
+      "detail": {
+        "cadvisor": false,
+        "commandSignals": [],
+        "deliveryForm": "systemd",
+        "exporterPorts": [
+          9100
+        ],
+        "heartbeat": true
+      },
+      "drilldownId": "host:harbor-app-02",
+      "expectedChurn": false,
+      "name": "harbor-app-02",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 40,
+        "path": "hosts[1]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.20.0.12:9100",
+          "job": "managed-linux"
+        },
+        {
+          "instance": "10.20.0.12:9130",
+          "job": "managed-linux-command-exporter"
+        },
+        {
+          "instance": "10.20.0.12:9110",
+          "job": "managed-linux-heartbeat"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.20.0.20"
+      ],
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml",
+        "scrape/file_sd/probe-only.json"
+      ],
+      "collectionClass": "probe-only",
+      "detail": {
+        "probe": {
+          "expect": "200",
+          "kind": "http",
+          "target": "https://status.aurora.example/healthz"
+        }
+      },
+      "drilldownId": "host:harbor-edge-01",
+      "expectedChurn": false,
+      "name": "harbor-edge-01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 66,
+        "path": "hosts[4]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "https://status.aurora.example/healthz",
+          "job": "probe-only"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.20.0.5"
+      ],
+      "artifacts": [
+        "scrape/file_sd/hypervisor-api.json"
+      ],
+      "collectionClass": "hypervisor-api",
+      "detail": {
+        "apiEndpoint": "https://harbor-hv-01.nimbus.example/api",
+        "credential": {
+          "display": "op://infra/hypervisor/token",
+          "kind": "op"
+        }
+      },
+      "drilldownId": "host:harbor-hv-01",
+      "expectedChurn": false,
+      "name": "harbor-hv-01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 49,
+        "path": "hosts[2]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "https://harbor-hv-01.nimbus.example/api",
+          "job": "hypervisor-api"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.20.0.99"
+      ],
+      "artifacts": [],
+      "collectionClass": "excluded",
+      "detail": {},
+      "drilldownId": "host:harbor-lab-01",
+      "expectedChurn": false,
+      "name": "harbor-lab-01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 76,
+        "path": "hosts[5]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [],
+      "suppressed": {
+        "class": "excluded",
+        "rationale": "Ephemeral lab bench; intentionally not collected in v1."
+      }
+    },
+    {
+      "addresses": [
+        "10.20.0.6"
+      ],
+      "artifacts": [
+        "scrape/file_sd/nas-api.json"
+      ],
+      "collectionClass": "nas-api",
+      "detail": {
+        "apiEndpoint": null,
+        "credential": null
+      },
+      "drilldownId": "host:harbor-nas-01",
+      "expectedChurn": false,
+      "name": "harbor-nas-01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 60,
+        "path": "hosts[3]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.20.0.6:9100",
+          "job": "nas-api"
+        }
+      ],
+      "suppressed": null
+    },
+    {
+      "addresses": [
+        "10.20.0.11"
+      ],
+      "artifacts": [
+        "agent/harbor-web-01.yaml",
+        "agent/harbor-web-01/prober/config.yaml",
+        "command-exporter/harbor-web-01.yaml",
+        "scrape/file_sd/cadvisor.json",
+        "scrape/file_sd/managed-linux-command-exporter.json",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux-prober.json",
+        "scrape/file_sd/managed-linux.json",
+        "scrape/file_sd/process-exporter.json"
+      ],
+      "collectionClass": "managed-linux",
+      "detail": {
+        "cadvisor": true,
+        "commandSignals": [
+          {
+            "command": "/opt/pulse/gpu-metrics.sh",
+            "credential": null,
+            "interval": "30s",
+            "name": "gpu",
+            "output": "exposition"
+          }
+        ],
+        "deliveryForm": "compose",
+        "exporterPorts": [
+          9100,
+          9256
+        ],
+        "heartbeat": true
+      },
+      "drilldownId": "host:harbor-web-01",
+      "expectedChurn": false,
+      "name": "harbor-web-01",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 22,
+        "path": "hosts[0]"
+      },
+      "scrapeIntervalClass": null,
+      "scrapeTargets": [
+        {
+          "instance": "10.20.0.11:8080",
+          "job": "cadvisor"
+        },
+        {
+          "instance": "10.20.0.11:9100",
+          "job": "managed-linux"
+        },
+        {
+          "instance": "10.20.0.11:9130",
+          "job": "managed-linux-command-exporter"
+        },
+        {
+          "instance": "10.20.0.11:9110",
+          "job": "managed-linux-heartbeat"
+        },
+        {
+          "instance": "10.20.0.11:9120",
+          "job": "managed-linux-prober"
+        },
+        {
+          "instance": "10.20.0.11:9256",
+          "job": "process-exporter"
+        }
+      ],
+      "suppressed": null
+    }
+  ],
+  "routingOverrides": [
+    {
+      "channels": [
+        "oncall-push",
+        "ops-chat"
+      ],
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 166,
+        "path": "routing_overrides[0]"
+      },
+      "severity": "critical"
+    },
+    {
+      "channels": [
+        "ops-chat",
+        "ops-email"
+      ],
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 170,
+        "path": "routing_overrides[1]"
+      },
+      "severity": "warning"
+    }
+  ],
+  "services": [
+    {
+      "alerts": [],
+      "artifacts": [
+        "command-exporter/harbor-app-02.yaml",
+        "prober/config.yaml"
+      ],
+      "backupFreshness": {
+        "hasCommand": true,
+        "interval": "15m",
+        "signal": "pulse_backup_freshness_age_seconds",
+        "threshold": "24h"
+      },
+      "deepHealth": false,
+      "deepHealthDetail": null,
+      "drilldownId": "svc:harbor-app-02/nas-backups",
+      "gatusEndpoints": [],
+      "host": "harbor-app-02",
+      "kind": "backup",
+      "managed": true,
+      "name": "nas-backups",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 115,
+        "path": "services[1]"
+      },
+      "suppressed": null
+    },
+    {
+      "alerts": [],
+      "artifacts": [
+        "agent/harbor-web-01/prober/config.yaml"
+      ],
+      "backupFreshness": null,
+      "deepHealth": true,
+      "deepHealthDetail": {
+        "alertExpression": "detectors < 1",
+        "credential": null,
+        "endpoint": "http://127.0.0.1:5000/api/stats",
+        "hostLocal": true,
+        "metrics": [
+          "detectors"
+        ],
+        "responseMapping": {
+          "detectors": "$.detectors.count"
+        }
+      },
+      "drilldownId": "svc:harbor-web-01/frigate",
+      "gatusEndpoints": [],
+      "host": "harbor-web-01",
+      "kind": "http",
+      "managed": true,
+      "name": "frigate",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 131,
+        "path": "services[2]"
+      },
+      "suppressed": null
+    },
+    {
+      "alerts": [
+        {
+          "description": "Portal ingress synthetic check failing",
+          "failureThreshold": 3,
+          "sendOnResolved": true,
+          "type": "custom"
+        }
+      ],
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml"
+      ],
+      "backupFreshness": null,
+      "deepHealth": true,
+      "deepHealthDetail": {
+        "alertExpression": "status == 0",
+        "credential": {
+          "display": "${WEB_HEALTH_TOKEN}",
+          "kind": "env"
+        },
+        "endpoint": "https://portal.aurora.example/api/health",
+        "hostLocal": false,
+        "metrics": [
+          "status",
+          "version"
+        ],
+        "responseMapping": {
+          "status": "$.status",
+          "version": "$.build.version"
+        }
+      },
+      "drilldownId": "svc:harbor-web-01/portal-web",
+      "gatusEndpoints": [
+        "harbor-web-01/portal-web"
+      ],
+      "host": "harbor-web-01",
+      "ingressUrl": "https://portal.aurora.example",
+      "kind": "http",
+      "managed": true,
+      "name": "portal-web",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 86,
+        "path": "services[0]"
+      },
+      "suppressed": null
+    }
+  ],
+  "suppressions": [
+    {
+      "class": "expected-churn",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 176,
+        "path": "suppressions[0]"
+      },
+      "rationale": "Autoscaled worker pool; targets appear and disappear by design.",
+      "resolves": [],
+      "target": "harbor-app-02/ephemeral-worker"
+    },
+    {
+      "class": "known-expected",
+      "provenance": {
+        "col": 5,
+        "file": "estate.yaml",
+        "line": 179,
+        "path": "suppressions[1]"
+      },
+      "rationale": "Self-signed cert on the edge probe is expected in the lab tier.",
+      "resolves": [],
+      "target": "host=\"harbor-edge-01\",alertname=\"TlsCertWarning\""
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "uid": "pulse-dns",
+  "title": "Pulse — DNS",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "dns"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "DNS server",
+        "datasource": "${DS}",
+        "query": "label_values(coredns_build_info, instance)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About this board",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Per-DNS-server health, scoped by the `instance` variable. Metric names follow the **CoreDNS** exposition (`coredns_dns_requests_total`, `coredns_dns_responses_total`, `coredns_forward_request_duration_seconds_bucket`) with **BIND**-exporter equivalents documented per panel (`bind_up`, `bind_incoming_queries_total`, `bind_zone_serial`). Wire whichever exporter your resolver exposes; every series is expected to carry an `instance` label. Panels load as No-data until the matching exporter is scraped."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Query rate",
+      "datasource": "${DS}",
+      "description": "Incoming query rate per DNS server. CoreDNS: coredns_dns_requests_total (labels instance, server, zone, type). BIND exporter: bind_incoming_queries_total.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{type}}",
+          "expr": "sum by (type) (rate(coredns_dns_requests_total{instance=~\"$instance\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "NXDOMAIN / SERVFAIL ratio",
+      "datasource": "${DS}",
+      "description": "Share of responses returning an error rcode. CoreDNS: coredns_dns_responses_total split by the rcode label (NXDOMAIN, SERVFAIL) over all responses.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "NXDOMAIN",
+          "expr": "sum(rate(coredns_dns_responses_total{instance=~\"$instance\",rcode=\"NXDOMAIN\"}[5m])) / clamp_min(sum(rate(coredns_dns_responses_total{instance=~\"$instance\"}[5m])), 1)"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "SERVFAIL",
+          "expr": "sum(rate(coredns_dns_responses_total{instance=~\"$instance\",rcode=\"SERVFAIL\"}[5m])) / clamp_min(sum(rate(coredns_dns_responses_total{instance=~\"$instance\"}[5m])), 1)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Upstream forward latency",
+      "datasource": "${DS}",
+      "description": "Latency of queries forwarded to upstream resolvers. CoreDNS: coredns_forward_request_duration_seconds_bucket (histogram). BIND exporter: bind_resolver_query_duration_seconds_bucket.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "p99",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(coredns_forward_request_duration_seconds_bucket{instance=~\"$instance\"}[5m])))"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(coredns_forward_request_duration_seconds_bucket{instance=~\"$instance\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Zone-transfer & authoritative health",
+      "datasource": "${DS}",
+      "description": "Zone-transfer traffic and authoritative-server reachability. Transfer rate from CoreDNS coredns_dns_requests_total filtered to AXFR/IXFR query types; authoritative up state from the BIND exporter bind_up (1 = reachable). Zone serials via bind_zone_serial.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "transfer {{type}}",
+          "expr": "sum by (type) (rate(coredns_dns_requests_total{instance=~\"$instance\",type=~\"AXFR|IXFR\"}[5m]))"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "authoritative up",
+          "expr": "bind_up{instance=~\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "alertGroups",
+      "title": "Firing alerts (this DNS server)",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+      "options": {
+        "labels": "instance=~\"$instance\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

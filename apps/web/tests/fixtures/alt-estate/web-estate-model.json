@@ -1,0 +1,34 @@
+{
+  "estate": {
+    "domains": ["lab.internal"],
+    "name": "lab-estate"
+  },
+  "formatVersion": 2,
+  "hosts": [
+    {
+      "addresses": ["192.168.50.10"],
+      "collectionClass": "managed-linux",
+      "drilldownId": "host:builder",
+      "name": "builder",
+      "suppressed": null
+    },
+    {
+      "addresses": ["192.168.50.20", "10.10.0.20"],
+      "collectionClass": "hypervisor-api",
+      "drilldownId": "host:hv1",
+      "name": "hv1",
+      "suppressed": null
+    }
+  ],
+  "services": [
+    {
+      "deepHealth": true,
+      "drilldownId": "svc:builder/ci",
+      "host": "builder",
+      "ingressUrl": "https://ci.lab.internal",
+      "managed": true,
+      "name": "ci",
+      "suppressed": null
+    }
+  ]
+}

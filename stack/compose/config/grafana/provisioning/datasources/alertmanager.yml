@@ -1,0 +1,29 @@
+# stack/compose/config/grafana/provisioning/datasources/alertmanager.yml
+#
+# Additive Alertmanager datasource for alert-state panels (REQ-ALERT-01/02). ADDITIVE — this is a
+# NEW file alongside stack-core's victoriametrics.yml, which is left byte-identical (CON-01/02). Boards
+# reference this datasource ONLY through the ${DS_ALERTS} template variable, never this uid literal
+# (REQ-TMPL-02). Reached over the trusted in-stack `pulse` network — no credential literal (REQ-SEC-01).
+# Models AlertmanagerDatasourceConfig (00-core-definitions.md §5).
+apiVersion: 1
+
+datasources:
+  - name: Alertmanager
+    # Grafana's Alertmanager datasource plugin — reads live alert state from an Alertmanager API.
+    type: alertmanager
+    # ALERTMANAGER_DS_UID (00 §1). A STABLE handle for the DS_ALERTS datasource variable to resolve to;
+    # boards never hardcode this uid in a panel (REQ-TMPL-02) — they select it via ${DS_ALERTS}.
+    uid: pulse-alertmanager
+    # Grafana proxies requests server-side (browser never contacts alertmanager directly), mirroring
+    # stack-core's VM datasource posture.
+    access: proxy
+    # engine-apis in-stack address (CON-03): alertmanager:9093 on the `pulse` network. Confirmed against
+    # docker-compose.yml (alertmanager `--web.listen-address=:9093`, line 79). No estate literal, no port
+    # published to the host is assumed (in-stack DNS only).
+    url: http://alertmanager:9093
+    # Config-as-code posture (REQ-PROV-03): provisioned, not UI-editable — mirrors stack-core's DS.
+    editable: false
+    jsonData:
+      # This is a standalone Prometheus-style Alertmanager (prom/alertmanager), NOT Grafana-managed
+      # alerting; `prometheus` selects the Alertmanager (Prometheus) API implementation.
+      implementation: prometheus

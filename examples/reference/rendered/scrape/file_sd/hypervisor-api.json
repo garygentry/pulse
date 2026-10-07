@@ -1,0 +1,12 @@
+[
+  {
+    "labels": {
+      "__pulse_credential__": "op://infra/hypervisor/token",
+      "collection_class": "hypervisor-api",
+      "host": "harbor-hv-01"
+    },
+    "targets": [
+      "https://harbor-hv-01.nimbus.example/api"
+    ]
+  }
+]

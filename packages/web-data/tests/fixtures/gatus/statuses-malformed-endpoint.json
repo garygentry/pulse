@@ -1,0 +1,9 @@
+[
+  {
+    "name": "harbor-web-01/portal-web",
+    "group": "harbor-web-01",
+    "results": [
+      { "success": true, "timestamp": "2025-12-31T23:59:30.000Z", "duration": 118000000, "status": 200 }
+    ]
+  }
+]

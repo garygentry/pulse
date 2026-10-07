@@ -1,0 +1,21 @@
+receivers:
+  - config:
+      webhook_configs:
+        - url: ${OPSGENIE_WEBHOOK}
+    name: oncall
+  - config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}
+    name: team-chat
+  - config:
+      telegram_configs:
+        - bot_token: ${TELEGRAM_BOT_TOKEN}
+          chat_id: -1002001002003
+    name: team-telegram
+route:
+  receiver: oncall
+  routes:
+    - continue: false
+      match:
+        severity: critical
+      receiver: oncall

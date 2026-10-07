@@ -1,0 +1,32 @@
+# stack/alerting/tests/fixtures/promtool/hostdown.test.yaml
+# Availability family (02 §HostDown, REQ-AVAIL-01): a managed host is DOWN after three consecutive
+# missed 30s scrapes (for: 90s). `up` is driven to 0 (scrape failure); a value that fails for < 90s
+# does NOT fire, and one that fails for ≥ 90s fires `critical`. All names fictional (CON-05); the
+# estate label is set explicitly on the fixture (engine-injected at runtime).
+rule_files:
+  - availability.yml
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'up{job="managed-linux", instance="host-alpha", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0" # healthy, then scrape fails from t=90s
+    alert_rule_test:
+      # t=150s: failing 60s (< for:90s) → NOT yet firing
+      - eval_time: 2m30s
+        alertname: HostDown
+        exp_alerts: []
+      # t=210s: failing ≥90s → critical firing
+      - eval_time: 3m30s
+        alertname: HostDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              host: host-alpha
+              instance: host-alpha
+              job: managed-linux
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Host host-alpha is DOWN (critical)"
+              description: "No successful metric scrape from managed host host-alpha for at least 90s (three consecutive missed 30s scrapes). The host agent is unreachable or the host is down. Missing data is treated as failure, never as healthy."

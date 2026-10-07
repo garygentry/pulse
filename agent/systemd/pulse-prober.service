@@ -1,0 +1,38 @@
+# agent/systemd/pulse-prober.service — installed ONLY on a host that owns host-local deep-health
+# probes (issue #8; deploy-toolkit gates installation on the rendered per-host prober config).
+#
+# PER-HOST deep-health prober for LOCAL targets the CENTRAL prober can't reach: a loopback or
+# bridge-local endpoint (127.0.0.1 in the central container is the central container itself). Runs
+# the SAME pinned prober image + loader as the central prober (agent/prober/) — it reads
+# /rendered/prober/config.yaml, so binding THIS host's config there needs no code change.
+#
+# Estate-agnostic template (REQ-BUNDLE-04): no host/estate/domain/credential literal — the `host`
+# label is scrape-applied (this prober SUPPRESSES its self-set host label so file_sd applies it),
+# never baked. --network host so 127.0.0.1 / bridge-local targets resolve on the HOST and :9120
+# listens on the host (no port mapping under host networking). Serves GET /metrics + /healthz on
+# :9120 only (no write/control surface).
+#
+# The rendered per-host config is expected at the fixed path
+# /etc/pulse/rendered/prober/config.yaml (deploy-toolkit places the host's
+# agent/<host>/prober/config.yaml there). See docs/runbooks/agent-install.md.
+[Unit]
+Description=Pulse managed-linux agent — per-host deep-health prober
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Pinned prober image. --network host so loopback/bridge-local targets resolve on the host; the
+# rendered per-host config is mounted read-only to the fixed in-container path the loader reads
+# (PULSE_RENDERED_DIR defaults to /rendered). PULSE_PROBER_SUPPRESS_HOST_LABEL omits the self-set
+# host label so the scrape-time file_sd host label owns it.
+ExecStartPre=-/usr/bin/podman rm -f pulse-prober
+ExecStart=/usr/bin/podman run --rm --name pulse-prober \
+  --network host \
+  -e PULSE_PROBER_SUPPRESS_HOST_LABEL=1 \
+  -v /etc/pulse/rendered/prober/config.yaml:/rendered/prober/config.yaml:ro \
+  pulse/prober:1.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

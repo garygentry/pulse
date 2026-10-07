@@ -1,0 +1,13 @@
+[
+  {
+    "fingerprint": "fp-additive",
+    "labels": { "alertname": "MemPressure", "severity": "warning", "host": "harbor-3", "unknown_label": "should-be-dropped" },
+    "annotations": { "summary": "Memory pressure", "unknown_annotation": "should-be-dropped" },
+    "startsAt": "2026-09-16T00:00:00.000Z",
+    "endsAt": "2026-09-16T01:00:00.000Z",
+    "status": { "state": "active", "extraStatusField": "ignored" },
+    "receivers": [{ "name": "team-a", "extraReceiverField": "ignored" }],
+    "generatorURL": "http://vmalert.internal/rule",
+    "extraTopLevelField": { "nested": "ignored" }
+  }
+]

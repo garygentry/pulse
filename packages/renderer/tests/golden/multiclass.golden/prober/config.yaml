@@ -1,0 +1,14 @@
+probes:
+  - kind: icmp
+    name: host:edge01
+    target: 10.0.0.9
+  - kind: backup-freshness
+    name: svc:web01/frigate#backup
+    target: pulse_backup_freshness_age_seconds
+    threshold: 26h
+  - alertExpression: db_ok == 0
+    kind: deep-health
+    name: svc:web01/grafana
+    responseMapping:
+      db_ok: $.database
+    target: https://grafana.example.com/api/health

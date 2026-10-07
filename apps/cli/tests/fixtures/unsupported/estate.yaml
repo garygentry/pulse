@@ -1,0 +1,19 @@
+# unsupported — schema_version:2 (an unsupported major). The core version gate short-circuits
+# BEFORE shape/semantic validation, yielding EXACTLY ONE finding: UNSUPPORTED_VERSION. Every
+# read handler surfaces that single error finding (exit 1); the CLI attempts no migration.
+estate:
+  schema_version: 2
+  name: unsupported-estate
+  domains:
+    - example.com
+  timezone: UTC
+  deadman_hook: https://example.com/deadman
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    exporter_ports:
+      - 9100

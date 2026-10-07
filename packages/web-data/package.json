@@ -1,0 +1,25 @@
+{
+  "name": "@pulse/web-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./wire": { "types": "./dist/wire/index.d.ts", "import": "./dist/wire/index.js" },
+    "./cycle": { "types": "./dist/cycle/index.d.ts", "import": "./dist/cycle/index.js" },
+    "./sources": { "types": "./dist/sources/index.d.ts", "import": "./dist/sources/index.js" },
+    "./queries": { "types": "./dist/queries/index.d.ts", "import": "./dist/queries/index.js" },
+    "./history": { "types": "./dist/history/index.d.ts", "import": "./dist/history/index.js" },
+    "./identity": { "types": "./dist/identity/index.d.ts", "import": "./dist/identity/index.js" },
+    "./audit": { "types": "./dist/audit/index.d.ts", "import": "./dist/audit/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@pulse/renderer": "workspace:*",
+    "ipaddr.js": "2.5.0",
+    "zod": "^3.23.0"
+  }
+}

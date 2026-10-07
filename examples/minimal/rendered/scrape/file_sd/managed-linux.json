@@ -1,0 +1,11 @@
+[
+  {
+    "labels": {
+      "collection_class": "managed-linux",
+      "host": "monitor-host-01"
+    },
+    "targets": [
+      "10.10.0.10:9100"
+    ]
+  }
+]

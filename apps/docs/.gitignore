@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Astro build output
+dist/
+.astro/
+
+# Generated at build time by sync-architecture.mjs from the read-only
+# docs/architecture/** generated architecture docs (the operator/runbooks content symlinks
+# in this dir ARE committed; only this generated subtree is ignored).
+src/content/docs/architecture/

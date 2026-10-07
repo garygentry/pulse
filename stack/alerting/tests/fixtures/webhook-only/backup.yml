@@ -1,0 +1,28 @@
+groups:
+  - name: backup-freshness
+    rules:
+      - alert: BackupStale
+        annotations:
+          description: Last successful backup for service {{ $labels.service }} on host {{ $labels.host }} is older than its declared threshold (12h).
+          runbook_url: https://runbooks.pulse.local/backup-freshness
+          summary: Backup for {{ $labels.service }} is stale
+        expr: pulse_backup_freshness_age_seconds{service="hook-db"} > 43200
+        labels:
+          severity: warning
+      - alert: BackupCritical
+        annotations:
+          description: Last successful backup for service {{ $labels.service }} on host {{ $labels.host }} is older than twice its declared threshold (12h).
+          runbook_url: https://runbooks.pulse.local/backup-freshness
+          summary: Backup for {{ $labels.service }} is critically stale
+        expr: pulse_backup_freshness_age_seconds{service="hook-db"} > 86400
+        labels:
+          severity: critical
+      - alert: BackupNoData
+        annotations:
+          description: No readable backup-freshness signal for service {{ $labels.service }} on host {{ $labels.host }}. Missing data is NOT treated as a healthy backup (REQ-BACKUP-03).
+          runbook_url: https://runbooks.pulse.local/backup-freshness
+          summary: Backup freshness signal missing for {{ $labels.service }}
+        expr: pulse_backup_freshness_up{service="hook-db"} == 0 or absent(pulse_backup_freshness_up{service="hook-db"})
+        for: 15m
+        labels:
+          severity: warning

@@ -1,0 +1,16 @@
+receivers:
+  - config:
+      webhook_configs:
+        - url: ${OPSGENIE_WEBHOOK}
+    name: oncall
+  - config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}
+    name: team-chat
+route:
+  receiver: oncall
+  routes:
+    - continue: false
+      match:
+        severity: critical
+      receiver: oncall

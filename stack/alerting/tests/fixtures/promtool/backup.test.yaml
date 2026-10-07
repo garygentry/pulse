@@ -1,0 +1,62 @@
+# stack/alerting/tests/fixtures/promtool/backup.test.yaml
+# Backup-freshness family (03 §5, REQ-BACKUP-01..03) — GATED (06 §10). Runs only once host-agent
+# delivers pulse_backup_freshness_age_seconds / pulse_backup_freshness_up (backupMetricDelivered()).
+# Authored now against the required contract so it activates on delivery with NO test-body edits.
+# backup.yml is rendered by buildAlertingConfig for the multi-service fixture (service "postgres",
+# threshold 24h → 86400s stale / 172800s critical). Fictional names; estate set explicitly.
+rule_files:
+  - backup.yml
+evaluation_interval: 1m
+tests:
+  # age past 2× threshold with the freshness signal present → BackupStale AND BackupCritical
+  - interval: 1m
+    input_series:
+      - series: 'pulse_backup_freshness_age_seconds{service="postgres", host="db-01", estate="fixture-estate"}'
+        values: "200000+0x20" # > 172800 (2×86400)
+      - series: 'pulse_backup_freshness_up{service="postgres", host="db-01", estate="fixture-estate"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: postgres
+              host: db-01
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/backup-freshness"
+              summary: "Backup for postgres is stale"
+              description: "Last successful backup for service postgres on host db-01 is older than its declared threshold (24h)."
+      - eval_time: 1m
+        alertname: BackupCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: postgres
+              host: db-01
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/backup-freshness"
+              summary: "Backup for postgres is critically stale"
+              description: "Last successful backup for service postgres on host db-01 is older than twice its declared threshold (24h)."
+  # freshness signal reads 0 (NoData discipline) sustained past for:15m → BackupNoData, never healthy
+  - interval: 1m
+    input_series:
+      - series: 'pulse_backup_freshness_up{service="postgres", host="db-01", estate="fixture-estate"}'
+        values: "0+0x20"
+      - series: 'pulse_backup_freshness_age_seconds{service="postgres", host="db-01", estate="fixture-estate"}'
+        values: "100+0x20"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: BackupNoData
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: postgres
+              host: db-01
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/backup-freshness"
+              summary: "Backup freshness signal missing for postgres"
+              description: "No readable backup-freshness signal for service postgres on host db-01. Missing data is NOT treated as a healthy backup (REQ-BACKUP-03)."

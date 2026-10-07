@@ -1,0 +1,49 @@
+# stack/alerting/tests/fixtures/promtool/deep-health.test.yaml
+# Deep-health (REQ-AVAIL-02/03): the rendered FUNCTIONAL expression (deep-health.yml, critical) vs
+# the static PROBE-reachability warning (availability.yml, DeepHealthProbeFailed). Two deliberately
+# separate signals. deep-health.yml is rendered by buildAlertingConfig for the multi-service fixture
+# (service "camera-svc", metric "camera_count", threshold 6). Fictional names; estate explicit.
+rule_files:
+  - deep-health.yml
+  - availability.yml
+evaluation_interval: 30s
+tests:
+  # (1) functional expression false (value < 6) with the probe still reachable → critical
+  - interval: 30s
+    input_series:
+      - series: 'pulse_deep_health{service="camera-svc", metric="camera_count", host="host-beta", estate="fixture-estate"}'
+        values: "8 8 4 4 4 4 4" # drops below threshold (6) at t=60s
+      - series: 'pulse_deep_health_up{service="camera-svc", host="host-beta", estate="fixture-estate"}'
+        values: "1 1 1 1 1 1 1" # probe still reachable
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DeepHealthFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: camera-svc
+              metric: camera_count
+              host: host-beta
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/deep-health"
+              summary: "Deep-health functional check failed for camera-svc"
+              description: "Declared deep-health expression is failing for service camera-svc on host host-beta in estate fixture-estate."
+  # (2) probe unreachable (_up == 0) → warning; the functional rule has no fresh value to read as healthy
+  - interval: 30s
+    input_series:
+      - series: 'pulse_deep_health_up{service="camera-svc", host="host-beta", estate="fixture-estate"}'
+        values: "1 1 0 0 0 0 0" # probe fails from t=60s
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DeepHealthProbeFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: camera-svc
+              host: host-beta
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Deep-health probe failed for camera-svc on host-beta (warning)"
+              description: "The deep-health probe for service camera-svc on host host-beta has been failing for at least 2m (unreachable, malformed response, or probe error). This is the probe-reachability signal — distinct from the declared functional-health expression (03-transform-and-rendered-rules.md). While the probe is failing, mapped pulse_deep_health values are STALE and must not be read as healthy (see DeepHealthProbeStale)."

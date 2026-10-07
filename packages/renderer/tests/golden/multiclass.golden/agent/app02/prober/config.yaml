@@ -1,0 +1,7 @@
+probes:
+  - alertExpression: pulse_deep_health_up == 0
+    kind: deep-health
+    name: svc:app02/nvr
+    responseMapping:
+      detectors: $.detectors.count
+    target: http://127.0.0.1:5000/api/stats

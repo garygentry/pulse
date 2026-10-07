@@ -1,0 +1,36 @@
+{{/*
+  stack/compose/config/alertmanager/templates/pulse.tmpl
+
+  Pulse notification templates (issue #16). Their sole job over the Alertmanager defaults is to
+  surface a rule's `runbook_url` annotation as a clickable link in the notification body — an
+  operator paged at 2am gets the runbook one click away.
+
+  Registered by the rendered alertmanager.yml `templates:` key (AM_TEMPLATE_GLOB) and referenced by
+  the email (`html`) and telegram (`message`) receiver bodies the alerting transform emits. Purely
+  presentational: they read only labels/annotations, never a credential. Mounted read-only into the
+  Alertmanager container at /etc/alertmanager/templates (see docker-compose.yml).
+*/}}
+
+{{/* Shared runbook line — emitted only when the alert carries a runbook_url annotation. */}}
+{{ define "pulse.runbook_line" }}{{ if .Annotations.runbook_url }}
+Runbook: {{ .Annotations.runbook_url }}{{ end }}{{ end }}
+
+{{/* Telegram message body. The receiver pins parse_mode="" (plain text), so this content is never
+     HTML-parsed and a stray < / > / & in an annotation can't make Telegram reject the send; Telegram
+     still auto-links the bare runbook URL. */}}
+{{ define "pulse.telegram.message" }}{{ range .Alerts }}{{ .Labels.alertname }}: {{ .Annotations.summary }}
+{{ .Annotations.description }}{{ template "pulse.runbook_line" . }}
+{{ end }}{{ end }}
+
+{{/* Email HTML body — renders the runbook as a real <a href> link per alert. */}}
+{{ define "pulse.email.html" }}<!DOCTYPE html>
+<html>
+<body style="font-family: system-ui, sans-serif;">
+{{ range .Alerts }}
+<h3 style="margin-bottom: 0.2em;">{{ .Labels.alertname }} — {{ .Annotations.summary }}</h3>
+<p style="margin-top: 0.2em;">{{ .Annotations.description }}</p>
+{{ if .Annotations.runbook_url }}<p><a href="{{ .Annotations.runbook_url }}">Open runbook</a></p>{{ end }}
+<hr>
+{{ end }}
+</body>
+</html>{{ end }}

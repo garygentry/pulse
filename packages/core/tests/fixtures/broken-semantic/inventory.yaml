@@ -1,0 +1,47 @@
+# broken-semantic — shape-CLEAN but semantically broken, so the pipeline reaches Phase 6
+# (semantic) and collects ALL semantic findings in ONE pass (REQ-VAL-02).
+#
+# This fixture is the companion to broken-min/. The pipeline (03 §4.6) SHORT-CIRCUITS on a
+# shape failure ("no trustworthy body — return the findings collected so far"), so broken-min/
+# — which carries shape defects — only ever surfaces its two shape codes. The three semantic
+# codes item 013's golden pairs with them (MISSING_RATIONALE, SECRET_LITERAL, UNRESOLVED_HOST)
+# can only be produced by a shape-clean document, which is this one. It additionally carries
+# UNRESOLVED_CHANNEL and INVALID_TIMEZONE to demonstrate the semantic layer's own one-pass
+# multi-finding collection. Every z.object shape-validates; every defect below is semantic.
+estate:
+  schema_version: 1
+  name: semantic-broken
+  domains:
+    - semantic.example
+  timezone: Not/AZone # INVALID_TIMEZONE — non-empty string (shape-ok) but not IANA-parseable
+  deadman_hook: "${DEADMAN}"
+
+hosts:
+  - name: real-host
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.3.0.1
+    exporter_ports:
+      - 9100
+
+services:
+  - name: api
+    host: ghost-host # UNRESOLVED_HOST — no host named "ghost-host" is declared
+    kind: http
+    managed: true
+
+channels:
+  - name: alerts
+    kind: chat
+    credential: xoxb-literal-token # SECRET_LITERAL — a bare literal, not ${ENV}/op://
+
+routing_overrides:
+  - severity: critical
+    channels:
+      - ghost-channel # UNRESOLVED_CHANNEL — no channel named "ghost-channel" is declared
+
+suppressions:
+  - class: expected-churn
+    target: some-target
+    rationale: "" # MISSING_RATIONALE — empty rationale

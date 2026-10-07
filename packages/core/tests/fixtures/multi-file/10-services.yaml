@@ -1,0 +1,12 @@
+# multi-file (2/3) — services + channels, in a differently-named file. `web` binds to
+# `shared-host` (declared in 00-estate.yaml), proving cross-file host resolution merges.
+services:
+  - name: web
+    host: shared-host
+    kind: http
+    managed: true
+
+channels:
+  - name: chatops
+    kind: chat
+    credential: "${TOKEN}"

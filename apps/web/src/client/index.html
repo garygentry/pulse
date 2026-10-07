@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse — Estate Overview</title>
+    <!-- Pre-paint theme/density stamp (02-design-tokens.md §6): the `.dark` class + color-scheme
+         and `data-density` on <html>. Runs synchronously BEFORE any stylesheet (injectEntryTags
+         splices the entry stylesheet links in at the head close anchor, after this script) so the
+         active theme is applied before first paint (no flash). It cannot
+         import preferences.ts (static inline), so the key strings + default density are duplicated
+         verbatim and pinned by the drift meta-guard in tests/theme-init.test.ts. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("pulse.web.theme") || "system";
+          var d = localStorage.getItem("pulse.web.density") || "desk";
+          var q = location.search;
+          if (q.indexOf("kiosk=1") > -1) d = "wallboard";
+          var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme:dark)").matches);
+          var e = document.documentElement;
+          e.classList.toggle("dark", dark);
+          e.style.colorScheme = dark ? "dark" : "light";
+          e.dataset.density = d;
+        } catch (_) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = "dark";
+          document.documentElement.dataset.density = "desk";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- SPA mount point; the built client bundle (content-hashed) is injected by the server shell. -->
+    <div id="app"></div>
+  </body>
+</html>

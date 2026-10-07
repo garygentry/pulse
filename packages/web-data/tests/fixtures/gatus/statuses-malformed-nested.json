@@ -1,0 +1,10 @@
+[
+  {
+    "name": "harbor-web-01/portal-web",
+    "group": "harbor-web-01",
+    "key": "harbor-web-01_portal-web",
+    "results": [
+      { "success": true, "timestamp": "not-a-timestamp", "duration": 118000000, "status": 200 }
+    ]
+  }
+]

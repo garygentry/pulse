@@ -1,0 +1,36 @@
+{
+  "status": "success",
+  "isPartial": false,
+  "data": {
+    "groupNextEvaluationHint": "additive-upstream-field-ignored-by-consumers",
+    "groups": [
+      {
+        "name": "harbor-hosts",
+        "file": "/etc/vmalert/rules/hosts.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "concurrency": 1,
+        "type": "prometheus",
+        "evaluationTime": 0.0031,
+        "unknownGroupField": "must-be-stripped",
+        "rules": [
+          {
+            "type": "alerting",
+            "name": "HypervisorUnreachable",
+            "query": "up{job=\"hypervisor-api\"} == 0",
+            "state": "inactive",
+            "health": "ok",
+            "lastError": "",
+            "duration": 300,
+            "labels": { "severity": "critical" },
+            "annotations": { "summary": "A hypervisor API scrape target has been unreachable for 5m" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0011,
+            "alerts": [],
+            "unknownRuleField": "must-be-stripped"
+          }
+        ]
+      }
+    ]
+  }
+}

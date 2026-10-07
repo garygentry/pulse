@@ -1,0 +1,10 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      { "metric": { "__name__": "up", "job": "victoriametrics" }, "value": [1726450000, "1"] },
+      { "metric": { "__name__": "pulse_web_engine_data_bytes" }, "value": [1726450000, 10737418240] }
+    ]
+  }
+}

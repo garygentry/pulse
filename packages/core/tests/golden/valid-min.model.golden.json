@@ -1,0 +1,165 @@
+{
+  "schemaMajor": 1,
+  "estate": {
+    "name": "acme-core",
+    "domains": [
+      "acme.internal"
+    ],
+    "dnsResolver": "10.0.0.53",
+    "timezone": "America/Chicago",
+    "deadmanHook": {
+      "kind": "env",
+      "raw": "${DEADMAN_URL}",
+      "varName": "DEADMAN_URL"
+    },
+    "retention": "30d",
+    "provenance": {
+      "file": "estate.yaml",
+      "path": "estate",
+      "line": 6,
+      "col": 3
+    }
+  },
+  "hosts": [
+    {
+      "name": "web-01",
+      "addresses": [
+        "10.0.0.11"
+      ],
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "hosts[0]",
+        "line": 16,
+        "col": 5
+      },
+      "collectionClass": "managed-linux",
+      "exporterPorts": [
+        9100
+      ],
+      "cadvisor": false,
+      "heartbeat": true,
+      "deliveryForm": "compose",
+      "commandSignals": []
+    },
+    {
+      "name": "vcenter-01",
+      "addresses": [
+        "10.0.0.20"
+      ],
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "hosts[1]",
+        "line": 23,
+        "col": 5
+      },
+      "collectionClass": "hypervisor-api",
+      "apiEndpoint": "https://vcenter-01.acme.internal",
+      "credential": {
+        "kind": "op",
+        "raw": "op://infra/vcenter/token",
+        "vault": "infra",
+        "item": "vcenter",
+        "field": "token"
+      }
+    },
+    {
+      "name": "legacy-box",
+      "addresses": [
+        "10.0.0.99"
+      ],
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "hosts[2]",
+        "line": 29,
+        "col": 5
+      },
+      "collectionClass": "excluded",
+      "suppressed": {
+        "class": "excluded",
+        "rationale": "Decommissioned host; retained in inventory for completeness."
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "web-app",
+      "host": "web-01",
+      "kind": "http",
+      "managed": true,
+      "ingressUrl": "https://web-app.acme.internal",
+      "deepHealth": {
+        "endpoint": "/healthz",
+        "responseMapping": {
+          "status": "ok"
+        },
+        "alertExpression": "status != \"ok\"",
+        "credential": {
+          "kind": "env",
+          "raw": "${WEB_HEALTH_TOKEN}",
+          "varName": "WEB_HEALTH_TOKEN"
+        }
+      },
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "services[0]",
+        "line": 38,
+        "col": 5
+      }
+    }
+  ],
+  "channels": [
+    {
+      "name": "ops-chat",
+      "kind": "chat",
+      "credential": {
+        "kind": "env",
+        "raw": "${SLACK_TOKEN}",
+        "varName": "SLACK_TOKEN"
+      },
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "channels[0]",
+        "line": 51,
+        "col": 5
+      }
+    }
+  ],
+  "routingOverrides": [
+    {
+      "severity": "critical",
+      "channels": [
+        "ops-chat"
+      ],
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "routing_overrides[0]",
+        "line": 56,
+        "col": 5
+      }
+    }
+  ],
+  "suppressions": [
+    {
+      "class": "expected-churn",
+      "rationale": "Ephemeral batch workers churn hourly by design.",
+      "target": "batch-runner-*",
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "suppressions[0]",
+        "line": 61,
+        "col": 5
+      }
+    },
+    {
+      "class": "known-expected",
+      "rationale": "Nightly maintenance window drops metrics briefly.",
+      "target": "nightly-maintenance",
+      "provenance": {
+        "file": "estate.yaml",
+        "path": "suppressions[1]",
+        "line": 64,
+        "col": 5
+      }
+    }
+  ]
+}

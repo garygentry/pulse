@@ -1,0 +1,15 @@
+route:
+  receiver: probe-ops
+  routes:
+    - match:
+        severity: critical
+      receiver: probe-ops
+    - match:
+        severity: warning
+      receiver: probe-ops
+receivers:
+  - name: probe-ops
+    config:
+      slack_configs:
+        - api_url: ${SLACK_TOKEN}
+          channel: "#probe-alerts"

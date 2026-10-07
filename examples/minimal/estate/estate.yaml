@@ -1,0 +1,19 @@
+# examples/minimal/estate/estate.yaml — smallest valid Pulse estate (REQ-FIX-01).
+# Fictional names/addresses only (REQ-FIX-04). deadman_hook is a plain URL, NOT a
+# SecretRef, so a clean minimal render never trips SECRET_LITERAL (00 §7).
+estate:
+  schema_version: 1                 # SUPPORTED_SCHEMA_MAJORS = [1]
+  name: quickstart-estate
+  domains:
+    - lab.example
+  timezone: UTC                     # IANA zone (quiet-hours/digest source of truth)
+  deadman_hook: https://deadman.lab.example/ping/quickstart   # plain URL (not a SecretRef)
+
+hosts:
+  - name: monitor-host-01
+    collection_class: managed-linux
+    delivery_form: compose          # enum: compose | systemd
+    addresses:
+      - 10.10.0.10                  # RFC1918 fictional address
+    exporter_ports:
+      - 9100                        # node_exporter default

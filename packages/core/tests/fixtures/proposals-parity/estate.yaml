@@ -1,0 +1,72 @@
+# proposals-parity — a small, fully VALID estate for the proposal current-value parity test
+# (07 §6.3): readCoreValue over the core model must deep-equal readProposableValue over the
+# rendered V2 model. Covers a managed-linux host with default cadvisor/heartbeat, hosts with and
+# without scrape_interval_class, expected_churn: true, a probe-only host, an excluded host, a
+# service with an in-target suppressed mark, an unsuppressed service, and a service covered ONLY
+# by a standalone suppression (target "<host>/<name>").
+estate:
+  schema_version: 1
+  name: parity-lab
+  domains:
+    - parity.internal
+  dns_resolver: 10.1.0.53
+  timezone: UTC
+  deadman_hook: "${DEADMAN_URL}"
+  retention: 30d
+
+hosts:
+  - name: app-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.0.11
+    exporter_ports:
+      - 9100
+  - name: db-01
+    collection_class: managed-linux
+    delivery_form: systemd
+    addresses:
+      - 10.1.0.12
+    exporter_ports:
+      - 9100
+    cadvisor: true
+    heartbeat: false
+    expected_churn: true
+    scrape_interval_class: fast
+  - name: edge-probe
+    collection_class: probe-only
+    addresses:
+      - 10.1.0.30
+    probe:
+      kind: icmp
+      target: 10.1.0.30
+    scrape_interval_class: slow
+  - name: old-nas
+    collection_class: excluded
+    addresses:
+      - 10.1.0.99
+    suppressed:
+      class: excluded
+      rationale: Retired storage box kept in inventory for reference.
+
+services:
+  - name: api
+    host: app-01
+    kind: http
+    managed: true
+  - name: batch
+    host: app-01
+    kind: worker
+    managed: true
+    suppressed:
+      class: known-expected
+      rationale: Batch worker idles between nightly runs by design.
+  - name: cache
+    host: db-01
+    kind: redis
+    managed: true
+
+suppressions:
+  - class: expected-churn
+    target: db-01/cache
+    rationale: Cache node restarts on every deploy by design.

@@ -1,0 +1,25 @@
+# multi-error — two managed-linux hosts, each MISSING its required exporter_ports, so core
+# emits TWO MISSING_FIELD error findings (one per host). Used to prove the CLI passes core's
+# findings through in core's order VERBATIM (REQ-VAL-02) — a single-finding fixture cannot
+# distinguish "preserved order" from "re-sorted", two can.
+estate:
+  schema_version: 1
+  name: multi-error-estate
+  domains:
+    - example.com
+  timezone: UTC
+  deadman_hook: https://example.com/deadman
+
+hosts:
+  - name: alpha-host
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.11
+    # exporter_ports absent — MISSING_FIELD on hosts[0].
+  - name: bravo-host
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.12
+    # exporter_ports absent — MISSING_FIELD on hosts[1].

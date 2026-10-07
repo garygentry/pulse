@@ -1,0 +1,167 @@
+{
+  "uid": "pulse-hypervisor",
+  "title": "Pulse — Hypervisor",
+  "schemaVersion": 39,
+  "editable": false,
+  "tags": ["pulse", "infrastructure", "proxmox"],
+  "timezone": "",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "DS",
+        "type": "datasource",
+        "label": "Data source",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "VictoriaMetrics", "value": "pulse-victoriametrics" },
+        "hide": 0
+      },
+      {
+        "name": "DS_ALERTS",
+        "type": "datasource",
+        "label": "Alertmanager",
+        "query": "alertmanager",
+        "current": { "selected": false, "text": "Alertmanager", "value": "pulse-alertmanager" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Node",
+        "datasource": "${DS}",
+        "query": "label_values(pve_up, instance)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Node up",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "up",
+          "expr": "pve_up{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CPU usage",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "cpu",
+          "expr": "pve_cpu_usage_ratio{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Memory used / total",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "used",
+          "expr": "pve_memory_usage_bytes{instance=\"$instance\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "total",
+          "expr": "pve_memory_size_bytes{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Disk used / total",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "used",
+          "expr": "pve_disk_usage_bytes{instance=\"$instance\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "total",
+          "expr": "pve_disk_size_bytes{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Guest count",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "guests",
+          "expr": "count(pve_guest_info{instance=\"$instance\"})"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Uptime",
+      "datasource": "${DS}",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "uptime",
+          "expr": "pve_uptime_seconds{instance=\"$instance\"}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "alertGroups",
+      "title": "Firing alerts (this node)",
+      "datasource": "${DS_ALERTS}",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 16 },
+      "options": {
+        "labels": "instance=\"$instance\"",
+        "alertmanager": "${DS_ALERTS}",
+        "expandAll": false,
+        "groupBy": ["severity"]
+      }
+    }
+  ]
+}

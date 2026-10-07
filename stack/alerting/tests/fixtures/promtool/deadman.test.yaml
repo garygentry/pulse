@@ -1,0 +1,23 @@
+# stack/alerting/tests/fixtures/promtool/deadman.test.yaml
+# Deadman family (02 §deadman, REQ-DEAD-01): an always-firing heartbeat. `vector(1)` carries no input
+# series — it fires immediately and continuously with severity "deadman" (the internal, non-Severity
+# value). Its ABSENCE at the external receiver is what pages; here we only assert the rule fires.
+rule_files:
+  - deadman.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # a harmless carrier series so the test block has an evaluation timeline; vector(1) ignores it
+      - series: 'up{job="placeholder"}'
+        values: "1x5"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: DeadMansSwitch
+        exp_alerts:
+          - exp_labels:
+              severity: deadman
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/deadman"
+              summary: "DeadMansSwitch heartbeat (always firing)"
+              description: "This alert is always firing. Its ABSENCE at the external dead-man receiver — expected every 5 minutes — means Pulse's evaluation or delivery path has stopped. The external service alarms after ~15m without a heartbeat (three missed 5m sends)."

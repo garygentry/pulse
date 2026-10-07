@@ -1,0 +1,13 @@
+# bad-layer — an otherwise-valid single-file estate that declares an unrecognized top-level
+# `layer:` value. `layer` selects the overlay merge layer (issue #7): only "base" (the default)
+# or "overlay" are valid, so this yields exactly one INVALID_LAYER finding. It is the covering
+# case for that code in meta.test.ts's anti-rot guard (07 §4). `layer` is read by the loader
+# merge and never reaches shape validation, so the estate body below still validates clean.
+layer: overlays # INVALID_LAYER — must be "base" | "overlay" (or omitted)
+estate:
+  schema_version: 1
+  name: bad-layer
+  domains:
+    - layer.example
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN}"

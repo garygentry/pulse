@@ -1,0 +1,36 @@
+# bad-version/unsupported — the valid-min body, but estate.schema_version:2 (an
+# unsupported major). The version gate short-circuits BEFORE shape/semantic validation,
+# so loading yields EXACTLY ONE finding: UNSUPPORTED_VERSION, and no body findings (SC-06).
+estate:
+  schema_version: 2
+  name: acme-core
+  domains:
+    - acme.internal
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN_URL}"
+  retention: 30d
+
+hosts:
+  - name: web-01
+    collection_class: managed-linux
+    addresses:
+      - 10.0.0.11
+    exporter_ports:
+      - 9100
+  - name: vcenter-01
+    collection_class: hypervisor-api
+    addresses:
+      - 10.0.0.20
+    api_endpoint: https://vcenter-01.acme.internal
+    credential: "op://infra/vcenter/token"
+
+services:
+  - name: web-app
+    host: web-01
+    kind: http
+    managed: true
+
+channels:
+  - name: ops-chat
+    kind: chat
+    credential: "${SLACK_TOKEN}"

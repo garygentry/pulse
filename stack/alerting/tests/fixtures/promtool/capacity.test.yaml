@@ -1,0 +1,80 @@
+# stack/alerting/tests/fixtures/promtool/capacity.test.yaml
+# Capacity family (02 §capacity, REQ-CAP-01..03): CPU/memory > 90% and disk-free < 20% (warning) /
+# < 10% (critical), each sustained for the 15m `for` window. Series are held past-threshold across
+# the window; a pre-window eval proves the `for` timing (no premature fire). instance→host via
+# label_replace. Fictional names; estate set explicitly.
+rule_files:
+  - capacity.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # idle counter flat → rate 0 → CPU utilization 100% (> 90)
+      - series: 'node_cpu_seconds_total{mode="idle", cpu="0", instance="host-cap", estate="fixture-estate", job="managed-linux"}'
+        values: "100+0x20"
+      # 1% available of total → 99% used (> 90)
+      - series: 'node_memory_MemAvailable_bytes{instance="host-cap", estate="fixture-estate"}'
+        values: "1+0x20"
+      - series: 'node_memory_MemTotal_bytes{instance="host-cap", estate="fixture-estate"}'
+        values: "100+0x20"
+      # 5% free (< 10 and < 20) → both LowDisk and CriticalDisk
+      - series: 'node_filesystem_avail_bytes{fstype="ext4", mountpoint="/", instance="host-cap", estate="fixture-estate"}'
+        values: "5+0x20"
+      - series: 'node_filesystem_size_bytes{fstype="ext4", mountpoint="/", instance="host-cap", estate="fixture-estate"}'
+        values: "100+0x20"
+    alert_rule_test:
+      # t=10m: threshold crossed but < for:15m → nothing firing yet
+      - eval_time: 10m
+        alertname: HighCPU
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: HighCPU
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              host: host-cap
+              instance: host-cap
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/capacity"
+              summary: "High CPU on host-cap: 100% (warning)"
+              description: "CPU utilization on host host-cap has exceeded 90% for 15m (current 100%). Investigate load; not yet paging."
+      - eval_time: 16m
+        alertname: HighMemory
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              host: host-cap
+              instance: host-cap
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/capacity"
+              summary: "High memory on host-cap: 99% (warning)"
+              description: "Memory utilization on host host-cap has exceeded 90% for 15m (current 99%). Investigate memory pressure."
+      - eval_time: 16m
+        alertname: LowDisk
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              host: host-cap
+              instance: host-cap
+              estate: fixture-estate
+              fstype: ext4
+              mountpoint: /
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/capacity"
+              summary: "Low disk on host-cap /: 5% free (warning)"
+              description: "Filesystem / on host host-cap has under 20% free capacity for 15m (current 5% free). Reclaim space before it reaches the critical threshold (CriticalDisk)."
+      - eval_time: 16m
+        alertname: CriticalDisk
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              host: host-cap
+              instance: host-cap
+              estate: fixture-estate
+              fstype: ext4
+              mountpoint: /
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/capacity"
+              summary: "Critical disk on host-cap /: 5% free (critical)"
+              description: "Filesystem / on host host-cap has under 10% free capacity for 15m (current 5% free). Imminent exhaustion — immediate action."

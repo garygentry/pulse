@@ -1,0 +1,120 @@
+[
+  {
+    "version": "4",
+    "status": "firing",
+    "groupKey": "{}/{severity=\"critical\"}:{estate=\"fixture-estate\", host=\"host-alpha\", service=\"camera-svc\", alertname=\"DeepHealthFailed\"}",
+    "receiver": "pulse-webhook-mirror",
+    "externalURL": "http://alertmanager.fixture.invalid",
+    "commonLabels": { "alertname": "DeepHealthFailed", "severity": "critical", "estate": "fixture-estate" },
+    "alerts": [
+      {
+        "status": "firing",
+        "fingerprint": "b6a9c1f0e3d24857",
+        "labels": {
+          "alertname": "DeepHealthFailed",
+          "severity": "critical",
+          "estate": "fixture-estate",
+          "host": "host-alpha",
+          "service": "camera-svc"
+        },
+        "annotations": { "summary": "Deep-health functional check failed for camera-svc on host-alpha" },
+        "startsAt": "2026-08-21T14:32:10.000Z",
+        "endsAt": "0001-01-01T00:00:00Z"
+      }
+    ]
+  },
+  {
+    "version": "4",
+    "status": "firing",
+    "groupKey": "{}/{severity=\"critical\"}:{estate=\"fixture-estate\", host=\"host-beta\", alertname=\"HostDown\"}",
+    "receiver": "pulse-webhook-mirror",
+    "externalURL": "http://alertmanager.fixture.invalid",
+    "commonLabels": { "alertname": "HostDown", "severity": "critical", "estate": "fixture-estate" },
+    "alerts": [
+      {
+        "status": "firing",
+        "fingerprint": "1f2e3d4c5b6a7988",
+        "labels": {
+          "alertname": "HostDown",
+          "severity": "critical",
+          "estate": "fixture-estate",
+          "host": "host-beta"
+        },
+        "annotations": { "summary": "Host host-beta is unreachable (3 missed scrapes)" },
+        "startsAt": "2026-08-21T14:33:00.000Z",
+        "endsAt": "0001-01-01T00:00:00Z"
+      }
+    ]
+  },
+  {
+    "version": "4",
+    "status": "firing",
+    "groupKey": "{}/{severity=\"critical\"}:{estate=\"fixture-estate\", host=\"host-alpha\", service=\"camera-svc\", alertname=\"DeepHealthFailed\"}",
+    "receiver": "pulse-webhook-mirror",
+    "externalURL": "http://alertmanager.fixture.invalid",
+    "commonLabels": { "alertname": "DeepHealthFailed", "severity": "critical", "estate": "fixture-estate" },
+    "alerts": [
+      {
+        "status": "firing",
+        "fingerprint": "b6a9c1f0e3d24857",
+        "labels": {
+          "alertname": "DeepHealthFailed",
+          "severity": "critical",
+          "estate": "fixture-estate",
+          "host": "host-alpha",
+          "service": "camera-svc"
+        },
+        "annotations": { "summary": "Deep-health functional check failed for camera-svc on host-alpha" },
+        "startsAt": "2026-08-21T14:32:10.000Z",
+        "endsAt": "0001-01-01T00:00:00Z"
+      }
+    ]
+  },
+  {
+    "version": "4",
+    "status": "resolved",
+    "groupKey": "{}/{severity=\"critical\"}:{estate=\"fixture-estate\", host=\"host-beta\", alertname=\"HostDown\"}",
+    "receiver": "pulse-webhook-mirror",
+    "externalURL": "http://alertmanager.fixture.invalid",
+    "commonLabels": { "alertname": "HostDown", "severity": "critical", "estate": "fixture-estate" },
+    "alerts": [
+      {
+        "status": "resolved",
+        "fingerprint": "1f2e3d4c5b6a7988",
+        "labels": {
+          "alertname": "HostDown",
+          "severity": "critical",
+          "estate": "fixture-estate",
+          "host": "host-beta"
+        },
+        "annotations": { "summary": "Host host-beta is unreachable (3 missed scrapes)" },
+        "startsAt": "2026-08-21T14:33:00.000Z",
+        "endsAt": "2026-08-21T14:40:30.000Z"
+      }
+    ]
+  },
+  {
+    "version": "4",
+    "status": "resolved",
+    "groupKey": "{}/{severity=\"critical\"}:{estate=\"fixture-estate\", host=\"host-alpha\", service=\"camera-svc\", alertname=\"DeepHealthFailed\"}",
+    "receiver": "pulse-webhook-mirror",
+    "externalURL": "http://alertmanager.fixture.invalid",
+    "commonLabels": { "alertname": "DeepHealthFailed", "severity": "critical", "estate": "fixture-estate" },
+    "alerts": [
+      {
+        "status": "resolved",
+        "fingerprint": "b6a9c1f0e3d24857",
+        "labels": {
+          "alertname": "DeepHealthFailed",
+          "severity": "critical",
+          "estate": "fixture-estate",
+          "host": "host-alpha",
+          "service": "camera-svc"
+        },
+        "annotations": { "summary": "Deep-health functional check failed for camera-svc on host-alpha" },
+        "startsAt": "2026-08-21T14:32:10.000Z",
+        "endsAt": "2026-08-21T14:47:55.000Z"
+      }
+    ]
+  }
+]

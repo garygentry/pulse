@@ -1,0 +1,83 @@
+global:
+  resolve_timeout: 5m
+inhibit_rules: []
+receivers:
+  - name: hook-sink
+    webhook_configs:
+      - send_resolved: true
+        url: ${AUTOMATION_WEBHOOK_URL}
+  - name: pulse-deadman
+    webhook_configs:
+      - send_resolved: false
+        url: ${PULSE_DEADMANSSWITCH_URL}
+  - name: pulse-default-ops
+    webhook_configs:
+      - send_resolved: false
+        url: http://alertmanager:9093/-/healthy
+  - name: pulse-digest
+    webhook_configs:
+      - send_resolved: false
+        url: http://alertmanager:9093/-/healthy
+  - name: pulse-webhook-mirror
+    webhook_configs:
+      - send_resolved: true
+        url: ${PULSE_WEBHOOK_MIRROR_URL}
+route:
+  group_by:
+    - estate
+    - host
+    - service
+    - alertname
+  group_interval: 5m
+  group_wait: 30s
+  receiver: pulse-default-ops
+  repeat_interval: 4h
+  routes:
+    - continue: false
+      group_interval: 1m
+      group_wait: 0s
+      matchers:
+        - alertname="DeadMansSwitch"
+      receiver: pulse-deadman
+      repeat_interval: 5m
+    - continue: false
+      group_wait: 10s
+      matchers:
+        - alertname="PulseAlertPathCanary"
+      receiver: hook-sink
+      repeat_interval: 6h
+    - continue: true
+      group_interval: 5m
+      group_wait: 10s
+      matchers:
+        - severity="critical"
+      receiver: hook-sink
+      repeat_interval: 30m
+    - continue: false
+      group_wait: 10s
+      matchers:
+        - severity="critical"
+      receiver: pulse-webhook-mirror
+    - active_time_intervals:
+        - daily-0900
+      continue: false
+      group_interval: 15m
+      matchers:
+        - severity="info"
+      receiver: pulse-digest
+    - continue: false
+      group_interval: 15m
+      group_wait: 30s
+      matchers:
+        - severity="warning"
+      receiver: hook-sink
+      repeat_interval: 4h
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+time_intervals:
+  - name: daily-0900
+    time_intervals:
+      - location: Europe/London
+        times:
+          - end_time: 09:01
+            start_time: 09:00

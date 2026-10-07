@@ -1,0 +1,6 @@
+# TYPE pulse_deep_health gauge
+# TYPE pulse_deep_health_up gauge
+# TYPE pulse_deep_health_last_scrape_seconds gauge
+pulse_deep_health{host="web01",service="frigate",metric="camera_count"} 4
+pulse_deep_health_up{host="web01",service="frigate"} 0
+pulse_deep_health_last_scrape_seconds{host="web01",service="frigate"} 1734300000

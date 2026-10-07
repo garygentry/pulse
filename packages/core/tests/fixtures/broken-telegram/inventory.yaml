@@ -1,0 +1,19 @@
+# broken-telegram — shape-CLEAN but semantically broken: a `telegram` channel declares its
+# bot-token credential but omits `options.chat_id`. A telegram receiver needs a non-secret
+# chat_id to address a destination; because `options` is a generic map with no kind-specific
+# shape, the requirement is a semantic invariant (checkTelegramOptions, issue #2), not a shape
+# rule — so this document shape-validates and the pipeline reaches the semantic layer, which
+# emits exactly one MISSING_CHAT_ID. This is the covering case for that code in meta.test.ts's
+# anti-rot guard (07 §4).
+estate:
+  schema_version: 1
+  name: telegram-broken
+  domains:
+    - tg.example
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN}"
+
+channels:
+  - name: ops-telegram
+    kind: telegram
+    credential: "${TELEGRAM_BOT_TOKEN}" # MISSING_CHAT_ID — options.chat_id omitted

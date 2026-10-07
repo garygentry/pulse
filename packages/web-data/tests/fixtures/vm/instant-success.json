@@ -1,0 +1,19 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      { "metric": { "__name__": "up", "job": "victoriametrics", "instance": "harbor-1:8428" }, "value": [1726450000, "1"] },
+      { "metric": { "__name__": "up", "job": "gatus", "instance": "harbor-1:8080" }, "value": [1726450000, "0"] },
+      { "metric": { "__name__": "pulse_agent_up", "host": "harbor-2" }, "value": [1726450000, "1"] },
+      { "metric": { "__name__": "pulse_deep_health_up", "host": "harbor-3" }, "value": [1726450000, "1"] },
+      { "metric": { "__name__": "pulse_web_engine_ingestion_rows_per_second" }, "value": [1726450000, "1234.5"] },
+      { "metric": { "__name__": "pulse_web_engine_hourly_active_series" }, "value": [1726450000, "48213"] },
+      { "metric": { "__name__": "pulse_web_engine_data_bytes" }, "value": [1726450000, "10737418240"] },
+      { "metric": { "__name__": "pulse_web_engine_free_disk_bytes" }, "value": [1726450000, "53687091200"] },
+      { "metric": { "__name__": "pulse_web_engine_notification_failures_per_second", "integration": "webhook" }, "value": [1726450000, "NaN"] },
+      { "metric": { "__name__": "pulse_web_engine_notification_latency_p95_seconds", "integration": "webhook" }, "value": [1726450000, "+Inf"] },
+      { "metric": { "__name__": "pulse_web_engine_process_start_seconds", "job": "victoriametrics" }, "value": [1726450000, "1726400000"] }
+    ]
+  }
+}

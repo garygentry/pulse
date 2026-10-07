@@ -1,0 +1,25 @@
+{
+  "files": [
+    "agent/harbor-app-02.yaml",
+    "agent/harbor-web-01.yaml",
+    "agent/harbor-web-01/prober/config.yaml",
+    "alertmanager/routing.yaml",
+    "command-exporter/harbor-app-02.yaml",
+    "command-exporter/harbor-web-01.yaml",
+    "gatus/config.yaml",
+    "prober/config.yaml",
+    "scrape/file_sd/cadvisor.json",
+    "scrape/file_sd/hypervisor-api.json",
+    "scrape/file_sd/managed-linux-command-exporter.json",
+    "scrape/file_sd/managed-linux-heartbeat.json",
+    "scrape/file_sd/managed-linux-prober.json",
+    "scrape/file_sd/managed-linux.json",
+    "scrape/file_sd/nas-api.json",
+    "scrape/file_sd/probe-only.json",
+    "scrape/file_sd/process-exporter.json",
+    "web-coverage.json",
+    "web-estate-model.json",
+    "web-findings.json"
+  ],
+  "formatVersion": 2
+}

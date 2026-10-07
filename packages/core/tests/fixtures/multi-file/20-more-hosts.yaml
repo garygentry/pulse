@@ -1,0 +1,11 @@
+# multi-file (3/3) — a second hosts section that RE-DECLARES `shared-host` (already in
+# 00-estate.yaml). The content-based merge keeps the first occurrence and emits exactly
+# one DUPLICATE_IDENTITY finding naming BOTH file locations (REQ-LOAD-02).
+hosts:
+  - name: shared-host
+    collection_class: probe-only
+    addresses:
+      - 10.2.0.99
+    probe:
+      kind: tcp
+      target: 10.2.0.99:443

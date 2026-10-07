@@ -1,0 +1,47 @@
+estate:
+  schema_version: 1
+  name: host-agent-valid
+  domains:
+    - example.test
+  timezone: UTC
+  deadman_hook: "${DEADMAN_URL}"
+
+hosts:
+  - name: app-01
+    collection_class: managed-linux
+    delivery_form: systemd
+    addresses:
+      - 10.0.0.10
+    exporter_ports:
+      - 9100
+
+services:
+  - name: env-health
+    host: app-01
+    kind: http
+    managed: true
+    deep_health:
+      endpoint: /health/env
+      response_mapping:
+        ready: $.ready
+      alert_expression: ready != 1
+      credential: "${HEALTH_TOKEN}"
+  - name: op-health
+    host: app-01
+    kind: http
+    managed: true
+    deep_health:
+      endpoint: /health/op
+      response_mapping:
+        ready: $.ready
+      alert_expression: ready != 1
+      credential: op://infra/health/token
+  - name: public-health
+    host: app-01
+    kind: http
+    managed: true
+    deep_health:
+      endpoint: /health/public
+      response_mapping:
+        ready: $.ready
+      alert_expression: ready != 1

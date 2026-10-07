@@ -1,0 +1,19 @@
+probes:
+  - name: svc:probe-host/cameras
+    target: https://cameras.probe.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      camera_count: $.cameras
+    alertExpression: camera_count < 6
+  - name: svc:probe-host/ingest
+    target: https://ingest.probe.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      ingest_lag: $.lag_seconds
+    alertExpression: ingest_lag > 120
+  - name: svc:probe-host/encoder
+    target: https://encoder.probe.invalid/healthz
+    kind: deep-health
+    responseMapping:
+      active_streams: $.streams
+    alertExpression: active_streams < 1

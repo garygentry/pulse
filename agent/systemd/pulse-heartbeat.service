@@ -1,0 +1,32 @@
+# agent/systemd/pulse-heartbeat.service — installed ONLY when heartbeat: true (issue #30/#33, 03 §7.2).
+#
+# The unit file always EXISTS in the estate-agnostic template set, but deploy-toolkit installs &
+# `systemctl enable --now` it only when the ONE rendered config rendered/agent/<host>.yaml has
+# heartbeat: true (REQ-CFG-03, §7.2) — symmetric with pulse-cadvisor.service. The estate default is
+# heartbeat: true, so this unit is installed for every bundle host EXCEPT a node-exporter-only one
+# (heartbeat: false), which then drops the central scrape target + descriptor port and runs no :9110.
+#
+# Estate-agnostic template (REQ-BUNDLE-04): no host/estate/domain/credential literal — the
+# `host` label is scrape-applied (03 §5.1), never baked. Runs the SAME pinned heartbeat image as
+# the compose form (REQ-BUNDLE-06, §5.5) via the host container runtime. Serves GET /metrics on
+# :9110 only (REQ-SEC-02). Consumes the ONE rendered config rendered/agent/<host>.yaml at install
+# time (REQ-CFG-03, §7.2) — the same single-config seam the compose form uses; the unit does NOT
+# parse the YAML. The deep-health prober is CENTRALLY deployed by default (03 §1, §8); a host that
+# owns host-local (loopback/bridge-local) probes ALSO gets the opt-in per-host prober unit
+# (pulse-prober.service, issue #8) — gated on a rendered per-host prober config, like this heartbeat.
+[Unit]
+Description=Pulse managed-linux agent — heartbeat exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Pinned heartbeat image (REQ-BUNDLE-06, §5.5). Serves GET /metrics on :9110 only (REQ-SEC-02).
+ExecStartPre=-/usr/bin/podman rm -f pulse-heartbeat
+ExecStart=/usr/bin/podman run --rm --name pulse-heartbeat \
+  -p 9110:9110 \
+  pulse/agent-heartbeat:1.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,46 @@
+# agent/tests/fixtures/bringup/agent.smoke.compose.yml — the Tier-2 bring-up smoke fixture
+# (06-testing-strategy.md §5). NOT the shipped delivery form (agent/compose/agent.fragment.yml).
+#
+# The shipped fragment uses `network_mode: host` + privileged host introspection — a DEPLOY
+# posture deploy-toolkit owns, and one that defeats in-stack service DNS. This SEEDED fixture
+# instead runs the SAME pinned images on a project-scoped bridge network, so the smoke's
+# one-shot curl sidecar can reach each exporter by service DNS and prove it answers
+# /metrics. It never publishes a host port (REQ-SEC-02) and uses a LOCAL dev-build heartbeat
+# image (${PULSE_HEARTBEAT_IMAGE}, built in beforeAll) — never a published/released tag.
+#
+# Image tags mirror the shared PINNED patches (agent/contract/constants.ts §3): node_exporter and
+# cAdvisor are the concrete engine-stack pins; heartbeat is the locally-built dev tag.
+
+services:
+  node-exporter:                                   # always-on configured exporter (REQ-NODE-01)
+    image: prom/node-exporter:v1.8.2               # PINNED.nodeExporter (00 §3)
+    networks: [bundle]
+    restart: unless-stopped
+    # Serves node_* on :9100 (NODE_EXPORTER_PORT). The smoke reaches it in-stack by service DNS;
+    # no host networking here (that is the shipped fragment's deploy posture), no published port.
+
+  heartbeat:                                       # heartbeat image under test — run unconditionally in this smoke fixture (the shipped bundle profile-gates it; issue #33)
+    image: ${PULSE_HEARTBEAT_IMAGE}                # LOCAL dev-build tag (never a released tag)
+    networks: [bundle]
+    restart: unless-stopped
+    # Serves GET /metrics on :9110 (HEARTBEAT_PORT) → `pulse_agent_up 1` (03 §5.1).
+
+  cadvisor:                                        # OPTIONAL configured exporter, profile-gated
+    image: gcr.io/cadvisor/cadvisor:v0.49.1         # PINNED.cadvisor (00 §3)
+    profiles: ["cadvisor"]                          # only materialized when the smoke opts in
+    privileged: true                                # container introspection (as engine stack)
+    command:
+      - "--housekeeping_interval=10s"
+      - "--docker_only=true"
+    volumes:
+      - /:/rootfs:ro                                # read-only host introspection
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [bundle]
+    restart: unless-stopped
+    # Serves container_* on :8080 (CADVISOR_PORT). Best-effort in the smoke: on a daemon that
+    # forbids privileged host introspection it simply does not start, and the assertion is skipped.
+
+networks:
+  bundle:                                          # Compose derives <ephemeral-project>_bundle

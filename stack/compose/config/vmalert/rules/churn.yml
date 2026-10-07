@@ -1,0 +1,52 @@
+# stack/compose/config/vmalert/rules/churn.yml
+# Static, estate-agnostic. The ONLY alerts an expected-churn suppression targets (REQ-SUPP-03).
+# container_* is workload telemetry only — NEVER a service liveness signal (REQ-AVAIL-04, §10).
+groups:
+  - name: churn
+    rules:
+      # REQ-SUPP-03: a container restarted at least once in the last 15m.
+      # issue #25: gate on cadvisor uptime > 15m so a freshly-(re)started cadvisor is never trusted —
+      # its container_start_time_seconds series all *appear* at once and their first-scrape edge reads
+      # as changes()==1, which would otherwise storm ContainerRestarting for every container. When
+      # uptime exceeds the range window, that appearance edge predates the window and is not counted.
+      # `for: 5m` rides out any residual single-eval blip at the moment the gate opens.
+      - alert: ContainerRestarting
+        expr: |
+          label_replace(
+            changes(container_start_time_seconds{job="cadvisor",name!=""}[15m])
+              and on(instance)
+            (time() - process_start_time_seconds{job="cadvisor"} > 900),
+            "host", "$1", "instance", "(.*)"
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} on {{ $labels.host }} restarted (warning)"
+          description: >-
+            Container {{ $labels.name }} on host {{ $labels.host }} restarted
+            {{ $value | printf "%.0f" }} time(s) in the last 15m. Workload telemetry only — this is
+            never a service liveness signal (REQ-AVAIL-04).
+          runbook_url: "https://runbooks.pulse.local/churn"
+
+      # REQ-SUPP-03: a container is flapping — 3+ restarts in the last hour.
+      # issue #25: gate on cadvisor uptime > 1h for the same fresh-cadvisor reason. Less exposed than
+      # ContainerRestarting (a one-time appearance is a single change and never reaches >= 3), but the
+      # gate keeps a cadvisor that restarts repeatedly from being counted against a half-full window.
+      - alert: ContainerChurn
+        expr: |
+          label_replace(
+            changes(container_start_time_seconds{job="cadvisor",name!=""}[1h])
+              and on(instance)
+            (time() - process_start_time_seconds{job="cadvisor"} > 3600),
+            "host", "$1", "instance", "(.*)"
+          ) >= 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} on {{ $labels.host }} is churning (warning)"
+          description: >-
+            Container {{ $labels.name }} on host {{ $labels.host }} restarted
+            {{ $value | printf "%.0f" }} times in the last hour (flapping). Workload telemetry only.
+          runbook_url: "https://runbooks.pulse.local/churn"

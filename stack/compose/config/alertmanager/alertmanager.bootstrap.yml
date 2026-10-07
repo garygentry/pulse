@@ -1,0 +1,69 @@
+# stack/compose/config/alertmanager/alertmanager.bootstrap.yml
+#
+# Estate-agnostic NATIVE Alertmanager bootstrap (REQ-ALERT-02, stack-core owned).
+# Alertmanager runs: --config.file=/etc/alertmanager/alertmanager.yml  (this file, mounted).
+#
+# WHY THIS FILE and not the rendered alertmanager/routing.yaml:
+#   The rendered file is an ABSTRACT {name, config} receiver shape (see 00-core-definitions.md
+#   §4.3 and 04-bootstrap-and-wiring.md §1.1). Native AM strict-unmarshals and rejects the
+#   `config:` wrapper, so pointing --config.file at it makes AM refuse to start. The rendered
+#   file is mounted at a SLOT path for the `alerting` feature to transform (05-mounts-contracts-
+#   failure.md §2); AM does not read it in v1.
+#
+# This config boots healthy with NO rule library present. All estate routing is added later by
+# `alerting` transforming the rendered routing into a native config that supersedes this one.
+# Rule content, the severity framework, and the DeadMansSwitch EXPRESSION are `alerting`'s.
+
+global:
+  # Bounds how long AM waits for a resolve before declaring an alert resolved. Estate-agnostic
+  # engine default; `alerting` may override when it supersedes this file.
+  resolve_timeout: 5m
+
+# Notification templates (issue #16): the runbook-link partials, mounted read-only at this glob.
+# The bootstrap receivers (null/deadmansswitch) do not reference them, but registering here keeps
+# the running config parseable and consistent once `alerting` supersedes this file with receivers
+# whose email/telegram bodies call the partials.
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+
+# ---------------------------------------------------------------------------------------------
+# Routing tree. The root routes everything to the null receiver so a fixture bring-up with no
+# `alerting` library present is GREEN and silent (no real destinations are configured yet).
+# ---------------------------------------------------------------------------------------------
+route:
+  receiver: 'null'
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # ---- DeadMansSwitch wiring slot (REQ-ALERT-02) --------------------------------------------
+    # The always-firing watchdog alert is routed OUT of the null sink to its own receiver so an
+    # external heartbeat monitor can confirm the whole pipeline is alive. stack-core provides the
+    # SLOT (this route + the `deadmansswitch` receiver below); `alerting` owns the alert's
+    # EXPRESSION (emitted into the vmalert rule library, §3) and the real heartbeat destination.
+    - receiver: 'deadmansswitch'
+      matchers:
+        - alertname = "DeadMansSwitch"
+      group_wait: 0s
+      group_interval: 1m
+      # Re-send the heartbeat frequently so a downstream watchdog notices a wedged pipeline fast.
+      repeat_interval: 1m
+      continue: false
+
+receivers:
+  # Default / null sink: a receiver with no notifier config discards everything routed to it.
+  # This is what makes an estate-free bring-up boot green and stay silent (REQ-ALERT-02).
+  - name: 'null'
+
+  # DeadMansSwitch destination slot. Alertmanager does NOT env-expand its config file, and compose
+  # env-substitution only templates the compose file — never a bind-mounted config's contents — so
+  # a `${VAR}` here would reach AM verbatim and fail URL parsing (AM refuses to start). The v1
+  # bootstrap therefore uses a valid, estate-agnostic in-stack default (AM's own health endpoint):
+  # it makes the file PARSE and AM START, and no DeadMansSwitch alert fires in v1 (no rule library),
+  # so nothing is actually posted here. `alerting` supplies the real heartbeat destination when it
+  # supersedes this file. No estate literal (CON-04, REQ-SEC-01) — only an in-stack DNS service:port.
+  - name: 'deadmansswitch'
+    webhook_configs:
+      - url: 'http://alertmanager:9093/-/healthy'
+        send_resolved: false

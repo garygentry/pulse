@@ -1,0 +1,3313 @@
+estate:
+  schema_version: 1
+  name: scale-estate
+  domains:
+    - scale.example
+  timezone: UTC
+  deadman_hook: ${DEADMAN_URL}
+hosts:
+  - name: host-0001
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.1.1
+    exporter_ports:
+      - 9100
+  - name: host-0002
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.2.1
+    exporter_ports:
+      - 9100
+  - name: host-0003
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.3.1
+    exporter_ports:
+      - 9100
+  - name: host-0004
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.4.1
+    exporter_ports:
+      - 9100
+  - name: host-0005
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.5.1
+    exporter_ports:
+      - 9100
+  - name: host-0006
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.6.1
+    exporter_ports:
+      - 9100
+  - name: host-0007
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.7.1
+    exporter_ports:
+      - 9100
+  - name: host-0008
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.8.1
+    exporter_ports:
+      - 9100
+  - name: host-0009
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.9.1
+    exporter_ports:
+      - 9100
+  - name: host-0010
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.10.1
+    exporter_ports:
+      - 9100
+  - name: host-0011
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.11.1
+    exporter_ports:
+      - 9100
+  - name: host-0012
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.12.1
+    exporter_ports:
+      - 9100
+  - name: host-0013
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.13.1
+    exporter_ports:
+      - 9100
+  - name: host-0014
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.14.1
+    exporter_ports:
+      - 9100
+  - name: host-0015
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.15.1
+    exporter_ports:
+      - 9100
+  - name: host-0016
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.16.1
+    exporter_ports:
+      - 9100
+  - name: host-0017
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.17.1
+    exporter_ports:
+      - 9100
+  - name: host-0018
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.18.1
+    exporter_ports:
+      - 9100
+  - name: host-0019
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.19.1
+    exporter_ports:
+      - 9100
+  - name: host-0020
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.20.1
+    exporter_ports:
+      - 9100
+  - name: host-0021
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.21.1
+    exporter_ports:
+      - 9100
+  - name: host-0022
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.22.1
+    exporter_ports:
+      - 9100
+  - name: host-0023
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.23.1
+    exporter_ports:
+      - 9100
+  - name: host-0024
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.24.1
+    exporter_ports:
+      - 9100
+  - name: host-0025
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.25.1
+    exporter_ports:
+      - 9100
+  - name: host-0026
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.26.1
+    exporter_ports:
+      - 9100
+  - name: host-0027
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.27.1
+    exporter_ports:
+      - 9100
+  - name: host-0028
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.28.1
+    exporter_ports:
+      - 9100
+  - name: host-0029
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.29.1
+    exporter_ports:
+      - 9100
+  - name: host-0030
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.30.1
+    exporter_ports:
+      - 9100
+  - name: host-0031
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.31.1
+    exporter_ports:
+      - 9100
+  - name: host-0032
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.32.1
+    exporter_ports:
+      - 9100
+  - name: host-0033
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.33.1
+    exporter_ports:
+      - 9100
+  - name: host-0034
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.34.1
+    exporter_ports:
+      - 9100
+  - name: host-0035
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.35.1
+    exporter_ports:
+      - 9100
+  - name: host-0036
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.36.1
+    exporter_ports:
+      - 9100
+  - name: host-0037
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.37.1
+    exporter_ports:
+      - 9100
+  - name: host-0038
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.38.1
+    exporter_ports:
+      - 9100
+  - name: host-0039
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.39.1
+    exporter_ports:
+      - 9100
+  - name: host-0040
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.40.1
+    exporter_ports:
+      - 9100
+  - name: host-0041
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.41.1
+    exporter_ports:
+      - 9100
+  - name: host-0042
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.42.1
+    exporter_ports:
+      - 9100
+  - name: host-0043
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.43.1
+    exporter_ports:
+      - 9100
+  - name: host-0044
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.44.1
+    exporter_ports:
+      - 9100
+  - name: host-0045
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.45.1
+    exporter_ports:
+      - 9100
+  - name: host-0046
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.46.1
+    exporter_ports:
+      - 9100
+  - name: host-0047
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.47.1
+    exporter_ports:
+      - 9100
+  - name: host-0048
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.48.1
+    exporter_ports:
+      - 9100
+  - name: host-0049
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.49.1
+    exporter_ports:
+      - 9100
+  - name: host-0050
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.50.1
+    exporter_ports:
+      - 9100
+  - name: host-0051
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.51.1
+    exporter_ports:
+      - 9100
+  - name: host-0052
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.52.1
+    exporter_ports:
+      - 9100
+  - name: host-0053
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.53.1
+    exporter_ports:
+      - 9100
+  - name: host-0054
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.54.1
+    exporter_ports:
+      - 9100
+  - name: host-0055
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.55.1
+    exporter_ports:
+      - 9100
+  - name: host-0056
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.56.1
+    exporter_ports:
+      - 9100
+  - name: host-0057
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.57.1
+    exporter_ports:
+      - 9100
+  - name: host-0058
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.58.1
+    exporter_ports:
+      - 9100
+  - name: host-0059
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.59.1
+    exporter_ports:
+      - 9100
+  - name: host-0060
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.60.1
+    exporter_ports:
+      - 9100
+  - name: host-0061
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.61.1
+    exporter_ports:
+      - 9100
+  - name: host-0062
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.62.1
+    exporter_ports:
+      - 9100
+  - name: host-0063
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.63.1
+    exporter_ports:
+      - 9100
+  - name: host-0064
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.64.1
+    exporter_ports:
+      - 9100
+  - name: host-0065
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.65.1
+    exporter_ports:
+      - 9100
+  - name: host-0066
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.66.1
+    exporter_ports:
+      - 9100
+  - name: host-0067
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.67.1
+    exporter_ports:
+      - 9100
+  - name: host-0068
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.68.1
+    exporter_ports:
+      - 9100
+  - name: host-0069
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.69.1
+    exporter_ports:
+      - 9100
+  - name: host-0070
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.70.1
+    exporter_ports:
+      - 9100
+  - name: host-0071
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.71.1
+    exporter_ports:
+      - 9100
+  - name: host-0072
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.72.1
+    exporter_ports:
+      - 9100
+  - name: host-0073
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.73.1
+    exporter_ports:
+      - 9100
+  - name: host-0074
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.74.1
+    exporter_ports:
+      - 9100
+  - name: host-0075
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.75.1
+    exporter_ports:
+      - 9100
+  - name: host-0076
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.76.1
+    exporter_ports:
+      - 9100
+  - name: host-0077
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.77.1
+    exporter_ports:
+      - 9100
+  - name: host-0078
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.78.1
+    exporter_ports:
+      - 9100
+  - name: host-0079
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.79.1
+    exporter_ports:
+      - 9100
+  - name: host-0080
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.80.1
+    exporter_ports:
+      - 9100
+  - name: host-0081
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.81.1
+    exporter_ports:
+      - 9100
+  - name: host-0082
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.82.1
+    exporter_ports:
+      - 9100
+  - name: host-0083
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.83.1
+    exporter_ports:
+      - 9100
+  - name: host-0084
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.84.1
+    exporter_ports:
+      - 9100
+  - name: host-0085
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.85.1
+    exporter_ports:
+      - 9100
+  - name: host-0086
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.86.1
+    exporter_ports:
+      - 9100
+  - name: host-0087
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.87.1
+    exporter_ports:
+      - 9100
+  - name: host-0088
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.88.1
+    exporter_ports:
+      - 9100
+  - name: host-0089
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.89.1
+    exporter_ports:
+      - 9100
+  - name: host-0090
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.90.1
+    exporter_ports:
+      - 9100
+  - name: host-0091
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.91.1
+    exporter_ports:
+      - 9100
+  - name: host-0092
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.92.1
+    exporter_ports:
+      - 9100
+  - name: host-0093
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.93.1
+    exporter_ports:
+      - 9100
+  - name: host-0094
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.94.1
+    exporter_ports:
+      - 9100
+  - name: host-0095
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.95.1
+    exporter_ports:
+      - 9100
+  - name: host-0096
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.96.1
+    exporter_ports:
+      - 9100
+  - name: host-0097
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.97.1
+    exporter_ports:
+      - 9100
+  - name: host-0098
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.98.1
+    exporter_ports:
+      - 9100
+  - name: host-0099
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.99.1
+    exporter_ports:
+      - 9100
+  - name: host-0100
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.100.1
+    exporter_ports:
+      - 9100
+  - name: host-0101
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.101.1
+    exporter_ports:
+      - 9100
+  - name: host-0102
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.102.1
+    exporter_ports:
+      - 9100
+  - name: host-0103
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.103.1
+    exporter_ports:
+      - 9100
+  - name: host-0104
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.104.1
+    exporter_ports:
+      - 9100
+  - name: host-0105
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.105.1
+    exporter_ports:
+      - 9100
+  - name: host-0106
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.106.1
+    exporter_ports:
+      - 9100
+  - name: host-0107
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.107.1
+    exporter_ports:
+      - 9100
+  - name: host-0108
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.108.1
+    exporter_ports:
+      - 9100
+  - name: host-0109
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.109.1
+    exporter_ports:
+      - 9100
+  - name: host-0110
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.110.1
+    exporter_ports:
+      - 9100
+  - name: host-0111
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.111.1
+    exporter_ports:
+      - 9100
+  - name: host-0112
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.112.1
+    exporter_ports:
+      - 9100
+  - name: host-0113
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.113.1
+    exporter_ports:
+      - 9100
+  - name: host-0114
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.114.1
+    exporter_ports:
+      - 9100
+  - name: host-0115
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.115.1
+    exporter_ports:
+      - 9100
+  - name: host-0116
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.116.1
+    exporter_ports:
+      - 9100
+  - name: host-0117
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.117.1
+    exporter_ports:
+      - 9100
+  - name: host-0118
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.118.1
+    exporter_ports:
+      - 9100
+  - name: host-0119
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.119.1
+    exporter_ports:
+      - 9100
+  - name: host-0120
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.120.1
+    exporter_ports:
+      - 9100
+  - name: host-0121
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.121.1
+    exporter_ports:
+      - 9100
+  - name: host-0122
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.122.1
+    exporter_ports:
+      - 9100
+  - name: host-0123
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.123.1
+    exporter_ports:
+      - 9100
+  - name: host-0124
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.124.1
+    exporter_ports:
+      - 9100
+  - name: host-0125
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.125.1
+    exporter_ports:
+      - 9100
+  - name: host-0126
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.126.1
+    exporter_ports:
+      - 9100
+  - name: host-0127
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.127.1
+    exporter_ports:
+      - 9100
+  - name: host-0128
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.128.1
+    exporter_ports:
+      - 9100
+  - name: host-0129
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.129.1
+    exporter_ports:
+      - 9100
+  - name: host-0130
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.130.1
+    exporter_ports:
+      - 9100
+  - name: host-0131
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.131.1
+    exporter_ports:
+      - 9100
+  - name: host-0132
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.132.1
+    exporter_ports:
+      - 9100
+  - name: host-0133
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.133.1
+    exporter_ports:
+      - 9100
+  - name: host-0134
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.134.1
+    exporter_ports:
+      - 9100
+  - name: host-0135
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.135.1
+    exporter_ports:
+      - 9100
+  - name: host-0136
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.136.1
+    exporter_ports:
+      - 9100
+  - name: host-0137
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.137.1
+    exporter_ports:
+      - 9100
+  - name: host-0138
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.138.1
+    exporter_ports:
+      - 9100
+  - name: host-0139
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.139.1
+    exporter_ports:
+      - 9100
+  - name: host-0140
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.140.1
+    exporter_ports:
+      - 9100
+  - name: host-0141
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.141.1
+    exporter_ports:
+      - 9100
+  - name: host-0142
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.142.1
+    exporter_ports:
+      - 9100
+  - name: host-0143
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.143.1
+    exporter_ports:
+      - 9100
+  - name: host-0144
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.144.1
+    exporter_ports:
+      - 9100
+  - name: host-0145
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.145.1
+    exporter_ports:
+      - 9100
+  - name: host-0146
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.146.1
+    exporter_ports:
+      - 9100
+  - name: host-0147
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.147.1
+    exporter_ports:
+      - 9100
+  - name: host-0148
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.148.1
+    exporter_ports:
+      - 9100
+  - name: host-0149
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.149.1
+    exporter_ports:
+      - 9100
+  - name: host-0150
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.150.1
+    exporter_ports:
+      - 9100
+  - name: host-0151
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.151.1
+    exporter_ports:
+      - 9100
+  - name: host-0152
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.152.1
+    exporter_ports:
+      - 9100
+  - name: host-0153
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.153.1
+    exporter_ports:
+      - 9100
+  - name: host-0154
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.154.1
+    exporter_ports:
+      - 9100
+  - name: host-0155
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.155.1
+    exporter_ports:
+      - 9100
+  - name: host-0156
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.156.1
+    exporter_ports:
+      - 9100
+  - name: host-0157
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.157.1
+    exporter_ports:
+      - 9100
+  - name: host-0158
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.158.1
+    exporter_ports:
+      - 9100
+  - name: host-0159
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.159.1
+    exporter_ports:
+      - 9100
+  - name: host-0160
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.160.1
+    exporter_ports:
+      - 9100
+  - name: host-0161
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.161.1
+    exporter_ports:
+      - 9100
+  - name: host-0162
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.162.1
+    exporter_ports:
+      - 9100
+  - name: host-0163
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.163.1
+    exporter_ports:
+      - 9100
+  - name: host-0164
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.164.1
+    exporter_ports:
+      - 9100
+  - name: host-0165
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.165.1
+    exporter_ports:
+      - 9100
+  - name: host-0166
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.166.1
+    exporter_ports:
+      - 9100
+  - name: host-0167
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.167.1
+    exporter_ports:
+      - 9100
+  - name: host-0168
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.168.1
+    exporter_ports:
+      - 9100
+  - name: host-0169
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.169.1
+    exporter_ports:
+      - 9100
+  - name: host-0170
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.170.1
+    exporter_ports:
+      - 9100
+  - name: host-0171
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.171.1
+    exporter_ports:
+      - 9100
+  - name: host-0172
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.172.1
+    exporter_ports:
+      - 9100
+  - name: host-0173
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.173.1
+    exporter_ports:
+      - 9100
+  - name: host-0174
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.174.1
+    exporter_ports:
+      - 9100
+  - name: host-0175
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.175.1
+    exporter_ports:
+      - 9100
+  - name: host-0176
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.176.1
+    exporter_ports:
+      - 9100
+  - name: host-0177
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.177.1
+    exporter_ports:
+      - 9100
+  - name: host-0178
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.178.1
+    exporter_ports:
+      - 9100
+  - name: host-0179
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.179.1
+    exporter_ports:
+      - 9100
+  - name: host-0180
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.180.1
+    exporter_ports:
+      - 9100
+  - name: host-0181
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.181.1
+    exporter_ports:
+      - 9100
+  - name: host-0182
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.182.1
+    exporter_ports:
+      - 9100
+  - name: host-0183
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.183.1
+    exporter_ports:
+      - 9100
+  - name: host-0184
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.184.1
+    exporter_ports:
+      - 9100
+  - name: host-0185
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.185.1
+    exporter_ports:
+      - 9100
+  - name: host-0186
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.186.1
+    exporter_ports:
+      - 9100
+  - name: host-0187
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.187.1
+    exporter_ports:
+      - 9100
+  - name: host-0188
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.188.1
+    exporter_ports:
+      - 9100
+  - name: host-0189
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.189.1
+    exporter_ports:
+      - 9100
+  - name: host-0190
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.190.1
+    exporter_ports:
+      - 9100
+  - name: host-0191
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.191.1
+    exporter_ports:
+      - 9100
+  - name: host-0192
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.192.1
+    exporter_ports:
+      - 9100
+  - name: host-0193
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.193.1
+    exporter_ports:
+      - 9100
+  - name: host-0194
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.194.1
+    exporter_ports:
+      - 9100
+  - name: host-0195
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.195.1
+    exporter_ports:
+      - 9100
+  - name: host-0196
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.196.1
+    exporter_ports:
+      - 9100
+  - name: host-0197
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.197.1
+    exporter_ports:
+      - 9100
+  - name: host-0198
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.198.1
+    exporter_ports:
+      - 9100
+  - name: host-0199
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.199.1
+    exporter_ports:
+      - 9100
+  - name: host-0200
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.200.1
+    exporter_ports:
+      - 9100
+  - name: host-0201
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.201.1
+    exporter_ports:
+      - 9100
+  - name: host-0202
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.202.1
+    exporter_ports:
+      - 9100
+  - name: host-0203
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.203.1
+    exporter_ports:
+      - 9100
+  - name: host-0204
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.204.1
+    exporter_ports:
+      - 9100
+  - name: host-0205
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.205.1
+    exporter_ports:
+      - 9100
+  - name: host-0206
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.206.1
+    exporter_ports:
+      - 9100
+  - name: host-0207
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.207.1
+    exporter_ports:
+      - 9100
+  - name: host-0208
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.208.1
+    exporter_ports:
+      - 9100
+  - name: host-0209
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.209.1
+    exporter_ports:
+      - 9100
+  - name: host-0210
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.210.1
+    exporter_ports:
+      - 9100
+  - name: host-0211
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.211.1
+    exporter_ports:
+      - 9100
+  - name: host-0212
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.212.1
+    exporter_ports:
+      - 9100
+  - name: host-0213
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.213.1
+    exporter_ports:
+      - 9100
+  - name: host-0214
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.214.1
+    exporter_ports:
+      - 9100
+  - name: host-0215
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.215.1
+    exporter_ports:
+      - 9100
+  - name: host-0216
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.216.1
+    exporter_ports:
+      - 9100
+  - name: host-0217
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.217.1
+    exporter_ports:
+      - 9100
+  - name: host-0218
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.218.1
+    exporter_ports:
+      - 9100
+  - name: host-0219
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.219.1
+    exporter_ports:
+      - 9100
+  - name: host-0220
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.220.1
+    exporter_ports:
+      - 9100
+  - name: host-0221
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.221.1
+    exporter_ports:
+      - 9100
+  - name: host-0222
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.222.1
+    exporter_ports:
+      - 9100
+  - name: host-0223
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.223.1
+    exporter_ports:
+      - 9100
+  - name: host-0224
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.224.1
+    exporter_ports:
+      - 9100
+  - name: host-0225
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.225.1
+    exporter_ports:
+      - 9100
+  - name: host-0226
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.226.1
+    exporter_ports:
+      - 9100
+  - name: host-0227
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.227.1
+    exporter_ports:
+      - 9100
+  - name: host-0228
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.228.1
+    exporter_ports:
+      - 9100
+  - name: host-0229
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.229.1
+    exporter_ports:
+      - 9100
+  - name: host-0230
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.230.1
+    exporter_ports:
+      - 9100
+  - name: host-0231
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.231.1
+    exporter_ports:
+      - 9100
+  - name: host-0232
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.232.1
+    exporter_ports:
+      - 9100
+  - name: host-0233
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.233.1
+    exporter_ports:
+      - 9100
+  - name: host-0234
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.234.1
+    exporter_ports:
+      - 9100
+  - name: host-0235
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.235.1
+    exporter_ports:
+      - 9100
+  - name: host-0236
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.236.1
+    exporter_ports:
+      - 9100
+  - name: host-0237
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.237.1
+    exporter_ports:
+      - 9100
+  - name: host-0238
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.238.1
+    exporter_ports:
+      - 9100
+  - name: host-0239
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.239.1
+    exporter_ports:
+      - 9100
+  - name: host-0240
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.240.1
+    exporter_ports:
+      - 9100
+  - name: host-0241
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.241.1
+    exporter_ports:
+      - 9100
+  - name: host-0242
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.242.1
+    exporter_ports:
+      - 9100
+  - name: host-0243
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.243.1
+    exporter_ports:
+      - 9100
+  - name: host-0244
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.244.1
+    exporter_ports:
+      - 9100
+  - name: host-0245
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.245.1
+    exporter_ports:
+      - 9100
+  - name: host-0246
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.246.1
+    exporter_ports:
+      - 9100
+  - name: host-0247
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.247.1
+    exporter_ports:
+      - 9100
+  - name: host-0248
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.248.1
+    exporter_ports:
+      - 9100
+  - name: host-0249
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.249.1
+    exporter_ports:
+      - 9100
+  - name: host-0250
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.250.1
+    exporter_ports:
+      - 9100
+  - name: host-0251
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.251.1
+    exporter_ports:
+      - 9100
+  - name: host-0252
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.252.1
+    exporter_ports:
+      - 9100
+  - name: host-0253
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.253.1
+    exporter_ports:
+      - 9100
+  - name: host-0254
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.254.1
+    exporter_ports:
+      - 9100
+  - name: host-0255
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.255.1
+    exporter_ports:
+      - 9100
+  - name: host-0256
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.0.1
+    exporter_ports:
+      - 9100
+  - name: host-0257
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.1.1
+    exporter_ports:
+      - 9100
+  - name: host-0258
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.2.1
+    exporter_ports:
+      - 9100
+  - name: host-0259
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.3.1
+    exporter_ports:
+      - 9100
+  - name: host-0260
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.4.1
+    exporter_ports:
+      - 9100
+  - name: host-0261
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.5.1
+    exporter_ports:
+      - 9100
+  - name: host-0262
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.6.1
+    exporter_ports:
+      - 9100
+  - name: host-0263
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.7.1
+    exporter_ports:
+      - 9100
+  - name: host-0264
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.8.1
+    exporter_ports:
+      - 9100
+  - name: host-0265
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.9.1
+    exporter_ports:
+      - 9100
+  - name: host-0266
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.10.1
+    exporter_ports:
+      - 9100
+  - name: host-0267
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.11.1
+    exporter_ports:
+      - 9100
+  - name: host-0268
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.12.1
+    exporter_ports:
+      - 9100
+  - name: host-0269
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.13.1
+    exporter_ports:
+      - 9100
+  - name: host-0270
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.14.1
+    exporter_ports:
+      - 9100
+  - name: host-0271
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.15.1
+    exporter_ports:
+      - 9100
+  - name: host-0272
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.16.1
+    exporter_ports:
+      - 9100
+  - name: host-0273
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.17.1
+    exporter_ports:
+      - 9100
+  - name: host-0274
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.18.1
+    exporter_ports:
+      - 9100
+  - name: host-0275
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.19.1
+    exporter_ports:
+      - 9100
+  - name: host-0276
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.20.1
+    exporter_ports:
+      - 9100
+  - name: host-0277
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.21.1
+    exporter_ports:
+      - 9100
+  - name: host-0278
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.22.1
+    exporter_ports:
+      - 9100
+  - name: host-0279
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.23.1
+    exporter_ports:
+      - 9100
+  - name: host-0280
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.24.1
+    exporter_ports:
+      - 9100
+  - name: host-0281
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.25.1
+    exporter_ports:
+      - 9100
+  - name: host-0282
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.26.1
+    exporter_ports:
+      - 9100
+  - name: host-0283
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.27.1
+    exporter_ports:
+      - 9100
+  - name: host-0284
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.28.1
+    exporter_ports:
+      - 9100
+  - name: host-0285
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.29.1
+    exporter_ports:
+      - 9100
+  - name: host-0286
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.30.1
+    exporter_ports:
+      - 9100
+  - name: host-0287
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.31.1
+    exporter_ports:
+      - 9100
+  - name: host-0288
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.32.1
+    exporter_ports:
+      - 9100
+  - name: host-0289
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.33.1
+    exporter_ports:
+      - 9100
+  - name: host-0290
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.34.1
+    exporter_ports:
+      - 9100
+  - name: host-0291
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.35.1
+    exporter_ports:
+      - 9100
+  - name: host-0292
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.36.1
+    exporter_ports:
+      - 9100
+  - name: host-0293
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.37.1
+    exporter_ports:
+      - 9100
+  - name: host-0294
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.38.1
+    exporter_ports:
+      - 9100
+  - name: host-0295
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.39.1
+    exporter_ports:
+      - 9100
+  - name: host-0296
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.40.1
+    exporter_ports:
+      - 9100
+  - name: host-0297
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.41.1
+    exporter_ports:
+      - 9100
+  - name: host-0298
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.42.1
+    exporter_ports:
+      - 9100
+  - name: host-0299
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.43.1
+    exporter_ports:
+      - 9100
+  - name: host-0300
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.1.44.1
+    exporter_ports:
+      - 9100
+services:
+  - name: service-0001
+    host: host-0001
+    kind: http
+    managed: true
+  - name: service-0002
+    host: host-0002
+    kind: http
+    managed: true
+  - name: service-0003
+    host: host-0003
+    kind: http
+    managed: true
+  - name: service-0004
+    host: host-0004
+    kind: http
+    managed: true
+  - name: service-0005
+    host: host-0005
+    kind: http
+    managed: true
+  - name: service-0006
+    host: host-0006
+    kind: http
+    managed: true
+  - name: service-0007
+    host: host-0007
+    kind: http
+    managed: true
+  - name: service-0008
+    host: host-0008
+    kind: http
+    managed: true
+  - name: service-0009
+    host: host-0009
+    kind: http
+    managed: true
+  - name: service-0010
+    host: host-0010
+    kind: http
+    managed: true
+  - name: service-0011
+    host: host-0011
+    kind: http
+    managed: true
+  - name: service-0012
+    host: host-0012
+    kind: http
+    managed: true
+  - name: service-0013
+    host: host-0013
+    kind: http
+    managed: true
+  - name: service-0014
+    host: host-0014
+    kind: http
+    managed: true
+  - name: service-0015
+    host: host-0015
+    kind: http
+    managed: true
+  - name: service-0016
+    host: host-0016
+    kind: http
+    managed: true
+  - name: service-0017
+    host: host-0017
+    kind: http
+    managed: true
+  - name: service-0018
+    host: host-0018
+    kind: http
+    managed: true
+  - name: service-0019
+    host: host-0019
+    kind: http
+    managed: true
+  - name: service-0020
+    host: host-0020
+    kind: http
+    managed: true
+  - name: service-0021
+    host: host-0021
+    kind: http
+    managed: true
+  - name: service-0022
+    host: host-0022
+    kind: http
+    managed: true
+  - name: service-0023
+    host: host-0023
+    kind: http
+    managed: true
+  - name: service-0024
+    host: host-0024
+    kind: http
+    managed: true
+  - name: service-0025
+    host: host-0025
+    kind: http
+    managed: true
+  - name: service-0026
+    host: host-0026
+    kind: http
+    managed: true
+  - name: service-0027
+    host: host-0027
+    kind: http
+    managed: true
+  - name: service-0028
+    host: host-0028
+    kind: http
+    managed: true
+  - name: service-0029
+    host: host-0029
+    kind: http
+    managed: true
+  - name: service-0030
+    host: host-0030
+    kind: http
+    managed: true
+  - name: service-0031
+    host: host-0031
+    kind: http
+    managed: true
+  - name: service-0032
+    host: host-0032
+    kind: http
+    managed: true
+  - name: service-0033
+    host: host-0033
+    kind: http
+    managed: true
+  - name: service-0034
+    host: host-0034
+    kind: http
+    managed: true
+  - name: service-0035
+    host: host-0035
+    kind: http
+    managed: true
+  - name: service-0036
+    host: host-0036
+    kind: http
+    managed: true
+  - name: service-0037
+    host: host-0037
+    kind: http
+    managed: true
+  - name: service-0038
+    host: host-0038
+    kind: http
+    managed: true
+  - name: service-0039
+    host: host-0039
+    kind: http
+    managed: true
+  - name: service-0040
+    host: host-0040
+    kind: http
+    managed: true
+  - name: service-0041
+    host: host-0041
+    kind: http
+    managed: true
+  - name: service-0042
+    host: host-0042
+    kind: http
+    managed: true
+  - name: service-0043
+    host: host-0043
+    kind: http
+    managed: true
+  - name: service-0044
+    host: host-0044
+    kind: http
+    managed: true
+  - name: service-0045
+    host: host-0045
+    kind: http
+    managed: true
+  - name: service-0046
+    host: host-0046
+    kind: http
+    managed: true
+  - name: service-0047
+    host: host-0047
+    kind: http
+    managed: true
+  - name: service-0048
+    host: host-0048
+    kind: http
+    managed: true
+  - name: service-0049
+    host: host-0049
+    kind: http
+    managed: true
+  - name: service-0050
+    host: host-0050
+    kind: http
+    managed: true
+  - name: service-0051
+    host: host-0051
+    kind: http
+    managed: true
+  - name: service-0052
+    host: host-0052
+    kind: http
+    managed: true
+  - name: service-0053
+    host: host-0053
+    kind: http
+    managed: true
+  - name: service-0054
+    host: host-0054
+    kind: http
+    managed: true
+  - name: service-0055
+    host: host-0055
+    kind: http
+    managed: true
+  - name: service-0056
+    host: host-0056
+    kind: http
+    managed: true
+  - name: service-0057
+    host: host-0057
+    kind: http
+    managed: true
+  - name: service-0058
+    host: host-0058
+    kind: http
+    managed: true
+  - name: service-0059
+    host: host-0059
+    kind: http
+    managed: true
+  - name: service-0060
+    host: host-0060
+    kind: http
+    managed: true
+  - name: service-0061
+    host: host-0061
+    kind: http
+    managed: true
+  - name: service-0062
+    host: host-0062
+    kind: http
+    managed: true
+  - name: service-0063
+    host: host-0063
+    kind: http
+    managed: true
+  - name: service-0064
+    host: host-0064
+    kind: http
+    managed: true
+  - name: service-0065
+    host: host-0065
+    kind: http
+    managed: true
+  - name: service-0066
+    host: host-0066
+    kind: http
+    managed: true
+  - name: service-0067
+    host: host-0067
+    kind: http
+    managed: true
+  - name: service-0068
+    host: host-0068
+    kind: http
+    managed: true
+  - name: service-0069
+    host: host-0069
+    kind: http
+    managed: true
+  - name: service-0070
+    host: host-0070
+    kind: http
+    managed: true
+  - name: service-0071
+    host: host-0071
+    kind: http
+    managed: true
+  - name: service-0072
+    host: host-0072
+    kind: http
+    managed: true
+  - name: service-0073
+    host: host-0073
+    kind: http
+    managed: true
+  - name: service-0074
+    host: host-0074
+    kind: http
+    managed: true
+  - name: service-0075
+    host: host-0075
+    kind: http
+    managed: true
+  - name: service-0076
+    host: host-0076
+    kind: http
+    managed: true
+  - name: service-0077
+    host: host-0077
+    kind: http
+    managed: true
+  - name: service-0078
+    host: host-0078
+    kind: http
+    managed: true
+  - name: service-0079
+    host: host-0079
+    kind: http
+    managed: true
+  - name: service-0080
+    host: host-0080
+    kind: http
+    managed: true
+  - name: service-0081
+    host: host-0081
+    kind: http
+    managed: true
+  - name: service-0082
+    host: host-0082
+    kind: http
+    managed: true
+  - name: service-0083
+    host: host-0083
+    kind: http
+    managed: true
+  - name: service-0084
+    host: host-0084
+    kind: http
+    managed: true
+  - name: service-0085
+    host: host-0085
+    kind: http
+    managed: true
+  - name: service-0086
+    host: host-0086
+    kind: http
+    managed: true
+  - name: service-0087
+    host: host-0087
+    kind: http
+    managed: true
+  - name: service-0088
+    host: host-0088
+    kind: http
+    managed: true
+  - name: service-0089
+    host: host-0089
+    kind: http
+    managed: true
+  - name: service-0090
+    host: host-0090
+    kind: http
+    managed: true
+  - name: service-0091
+    host: host-0091
+    kind: http
+    managed: true
+  - name: service-0092
+    host: host-0092
+    kind: http
+    managed: true
+  - name: service-0093
+    host: host-0093
+    kind: http
+    managed: true
+  - name: service-0094
+    host: host-0094
+    kind: http
+    managed: true
+  - name: service-0095
+    host: host-0095
+    kind: http
+    managed: true
+  - name: service-0096
+    host: host-0096
+    kind: http
+    managed: true
+  - name: service-0097
+    host: host-0097
+    kind: http
+    managed: true
+  - name: service-0098
+    host: host-0098
+    kind: http
+    managed: true
+  - name: service-0099
+    host: host-0099
+    kind: http
+    managed: true
+  - name: service-0100
+    host: host-0100
+    kind: http
+    managed: true
+  - name: service-0101
+    host: host-0101
+    kind: http
+    managed: true
+  - name: service-0102
+    host: host-0102
+    kind: http
+    managed: true
+  - name: service-0103
+    host: host-0103
+    kind: http
+    managed: true
+  - name: service-0104
+    host: host-0104
+    kind: http
+    managed: true
+  - name: service-0105
+    host: host-0105
+    kind: http
+    managed: true
+  - name: service-0106
+    host: host-0106
+    kind: http
+    managed: true
+  - name: service-0107
+    host: host-0107
+    kind: http
+    managed: true
+  - name: service-0108
+    host: host-0108
+    kind: http
+    managed: true
+  - name: service-0109
+    host: host-0109
+    kind: http
+    managed: true
+  - name: service-0110
+    host: host-0110
+    kind: http
+    managed: true
+  - name: service-0111
+    host: host-0111
+    kind: http
+    managed: true
+  - name: service-0112
+    host: host-0112
+    kind: http
+    managed: true
+  - name: service-0113
+    host: host-0113
+    kind: http
+    managed: true
+  - name: service-0114
+    host: host-0114
+    kind: http
+    managed: true
+  - name: service-0115
+    host: host-0115
+    kind: http
+    managed: true
+  - name: service-0116
+    host: host-0116
+    kind: http
+    managed: true
+  - name: service-0117
+    host: host-0117
+    kind: http
+    managed: true
+  - name: service-0118
+    host: host-0118
+    kind: http
+    managed: true
+  - name: service-0119
+    host: host-0119
+    kind: http
+    managed: true
+  - name: service-0120
+    host: host-0120
+    kind: http
+    managed: true
+  - name: service-0121
+    host: host-0121
+    kind: http
+    managed: true
+  - name: service-0122
+    host: host-0122
+    kind: http
+    managed: true
+  - name: service-0123
+    host: host-0123
+    kind: http
+    managed: true
+  - name: service-0124
+    host: host-0124
+    kind: http
+    managed: true
+  - name: service-0125
+    host: host-0125
+    kind: http
+    managed: true
+  - name: service-0126
+    host: host-0126
+    kind: http
+    managed: true
+  - name: service-0127
+    host: host-0127
+    kind: http
+    managed: true
+  - name: service-0128
+    host: host-0128
+    kind: http
+    managed: true
+  - name: service-0129
+    host: host-0129
+    kind: http
+    managed: true
+  - name: service-0130
+    host: host-0130
+    kind: http
+    managed: true
+  - name: service-0131
+    host: host-0131
+    kind: http
+    managed: true
+  - name: service-0132
+    host: host-0132
+    kind: http
+    managed: true
+  - name: service-0133
+    host: host-0133
+    kind: http
+    managed: true
+  - name: service-0134
+    host: host-0134
+    kind: http
+    managed: true
+  - name: service-0135
+    host: host-0135
+    kind: http
+    managed: true
+  - name: service-0136
+    host: host-0136
+    kind: http
+    managed: true
+  - name: service-0137
+    host: host-0137
+    kind: http
+    managed: true
+  - name: service-0138
+    host: host-0138
+    kind: http
+    managed: true
+  - name: service-0139
+    host: host-0139
+    kind: http
+    managed: true
+  - name: service-0140
+    host: host-0140
+    kind: http
+    managed: true
+  - name: service-0141
+    host: host-0141
+    kind: http
+    managed: true
+  - name: service-0142
+    host: host-0142
+    kind: http
+    managed: true
+  - name: service-0143
+    host: host-0143
+    kind: http
+    managed: true
+  - name: service-0144
+    host: host-0144
+    kind: http
+    managed: true
+  - name: service-0145
+    host: host-0145
+    kind: http
+    managed: true
+  - name: service-0146
+    host: host-0146
+    kind: http
+    managed: true
+  - name: service-0147
+    host: host-0147
+    kind: http
+    managed: true
+  - name: service-0148
+    host: host-0148
+    kind: http
+    managed: true
+  - name: service-0149
+    host: host-0149
+    kind: http
+    managed: true
+  - name: service-0150
+    host: host-0150
+    kind: http
+    managed: true
+  - name: service-0151
+    host: host-0151
+    kind: http
+    managed: true
+  - name: service-0152
+    host: host-0152
+    kind: http
+    managed: true
+  - name: service-0153
+    host: host-0153
+    kind: http
+    managed: true
+  - name: service-0154
+    host: host-0154
+    kind: http
+    managed: true
+  - name: service-0155
+    host: host-0155
+    kind: http
+    managed: true
+  - name: service-0156
+    host: host-0156
+    kind: http
+    managed: true
+  - name: service-0157
+    host: host-0157
+    kind: http
+    managed: true
+  - name: service-0158
+    host: host-0158
+    kind: http
+    managed: true
+  - name: service-0159
+    host: host-0159
+    kind: http
+    managed: true
+  - name: service-0160
+    host: host-0160
+    kind: http
+    managed: true
+  - name: service-0161
+    host: host-0161
+    kind: http
+    managed: true
+  - name: service-0162
+    host: host-0162
+    kind: http
+    managed: true
+  - name: service-0163
+    host: host-0163
+    kind: http
+    managed: true
+  - name: service-0164
+    host: host-0164
+    kind: http
+    managed: true
+  - name: service-0165
+    host: host-0165
+    kind: http
+    managed: true
+  - name: service-0166
+    host: host-0166
+    kind: http
+    managed: true
+  - name: service-0167
+    host: host-0167
+    kind: http
+    managed: true
+  - name: service-0168
+    host: host-0168
+    kind: http
+    managed: true
+  - name: service-0169
+    host: host-0169
+    kind: http
+    managed: true
+  - name: service-0170
+    host: host-0170
+    kind: http
+    managed: true
+  - name: service-0171
+    host: host-0171
+    kind: http
+    managed: true
+  - name: service-0172
+    host: host-0172
+    kind: http
+    managed: true
+  - name: service-0173
+    host: host-0173
+    kind: http
+    managed: true
+  - name: service-0174
+    host: host-0174
+    kind: http
+    managed: true
+  - name: service-0175
+    host: host-0175
+    kind: http
+    managed: true
+  - name: service-0176
+    host: host-0176
+    kind: http
+    managed: true
+  - name: service-0177
+    host: host-0177
+    kind: http
+    managed: true
+  - name: service-0178
+    host: host-0178
+    kind: http
+    managed: true
+  - name: service-0179
+    host: host-0179
+    kind: http
+    managed: true
+  - name: service-0180
+    host: host-0180
+    kind: http
+    managed: true
+  - name: service-0181
+    host: host-0181
+    kind: http
+    managed: true
+  - name: service-0182
+    host: host-0182
+    kind: http
+    managed: true
+  - name: service-0183
+    host: host-0183
+    kind: http
+    managed: true
+  - name: service-0184
+    host: host-0184
+    kind: http
+    managed: true
+  - name: service-0185
+    host: host-0185
+    kind: http
+    managed: true
+  - name: service-0186
+    host: host-0186
+    kind: http
+    managed: true
+  - name: service-0187
+    host: host-0187
+    kind: http
+    managed: true
+  - name: service-0188
+    host: host-0188
+    kind: http
+    managed: true
+  - name: service-0189
+    host: host-0189
+    kind: http
+    managed: true
+  - name: service-0190
+    host: host-0190
+    kind: http
+    managed: true
+  - name: service-0191
+    host: host-0191
+    kind: http
+    managed: true
+  - name: service-0192
+    host: host-0192
+    kind: http
+    managed: true
+  - name: service-0193
+    host: host-0193
+    kind: http
+    managed: true
+  - name: service-0194
+    host: host-0194
+    kind: http
+    managed: true
+  - name: service-0195
+    host: host-0195
+    kind: http
+    managed: true
+  - name: service-0196
+    host: host-0196
+    kind: http
+    managed: true
+  - name: service-0197
+    host: host-0197
+    kind: http
+    managed: true
+  - name: service-0198
+    host: host-0198
+    kind: http
+    managed: true
+  - name: service-0199
+    host: host-0199
+    kind: http
+    managed: true
+  - name: service-0200
+    host: host-0200
+    kind: http
+    managed: true
+  - name: service-0201
+    host: host-0201
+    kind: http
+    managed: true
+  - name: service-0202
+    host: host-0202
+    kind: http
+    managed: true
+  - name: service-0203
+    host: host-0203
+    kind: http
+    managed: true
+  - name: service-0204
+    host: host-0204
+    kind: http
+    managed: true
+  - name: service-0205
+    host: host-0205
+    kind: http
+    managed: true
+  - name: service-0206
+    host: host-0206
+    kind: http
+    managed: true
+  - name: service-0207
+    host: host-0207
+    kind: http
+    managed: true
+  - name: service-0208
+    host: host-0208
+    kind: http
+    managed: true
+  - name: service-0209
+    host: host-0209
+    kind: http
+    managed: true
+  - name: service-0210
+    host: host-0210
+    kind: http
+    managed: true
+  - name: service-0211
+    host: host-0211
+    kind: http
+    managed: true
+  - name: service-0212
+    host: host-0212
+    kind: http
+    managed: true
+  - name: service-0213
+    host: host-0213
+    kind: http
+    managed: true
+  - name: service-0214
+    host: host-0214
+    kind: http
+    managed: true
+  - name: service-0215
+    host: host-0215
+    kind: http
+    managed: true
+  - name: service-0216
+    host: host-0216
+    kind: http
+    managed: true
+  - name: service-0217
+    host: host-0217
+    kind: http
+    managed: true
+  - name: service-0218
+    host: host-0218
+    kind: http
+    managed: true
+  - name: service-0219
+    host: host-0219
+    kind: http
+    managed: true
+  - name: service-0220
+    host: host-0220
+    kind: http
+    managed: true
+  - name: service-0221
+    host: host-0221
+    kind: http
+    managed: true
+  - name: service-0222
+    host: host-0222
+    kind: http
+    managed: true
+  - name: service-0223
+    host: host-0223
+    kind: http
+    managed: true
+  - name: service-0224
+    host: host-0224
+    kind: http
+    managed: true
+  - name: service-0225
+    host: host-0225
+    kind: http
+    managed: true
+  - name: service-0226
+    host: host-0226
+    kind: http
+    managed: true
+  - name: service-0227
+    host: host-0227
+    kind: http
+    managed: true
+  - name: service-0228
+    host: host-0228
+    kind: http
+    managed: true
+  - name: service-0229
+    host: host-0229
+    kind: http
+    managed: true
+  - name: service-0230
+    host: host-0230
+    kind: http
+    managed: true
+  - name: service-0231
+    host: host-0231
+    kind: http
+    managed: true
+  - name: service-0232
+    host: host-0232
+    kind: http
+    managed: true
+  - name: service-0233
+    host: host-0233
+    kind: http
+    managed: true
+  - name: service-0234
+    host: host-0234
+    kind: http
+    managed: true
+  - name: service-0235
+    host: host-0235
+    kind: http
+    managed: true
+  - name: service-0236
+    host: host-0236
+    kind: http
+    managed: true
+  - name: service-0237
+    host: host-0237
+    kind: http
+    managed: true
+  - name: service-0238
+    host: host-0238
+    kind: http
+    managed: true
+  - name: service-0239
+    host: host-0239
+    kind: http
+    managed: true
+  - name: service-0240
+    host: host-0240
+    kind: http
+    managed: true
+  - name: service-0241
+    host: host-0241
+    kind: http
+    managed: true
+  - name: service-0242
+    host: host-0242
+    kind: http
+    managed: true
+  - name: service-0243
+    host: host-0243
+    kind: http
+    managed: true
+  - name: service-0244
+    host: host-0244
+    kind: http
+    managed: true
+  - name: service-0245
+    host: host-0245
+    kind: http
+    managed: true
+  - name: service-0246
+    host: host-0246
+    kind: http
+    managed: true
+  - name: service-0247
+    host: host-0247
+    kind: http
+    managed: true
+  - name: service-0248
+    host: host-0248
+    kind: http
+    managed: true
+  - name: service-0249
+    host: host-0249
+    kind: http
+    managed: true
+  - name: service-0250
+    host: host-0250
+    kind: http
+    managed: true
+  - name: service-0251
+    host: host-0251
+    kind: http
+    managed: true
+  - name: service-0252
+    host: host-0252
+    kind: http
+    managed: true
+  - name: service-0253
+    host: host-0253
+    kind: http
+    managed: true
+  - name: service-0254
+    host: host-0254
+    kind: http
+    managed: true
+  - name: service-0255
+    host: host-0255
+    kind: http
+    managed: true
+  - name: service-0256
+    host: host-0256
+    kind: http
+    managed: true
+  - name: service-0257
+    host: host-0257
+    kind: http
+    managed: true
+  - name: service-0258
+    host: host-0258
+    kind: http
+    managed: true
+  - name: service-0259
+    host: host-0259
+    kind: http
+    managed: true
+  - name: service-0260
+    host: host-0260
+    kind: http
+    managed: true
+  - name: service-0261
+    host: host-0261
+    kind: http
+    managed: true
+  - name: service-0262
+    host: host-0262
+    kind: http
+    managed: true
+  - name: service-0263
+    host: host-0263
+    kind: http
+    managed: true
+  - name: service-0264
+    host: host-0264
+    kind: http
+    managed: true
+  - name: service-0265
+    host: host-0265
+    kind: http
+    managed: true
+  - name: service-0266
+    host: host-0266
+    kind: http
+    managed: true
+  - name: service-0267
+    host: host-0267
+    kind: http
+    managed: true
+  - name: service-0268
+    host: host-0268
+    kind: http
+    managed: true
+  - name: service-0269
+    host: host-0269
+    kind: http
+    managed: true
+  - name: service-0270
+    host: host-0270
+    kind: http
+    managed: true
+  - name: service-0271
+    host: host-0271
+    kind: http
+    managed: true
+  - name: service-0272
+    host: host-0272
+    kind: http
+    managed: true
+  - name: service-0273
+    host: host-0273
+    kind: http
+    managed: true
+  - name: service-0274
+    host: host-0274
+    kind: http
+    managed: true
+  - name: service-0275
+    host: host-0275
+    kind: http
+    managed: true
+  - name: service-0276
+    host: host-0276
+    kind: http
+    managed: true
+  - name: service-0277
+    host: host-0277
+    kind: http
+    managed: true
+  - name: service-0278
+    host: host-0278
+    kind: http
+    managed: true
+  - name: service-0279
+    host: host-0279
+    kind: http
+    managed: true
+  - name: service-0280
+    host: host-0280
+    kind: http
+    managed: true
+  - name: service-0281
+    host: host-0281
+    kind: http
+    managed: true
+  - name: service-0282
+    host: host-0282
+    kind: http
+    managed: true
+  - name: service-0283
+    host: host-0283
+    kind: http
+    managed: true
+  - name: service-0284
+    host: host-0284
+    kind: http
+    managed: true
+  - name: service-0285
+    host: host-0285
+    kind: http
+    managed: true
+  - name: service-0286
+    host: host-0286
+    kind: http
+    managed: true
+  - name: service-0287
+    host: host-0287
+    kind: http
+    managed: true
+  - name: service-0288
+    host: host-0288
+    kind: http
+    managed: true
+  - name: service-0289
+    host: host-0289
+    kind: http
+    managed: true
+  - name: service-0290
+    host: host-0290
+    kind: http
+    managed: true
+  - name: service-0291
+    host: host-0291
+    kind: http
+    managed: true
+  - name: service-0292
+    host: host-0292
+    kind: http
+    managed: true
+  - name: service-0293
+    host: host-0293
+    kind: http
+    managed: true
+  - name: service-0294
+    host: host-0294
+    kind: http
+    managed: true
+  - name: service-0295
+    host: host-0295
+    kind: http
+    managed: true
+  - name: service-0296
+    host: host-0296
+    kind: http
+    managed: true
+  - name: service-0297
+    host: host-0297
+    kind: http
+    managed: true
+  - name: service-0298
+    host: host-0298
+    kind: http
+    managed: true
+  - name: service-0299
+    host: host-0299
+    kind: http
+    managed: true
+  - name: service-0300
+    host: host-0300
+    kind: http
+    managed: true
+channels:
+  - name: scale-chat
+    kind: chat
+    credential: ${SCALE_TOKEN}

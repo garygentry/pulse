@@ -1,0 +1,11 @@
+[
+  {
+    "labels": {
+      "collection_class": "managed-linux",
+      "host": "harbor-web-01"
+    },
+    "targets": [
+      "10.20.0.11:9256"
+    ]
+  }
+]

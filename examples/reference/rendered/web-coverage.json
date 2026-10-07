@@ -1,0 +1,106 @@
+{
+  "bundleId": "sha256:0b06fc951d495f111015f7b78c9e6b3bab87ac3da8d101b2c76a86bbbfadbd3c",
+  "covered": [
+    {
+      "artifacts": [
+        "agent/harbor-app-02.yaml",
+        "scrape/file_sd/managed-linux-command-exporter.json",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "harbor-app-02",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "command-exporter/harbor-app-02.yaml",
+        "prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "harbor-app-02/nas-backups",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml",
+        "scrape/file_sd/probe-only.json"
+      ],
+      "collectionClass": "probe-only",
+      "kind": "host",
+      "name": "harbor-edge-01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "scrape/file_sd/hypervisor-api.json"
+      ],
+      "collectionClass": "hypervisor-api",
+      "kind": "host",
+      "name": "harbor-hv-01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "scrape/file_sd/nas-api.json"
+      ],
+      "collectionClass": "nas-api",
+      "kind": "host",
+      "name": "harbor-nas-01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "agent/harbor-web-01.yaml",
+        "agent/harbor-web-01/prober/config.yaml",
+        "command-exporter/harbor-web-01.yaml",
+        "scrape/file_sd/cadvisor.json",
+        "scrape/file_sd/managed-linux-command-exporter.json",
+        "scrape/file_sd/managed-linux-heartbeat.json",
+        "scrape/file_sd/managed-linux-prober.json",
+        "scrape/file_sd/managed-linux.json",
+        "scrape/file_sd/process-exporter.json"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "host",
+      "name": "harbor-web-01",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "agent/harbor-web-01/prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "harbor-web-01/frigate",
+      "suppressed": null
+    },
+    {
+      "artifacts": [
+        "gatus/config.yaml",
+        "prober/config.yaml"
+      ],
+      "collectionClass": "managed-linux",
+      "kind": "service",
+      "name": "harbor-web-01/portal-web",
+      "suppressed": null
+    }
+  ],
+  "formatVersion": 2,
+  "gaps": [],
+  "suppressed": [
+    {
+      "artifacts": [],
+      "collectionClass": "excluded",
+      "kind": "host",
+      "name": "harbor-lab-01",
+      "suppressed": {
+        "class": "excluded",
+        "rationale": "Ephemeral lab bench; intentionally not collected in v1."
+      }
+    }
+  ]
+}

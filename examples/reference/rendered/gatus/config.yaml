@@ -1,0 +1,30 @@
+endpoints:
+  - conditions:
+      - "[DNS_RCODE] == NOERROR"
+    dns:
+      query-name: aurora.example
+      query-type: A
+    name: dns:aurora.example
+    url: 10.20.0.53
+  - conditions:
+      - "[DNS_RCODE] == NOERROR"
+    dns:
+      query-name: nimbus.example
+      query-type: A
+    name: dns:nimbus.example
+    url: 10.20.0.53
+  - alerts:
+      - description: Portal ingress synthetic check failing
+        failure-threshold: 3
+        send-on-resolved: true
+        type: custom
+    conditions:
+      - "[STATUS] == 200"
+    group: harbor-web-01
+    name: harbor-web-01/portal-web
+    url: https://portal.aurora.example
+  - conditions:
+      - "[STATUS] == 200"
+    group: harbor-edge-01
+    name: host:harbor-edge-01
+    url: https://status.aurora.example/healthz

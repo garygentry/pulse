@@ -1,0 +1,15 @@
+route:
+  receiver: tg-alerts
+  routes:
+    - match:
+        severity: critical
+      receiver: tg-alerts
+    - match:
+        severity: warning
+      receiver: tg-alerts
+receivers:
+  - name: tg-alerts
+    config:
+      telegram_configs:
+        - bot_token: ${TELEGRAM_BOT_TOKEN}
+          chat_id: -1002001002003

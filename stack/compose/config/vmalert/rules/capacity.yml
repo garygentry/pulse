@@ -1,0 +1,75 @@
+# stack/compose/config/vmalert/rules/capacity.yml
+# Static, estate-agnostic capacity thresholds (00-core-definitions.md §6 CAPACITY_THRESHOLDS).
+groups:
+  - name: capacity
+    rules:
+      # REQ-CAP-01: sustained CPU utilization > 90% for 15m.
+      - alert: HighCPU
+        expr: |
+          label_replace(
+            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100),
+            "host", "$1", "instance", "(.*)"
+          ) > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.host }}: {{ $value | printf \"%.0f\" }}% (warning)"
+          description: >-
+            CPU utilization on host {{ $labels.host }} has exceeded 90% for 15m
+            (current {{ $value | printf "%.0f" }}%). Investigate load; not yet paging.
+          runbook_url: "https://runbooks.pulse.local/capacity"
+
+      # REQ-CAP-02: sustained memory utilization > 90% for 15m.
+      - alert: HighMemory
+        expr: |
+          label_replace(
+            (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100,
+            "host", "$1", "instance", "(.*)"
+          ) > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory on {{ $labels.host }}: {{ $value | printf \"%.0f\" }}% (warning)"
+          description: >-
+            Memory utilization on host {{ $labels.host }} has exceeded 90% for 15m
+            (current {{ $value | printf "%.0f" }}%). Investigate memory pressure.
+          runbook_url: "https://runbooks.pulse.local/capacity"
+
+      # REQ-CAP-03 (warn tier): filesystem free capacity < 20% for 15m. Real filesystems only.
+      - alert: LowDisk
+        expr: |
+          label_replace(
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*"}
+              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*"} * 100,
+            "host", "$1", "instance", "(.*)"
+          ) < 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk on {{ $labels.host }} {{ $labels.mountpoint }}: {{ $value | printf \"%.0f\" }}% free (warning)"
+          description: >-
+            Filesystem {{ $labels.mountpoint }} on host {{ $labels.host }} has under 20% free capacity
+            for 15m (current {{ $value | printf "%.0f" }}% free). Reclaim space before it reaches the
+            critical threshold (CriticalDisk).
+          runbook_url: "https://runbooks.pulse.local/capacity"
+
+      # REQ-CAP-03 (crit tier): filesystem free capacity < 10% for 15m.
+      - alert: CriticalDisk
+        expr: |
+          label_replace(
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*"}
+              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*"} * 100,
+            "host", "$1", "instance", "(.*)"
+          ) < 10
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk on {{ $labels.host }} {{ $labels.mountpoint }}: {{ $value | printf \"%.0f\" }}% free (critical)"
+          description: >-
+            Filesystem {{ $labels.mountpoint }} on host {{ $labels.host }} has under 10% free capacity
+            for 15m (current {{ $value | printf "%.0f" }}% free). Imminent exhaustion — immediate action.
+          runbook_url: "https://runbooks.pulse.local/capacity"

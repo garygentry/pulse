@@ -1,0 +1,20 @@
+# overlay-estate/00-skeleton.base.yaml — the machine-generated BASE layer (issue #7).
+# A deterministic skeleton a generator could emit: estate metadata + the discovered hosts with
+# only their intrinsic facts. Monitoring policy is layered on by hand in the *.overlay.yaml.
+layer: base
+estate:
+  schema_version: 1
+  name: overlay-ref
+  domains:
+    - overlay.example
+  timezone: America/Chicago
+  deadman_hook: "${DEADMAN_URL}"
+
+hosts:
+  - name: app-01
+    collection_class: managed-linux
+    delivery_form: compose
+    addresses:
+      - 10.0.0.4
+    exporter_ports:
+      - 9100

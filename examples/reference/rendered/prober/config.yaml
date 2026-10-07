@@ -1,0 +1,17 @@
+probes:
+  - kind: http
+    name: host:harbor-edge-01
+    note: "200"
+    target: https://status.aurora.example/healthz
+  - kind: backup-freshness
+    name: svc:harbor-app-02/nas-backups#backup
+    target: pulse_backup_freshness_age_seconds
+    threshold: 24h
+  - alertExpression: status == 0
+    credential: ${WEB_HEALTH_TOKEN}
+    kind: deep-health
+    name: svc:harbor-web-01/portal-web
+    responseMapping:
+      status: $.status
+      version: $.build.version
+    target: https://portal.aurora.example/api/health

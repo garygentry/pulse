@@ -1,0 +1,9 @@
+{
+  "name": "@pulse/dashboards",
+  "private": true,
+  "type": "module",
+  "description": "Verification-only guard suite for the Pulse Grafana dashboard provisioning (static Tier A guards + Tier B provisioning smoke).",
+  "devDependencies": {
+    "yaml": "^2.5.0"
+  }
+}

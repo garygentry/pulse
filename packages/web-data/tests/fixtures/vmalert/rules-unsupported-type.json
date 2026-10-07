@@ -1,0 +1,28 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "harbor-hosts",
+        "file": "/etc/vmalert/rules/hosts.yml",
+        "interval": 30,
+        "lastEvaluation": "2026-01-01T00:00:00.000Z",
+        "rules": [
+          {
+            "type": "heartbeat",
+            "name": "UnsupportedDiscriminator",
+            "query": "vector(1)",
+            "state": "firing",
+            "health": "ok",
+            "lastError": "",
+            "duration": 0,
+            "labels": { "severity": "none" },
+            "annotations": { "summary": "unsupported rule discriminator" },
+            "lastEvaluation": "2026-01-01T00:00:00.000Z",
+            "evaluationTime": 0.0004
+          }
+        ]
+      }
+    ]
+  }
+}
