@@ -415,7 +415,8 @@ export function checkHostLocalProbeHost(
 /**
  * A service `alerts:` binding (issue #15) only takes effect on a service that renders a Gatus
  * endpoint — i.e. one with an `ingress_url` and not `suppressed`. On any other service the binding
- * is silently inert (no endpoint exists to attach it to), so warn (not error): the estate declared
+ * is silently inert (there is no check for stack/alerting's `GatusCheckFailed` rule to watch, so no
+ * rule is rendered — issue #1), so warn (not error): the estate declared
  * paging intent that will never fire. Mirrors the advisory shape of the other cross-field checks.
  */
 export function checkEndpointAlertBinding(

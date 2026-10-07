@@ -141,21 +141,26 @@ export interface Service {
   provenance: Provenance;
 }
 
-/** One per-endpoint alert binding (issue #15). CamelCase model vocabulary; the renderer maps it
- *  onto Gatus's kebab-case `endpoints[].alerts[]` entry. Omitted optional fields inherit the
- *  provider's `default-alert`. */
+/** One per-endpoint alert binding (issue #15). CamelCase model vocabulary. A binding on a service
+ *  that renders a Gatus endpoint makes stack/alerting emit a `GatusCheckFailed` vmalert rule over
+ *  that check's `gatus_results_total` series (issue #1); Gatus itself carries no alerting config.
+ *  Omitted thresholds take the rule builder's defaults (failure 3, success 2). */
 export interface EndpointAlert {
-  /** Gatus provider type to bind, e.g. `"custom"` (the shipped Alertmanager provider). */
+  /** Retained for compatibility; selects nothing. Historically the Gatus provider type to bind
+   *  (`"custom"`, the retired Gatus→Alertmanager provider). Any non-empty value is accepted. */
   type: string;
-  /** Whether this binding is active; omitted → inherits the provider default (enabled). */
+  /** Whether this binding is active; omitted → enabled. `false` → no rule is rendered. */
   enabled?: boolean;
-  /** Human-readable description surfaced in the alert payload; omitted → provider default. */
+  /** Human-readable description carried as the alert's `description` annotation. */
   description?: string;
-  /** Consecutive failures before firing; omitted → provider `default-alert` threshold. */
+  /** Consecutive failed checks before firing; omitted → 3. Rendered as the rule's look-back window
+   *  (`failureThreshold` × the Gatus check interval). */
   failureThreshold?: number;
-  /** Consecutive successes before resolving; omitted → provider `default-alert` threshold. */
+  /** Consecutive successful checks before resolving; omitted → 2. Rendered as the rule's
+   *  `keep_firing_for` ((`successThreshold` − 1) × the Gatus check interval). */
   successThreshold?: number;
-  /** Whether to emit a resolve notification; omitted → provider default. */
+  /** Retained for compatibility; has no effect. Resolve notifications are governed by each
+   *  Alertmanager receiver's `send_resolved`; `false` draws an advisory alerting finding. */
   sendOnResolved?: boolean;
 }
 
