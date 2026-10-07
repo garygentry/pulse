@@ -221,7 +221,7 @@ test("shipped gatus config enables /metrics so the gatus scrape job & AncillaryD
   expect(gatusConfig.metrics, "gatus config must set top-level `metrics: true` (#31)").toBe(true);
   // Issue #1: Gatus checks page through vmalert rules over gatus_results_total, never a Gatus
   // alerting provider (the retired push provider could not resolve alerts correctly).
-  expect(gatusConfig.alerting, "gatus config must carry no `alerting:` provider (#1)").toBeUndefined();
+  expect("alerting" in gatusConfig, "gatus config must carry no `alerting:` provider (#1)").toBe(false);
 
   // Consistency: the toggle exists precisely because scrape.yml scrapes gatus for /metrics and
   // engine.yml's AncillaryDown rule alerts on its `up` series — both (under stack/compose/config/)
