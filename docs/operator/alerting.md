@@ -84,19 +84,36 @@ services:
     ingress_url: https://portal.aurora.example   # the check target
     alerts:
       - type: custom                # retained for compatibility; selects nothing
-        failure_threshold: 3        # consecutive failed checks before firing (default 3)
-        success_threshold: 2        # consecutive passing checks before resolving (default 2)
+        failure_threshold: 3        # failed checks before firing (default 3, max 60)
+        success_threshold: 2        # passing checks before resolving (default 2, max 60)
         description: "Portal ingress synthetic check failing"
 ```
 
 The rule reads Gatus's own `gatus_results_total` series (the stack enables Gatus's `/metrics` and
-scrapes it). Gatus checks run every 60s, so the rule fires once **every check in the last
-`failure_threshold` minutes failed**, and stays firing for `success_threshold − 1` minutes after the
-first passing check (`keep_firing_for`), then resolves. vmalert re-sends the alert on every
-evaluation while it fires, so a long outage stays firing in Alertmanager and the "resolved"
-notification arrives only when the check recovers. The alert carries `severity: critical`,
-`source: gatus`, `endpoint: <host>/<service>`, `group: <host>`, plus `summary`, `description`,
-`url` (the ingress URL) and `runbook_url` (the [synthetic checks runbook](/synthetic/)).
+scrapes it every 30s). Gatus checks nominally run every 60s. With F = `failure_threshold` and
+S = `success_threshold`:
+
+- **Fires** once there were **at least F failed checks in the last 4·F minutes and no passing check
+  in the last F minutes**. At the nominal cadence that is F consecutive failures, so with the
+  defaults the alert fires about 3–4 minutes after the last good check. After a Gatus restart the
+  rule still needs F fresh failures.
+- **Resolves** once there were **at least S passing checks and no failed check in the last S+1
+  minutes**. With the defaults that is about 3 minutes after the last failure. A pass between
+  failures does not resolve it.
+- **Gatus down never resolves it.** While the alert fires, the rule reads its own state back from
+  the `ALERTS` series vmalert writes to VictoriaMetrics, and with no fresh check results nothing
+  can clear it. (A Gatus outage raises `AncillaryDown`; see the [engine runbook](/engine/).)
+- **Slow checks delay firing, they don't flap.** Gatus runs checks one at a time and waits 60s
+  after each finishes, so a broad outage (many endpoints timing out) stretches the real cadence.
+  The 4·F failure window still fits F failures at up to about 4× the nominal interval; slower than
+  that, the alert fires late. Once it fires, it holds until the resolve condition is met.
+
+vmalert re-sends the alert on every evaluation while it fires, so a long outage stays firing in
+Alertmanager and the "resolved" notification arrives only when the check recovers. The alert carries
+`severity: critical`, `source: gatus`, `endpoint: <host>/<service>`, `group: <host>`, plus `name`
+(same value as `endpoint`), vmalert's `alertgroup: synthetic-checks` and the `estate` label, with
+`summary`, `description`, `url` (the ingress URL) and `runbook_url` (the
+[synthetic checks runbook](/synthetic/)).
 
 Field notes:
 
@@ -113,10 +130,14 @@ Field notes:
 - The rule file is a rendered artifact like `deep-health.yml` and `backup.yml`: mount it into
   vmalert as the [rollout session](/rollout-session/) shows, or no synthetic check pages.
 
-> **Upgrading from the Gatus push provider.** Earlier revisions paged Gatus checks through a Gatus
-> `custom` alerting provider posting straight to Alertmanager. That provider never resolved alerts
-> correctly (issue #1) and has been removed. Re-run the alerting transform and mount the new
-> `synthetic.yml`; no estate change is needed, since the same `alerts:` bindings drive the rules.
+> **BREAKING for existing deployments: upgrading from the Gatus push provider.** Earlier revisions
+> paged Gatus checks through a Gatus `custom` alerting provider posting straight to Alertmanager.
+> That provider never resolved alerts correctly (issue #1) and has been removed. After upgrading you
+> **must** re-run the alerting transform and add the `synthetic.yml` mount to vmalert. If you
+> don't, Gatus checks **silently stop paging**: nothing errors, and the checks stay green in the
+> Gatus UI. No estate change is needed, since the same `alerts:` bindings drive the rules. Alerts
+> also change identity at cutover (new labels such as `estate`, `name` and `alertgroup`), so
+> existing silences matching on the full old label set need updating.
 
 ## The deadman: proving the pipeline is alive
 

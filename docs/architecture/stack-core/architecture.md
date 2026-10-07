@@ -24,7 +24,7 @@ graph TD
   VM -->|datasource| GF[grafana :3000]
   VM <-->|query + remoteWrite| VA[vmalert :8880]
   VA -->|notifier| AM[alertmanager :9093]
-  GA -->|POST /api/v2/alerts| AM
+  GA -->|/metrics: gatus_results_total<br/>scraped by| VM
   R3 -.->|:ro SLOT mount<br/>NOT read by AM| AM
 
   PVE[pve-exporter :9221] -->|scraped by| VM
@@ -182,16 +182,22 @@ services:
     ingress_url: https://portal.aurora.example
     alerts:
       - type: custom                 # retained for compatibility; selects nothing
-        failure_threshold: 3         # consecutive failed checks before firing (default 3)
-        success_threshold: 2         # consecutive passing checks before resolving (default 2)
+        failure_threshold: 3         # failed checks before firing (default 3, max 60)
+        success_threshold: 2         # passing checks before resolving (default 2, max 60)
 ```
 
 The rule reads Gatus's own `gatus_results_total` counter (exposed by the `metrics: true` toggle in
-`stack/gatus/alerting-provider.yaml` and scraped by the `gatus` job). It fires when every check in
-the last `failure_threshold × 60s` failed, and holds for `(success_threshold − 1) × 60s` after the
-first passing check (`keep_firing_for`). It carries the labels the old provider posted
-(`severity: critical`, `source: gatus`, `endpoint: <host>/<service>`, `group: <host>`), so routing
-and silences are unchanged. The renderer emits no `endpoints[].alerts` into `gatus/config.yaml`.
+`stack/gatus/alerting-provider.yaml` and scraped by the `gatus` job). With F = `failure_threshold`
+and S = `success_threshold`, it **fires** once there were at least F failed checks in the last 4·F
+minutes and no passing check in the last F minutes (F consecutive failures at Gatus's nominal 60s
+cadence). Once firing it **holds** — reading its own state back from the `ALERTS` series vmalert
+remote-writes — until at least S passing checks and no failed check occur in the last S+1 minutes.
+With no fresh results (Gatus down) nothing clears it, so it never false-resolves. The 4·F failure
+window tolerates Gatus slowing down (it runs checks one at a time, so a broad outage stretches the
+real cadence): slow checks delay firing instead of making it flap. The rule carries the labels the
+old provider posted (`severity: critical`, `source: gatus`, `endpoint: <host>/<service>`,
+`group: <host>`), plus `name` from the expression and vmalert's `alertgroup` and `estate`. The
+renderer emits no `endpoints[].alerts` into `gatus/config.yaml`.
 
 The Gatus→Alertmanager push provider this replaces was retired in issue #1. It never set
 `endsAt`, so a resolve re-fired the alert until Alertmanager's `resolve_timeout`, and Gatus sends a
