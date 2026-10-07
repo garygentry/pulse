@@ -96,7 +96,7 @@ stack-core is a config tree, not a code package. Its surface is the directory la
 | `stack/compose/config/victoriametrics/scrape.yml` | VictoriaMetrics scrape config (estate targets + self-observability) |
 | `stack/compose/config/alertmanager/alertmanager.bootstrap.yml` | Native Alertmanager bootstrap (boots green, silent) |
 | `stack/compose/config/grafana/provisioning/datasources/` | The VictoriaMetrics datasource provisioning |
-| `stack/gatus/alerting-provider.yaml` | Gatus → Alertmanager webhook provider |
+| `stack/gatus/alerting-provider.yaml` | Static Gatus config: `metrics: true` (no alerting provider — Gatus checks page via vmalert, issue #1) |
 | `stack/tests/` | The two-tier verification harness + the seeded rendered fixture |
 | `stack/alerting/`, `stack/grafana/` | **Reserved** mount points owned by downstream features |
 

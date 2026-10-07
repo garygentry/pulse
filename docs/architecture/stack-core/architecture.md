@@ -143,8 +143,9 @@ out-of-band by the smoke tier's in-stack HTTP probe instead, and Gatus is exempt
 healthcheck-presence rule.
 
 `depends_on` uses `condition: service_healthy` to order startup: `vmalert` waits on
-VictoriaMetrics and Alertmanager; `grafana` waits on VictoriaMetrics; `gatus` waits on
-Alertmanager; the `web` slot waits on all three of VictoriaMetrics, Alertmanager, and Gatus.
+VictoriaMetrics and Alertmanager; `grafana` waits on VictoriaMetrics; `gatus` has no
+dependency (it posts nothing to Alertmanager); the `web` slot waits on all three of
+VictoriaMetrics, Alertmanager, and Gatus.
 
 ## Ownership boundaries: owned config vs reserved slots
 
@@ -152,8 +153,8 @@ stack-core owns the **engine** and the base config that boots it green. It delib
 own estate *content*. The boundaries:
 
 - **stack-core owns:** the compose tree, the VictoriaMetrics scrape config, the native
-  Alertmanager bootstrap, the Grafana VictoriaMetrics datasource, and the Gatus→Alertmanager
-  webhook provider.
+  Alertmanager bootstrap, the Grafana VictoriaMetrics datasource, and the static Gatus config
+  (`metrics: true`).
 - **`dashboards` owns** the Grafana folder taxonomy and dashboard JSON, dropped into the same
   `/etc/grafana/provisioning` tree stack-core mounts (`stack/grafana/` — reserved).
 - **`alerting` owns** the vmalert rule library, the severity framework, the DeadMansSwitch
@@ -167,12 +168,12 @@ points today. Downstream features add content without editing the compose file.
 
 ### Gatus paging: bind a synthetic check with a service `alerts:` binding
 
-`stack/gatus/alerting-provider.yaml` defines the Gatus→Alertmanager route, and Gatus fires it for
-endpoints that declare an `alerts:` block. As of issue #15, a service declares that binding in the
-estate and the renderer emits it into `gatus/config.yaml`:
+Gatus checks page through **vmalert**, not a Gatus alerting provider. A service declares an
+`alerts:` binding in the estate, and the alerting transform (`stack/alerting`) renders one
+`GatusCheckFailed` rule for its ingress check into `rendered/vmalert/rules/synthetic.yml`:
 
 ```yaml
-# estate service — bind its synthetic ingress check to the Alertmanager provider so it PAGES.
+# estate service — make its synthetic ingress check PAGE.
 services:
   - name: portal-web
     host: harbor-web-01
@@ -180,15 +181,26 @@ services:
     managed: true
     ingress_url: https://portal.aurora.example
     alerts:
-      - type: custom                 # the shipped Gatus→Alertmanager provider
-        failure_threshold: 3         # omitted fields inherit the provider's default-alert
-        send_on_resolved: true
+      - type: custom                 # retained for compatibility; selects nothing
+        failure_threshold: 3         # consecutive failed checks before firing (default 3)
+        success_threshold: 2         # consecutive passing checks before resolving (default 2)
 ```
 
-The renderer maps this onto `endpoints[].alerts[]` (kebab-case: `failure-threshold`,
-`send-on-resolved`, …) on the service's ingress endpoint. A binding only takes effect on a service
-that renders a Gatus endpoint (has `ingress_url`, not suppressed); on any other service it is inert
-and raises an `inert_alert_binding` warning. Endpoints without a binding stay non-paging by design.
+The rule reads Gatus's own `gatus_results_total` counter (exposed by the `metrics: true` toggle in
+`stack/gatus/alerting-provider.yaml` and scraped by the `gatus` job). It fires when every check in
+the last `failure_threshold × 60s` failed, and holds for `(success_threshold − 1) × 60s` after the
+first passing check (`keep_firing_for`). It carries the labels the old provider posted
+(`severity: critical`, `source: gatus`, `endpoint: <host>/<service>`, `group: <host>`), so routing
+and silences are unchanged. The renderer emits no `endpoints[].alerts` into `gatus/config.yaml`.
+
+The Gatus→Alertmanager push provider this replaces was retired in issue #1. It never set
+`endsAt`, so a resolve re-fired the alert until Alertmanager's `resolve_timeout`, and Gatus sends a
+trigger only once, so any outage longer than `resolve_timeout` auto-resolved with a false
+"resolved". vmalert re-sends a firing alert every evaluation and sends a real resolve.
+
+A binding only takes effect on a service that renders a Gatus endpoint (has `ingress_url`, not
+suppressed); on any other service it is inert and raises an `inert_alert_binding` warning.
+Endpoints without a binding stay non-paging by design.
 
 ## Verification: a two-tier harness
 

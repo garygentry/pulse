@@ -71,9 +71,9 @@ A `stack/alerting` test (`runbook-coverage.test.ts`) enforces the mapping: every
 
 ## Synthetic (Gatus) paging: the `alerts:` binding
 
-Gatus blackbox checks page through Alertmanager **only for endpoints that declare an `alerts:`
-block**. Declare that binding on a service in the estate and the renderer emits it into the Gatus
-config, flipping the check from silent to paging:
+Gatus blackbox checks page **only for services that declare an `alerts:` binding**. Declare it on a
+service in the estate and the alerting transform renders a critical **`GatusCheckFailed`** vmalert
+rule for that service's ingress check into `rendered/vmalert/rules/synthetic.yml`:
 
 ```yaml
 services:
@@ -83,21 +83,40 @@ services:
     managed: true
     ingress_url: https://portal.aurora.example   # the check target
     alerts:
-      - type: custom                # the shipped Gatus→Alertmanager provider
-        failure_threshold: 3        # omitted fields inherit the provider's default-alert
-        send_on_resolved: true
+      - type: custom                # retained for compatibility; selects nothing
+        failure_threshold: 3        # consecutive failed checks before firing (default 3)
+        success_threshold: 2        # consecutive passing checks before resolving (default 2)
         description: "Portal ingress synthetic check failing"
 ```
 
+The rule reads Gatus's own `gatus_results_total` series (the stack enables Gatus's `/metrics` and
+scrapes it). Gatus checks run every 60s, so the rule fires once **every check in the last
+`failure_threshold` minutes failed**, and stays firing for `success_threshold − 1` minutes after the
+first passing check (`keep_firing_for`), then resolves. vmalert re-sends the alert on every
+evaluation while it fires, so a long outage stays firing in Alertmanager and the "resolved"
+notification arrives only when the check recovers. The alert carries `severity: critical`,
+`source: gatus`, `endpoint: <host>/<service>`, `group: <host>`, plus `summary`, `description`,
+`url` (the ingress URL) and `runbook_url` (the [synthetic checks runbook](/synthetic/)).
+
 Field notes:
 
-- **`type`** names the Gatus provider to bind; `custom` is the shipped Alertmanager provider
-  (`stack/gatus/alerting-provider.yaml`).
-- Optional: **`enabled`**, **`description`**, **`failure_threshold`**, **`success_threshold`**,
-  **`send_on_resolved`**. Anything omitted inherits the provider's `default-alert` thresholds.
-- A binding only fires on a service that **renders a Gatus endpoint** — one with an `ingress_url`,
-  not suppressed. On any other service it is inert and raises an `inert_alert_binding` **warning** at
-  validation.
+- Optional: **`enabled`** (`false` renders no rule), **`description`**, **`failure_threshold`**,
+  **`success_threshold`**.
+- **`type`** and **`send_on_resolved`** are kept for compatibility and **have no effect**. Whether
+  you get resolve notifications is decided by each Alertmanager receiver (`send_resolved`). Setting
+  `send_on_resolved: false` raises an advisory `IGNORED_ALERT_FIELD` finding from the transform.
+- One rule per check: if a service declares several enabled bindings, the first is used (advisory
+  `IGNORED_ALERT_FIELD` finding).
+- A binding only fires on a service that **renders a Gatus endpoint**, meaning one with an
+  `ingress_url` that is not suppressed. On any other service it is inert and raises an
+  `inert_alert_binding` **warning** at validation.
+- The rule file is a rendered artifact like `deep-health.yml` and `backup.yml`: mount it into
+  vmalert as the [rollout session](/rollout-session/) shows, or no synthetic check pages.
+
+> **Upgrading from the Gatus push provider.** Earlier revisions paged Gatus checks through a Gatus
+> `custom` alerting provider posting straight to Alertmanager. That provider never resolved alerts
+> correctly (issue #1) and has been removed. Re-run the alerting transform and mount the new
+> `synthetic.yml`; no estate change is needed, since the same `alerts:` bindings drive the rules.
 
 ## The deadman: proving the pipeline is alive
 
