@@ -1,6 +1,6 @@
 // stack/alerting/tests/synthetic-rules.test.ts
 // Tier-A unit tests for the synthetic-check (Gatus) rule builder (issue #1): selection (ingress,
-// suppression, enabled), threshold defaults → look-back window / keep_firing_for, PromQL + template
+// suppression, enabled), thresholds → fire/clear windows and counts, the HOLD term, PromQL + template
 // escaping, determinism, the endpoint-name single source of truth shared with the renderer, and the
 // advisory IGNORED_ALERT_FIELD findings.
 /// <reference path="./bun-test.d.ts" />
@@ -60,6 +60,10 @@ function build(services: Service[]): { yaml: string; findings: AlertingFinding[]
   return { yaml: buildSyntheticRules(estate(services), findings), findings };
 }
 
+/** The rendered expression for web-01/portal with default thresholds (F=3, S=2). */
+const DEFAULT_EXPR =
+  '((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[12m])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[3m])) > 0)) or on (name, group) (max by (name, group) (time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 90) unless on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[3m])) >= 2) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[3m])) > 0)))';
+
 const PORTAL = svc({
   name: "portal",
   host: "web-01",
@@ -74,15 +78,15 @@ describe("buildSyntheticRules — the rendered rule", () => {
     expect(yaml).toBe(
       [
         "groups:",
-        "  - name: synthetic-checks",
+        "  - interval: 1m",
+        "    name: synthetic-checks",
         "    rules:",
         "      - alert: GatusCheckFailed",
         "        annotations:",
         "          runbook_url: https://runbooks.pulse.local/synthetic",
         "          summary: Gatus check web-01/portal is failing",
         "          url: https://portal.example/",
-        '        expr: (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",success="false"}[3m])) > 0) unless on (name) (sum by (name) (increase(gatus_results_total{name="web-01/portal",success="true"}[3m])) > 0)',
-        "        keep_firing_for: 1m",
+        "        expr: " + DEFAULT_EXPR,
         "        labels:",
         "          endpoint: web-01/portal",
         "          group: web-01",
@@ -104,7 +108,7 @@ describe("buildSyntheticRules — the rendered rule", () => {
     const [rule] = rulesOf(build([PORTAL]).yaml);
     const name = gatusEndpointName(PORTAL);
     expect(rule!.labels.endpoint).toBe(name);
-    expect(rule!.expr).toContain(`name=${promqlString(name)}`);
+    expect(rule!.expr).toContain(`name=${promqlString(name)},group=${promqlString(PORTAL.host)}`);
   });
 });
 
@@ -153,7 +157,7 @@ describe("buildSyntheticRules — selection", () => {
         ],
       }),
     ]);
-    expect(rulesOf(yaml)[0]!.expr).toContain("[4m]");
+    expect(rulesOf(yaml)[0]!.expr).toContain("[16m])) >= 4)");
   });
 
   test("rules are sorted by endpoint name regardless of estate order (determinism)", () => {
@@ -176,29 +180,45 @@ describe("buildSyntheticRules — selection", () => {
 describe("buildSyntheticRules — thresholds", () => {
   const withBinding = (b: Partial<NonNullable<Service["alerts"]>[number]>): Rule =>
     rulesOf(build([svc({ ...PORTAL, alerts: [{ type: "custom", ...b }] })]).yaml)[0]!;
+  /** Every `[window]` in the expression, in order: fail-count, no-pass, clear-pass, clear-fail. */
+  const windows = (r: Rule): string[] => r.expr.match(/\[(\w+)\]/g) ?? [];
 
-  test("defaults: failure 3 → [3m] window; success 2 → keep_firing_for 1m", () => {
+  test("defaults F=3/S=2: ≥3 failures in 12m, no pass in 3m; clear = ≥2 passes, no failure in 3m", () => {
     const rule = withBinding({});
-    expect(rule.expr.match(/\[(\w+)\]/g)).toEqual(["[3m]", "[3m]"]);
-    expect(rule.keep_firing_for).toBe("1m");
+    expect(windows(rule)).toEqual(["[12m]", "[3m]", "[3m]", "[3m]"]);
+    expect(rule.expr).toContain(")) >= 3)");
+    expect(rule.expr).toContain(")) >= 2)");
+    expect(rule.keep_firing_for).toBeUndefined();
     expect(rule.for).toBeUndefined();
   });
 
-  test("failureThreshold N → an N-minute look-back window on both sides", () => {
-    expect(withBinding({ failureThreshold: 5 }).expr.match(/\[(\w+)\]/g)).toEqual(["[5m]", "[5m]"]);
-    expect(withBinding({ failureThreshold: 1 }).expr.match(/\[(\w+)\]/g)).toEqual(["[1m]", "[1m]"]);
+  test("failureThreshold F → ≥F failures in a 4·F-minute window, no pass in F minutes", () => {
+    const rule = withBinding({ failureThreshold: 5 });
+    expect(windows(rule).slice(0, 2)).toEqual(["[20m]", "[5m]"]);
+    expect(rule.expr).toContain(")) >= 5)");
+    expect(windows(withBinding({ failureThreshold: 1 })).slice(0, 2)).toEqual(["[4m]", "[1m]"]);
   });
 
-  test("successThreshold N → keep_firing_for (N−1) minutes; 1 → omitted", () => {
-    expect(withBinding({ successThreshold: 4 }).keep_firing_for).toBe("3m");
-    expect(withBinding({ successThreshold: 1 }).keep_firing_for).toBeUndefined();
+  test("successThreshold S → ≥S passes and no failure in (S+1) minutes", () => {
+    const rule = withBinding({ successThreshold: 4 });
+    expect(windows(rule).slice(2)).toEqual(["[5m]", "[5m]"]);
+    expect(rule.expr).toContain(")) >= 4)");
+    expect(windows(withBinding({ successThreshold: 1 })).slice(2)).toEqual(["[2m]", "[2m]"]);
+  });
+
+  test("the HOLD term reads only fresh firing state of this exact alert", () => {
+    expect(withBinding({}).expr).toContain(
+      'time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 90',
+    );
   });
 });
 
 describe("buildSyntheticRules — escaping", () => {
   test("PromQL label values escape backslash, quote and newline", () => {
     expect(promqlString('a"b\\c\nd')).toBe('"a\\"b\\\\c\\nd"');
-    expect(syntheticExpr('h/x"y', "3m")).toContain('name="h/x\\"y",success="false"');
+    expect(syntheticExpr('h/x"y', "g\\1", { failures: 3, successes: 2 })).toContain(
+      'name="h/x\\"y",group="g\\\\1",success="false"',
+    );
   });
 
   test("template delimiters in estate-supplied text are neutralized", () => {
@@ -244,7 +264,7 @@ describe("buildSyntheticRules — advisory findings", () => {
         ],
       }),
     ]);
-    expect(rulesOf(yaml)[0]!.expr).toContain("[2m]");
+    expect(rulesOf(yaml)[0]!.expr).toContain("[8m])) >= 2)");
     expect(findings.map((f) => [f.code, f.severity, f.path])).toEqual([
       ["IGNORED_ALERT_FIELD", "inconsistency", "services[name=portal].alerts"],
     ]);

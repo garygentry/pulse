@@ -9,7 +9,6 @@ export interface AlertRuleYaml {
   alert: string;                          // PascalCase alert name (REQ-RULE-02)
   expr: string;                           // PromQL expression
   for?: string;                           // detection/grace window (REQ-RULE-05 for NoData)
-  keep_firing_for?: string;               // hold a resolving alert this long (synthetic checks, #1)
   labels: Record<string, string>;         // severity (+ any rule-static labels)
   annotations: Record<string, string>;    // summary/description (REQ-RULE-04)
 }
@@ -17,6 +16,7 @@ export interface AlertRuleYaml {
 /** One vmalert rule group. */
 export interface RuleGroupYaml {
   name: string;
+  interval?: string;                      // evaluation interval; omitted → vmalert's global default
   rules: AlertRuleYaml[];
 }
 

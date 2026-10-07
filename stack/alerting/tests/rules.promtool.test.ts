@@ -2,8 +2,9 @@
 // Tier B (Docker-gated, hermetic — 06 §3): drives `promtool test rules` over deterministic fixtures
 // that inject synthetic series and assert each rule's firing state, severity/identity labels, and
 // `for`/NoData timing. Covers all SIX static families (availability, capacity, engine,
-// pipeline-health, churn, deadman — 06 §11.3) plus the rendered deep-health functional family and
-// the rendered synthetic-check (Gatus) family (issue #1).
+// pipeline-health, churn, deadman — 06 §11.3) plus the rendered deep-health functional family.
+// The rendered synthetic-check (Gatus) family is NOT tested here: its logic rides on MetricsQL
+// increase() semantics promtool does not share — see synthetic.vm.test.ts (issue #1).
 //
 // promtool is a TEST-ONLY tool (PROMTOOL_IMAGE, a pinned Prometheus image); it is NEVER wired into
 // the VM/vmalert runtime compose tree (CON-04). vmalert rules are Prometheus rule-format, so
@@ -34,7 +35,7 @@ const d = DOCKER_OK ? describe : describe.skip;
 
 /**
  * Assemble a temp workspace holding (a) the committed static rule families, (b) the deep-health.yml /
- * backup.yml / synthetic.yml rendered by `buildAlertingConfig` for the multi-service fixture estate, and (c) the
+ * backup.yml rendered by `buildAlertingConfig` for the multi-service fixture estate, and (c) the
  * promtool `test rules` fixture YAMLs — all in one flat directory so each fixture's `rule_files:`
  * paths (relative to the test file) resolve. `promtool test rules` runs against `/w/<file>`.
  */
@@ -44,7 +45,6 @@ function assembleWorkspace(): string {
   const out = buildAlertingConfig(loadFixtureInput("multi-service")); // (b) rendered families
   writeFileSync(join(workspace, "deep-health.yml"), out.deepHealthRules);
   writeFileSync(join(workspace, "backup.yml"), out.backupRules);
-  writeFileSync(join(workspace, "synthetic.yml"), out.syntheticRules);
   cpSync(PROMTOOL_FIXTURE_DIR, workspace, { recursive: true }); // (c) promtool test YAMLs
   // `mkdtempSync` yields a 0700 dir the pinned image's non-root user cannot traverse when mounted;
   // widen it so `promtool` (running as `nobody`) can read the mounted rule/test files.
@@ -69,7 +69,7 @@ d("promtool rule unit tests (Tier B)", () => {
   afterAll(() => rmSync(workspace, { recursive: true, force: true }));
 
   // All six static families (availability, capacity, engine, pipeline-health, churn, deadman) plus
-  // the rendered deep-health functional family (06 §11.3) and synthetic-check family (issue #1).
+  // the rendered deep-health functional family (06 §11.3).
   for (const file of [
     "hostdown.test.yaml",
     "capacity.test.yaml",
@@ -79,7 +79,6 @@ d("promtool rule unit tests (Tier B)", () => {
     "churn.test.yaml",
     "deadman.test.yaml",
     "canary.test.yaml",
-    "synthetic.test.yaml",
   ]) {
     test(`promtool test rules ${file}`, () => {
       const res = promtoolTest(workspace, file);

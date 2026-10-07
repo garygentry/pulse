@@ -42,16 +42,44 @@ export function formatDuration(seconds: number): string {
   return seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
 }
 
+/** The windows and thresholds one rule is rendered with (see `GATUS_CHECKS`). */
+export interface SyntheticTiming {
+  /** F — failed checks needed to fire. */
+  failures: number;
+  /** S — passing checks needed to resolve. */
+  successes: number;
+}
+
 /**
- * The "every check in the window failed" expression for one Gatus endpoint: at least one failed
- * result in the last `window`, and no successful one. A healthy endpoint has no `success="false"`
- * increase, so the left side is empty; a single success in the window empties the result.
+ * The `GatusCheckFailed` expression for one Gatus endpoint (`name` + `group`). Three terms:
+ *
+ *  1. FIRE: ≥ F failed checks in the failure window (`failureWindowFactor`·F·I) and no passing
+ *     check in the last F·I. Counting failures (`>= F`, not `> 0`) keeps the threshold after a
+ *     Gatus restart: VictoriaMetrics' increase() counts a new series' first sample, so `> 0` would
+ *     fire on the first failure.
+ *  2. HOLD: while the alert is already firing — read back from the ALERTS series vmalert
+ *     remote-writes (`time() - timestamp(…) < maxAge`, so a stale sample never counts) —
+ *  3. … keep firing UNLESS it is CLEAR: ≥ S passing checks and no failed check in the last
+ *     (S+1)·I. With no fresh results (Gatus down) nothing is clear, so it never false-resolves.
+ *
+ * Every term is aggregated `by (name, group)`, so the alert's label set is the same whichever term
+ * holds it (a stable alert identity), and equal names in different groups stay independent.
  */
-export function syntheticExpr(endpoint: string, window: string): string {
-  const name = promqlString(endpoint);
-  const failed = `increase(${METRICS.gatusResults}{name=${name},success="false"}[${window}])`;
-  const passed = `increase(${METRICS.gatusResults}{name=${name},success="true"}[${window}])`;
-  return `(sum by (name, group) (${failed}) > 0) unless on (name) (sum by (name) (${passed}) > 0)`;
+export function syntheticExpr(endpoint: string, group: string, timing: SyntheticTiming): string {
+  const I = GATUS_CHECKS.checkIntervalSeconds;
+  const { failures: F, successes: S } = timing;
+  const failWindow = formatDuration(GATUS_CHECKS.failureWindowFactor * F * I);
+  const noPassWindow = formatDuration(F * I);
+  const clearWindow = formatDuration((S + 1) * I);
+  const ids = `name=${promqlString(endpoint)},group=${promqlString(group)}`;
+  const count = (success: "true" | "false", window: string): string =>
+    `sum by (name, group) (increase(${METRICS.gatusResults}{${ids},success="${success}"}[${window}]))`;
+  const firing =
+    `max by (name, group) (time() - timestamp(ALERTS{alertname="${ALERT}",alertstate="firing",${ids}})` +
+    ` < ${GATUS_CHECKS.firingStateMaxAgeSeconds})`;
+  const fire = `(${count("false", failWindow)} >= ${F}) unless on (name, group) (${count("true", noPassWindow)} > 0)`;
+  const clear = `(${count("true", clearWindow)} >= ${S}) unless on (name, group) (${count("false", clearWindow)} > 0)`;
+  return `(${fire}) or on (name, group) (${firing} unless on (name, group) (${clear}))`;
 }
 
 /**
@@ -64,8 +92,8 @@ export function syntheticExpr(endpoint: string, window: string): string {
  * `sendOnResolved: false` draws an advisory finding — resolve notifications are governed by the
  * Alertmanager receiver (`send_resolved`), not the binding.
  *
- * Timing: the look-back window is `failureThreshold × GATUS_CHECKS.checkIntervalSeconds`, and
- * `keep_firing_for` is `(successThreshold − 1) × checkIntervalSeconds` (omitted when 0).
+ * Timing: see `syntheticExpr` and `GATUS_CHECKS` (F = `failureThreshold`, default 3;
+ * S = `successThreshold`, default 2).
  *
  * @param estate   - The validated estate model.
  * @param findings - Accumulator for the advisory (`inconsistency`) findings; never an error.
@@ -117,18 +145,16 @@ export function buildSyntheticRules(estate: EstateModel, findings: AlertingFindi
       });
     }
 
-    const interval = GATUS_CHECKS.checkIntervalSeconds;
     const failures = binding.failureThreshold ?? GATUS_CHECKS.defaultFailureThreshold;
     const successes = binding.successThreshold ?? GATUS_CHECKS.defaultSuccessThreshold;
-    const keepFiringSeconds = (successes - 1) * interval;
     const name = templateLiteral(endpoint);
 
     rules.push({
       alert: ALERT,
-      expr: syntheticExpr(endpoint, formatDuration(failures * interval)),
-      ...(keepFiringSeconds > 0 ? { keep_firing_for: formatDuration(keepFiringSeconds) } : {}),
-      // The exact label set the retired provider posted, so routing, inhibition, silences and the
-      // web UI's endpoint matching are unchanged. `estate` is stamped by vmalert's external label.
+      expr: syntheticExpr(endpoint, service.host, { failures, successes }),
+      // The label set the retired provider posted, so routing, inhibition, silences and the web
+      // UI's endpoint matching are unchanged. The expression adds `name` (= endpoint); vmalert adds
+      // `alertgroup` and the `estate` external label.
       labels: {
         severity: "critical",
         source: "gatus",
@@ -145,5 +171,7 @@ export function buildSyntheticRules(estate: EstateModel, findings: AlertingFindi
       },
     });
   }
-  return serializeRuleGroups([{ name: GROUP, rules }]);
+  // Pin the evaluation interval: the HOLD term's freshness bound assumes one evaluation per minute.
+  const interval = formatDuration(GATUS_CHECKS.evaluationIntervalSeconds);
+  return serializeRuleGroups([{ name: GROUP, interval, rules }]);
 }

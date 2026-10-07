@@ -312,7 +312,9 @@ describe("renderToDisk (03 §2.3)", () => {
     // The estate's alerts: binding (snake_case, through the real loader) reaches the synthetic rule.
     const synthetic = readFileSync(OUTPUT_PATHS(renderedDir)[3]!, "utf8");
     expect(synthetic).toContain("GatusCheckFailed");
-    expect(synthetic).toContain('gatus_results_total{name="web-01/portal",success="false"}[2m]');
+    expect(synthetic).toContain(
+      'gatus_results_total{name="web-01/portal",group="web-01",success="false"}[8m])) >= 2',
+    );
     // No staging temp survives a successful rename.
     const amDir = readdirSync(join(renderedDir, "alertmanager"));
     expect(amDir.some((f) => f.endsWith(".tmp"))).toBe(false);

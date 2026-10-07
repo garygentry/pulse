@@ -72,19 +72,37 @@ export const METRICS = {
   gatusResults: "gatus_results_total",
 } as const;
 
-/** Synthetic-check (Gatus) rule timing (issue #1) — the ONE place the check cadence and the
- *  binding threshold defaults live. The renderer sets no per-endpoint `interval`, so every Gatus
- *  ingress check runs at Gatus's default 60s; a rule's look-back window is
- *  `failureThreshold × checkIntervalSeconds` and its `keep_firing_for` is
- *  `(successThreshold − 1) × checkIntervalSeconds`. The threshold defaults are the ones the retired
- *  Gatus provider's `default-alert` applied, so an existing binding keeps its timing. */
+/** Synthetic-check (Gatus) rule timing (issue #1) — the ONE place the check cadence, the binding
+ *  threshold defaults and the rule's window factors live. The renderer sets no per-endpoint
+ *  `interval`, so every Gatus ingress check runs at Gatus's default 60s — nominally. Gatus runs
+ *  checks one at a time behind a global lock and waits `interval` AFTER each check finishes, so in
+ *  a broad outage (many endpoints × 10s timeouts) the real cadence is slower. The windows below
+ *  are sized so slow cadence DELAYS firing rather than making the alert flap.
+ *
+ *  For a binding with failure threshold F and success threshold S (I = checkIntervalSeconds):
+ *    - fire:    ≥ F failed checks in the last `failureWindowFactor`·F·I seconds AND no passing
+ *               check in the last F·I seconds;
+ *    - resolve: (while firing) ≥ S passing checks AND no failed check in the last (S+1)·I seconds.
+ *               With no fresh results at all (Gatus down), it keeps firing.
+ *  The threshold defaults are the retired Gatus provider's `default-alert` values. */
 export const GATUS_CHECKS = {
   /** Gatus's default endpoint interval (the renderer emits none). */
   checkIntervalSeconds: 60,
-  /** Consecutive failed checks before firing when a binding omits `failureThreshold`. */
+  /** Failed checks needed to fire when a binding omits `failureThreshold`. */
   defaultFailureThreshold: 3,
-  /** Consecutive successful checks before resolving when a binding omits `successThreshold`. */
+  /** Passing checks needed to resolve when a binding omits `successThreshold`. */
   defaultSuccessThreshold: 2,
+  /** The failure-count window is this many times the nominal F checks: F failures still fit in
+   *  it when checks run up to this factor slower than nominal (default 3 → 6m tolerates ~120s). */
+  failureWindowFactor: 4,
+  /** The rule group's evaluation interval, pinned in the rendered group (`interval:`) because the
+   *  HOLD term below depends on it. */
+  evaluationIntervalSeconds: 60,
+  /** The rule reads its own previous state back from the ALERTS series vmalert remote-writes to VM.
+   *  Only a sample from the immediately preceding evaluation (≈ one interval old at query time)
+   *  counts as "currently firing"; this bound leaves 30s of slack and rejects anything older, so a
+   *  resolved alert cannot be resurrected from a stale sample even without staleness markers. */
+  firingStateMaxAgeSeconds: 90,
 } as const;
 
 /** The DeadMansSwitch internal label value (NOT in the `Severity` union — §3). */
