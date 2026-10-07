@@ -5,7 +5,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/garygentry/pulse/ci.yml?branch=main)](https://github.com/garygentry/pulse/actions)
 [![built with Bun](https://img.shields.io/badge/built%20with-Bun-000?logo=bun&logoColor=white)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Pulse turns a single declarative description of your infrastructure — an *estate* of hosts, services, channels, and what's deliberately unmonitored — into a complete, self-hosted monitoring stack.
 You edit one YAML file and re-render; you never touch a host to change what is monitored.
@@ -144,5 +144,4 @@ After an intentional estate or renderer change, regenerate goldens with `bun run
 
 ## License
 
-Pulse is currently **private and proprietary — all rights reserved**.
-No open-source `LICENSE` is distributed with this repository; contact the maintainer for usage or contribution terms.
+Pulse is released under the [MIT License](LICENSE).
