@@ -53,7 +53,7 @@ describe("isAlertOwnLane (canonical tuple, never the fingerprint)", () => {
   });
 
   test("TargetIdentity must agree when both sides are resolved; tuple suffices otherwise", () => {
-    const otherTarget: AlertHistoryLane = { ...hostLane!, target: { kind: "host", id: "web-02" } };
+    const otherTarget: AlertHistoryLane = { ...hostLane!, target: { kind: "host", id: "host:web-02" } };
     expect(isAlertOwnLane(hostDown, otherTarget)).toBe(false);
     const laneNoTarget: AlertHistoryLane = { ...hostLane!, target: null };
     expect(isAlertOwnLane(hostDown, laneNoTarget)).toBe(true);

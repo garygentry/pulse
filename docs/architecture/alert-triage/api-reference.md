@@ -87,11 +87,11 @@ const state = decodeTriageState({ sev: "critical,warning", sel: "fp-123" });
 Decodes a full `RouteMatch`. It builds on `decodeTriageState(match.query)` and adds the inbound deep-link forms:
 
 - `match.params.fingerprint`, from the `/alerts/:fingerprint` route, becomes the selection when `sel` is absent or empty;
-- a non-empty `target` query value `T` (a `TargetIdentity.id`, such as `host:web01` or `svc:web01/nginx`) adds its host/service facet value(s), merged with `hs` and de-duplicated. The candidates are `targetAliasValues(T)`: `T` itself (host and service ids already carry their kind) and `endpoint:T`. With `available` (`facetValues(payload).hostService`), only the matching candidate is kept. With no payload, or no match, both are added.
+- a non-empty `target` query value `T` (a `TargetIdentity.id`, such as `host:web01` or `svc:web01/nginx`) adds its host/service facet value(s), merged with `hs` and de-duplicated. The candidates are `targetAliasValues(T)`: `T` itself (host and service ids already carry their kind) and `endpoint:T`. With `available` (`facetValues(payload).hostService`), only the matching candidate is kept. With no payload, or no match, only `T` is added (one clearable chip). Pre-#10 `hs` values (`host:host:…`) are normalised unless the payload carries them verbatim.
 
 ```typescript
 const state = decodeTriageRoute({ path: "/alerts/fp-1", view: "alerts", params: { fingerprint: "fp-1" }, query: { target: "host:web01" } });
-// state.selected === "fp-1"; state.facets.hostService is ["host:web01", "endpoint:host:web01"]
+// state.selected === "fp-1"; state.facets.hostService is ["host:web01"] (no payload loaded: the id itself)
 ```
 
 `TARGET_ALIAS_KEY` (`"target"`), `TARGET_ALIAS_KINDS` (`["host", "service", "endpoint"]`) and `targetAliasValues(id)` are exported alongside it.

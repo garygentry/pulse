@@ -60,22 +60,21 @@ describe("decodeTriageRoute", () => {
     expect(decodeTriageRoute(routeMatch({}, {})).selected).toBeNull();
   });
 
-  test("target=<id> adds the canonical id (host/service) and endpoint:<id> to the hostService facet", () => {
+  test("target=<id> adds the id itself to the hostService facet", () => {
     const s = decodeTriageRoute(routeMatch({}, { [TARGET_ALIAS_KEY]: "host:web01" }));
     expect(TARGET_ALIAS_KEY).toBe("target");
     // The wire id already carries its kind: never host:host:… / service:host:… (GitHub #10).
-    expect(s.facets.hostService).toEqual(["host:web01", "endpoint:host:web01"]);
+    expect(s.facets.hostService).toEqual(["host:web01"]);
     expect(s.selected).toBeNull();
     expect(decodeTriageRoute(routeMatch({}, { target: "" })).facets.hostService).toEqual([]);
   });
 
   test("target merges with hs, de-duplicated; other facets are untouched", () => {
     const s = decodeTriageRoute(routeMatch({}, { hs: "host:web01,host:db01", target: "svc:web01/nginx", sev: "critical" }));
-    expect(s.facets.hostService).toEqual(["host:web01", "host:db01", "svc:web01/nginx", "endpoint:svc:web01/nginx"]);
-    // An alias equal to an hs value adds only its endpoint reading.
+    expect(s.facets.hostService).toEqual(["host:web01", "host:db01", "svc:web01/nginx"]);
+    // An alias equal to an hs value adds nothing.
     expect(decodeTriageRoute(routeMatch({}, { hs: "host:web01", target: "host:web01" })).facets.hostService).toEqual([
       "host:web01",
-      "endpoint:host:web01",
     ]);
     expect(s.facets.severity).toEqual(["critical"]);
   });
@@ -91,8 +90,14 @@ describe("decodeTriageRoute", () => {
     ).toEqual(["endpoint:zzz", "svc:web01/backup"]);
   });
 
-  test("no payload, or no matching kind, keeps the full expansion", () => {
-    const full = ["host:gone", "endpoint:host:gone"];
+  test("the endpoint reading is kept only when the payload carries it", () => {
+    expect(decodeTriageRoute(routeMatch({}, { target: "web01/grafana" }), ["endpoint:web01/grafana"]).facets.hostService).toEqual([
+      "endpoint:web01/grafana",
+    ]);
+  });
+
+  test("no payload, or no matching kind, keeps only the id itself (one clearable chip)", () => {
+    const full = ["host:gone"];
     expect(decodeTriageRoute(routeMatch({}, { target: "host:gone" }), null).facets.hostService).toEqual(full);
     expect(decodeTriageRoute(routeMatch({}, { target: "host:gone" }), ["host:web01"]).facets.hostService).toEqual(full);
   });
@@ -102,6 +107,11 @@ describe("decodeTriageRoute", () => {
       routeMatch({}, { hs: "host:host:web01,service:svc:web01/nginx,host:web01,endpoint:web01/grafana" }),
     );
     expect(s.facets.hostService).toEqual(["host:web01", "svc:web01/nginx", "endpoint:web01/grafana"]);
+  });
+
+  test("an hs value the payload carries verbatim is never normalised (a host named host:x)", () => {
+    const available = ["host:host:x", "host:x"];
+    expect(decodeTriageRoute(routeMatch({}, { hs: "host:host:x" }), available).facets.hostService).toEqual(["host:host:x"]);
   });
 });
 
@@ -346,7 +356,7 @@ describeDom("AlertsView deep links", (dom) => {
     expect(firingRowIds(m.container)).toEqual(allRows);
   });
 
-  test("a target with no current alerts shows its values as pressed, clearable chips", async () => {
+  test("a target with no current alerts shows one pressed, clearable chip", async () => {
     const payload = makeAlertsPayload({ scenario: "mixed" });
     const m = await setup("/alerts?target=host:nowhere", payload);
     expect(firingRowIds(m.container)).toEqual([]);
@@ -354,12 +364,13 @@ describeDom("AlertsView deep links", (dom) => {
     expect(m.container.textContent).toContain("No alerts match these filters");
     expect(m.container.textContent).not.toContain("All monitored targets are healthy");
     const orphan = (await hostServiceChips(m.container)).filter((b) => b.text.endsWith(":nowhere"));
-    expect(orphan.map((b) => b.selected)).toEqual([true, true]);
-    // Each is also listed as a removable active-filter chip.
-    for (const text of ["host:nowhere", "endpoint:host:nowhere"]) {
+    expect(orphan.map((b) => b.selected)).toEqual([true]);
+    // It is also listed as a removable active-filter chip; no unmatchable endpoint: twin is added.
+    expect(orphan.map((b) => b.text)).toEqual(["host:nowhere"]);
+    for (const text of ["host:nowhere"]) {
       expect(m.container.querySelector(`[aria-label="Remove Host / Service filter ${text}"]`)).not.toBeNull();
     }
-    for (const text of ["host:nowhere", "endpoint:host:nowhere"]) {
+    for (const text of ["host:nowhere"]) {
       (await hostServiceChips(m.container)).find((b) => b.text === text)!.el.click();
       await flush();
     }

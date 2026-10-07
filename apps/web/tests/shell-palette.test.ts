@@ -84,9 +84,9 @@ test("firingAlertRows never throws and degrades to [] on absent/mis-shaped paylo
   ]);
   expect(
     firingAlertRows({
-      alerts: [{ fingerprint: "a", name: "Alert A", state: "silenced", target: { kind: "host", id: "web-01" } }],
+      alerts: [{ fingerprint: "a", name: "Alert A", state: "silenced", target: { kind: "host", id: "host:web-01" } }],
     }),
-  ).toEqual([{ id: "a", label: "Alert A", sublabel: "web-01" }]);
+  ).toEqual([{ id: "a", label: "Alert A", sublabel: "host:web-01" }]);
 });
 
 // ─── matchEntries ranking + cap (REQ-CMD-02, REQ-SCALE-01) ─────────────────────────────────────────

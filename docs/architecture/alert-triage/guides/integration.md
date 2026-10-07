@@ -39,7 +39,7 @@ The compile-time view registry already contains:
 
 The primary route is derived as `/alerts`. The single extra route, `/alerts/:fingerprint`, exists so that inbound links from other views (the overview firing ribbon, and command-palette alert results via `entityPath("alert", fingerprint)`) open an alert directly. Inside the view, selection still belongs in `?sel=<fingerprint>`, and the current tab belongs in `?tab=…`. Do not add further routes to represent view state.
 
-To link *into* triage from another view, prefer `/alerts/<encodeURIComponent(fingerprint)>` for one alert and `/alerts?target=<TargetIdentity id>` (or the canonical `?hs=<targetRef(target)>`, e.g. `?hs=host:web01`) for a target's alerts. Build both from the wire id with `targetRef` (`src/client/target-ref.ts`); never prefix a `TargetIdentity.id` with its kind again.
+To link *into* triage from another view, prefer `/alerts/<encodeURIComponent(fingerprint)>` for one alert and `/alerts?target=<TargetIdentity id>` (or the canonical `?hs=<targetRef(target)>`, e.g. `?hs=host:web01`) for a target's alerts. Pass the raw wire id as `?target=<target.id>`, and build `?hs=` with `targetRef(target)` (`src/client/target-ref.ts`); never prefix a `TargetIdentity.id` with its kind again.
 
 When changing query state:
 

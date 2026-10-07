@@ -144,7 +144,7 @@ function mixedAlerts(): readonly ActiveAlert[] {
       name: "BackupTooOld",
       target: { kind: "service", id: "svc:web-01/backup" },
       startsAt: "2026-09-21T06:00:00.000Z",
-      labels: { alertname: "BackupTooOld", severity: "warning", service: "backup" },
+      labels: { alertname: "BackupTooOld", severity: "warning", host: "web-01", service: "backup" },
       annotations: { description: "The last successful backup is older than 26 hours." },
       receivers: [],
       silencedBy: [FIXTURE_SILENCE_IDS.backup, FIXTURE_SILENCE_IDS.missing],

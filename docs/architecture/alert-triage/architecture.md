@@ -102,7 +102,7 @@ Two **inbound-only** forms are also accepted, for links built outside the view:
 | Inbound form | Decoded as |
 |---|---|
 | `/alerts/<fingerprint>` (path) | the selection, when `sel` is absent (`sel` wins when both are present) |
-| `?target=<TargetIdentity id>` | the host/service facet value(s) for that id, merged with any `hs` values: `<id>` itself (host and service ids already carry their kind) or `endpoint:<id>`: only the one present in the current payload, or both when none match or no payload is loaded |
+| `?target=<TargetIdentity id>` | the host/service facet value(s) for that id, merged with any `hs` values: `<id>` itself (host and service ids already carry their kind) or `endpoint:<id>`: only the one present in the current payload, or `<id>` alone when none match or no payload is loaded |
 
 `decodeTriageRoute(match, available)` is the single decoder for the full route (path params plus query). The view never emits either inbound form. On the first interaction, `navigateQuery` folds a path fingerprint into `sel` and a `target` alias into canonical `hs`, then navigates to `/alerts?…`. The link therefore settles on the canonical encoding, and closing the detail sheet really closes it. `FacetBar` renders any selected value that is missing from the payload as a pressed chip, so a filter from a hand-typed link, or for a target with no current alerts, is always visible and clearable. When alerts are firing but the active facets exclude all of them, the table says "No alerts match these filters" rather than the all-clear. A `target` alias is left in the URL until the payload has loaded, so it is pruned to the matching kind before being folded into `hs`.
 
