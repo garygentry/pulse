@@ -108,12 +108,11 @@ services:
       GATUS_CONFIG_PATH: /config                         # merge every YAML in the dir (tech-spec §3.7)
     networks: [pulse]
     volumes:
-      # stack-core's estate-agnostic Gatus→Alertmanager webhook provider (04-* §4.2, REQ-GATUS-02):
+      # stack-core's estate-agnostic Gatus config (`metrics: true`; no alerting provider — Gatus
+      # checks page through vmalert rules over gatus_results_total, issue #1):
       - ../gatus/alerting-provider.yaml:/config/00-alerting.yaml:ro
       # rendered endpoints — what to check (RENDERED_MOUNTS, 00 §6; renderer owns content):
       - ${PULSE_RENDERED_DIR:-../rendered}/gatus/config.yaml:/config/10-endpoints.yaml:ro
-    depends_on:
-      alertmanager: { condition: service_healthy }       # posts alerts to AM /api/v2/alerts
     # No container healthcheck: the pinned gatus image ships only the /gatus binary — no shell,
     # wget, curl, or one-shot health subcommand — so no in-container command can probe GET /health.
     # Gatus readiness is asserted out-of-band by the Tier-2 smoke's in-stack HTTP probe against

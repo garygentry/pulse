@@ -197,7 +197,9 @@ stackDescribe("Tier-2 smoke: default-profile engine bring-up (REQ-PERF-01)", () 
 
   // §5.4 Functional in-stack probes — the engine is actually queryable & self-observing. Only
   // the in-stack targets are probed; the fictional estate file_sd targets are expected-DOWN and
-  // never touched (§5.5, §7). V-002: Gatus paging is NOT asserted (the provider does not fire).
+  // never touched (§5.5, §7). Gatus paging is NOT asserted here: it is a rendered vmalert rule
+  // (synthetic.yml, issue #1) the base tree does not mount; its firing/resolve behaviour is unit-tested
+  // by stack/alerting's promtool suite.
   const PROBES: FunctionalProbe[] = [
     {
       // VM ingested its OWN self-scrape / cAdvisor series (REQ-SELF-01/02, 03 §2/§3). VM
