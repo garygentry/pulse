@@ -7,7 +7,7 @@
 //   • a utility beats a MORE specific `base` or `components` rule;
 //   • the body sits on the theme background in the theme's font, and the `.dark` class re-themes it;
 //   • inline code/kbd sit a step below the text around them (13px in 14px desk text, 16px in 18px
-//     wallboard text), without shrinking again inside a <pre>.
+//     wallboard text), without shrinking again inside a <pre> or a Badge.
 //
 // SELF-SKIPS when Chromium is not provisioned (see _harness.browserDescribe).
 
@@ -95,17 +95,19 @@ browserDescribe()("browser: cascade layers (Preflight, components, utilities)", 
     await page.evaluate(() => document.documentElement.classList.remove("dark"));
   });
 
-  test("inline code and kbd are 13/14 of the surrounding text (16/18 on the wallboard); code in a pre keeps the pre's size", async () => {
+  test("inline code and kbd are 13/14 of the surrounding text (16/18 on the wallboard); code in a pre or a Badge keeps its container's size", async () => {
     await page.locator("body").evaluate((body) => {
       body.insertAdjacentHTML(
         "beforeend",
         '<div id="mono-probes"><p style="font-size:14px">a <code id="probe-code">x</code> <kbd id="probe-kbd">K</kbd></p>' +
-          '<pre id="probe-pre" style="font-size:12px"><code id="probe-pre-code">y</code></pre></div>',
+          '<pre id="probe-pre" style="font-size:12px"><code id="probe-pre-code">y</code></pre>' +
+          '<span data-slot="badge" style="font-size:12px"><code id="probe-badge-code">z</code></span></div>',
       );
     });
     expect(await css("#probe-code", "font-size")).toBe("13px");
     expect(await css("#probe-kbd", "font-size")).toBe("13px");
     expect(await css("#probe-pre-code", "font-size")).toBe("12px");
+    expect(await css("#probe-badge-code", "font-size")).toBe("12px");
 
     await page.evaluate(() => {
       document.documentElement.dataset["density"] = "wallboard";
