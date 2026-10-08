@@ -7,6 +7,9 @@
 // pre-mount (05 §1, §6.3) — nothing throws for a missing DOM, and `register` still returns a
 // callable no-op disposer.
 
+// ui-deep-import: entry code; the barrel would pull lazy-only @/ui modules into the entry
+import { isTextEntryTarget } from "@/ui/lib/dom";
+
 /** A normalized key-combo string, case-insensitive on the key. Modifiers in a fixed order:
  *  "mod" (Cmd on macOS, Ctrl elsewhere), "ctrl", "alt", "shift", then the key. */
 export type KeyCombo = string;
@@ -18,9 +21,13 @@ export type ShortcutHandler = (event: KeyboardEvent) => void;
 export interface ShortcutOptions {
   /** When true (default), the registry calls `event.preventDefault()` before invoking the handler. */
   preventDefault?: boolean;
-  /** When false (default), the shortcut does NOT fire while focus is in a text input / textarea /
-   *  contenteditable. */
+  /** When false (default), the shortcut does NOT fire while focus is in a text field (text-like
+   *  input, textarea, select or contenteditable). */
   allowInInput?: boolean;
+  /** When false (default), the shortcut does NOT fire for a keydown a widget already handled
+   *  (`defaultPrevented`). Set it for a global toggle that must win regardless (Ctrl/Cmd-K, which
+   *  cmdk's own Ctrl-K binding cancels inside the open palette). */
+  allowDefaultPrevented?: boolean;
 }
 
 /** A resolved registration held internally. */
@@ -29,6 +36,7 @@ interface Registration {
   handler: ShortcutHandler;
   preventDefault: boolean;
   allowInInput: boolean;
+  allowDefaultPrevented: boolean;
 }
 
 /** Read the live `document` from `globalThis` at call time, or `undefined` when absent (SSR). A bare
@@ -140,15 +148,12 @@ function joinTokens(
   return tokens.join("+");
 }
 
-/** True when focus is currently in a text input / textarea / contenteditable. */
+/** True when focus is currently in a text field: a text-like input, textarea, select (its type-ahead
+ *  owns printable keys) or contenteditable — the shared `@/ui` text-entry guard. */
 function isInInput(): boolean {
   const doc = getDocument();
   if (!doc) return false;
-  const el = doc.activeElement;
-  if (!el) return false;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA") return true;
-  return (el as HTMLElement).isContentEditable === true;
+  return isTextEntryTarget(doc.activeElement);
 }
 
 /**
@@ -205,6 +210,7 @@ export class ShortcutRegistry {
       handler,
       preventDefault: options?.preventDefault ?? true,
       allowInInput: options?.allowInInput ?? false,
+      allowDefaultPrevented: options?.allowDefaultPrevented ?? false,
     };
     this.registrations.push(registration);
     // Always (re)check the live document — start() is idempotent for the same document but re-binds
@@ -221,10 +227,15 @@ export class ShortcutRegistry {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
+    // A widget that already handled the key (a list's arrow/j/k navigation, a menu) claims it: a page
+    // shortcut on the same key must not act as well. Widgets listening on an element run before this
+    // document listener; window-level listeners run after it and so cannot pre-empt a shortcut.
+    const handled = event.defaultPrevented;
     const combo = normalizeEvent(event);
     // Snapshot: a disposer/register from within a handler must not perturb this dispatch.
     const matches = this.registrations.filter((r) => r.combo === combo);
     for (const registration of matches) {
+      if (handled && !registration.allowDefaultPrevented) continue;
       if (!registration.allowInInput && isInInput()) continue;
       if (registration.preventDefault) event.preventDefault();
       try {

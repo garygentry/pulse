@@ -35,7 +35,7 @@ import type { AppStore } from "../src/client/store/index.js";
 import type { ProposalListBody, ProposalView } from "../src/shared/mutations.js";
 import { readProposableValue, resolveTarget } from "../src/server/mutations/estate-values.js";
 import { MUTATION_STATE } from "../src/client/ui/index.js";
-import { describeUi } from "./rtl.js";
+import { describeUi, waitFor, within } from "./rtl.js";
 import { makeEstatePayloadFixture } from "./factories/estate-payload.js";
 import { setInputValue } from "./react-render.js";
 import { getDialog, mountDialog as mountOpenDialog, queryDialog } from "./mutations-dialog-dom.js";
@@ -532,11 +532,13 @@ describeUi("ProposeEditAction opens the lazy dialog and refreshes the list (REQ-
     await flush();
     const before = proposalListRefresh.value;
     buttonByText(dialog, "Submit proposal").click();
-    await flush(80);
-    expect(proposalListRefresh.value).toBe(before + 1);
-    expect(region("polite")).toContain("Proposal submitted. It is pending review.");
-    expect(queryDialog()).toBeNull(); // closed
-    expect(document.activeElement).toBe(buttonByText(container, "Propose edit…")); // focus returned to the trigger
+    // Poll rather than sleep a fixed time: under load the submit → close → focus-return chain can
+    // take longer than any single flush.
+    await waitFor(() => expect(proposalListRefresh.value).toBe(before + 1), { timeout: 5_000 });
+    await waitFor(() => expect(region("polite")).toContain("Proposal submitted. It is pending review."), { timeout: 5_000 });
+    await waitFor(() => expect(queryDialog()).toBeNull(), { timeout: 5_000 }); // closed
+    // focus returned to the trigger
+    await waitFor(() => expect(document.activeElement).toBe(buttonByText(container, "Propose edit…")), { timeout: 5_000 });
     unmount();
   });
 });
@@ -608,9 +610,10 @@ describe("ProposalList helpers (REQ-PROP-06, REQ-SEC-07)", () => {
   });
 });
 
-/** The disclosure trigger's text (its accessible name; the chevron icon has none). */
-function disclosureText(container: Element): string {
-  return container.querySelector<HTMLButtonElement>('[data-slot="disclosure"] button[aria-expanded]')!.textContent ?? "";
+/** The proposal disclosure trigger, found by role and accessible name ("Proposals, N items"; name
+ *  computation may put a space before the visually hidden ", N items"). */
+function proposalsTrigger(container: HTMLElement, count: number): HTMLElement {
+  return within(container).getByRole("button", { name: new RegExp(`^Proposals ?, ${count} items?$`) });
 }
 
 /** Expand the (collapsed by default) disclosure so its panel mounts. */
@@ -630,7 +633,7 @@ describeUi("ProposalList renders inert, state-chipped proposals (REQ-PROP-06, RE
     const { container, unmount } = await dom.mount(createElement(ProposalList, { target }) as ReactElement);
     await flush(150);
     expect(calls[0]!.url).toBe("/api/proposals?kind=host&id=host%3Aapp-01");
-    expect(disclosureText(container)).toBe("Proposals (3)");
+    expect(proposalsTrigger(container, 3)).toHaveAttribute("aria-expanded");
     await expand(container);
     const items = [...container.querySelectorAll("li[data-proposal-id]")];
     expect(items.map((li) => li.querySelector("[data-state]")?.textContent)).toEqual(["Pending", "Applied", "Rejected"]);
@@ -667,12 +670,12 @@ describeUi("ProposalList renders inert, state-chipped proposals (REQ-PROP-06, RE
     stubFetch({ list: { status: 200, json: EMPTY_LIST } });
     const { container, unmount } = await dom.mount(createElement(ProposalList, { target }) as ReactElement);
     await flush(150);
-    expect(disclosureText(container)).toBe("Proposals (0)");
+    expect(proposalsTrigger(container, 0)).toHaveAttribute("aria-expanded");
     stubFetch({ list: { status: 200, json: LIST } });
     proposalListRefresh.value += 1;
     await flush(150);
     expect(calls.length).toBe(1);
-    expect(disclosureText(container)).toBe("Proposals (3)");
+    expect(proposalsTrigger(container, 3)).toHaveAttribute("aria-expanded");
     unmount();
   });
 });

@@ -466,6 +466,34 @@ describeUi("@/ui filtering", () => {
       expect(alpha).toHaveAttribute("aria-checked", "false");
     });
 
+    it("puts keyShortcuts on every focusable radio, not on the group", async () => {
+      const user = userEvent.setup();
+      render(
+        <SegmentedControl
+          label="Time range"
+          value="6h"
+          keyShortcuts="[ ]"
+          onValueChange={() => {}}
+          options={[
+            { value: "1h", label: "1h" },
+            { value: "6h", label: "6h" },
+          ]}
+        />,
+      );
+      const group = screen.getByRole("radiogroup", { name: "Time range" });
+      expect(group).not.toHaveAttribute("aria-keyshortcuts");
+      for (const radio of within(group).getAllByRole("radio")) expect(radio).toHaveAttribute("aria-keyshortcuts", "[ ]");
+      // The Tab stop (the checked radio) is the control that announces it.
+      await user.tab();
+      expect(within(group).getByRole("radio", { name: "6h" })).toHaveFocus();
+      expect(document.activeElement).toHaveAttribute("aria-keyshortcuts", "[ ]");
+    });
+
+    it("sets no aria-keyshortcuts without keyShortcuts", () => {
+      render(<Demo onChange={() => {}} />);
+      for (const radio of screen.getAllByRole("radio")) expect(radio).not.toHaveAttribute("aria-keyshortcuts");
+    });
+
     it("moves focus between options with the arrow keys", async () => {
       const user = userEvent.setup();
       render(<Demo onChange={mock()} />);

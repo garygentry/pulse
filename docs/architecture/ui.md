@@ -174,11 +174,19 @@ tables).
 
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell
-renders no `h1`; each view's `PageHeader` supplies it. The top bar's health region shows the
+renders no `h1`; each view's `PageHeader` supplies it. The sidebar's view links are one Tab stop
+(a roving tabindex on the last focused link, else the active view), and ↑/↓ (or j/k) and Home/End
+move between them through `useListNavigation`, on the icon rail and in the mobile sheet alike.
+Ctrl/Cmd-B toggles the sidebar, except while focus is in a text field (`isTextEntryTarget`). The top bar's health region shows the
 estate name, the live and staleness pill, the theme menu and the density control. A stale-data
 `Callout` with `role="alert"` sits under it. `CommandPalette` is a Pulse pattern on shadcn
-`Command` inside `Dialog`. The shell loads it as a lazy chunk, registers `mod+k` through
-`a11y/shortcuts.ts`, and ranks results with the pure `shell/command-index.ts`. In kiosk mode
+`Command` inside `Dialog`. The shell loads it as a lazy chunk (prefetched when idle), registers
+`mod+k` through `a11y/shortcuts.ts`, and ranks results with the pure `shell/command-index.ts`. If
+Ctrl/Cmd-K lands before the chunk, the palette opens on a loading state and keys typed meanwhile
+are captured into the query (printable keys including Alt/AltGr characters, and pasted text;
+Backspace edits, Escape closes; F-keys and Ctrl/Cmd chords pass), so they show in the search field,
+caret at the end, when the dialog mounts, and nothing typed reaches the page. If the chunk fails,
+the buffer is dropped and focus moves to the error state's Reload button. In kiosk mode
 (`?kiosk=1`) the shell renders no sidebar, top-bar controls or palette, and uses wallboard density.
 Rotation lives in `shell/kiosk.ts`.
 
@@ -192,6 +200,11 @@ document click interceptor.
 `document.body`. A controlled Radix `Dialog` with no `DialogTrigger` returns focus to `<body>` on
 close, so a dialog opened from code restores focus itself (`mutations/dialog-frame.tsx` and the
 command palette do). Mutation dialogs stay lazy chunks, loaded with `useLazyDialog`.
+
+**Estate tree rows.** A `treeitem` cannot own an interactive control, so the estate inventory
+tree's rows show provenance as plain text and the provenance copy button lives on the entity page.
+The keyboard path there is Enter on a host or service row, and the tree's visible keyboard help
+(its `aria-describedby`) says so.
 
 **Overview grid.** The host grid stays bespoke (a 2-D `role="grid"` with spatial roving focus and
 change markers) and is restyled with token classes. Its cells use `React.memo` with an explicit
@@ -215,6 +228,10 @@ from a production build.
 - A new pattern goes in `ui/patterns/<kebab-name>.tsx`, is exported from `ui/index.ts`, has a
   `data-slot="<kebab-name>"` root, and is shown in the workbench in every state. If it is
   Pulse-only, list it in `VENDORED.md`.
+- Advertise a page shortcut with `aria-keyshortcuts` on the focusable control it acts on (each
+  radio of a `SegmentedControl` through `keyShortcuts`), never on a wrapper. Values are
+  KeyboardEvent `key` values, space-separated alternatives: `"[ ]"`, `"Shift+ArrowLeft"`, with
+  `Space` and `Plus` spelled out; `code` names such as `BracketLeft` are wrong.
 - Style only with token classes. `style={…}` is for dynamic geometry, in files on the guardrail
   allowlist.
 

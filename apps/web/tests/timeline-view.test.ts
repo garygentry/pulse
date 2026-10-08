@@ -2146,7 +2146,10 @@ describeDom("timeline view — TimelineView (item 022)", (dom) => {
     expect(checkedRange(header)).toBe("24h");
     expect(buttonNamed(header, "Pause")!.getAttribute("aria-keyshortcuts")).toBe("l");
     expect(buttonNamed(header, "Reset zoom")!.getAttribute("aria-keyshortcuts")).toBe("0");
-    expect(rangeGroup(header)!.closest("[aria-keyshortcuts]")!.getAttribute("aria-keyshortcuts")).toBe("[ ]");
+    expect(rangeGroup(header)!.closest("[aria-keyshortcuts]")).toBeNull();
+    for (const radio of rangeGroup(header)!.querySelectorAll('[role="radio"]')) {
+      expect(radio.getAttribute("aria-keyshortcuts")).toBe("[ ]");
+    }
     const slot = page.querySelector("[data-slot=timeline-readout-slot]")!;
     expect(slot.querySelector("[data-slot=cursor-readout]")).not.toBeNull();
     expect(page.querySelector("details[data-slot=timeline-kbd-hints]")).not.toBeNull();
