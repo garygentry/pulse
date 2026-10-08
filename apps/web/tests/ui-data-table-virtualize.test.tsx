@@ -346,7 +346,7 @@ describeUi("@/ui DataTable virtualize", () => {
       expect(rowIndexes().length).toBeLessThan(40);
     });
 
-    it("scrollToIndex lands a row at the bottom edge when tall rows above it are measured late", async () => {
+    it("scrollToIndex lands a row at the bottom edge among tall rows", async () => {
       const ref = createRef<DataTableHandle>();
       // Every row near the target is tall: the estimate puts the target ~200px too high.
       render(<DataTable ref={ref} caption="Hosts" columns={COLUMNS} data={mixed(1000, 1)} getRowId={(r) => r.key} virtualize />);
@@ -358,6 +358,45 @@ describeUi("@/ui DataTable virtualize", () => {
         const target = row("host-500");
         expect(bodyOffset(target) + bodyRowHeight(target)).toBe(viewport().scrollTop + VIEWPORT_HEIGHT);
       });
+    });
+
+    it("scrollToIndex keeps aiming at the same row when rows are inserted above it meanwhile", async () => {
+      const ref = createRef<DataTableHandle>();
+      const props = { caption: "Hosts", columns: COLUMNS, getRowId: (r: Host) => r.key, virtualize: true } as const;
+      const data = mixed(1000, 3);
+      const { rerender } = render(<DataTable ref={ref} {...props} data={data} />);
+
+      act(() => ref.current!.scrollToIndex(600, { align: "start" }));
+      // A live update lands 30 rows above the target before the scroll settles.
+      const inserted: Host[] = Array.from({ length: 30 }, (_, i) => ({ key: `new-${i}`, kind: "VM" }));
+      rerender(<DataTable ref={ref} {...props} data={[...inserted, ...data]} />);
+
+      await waitFor(() => expect(screen.getByRole("rowheader", { name: "host-600" })).toBeInTheDocument());
+      await waitFor(() => expect(bodyOffset(row("host-600"))).toBe(viewport().scrollTop));
+      expect(row("host-600")).toHaveAttribute("aria-rowindex", "632");
+    });
+
+    it("a scrolling key cancels scrollToIndex's re-aim, so the user's scroll stands", async () => {
+      const ref = createRef<DataTableHandle>();
+      render(<DataTable ref={ref} caption="Hosts" columns={COLUMNS} data={mixed(1000, 3)} getRowId={(r) => r.key} virtualize />);
+
+      // PageDown right after the call, before the scroll has rendered (and re-aimed): the
+      // browser scrolls the viewport by a page from where scrollToIndex put it.
+      act(() => {
+        ref.current!.scrollToIndex(600, { align: "start" });
+        viewport().focus();
+      });
+      const userTop = viewport().scrollTop + VIEWPORT_HEIGHT;
+      await act(async () => {
+        const view = document.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent };
+        viewport().dispatchEvent(new view.KeyboardEvent("keydown", { key: "PageDown", bubbles: true }));
+        viewport().scrollTop = userTop;
+        viewport().dispatchEvent(new Event("scroll"));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      // Not pulled back up to the target. (It may sit a little lower: rows above the viewport
+      // measured taller, and the library shifts the offset to keep the content in place.)
+      expect(viewport().scrollTop).toBeGreaterThanOrEqual(userTop);
     });
 
     it("keyboard focus across the window keeps landing on the next tall row", async () => {

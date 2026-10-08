@@ -166,7 +166,8 @@ row rendered by id, exposes `aria-rowcount` and `aria-rowindex`, and offers a re
 `scrollToIndex`. Rows are measured as they render (`virtualize.rowHeight` is the estimate and
 each row's minimum height), so rows that grow a second line, such as the alert catalog's rule
 errors, keep the spacers, the scrollbar and `scrollToIndex` exact. Below the threshold the output
-is deck's. The alerts triage table and the alert catalog use it.
+is deck's. The alerts triage table and catalog, the estate inventory, coverage and entity pages,
+and the `/_ui` workbench use it.
 `focusable={false}` drops the scroll region's tab stop where nobody interacts (the kiosk engine
 tables).
 

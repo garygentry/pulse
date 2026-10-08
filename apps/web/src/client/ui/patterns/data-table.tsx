@@ -24,6 +24,7 @@ import {
   useState,
   type ElementType,
   type FocusEvent,
+  type KeyboardEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -440,6 +441,17 @@ interface VirtualRowPosition {
  */
 const SCROLL_CORRECTION = { passes: 3, ms: 500 } as const;
 
+/** Keys that scroll a focused scroll region (and so cancel a pending re-aim). */
+const SCROLL_KEYS: ReadonlySet<string> = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
+
 interface VirtualizedTableProps<T> {
   rootRef: Ref<HTMLDivElement>;
   scrollRef: { current: DataTableHandle["scrollToIndex"] | null };
@@ -457,10 +469,15 @@ interface VirtualizedTableProps<T> {
   focusable: boolean;
 }
 
-/** An `aria-hidden` row standing in for `height` px of rows that are not rendered. */
+/**
+ * An `aria-hidden` row standing in for `height` px of rows that are not rendered. It carries
+ * the rows' bottom border, as the row it replaces would: in the collapsed-border table the
+ * next row then gets the same top half-border as anywhere else, so a row measures the same
+ * height whether or not it follows a spacer (no re-measure as the window moves).
+ */
 function SpacerRow({ height, columnCount }: { height: number; columnCount: number }) {
   return (
-    <tr aria-hidden="true" data-slot="data-table-spacer">
+    <tr aria-hidden="true" data-slot="data-table-spacer" className="border-b">
       <td colSpan={columnCount} className="border-0 p-0" style={{ height }} />
     </tr>
   );
@@ -562,10 +579,13 @@ function VirtualizedTable<T>({
   // Scroll by offset rather than `virtualizer.scrollToIndex`, which re-aims at the row
   // whenever a measurement changes for up to seconds, and so would undo a scroll the
   // user starts right after. Rows the scroll renders are measured in the next commit
-  // and can move the target (a tall row above it in the viewport); a few bounded
-  // passes after those commits re-aim, and any user scroll gesture cancels them.
+  // and can move the target: the library compensates rows above the viewport, but not
+  // the list growing below it, so a scroll to the last rows would stop short of the end
+  // once they measure taller. A few bounded passes after those commits re-aim, and any
+  // user scroll gesture (wheel, touch, pointer, scrolling key) cancels them. The target
+  // is held by row id, like the focused row, so live re-sorts do not retarget it.
   const pendingScrollRef = useRef<{
-    index: number;
+    id: string;
     align: DataTableScrollAlign;
     passes: number;
     until: number;
@@ -573,9 +593,10 @@ function VirtualizedTable<T>({
   const scrollToRow = (index: number, align: DataTableScrollAlign): void => {
     pendingScrollRef.current = null;
     const target = virtualizer.getOffsetForIndex(index, align);
-    if (target === undefined || target[0] === virtualizer.scrollOffset) return;
+    const id = rows[index]?.id;
+    if (target === undefined || id === undefined || target[0] === virtualizer.scrollOffset) return;
     pendingScrollRef.current = {
-      index,
+      id,
       align,
       passes: SCROLL_CORRECTION.passes,
       until: performance.now() + SCROLL_CORRECTION.ms,
@@ -589,8 +610,9 @@ function VirtualizedTable<T>({
     const pending = pendingScrollRef.current;
     const viewport = viewportRef.current;
     if (pending === null || viewport === null) return;
-    const rendered = virtualizer.getVirtualItems().some((item) => item.index === pending.index);
-    const target = virtualizer.getOffsetForIndex(pending.index, pending.align);
+    const index = rows.findIndex((row) => row.id === pending.id);
+    const rendered = index !== -1 && virtualizer.getVirtualItems().some((item) => item.index === index);
+    const target = index === -1 ? undefined : virtualizer.getOffsetForIndex(index, pending.align);
     const reachable =
       target === undefined ? undefined : Math.min(target[0], viewport.scrollHeight - viewport.clientHeight);
     const expired = pending.passes <= 0 || performance.now() > pending.until;
@@ -604,6 +626,11 @@ function VirtualizedTable<T>({
 
   const cancelPendingScroll = () => {
     pendingScrollRef.current = null;
+  };
+  // A key the browser turns into a scroll of the viewport. Keys a handler already took
+  // (list navigation prevents the default and moves focus, which re-aims) do not cancel.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!event.defaultPrevented && SCROLL_KEYS.has(event.key)) cancelPendingScroll();
   };
 
   useLayoutEffect(() => {
@@ -661,6 +688,7 @@ function VirtualizedTable<T>({
         onWheel={cancelPendingScroll}
         onTouchStart={cancelPendingScroll}
         onPointerDown={cancelPendingScroll}
+        onKeyDown={onKeyDown}
         className={cn(
           "relative max-h-[70vh] w-full overflow-auto rounded-md border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
           className,

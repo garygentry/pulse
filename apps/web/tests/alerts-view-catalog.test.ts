@@ -28,6 +28,17 @@ describe("ruleHealthStatus", () => {
     expect(Object.keys(RULE_HEALTH_STATUS).length).toBe(3);
   });
 
+  test("row keys are unique and stable: no row index, an ordinal only for a repeated group+name", async () => {
+    const { catalogRowKeys } = await import("../src/client/views/alerts/catalog/catalog-model.js");
+    const rule = (group: string, name: string): RuleState => ({ ...rules[0]!, group, name });
+    const keys = catalogRowKeys([rule("g", "A"), rule("g", "B"), rule("g", "A"), rule("h", "A")]);
+    expect(new Set(keys).size).toBe(4);
+    // Removing the first rule leaves the keys of rules that were not duplicates unchanged.
+    const after = catalogRowKeys([rule("g", "B"), rule("g", "A"), rule("h", "A")]);
+    expect(after[0]).toBe(keys[1]);
+    expect(after[2]).toBe(keys[3]);
+  });
+
   test("columns map name/group/family/state/health/lastEval in that order", async () => {
     const { CATALOG_COLUMNS } = await import("../src/client/views/alerts/catalog/CatalogTab.js");
     expect(CATALOG_COLUMNS.map((c) => c.header)).toEqual([

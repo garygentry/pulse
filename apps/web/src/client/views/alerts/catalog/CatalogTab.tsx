@@ -3,12 +3,12 @@
 // A pure prop-driven renderer over `AlertsPayload.rules`: one row per RuleState, in the data tier's
 // group/family -> name order, passed verbatim to a DataTable. No reordering, no row removal, no
 // links/buttons/mutation, no global state reads.
-import type { ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 
 import type { RuleState } from "@pulse/web-data/wire";
 import { Badge, DataTable, EmptyState, StatusBadge, TARGET_STATUS } from "@/ui";
 import type { ColumnDef } from "@/ui";
-import { ruleHealthStatus } from "./catalog-model.js";
+import { catalogRowKeys, ruleHealthStatus } from "./catalog-model.js";
 
 /** Props for {@link CatalogTab}. The slice is `AlertsPayload.rules`, passed by view.tsx in the data
  *  tier's group/family -> name order. This component never reorders it. */
@@ -95,6 +95,9 @@ function healthCell(r: RuleState): ReactElement {
  * view.tsx's; this component renders the panel content only.
  */
 export function CatalogTab({ rules }: CatalogTabProps): ReactElement {
+  // Row ids key the virtualized table's measured row heights (its size cache is keyed by row id
+  // and never pruned: an entry per id ever seen, a few bytes each, accepted).
+  const rowKeys = useMemo(() => catalogRowKeys(rules), [rules]);
   if (rules.length === 0) {
     return <EmptyState icon="list" title="No rules" description="No vmalert rules were reported." />;
   }
@@ -105,7 +108,7 @@ export function CatalogTab({ rules }: CatalogTabProps): ReactElement {
       captionHidden
       columns={CATALOG_COLUMNS}
       data={rules}
-      getRowId={(r, index) => `${r.group}\u0000${r.name}\u0000${index}`}
+      getRowId={(_rule, index) => rowKeys[index]!}
       virtualize
       className="max-h-[70vh]"
     />
