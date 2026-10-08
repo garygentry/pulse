@@ -454,3 +454,11 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     },
   };
 }
+
+/**
+ * A route as one string (path and query): the `resetKey` of a view's PageErrorBoundary, so navigating
+ * within the view (another tab, entity or filter) clears a render fault, as Retry does.
+ */
+export function routeKey(route: Pick<RouteMatch, "path" | "query">): string {
+  return `${route.path}?${new URLSearchParams(route.query).toString()}`;
+}

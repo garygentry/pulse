@@ -23,6 +23,7 @@ import {
 } from "@/ui";
 import type { DataTableHandle, IconName } from "@/ui";
 import type { ViewProps } from "../../../shared/registry.js";
+import { routeKey } from "../../router.js";
 
 import { facetValues, firingRows, readAlerts } from "./model.js";
 import { FACET_DELIMITER, QUERY_KEYS, TARGET_ALIAS_KEY, decodeTriageRoute, encodeTriageState } from "./url-state.js";
@@ -72,8 +73,11 @@ function toQueryString(query: Readonly<Record<string, string>>): string {
 /** Default export — the ComponentType<ViewProps> the registry loads. The boundary wraps the body so
  *  any render fault degrades in place. */
 export default function AlertsView(props: ViewProps): ReactElement {
+  useSignals();
   return (
     <PageErrorBoundary
+      pageSlot="alerts-page"
+      resetKey={routeKey(props.store.route.value)}
       title="The alerts view hit a rendering error"
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}
