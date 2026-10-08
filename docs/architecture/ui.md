@@ -250,7 +250,22 @@ from a production build.
 - `style={…}` only in allowlisted files, with no stale allowlist entries;
 - a `data-slot` root on every pattern, and no `data-icon`;
 - no legacy design tokens;
-- `useSignals()` in every component that reads a signal during render.
+- `useSignals()` in every component that reads a signal during render;
+- token resolution: every theme-backed utility in a source literal (`bg-…`, `text-…`, `border-…`,
+  `font-…`, `rounded-…`, …, variants included) compiles under the installed Tailwind over `app.css`,
+  colour utilities name an app theme colour (not Tailwind's palette; black, white and the keywords
+  excepted), every `var(--…)` reference in sources and stylesheets is declared by the compiled sheet
+  or set at runtime, and the light, dark and wallboard blocks define matching token sets. A `${…}`
+  interpolation is matched as a wildcard; classes built by concatenation are not seen;
+- list keyboards through `useListNavigation`: no new hand-rolled `ArrowUp`/`ArrowDown` or `j`/`k`
+  handler, vertical or 2-D `rovingTabindex`, or `j`/`k` shortcut outside the hook. The alerts triage
+  keyboard, the timeline lane tree and the overview grid are listed exemptions, each with its reason.
+
+`tests/views-page-structure.test.tsx` renders every registered view on every route it owns (tabs and
+deep routes included), loaded and before data, and checks the `data-slot="…-page"` root and the one
+`PageHeader` `h1`. `tests/ui-tabs-keyboard.test.tsx` holds the Radix tabs keyboard contract (arrows,
+Home/End, wrap, roving tabindex, automatic and manual activation) for the primitive and for the
+alerts and estate tabs.
 
 Related suites: `tests/no-preact.test.ts` keeps `preact` out of `apps/web`,
 `tests/mutations-client-imports.test.ts` keeps mutation dialogs behind `import()`, and

@@ -136,7 +136,7 @@ function EngineViewBody({ store, router, rotation }: ViewProps): ReactElement {
       data-not-current={notCurrent ? "true" : "false"}
     >
       <PageHeader
-        title="Monitoring engine"
+        title={ENGINE_PAGE_TITLE}
         meta={
           <span className="text-sm text-muted-foreground" data-zone="">
             Times in {clock.timezone}
@@ -201,11 +201,15 @@ function Region({ id, label, children }: { readonly id: string; readonly label: 
   );
 }
 
+/** The page's one h1, loaded or not. */
+const ENGINE_PAGE_TITLE = "Monitoring engine";
+
 /** Pre-first-payload layout. The skeletons are aria-hidden; the visible status text carries the
- *  meaning, and aria-busy marks the region. */
+ *  meaning, and aria-busy marks the region. The page keeps its one h1 while it loads. */
 function EngineLoading({ text }: { readonly text: string }): ReactElement {
   return (
     <div data-slot="engine-page" data-region="loading" className="flex min-w-0 flex-col gap-6">
+      <PageHeader title={ENGINE_PAGE_TITLE} />
       <LoadingState label={text} preset="cards" rows={6} />
     </div>
   );
