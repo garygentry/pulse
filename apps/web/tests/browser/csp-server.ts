@@ -4,15 +4,17 @@
 // Composes the PRODUCTION router and asset loader over a built client directory (argv[2]), the way
 // `src/server/index.ts` does in auth mode `proxy-header`, so the write path's dialogs are reachable:
 // loadServerConfig → buildWriteRuntime → createServerRuntime → createFetchHandler(…, write.dispatcher).
-// The engine is the dev loop's in-process mock (`degraded-mix`), plus two read endpoints the mock
-// does not serve, so every surface the suite opens has data to draw:
+// The estate is the reference bundle copied to a temp dir with three findings added (same bundleId),
+// so the Findings tab renders its Radix Select filters. The engine is the dev loop's in-process mock
+// (`degraded-mix`), plus two read endpoints the mock does not serve, so every surface the suite opens
+// has data to draw:
 //   • Alertmanager `GET /api/v2/silences` — one active silence (the Silences tab's Expire action);
 //   • VictoriaMetrics `/api/v1/query_range` — one smooth series (the uPlot charts on Engine and in
 //     the Timeline detail).
 // It runs as its own process so the write path's module-level providers never leak into the shared
 // `bun test` process. Prints `csp-server listening on http://127.0.0.1:<port>` once bound.
 
-import { mkdtempSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -23,6 +25,7 @@ import { DEV_DEFAULT_ESTATE_MODEL } from "../../src/server/dev/protocol.js";
 import { buildWriteRuntime } from "../../src/server/mutations/bootstrap.js";
 import { createServerRuntime } from "../../src/server/refresh.js";
 import { createFetchHandler } from "../../src/server/router.js";
+import { makeWebFindingsArtifact } from "../factories/estate-bundle.js";
 
 /** The identity header the suite's browser context sends; loopback is the trusted proxy. */
 export const CSP_SERVER_IDENTITY_HEADER = "Remote-User" as const;
@@ -65,10 +68,18 @@ async function main(): Promise<void> {
     return mock.fetchImpl(input, init);
   }) as typeof fetch;
 
+  // The reference bundle, with findings (the Findings tab's filters only render when there are some).
+  const estateDir = mkdtempSync(join(tmpdir(), "pulse-csp-estate-"));
+  const sourceDir = resolve(REPO_ROOT, DEV_DEFAULT_ESTATE_MODEL, "..");
+  for (const name of ["web-estate-model.json", "web-coverage.json"]) copyFileSync(join(sourceDir, name), join(estateDir, name));
+  const { bundleId } = JSON.parse(readFileSync(join(sourceDir, "web-findings.json"), "utf8")) as { bundleId: string };
+  const findings = makeWebFindingsArtifact(bundleId as Parameters<typeof makeWebFindingsArtifact>[0]);
+  writeFileSync(join(estateDir, "web-findings.json"), JSON.stringify(findings));
+
   const env = {
     ...process.env,
     ...MOCK_ENV,
-    PULSE_WEB_ESTATE_MODEL: resolve(REPO_ROOT, DEV_DEFAULT_ESTATE_MODEL),
+    PULSE_WEB_ESTATE_MODEL: join(estateDir, "web-estate-model.json"),
     PULSE_WEB_AUTH_MODE: "proxy-header",
     PULSE_WEB_AUTH_HEADER: CSP_SERVER_IDENTITY_HEADER,
     PULSE_WEB_TRUSTED_PROXIES: "127.0.0.1/32",

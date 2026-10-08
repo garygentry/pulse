@@ -12,7 +12,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { loadStaticAssets, MANIFEST_FILENAME, SHELL_MARKERS, type ClientManifest, type StaticAssets } from "../src/server/assets.js";
+import {
+  injectEntryTags,
+  loadStaticAssets,
+  MANIFEST_FILENAME,
+  parseClientManifest,
+  SHELL_MARKERS,
+  type ClientManifest,
+  type StaticAssets,
+} from "../src/server/assets.js";
 import type { ServerConfig } from "../src/server/config.js";
 import { ERROR_PAGE_CSP } from "../src/server/estate/error-page.js";
 import type { RuntimeStatus, ServerRuntime } from "../src/server/refresh.js";
@@ -347,30 +355,97 @@ describe("build-time inline-script hashes", () => {
     expect(policy).not.toContain(sha("self.a = 1;"));
   }, 120_000);
 
-  test("a shell that drifted from its manifest is served with the hashes of the bytes it serves", async () => {
+  /** A built-looking dir whose shell's inline script is `script` and whose manifest records `recorded`. */
+  function driftDir(script: string, recorded: string[] | undefined, buildId = "000000000000"): string {
     const dir = tmp("pulse-csp-drift-");
-    writeFileSync(join(dir, "index.html"), "<html><head><script>edited()</script></head><body></body></html>");
+    writeFileSync(join(dir, "index.html"), `<html><head><script>${script}</script></head><body></body></html>`);
     writeFileSync(join(dir, "main-aaaa.js"), "");
-    const manifest: ClientManifest = {
-      buildId: "000000000000",
-      entries: { js: ["/assets/main-aaaa.js"], css: [] },
-      chunks: [],
-      chunkCss: {},
-      inlineScriptHashes: [sha("original()")],
-    };
-    writeFileSync(join(dir, MANIFEST_FILENAME), JSON.stringify(manifest));
-    expect(loadStaticAssets(dir).inlineScriptHashes?.()).toEqual([sha("edited()")]);
+    writeFileSync(
+      join(dir, MANIFEST_FILENAME),
+      JSON.stringify({
+        buildId,
+        entries: { js: ["/assets/main-aaaa.js"], css: [] },
+        chunks: [],
+        chunkCss: {},
+        ...(recorded !== undefined ? { inlineScriptHashes: recorded } : {}),
+      }),
+    );
+    return dir;
+  }
+
+  test("production fails closed: a shell that drifted from its manifest keeps the recorded hashes", async () => {
+    const dir = driftDir("edited()", [sha("original()")]);
+    expect(loadStaticAssets(dir).inlineScriptHashes?.()).toEqual([sha("original()")]);
+    const policy = await servedShellPolicy(dir);
+    expect(policy).toContain(`'${sha("original()")}'`);
+    expect(policy).not.toContain(sha("edited()"));
   });
 
-  test("a manifest with a malformed hash is rejected (directory-scan fallback)", () => {
+  test("development serves the hashes of the shell it serves", () => {
+    const dir = driftDir("edited()", [sha("original()")]);
+    expect(loadStaticAssets(dir, { dev: true }).inlineScriptHashes?.()).toEqual([sha("edited()")]);
+  });
+
+  test("production allows no inline script without recorded hashes (older manifest)", () => {
+    const dir = driftDir("x()", undefined);
+    expect(loadStaticAssets(dir).inlineScriptHashes?.()).toEqual([]);
+    expect(loadStaticAssets(dir, { dev: true }).inlineScriptHashes?.()).toEqual([sha("x()")]);
+  });
+
+  test("a manifest with a malformed hash is rejected (directory-scan fallback, no inline script in production)", () => {
     const dir = tmp("pulse-csp-bad-");
     writeFileSync(join(dir, "index.html"), "<html><head><script>x()</script></head><body></body></html>");
     writeFileSync(
       join(dir, MANIFEST_FILENAME),
       JSON.stringify({ buildId: "0", entries: { js: [], css: [] }, chunks: [], inlineScriptHashes: ["'unsafe-inline'"] }),
     );
+    expect(loadStaticAssets(dir).buildId?.()).toBeNull();
+    expect(loadStaticAssets(dir).inlineScriptHashes?.()).toEqual([]);
+    expect(loadStaticAssets(dir, { dev: true }).inlineScriptHashes?.()).toEqual([sha("x()")]);
+  });
+
+  test("shellDocument pairs the shell with its own hashes from one snapshot", () => {
+    const dir = driftDir("a()", [sha("a()")]);
     const loaded = loadStaticAssets(dir);
-    expect(loaded.buildId?.()).toBeNull();
-    expect(loaded.inlineScriptHashes?.()).toEqual([sha("x()")]);
+    const doc = loaded.shellDocument?.();
+    expect(doc?.html).toBe(loaded.shell());
+    expect(doc?.scriptHashes).toEqual([sha("a()")]);
+  });
+});
+
+describe("manifest buildId", () => {
+  test("a buildId that is not a short token is rejected (it lands in an HTML attribute)", () => {
+    for (const buildId of ['x" onload="alert(1)', "<script>", "", "a".repeat(65)]) {
+      expect(parseClientManifest(JSON.stringify({ buildId, entries: { js: [], css: [] }, chunks: [] })), buildId).toBeNull();
+    }
+    for (const buildId of ["3f9c2a1b7e40", "build-XYZ", "shell-v1", "0"]) {
+      expect(parseClientManifest(JSON.stringify({ buildId, entries: { js: [], css: [] }, chunks: [] }))?.buildId).toBe(buildId);
+    }
+  });
+
+  test("injectEntryTags attribute-escapes the buildId it interpolates", () => {
+    const html = injectEntryTags(
+      "<html><head></head><body></body></html>",
+      { buildId: 'x"><script>alert(1)</script>', entries: { js: [], css: [] }, chunks: [] },
+      { dev: false },
+    );
+    expect(html).toContain('content="x&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"');
+    expect(html).not.toContain("<script>alert(1)");
+  });
+});
+
+describe("lazy document policy", () => {
+  test("withSecurityHeaders calls a policy function only for an HTML document without a CSP", () => {
+    let calls = 0;
+    const policy = (): string => {
+      calls += 1;
+      return "default-src 'self'";
+    };
+    withSecurityHeaders(Response.json({}), policy);
+    withSecurityHeaders(new Response("<p>", { headers: { "content-type": "text/html", "content-security-policy": "x" } }), policy);
+    expect(calls).toBe(0);
+    const res = withSecurityHeaders(new Response("<p>", { headers: { "content-type": "text/html" } }), policy);
+    expect(calls).toBe(1);
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'self'");
   });
 });

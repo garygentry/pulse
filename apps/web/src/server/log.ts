@@ -44,8 +44,9 @@ export interface LogEvent {
     | "assets_manifest_loaded"
     /** Directory-scan fallback engaged: `{ ok: false, reason: ManifestFallbackReason, dir }`. Once per loader. */
     | "assets_manifest_fallback"
-    /** The manifest's build-time inline-script hashes differ from the served shell's; the served
-     *  shell's hashes are used: `{ ok: false, recorded: n, served: n }`. */
+    /** The manifest's build-time inline-script hashes are missing or differ from the served shell's:
+     *  `{ ok: false, recorded: n | null, served: n, enforcing: "recorded" | "served" }`. Production
+     *  enforces the recorded hashes (an edited inline script is blocked); dev the served ones. */
     | "assets_csp_hash_drift"
     /** Dev composition root bound (`DevServerListeningEvent`). */
     | "dev_server_listening"

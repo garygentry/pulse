@@ -143,11 +143,11 @@ Registered server routes receive a `ServerContext` containing the current estate
 
 ## Security Headers
 
-`src/server/security-headers.ts` owns every security header, and `createFetchHandler()` applies them to every response it returns, error paths included. Nothing in the stack's compose files adds headers; the operator's reverse proxy should not either (see [Exposure](../../operator/exposure.md#security-headers)).
+`src/server/security-headers.ts` owns every security header, and `createFetchHandler()` applies them to every response it returns, error paths included. The one exception is the dev-only `/__dev/build-id`, which the dev composition root answers before that handler. Nothing in the stack's compose files adds headers; the operator's reverse proxy should not either (see [Exposure](../../operator/exposure.md#security-headers)).
 
 | Response | Headers |
 |----------|---------|
-| Every response | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` |
+| Every response from `createFetchHandler()` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` |
 | HTML documents (shell, error page) | the above, plus `Content-Security-Policy`, `Cross-Origin-Opener-Policy: same-origin`, and `Permissions-Policy` disabling camera, microphone, geolocation, payment, USB, and motion sensors |
 | SPA shell only | `Cache-Control: no-store`, because each response carries a fresh nonce |
 
@@ -162,7 +162,7 @@ form-action 'self'; frame-ancestors 'none'
 ```
 
 - **`script-src`** allows same-origin bundles and, by hash, the one inline script: the pre-paint theme/density stamp in `src/client/index.html`. The `pulse-chunk-css` island is `type="application/json"`, a data block the browser never executes, so CSP does not apply to it and it needs no hash.
-- **`style-src`** has no `'unsafe-inline'`. Stylesheets are same-origin files. React, Radix positioning, and uPlot set inline styles through the CSSOM (`element.style`), which CSP does not govern. The one `<style>` element the app creates at runtime is react-remove-scroll's scroll lock, which every modal Radix dialog, sheet, select, and menu injects. It carries the response's nonce: the router stamps `<meta name="pulse-csp-nonce" nonce="…">` into the shell, and `main.tsx` passes the meta's `.nonce` property to `get-nonce`, which react-style-singleton reads. Browsers hide the `nonce` attribute from the DOM and from CSS selectors once the header applies, so the value is not readable through markup. A `style="…"` attribute in parsed HTML is still blocked.
+- **`style-src`** has no `'unsafe-inline'`. Stylesheets are same-origin files. React, Radix positioning, and uPlot set inline styles through the CSSOM (`element.style`), which CSP does not govern. Three libraries create `<style>` elements at runtime, and each carries the response's nonce. The router stamps `<meta name="pulse-csp-nonce" nonce="…">` into the shell, and `main.tsx` passes the meta's `.nonce` property to `get-nonce`. react-remove-scroll's scroll lock, which every modal Radix dialog, sheet, select, and menu injects, reads `get-nonce` itself through react-style-singleton. The Radix Select and ScrollArea viewports each render their own `<style>` and take a `nonce` prop, which the vendored wrappers pass from `ui/lib/style-nonce.ts`. Browsers hide the `nonce` attribute from the DOM and from CSS selectors once the header applies, so the value is not readable through markup. A `style="…"` attribute in parsed HTML is still blocked.
 - **`img-src 'self' data:`** allows data-URI images. **`font-src 'self'`** covers the self-hosted Geist files. **`connect-src 'self'`** covers `/api/*` fetches, the `/api/events` EventSource, and the dev loop's `/__dev/build-id` poll. The app uses no WebSocket, and dev and production share one policy.
 - **`object-src 'none'`, `base-uri 'none'`, `form-action 'self'`, and `frame-ancestors 'none'`** close plugin content, `<base>` hijacking, off-origin form posts, and framing (clickjacking).
 
@@ -172,7 +172,7 @@ The estate error page has its own policy, `default-src 'none'` plus the hash of 
 
 `buildClient()` runs `inlineScriptHashes()` over `src/client/index.html` when it copies the file into the output, and records the result as `manifest.inlineScriptHashes`. `inlineScriptHashes()` hashes each inline `<script>` whose type is absent, a JavaScript MIME type, or `module`. It skips `src=` scripts, data blocks, and HTML comments, and it normalises CRLF to LF as the HTML parser does. Nobody maintains a hash by hand: edit the inline script, rebuild, and the new hash ships with the new bytes.
 
-At load, `loadStaticAssets()` re-hashes the composed shell. If the hashes differ from the manifest's, for example when `index.html` was edited in `dist/` after the build, it logs `assets_csp_hash_drift` and serves the hashes of the bytes it actually serves, so the pre-paint script is never silently blocked. A manifest with a malformed hash fails validation and takes the directory-scan fallback, which hashes the shell itself.
+At load, `loadStaticAssets()` re-hashes the composed shell and compares it with the manifest. Production fails closed: the policy allows exactly the recorded hashes. If the shell drifted, for example because `index.html` was edited in `dist/` after the build, the loader logs `assets_csp_hash_drift` and the edited script is blocked rather than trusted. With no recorded hashes (an older build, or a malformed manifest that takes the directory-scan fallback), production allows no inline script. Development instead enforces the hashes of the shell it serves, so an `index.html` edit applies on the next rebuild, and logs the same drift line. Each shell response reads the HTML and its hashes from one loader snapshot (`shellDocument()`), so a dev rebuild can never pair one build's shell with another build's hashes. The manifest's `buildId` must be a short token (`[A-Za-z0-9._-]{1,64}`; the build emits 12 hex characters), and it is attribute-escaped where the shell interpolates it.
 
 ### Extending the policy
 

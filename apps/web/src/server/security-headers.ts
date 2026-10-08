@@ -8,7 +8,8 @@
 //     inert and need no hash.
 //   • `shellContentSecurityPolicy(hashes)` — the policy for the SPA shell document.
 //   • `withSecurityHeaders(res)` — the per-response-type header set, applied by `createFetchHandler`
-//     to every response it returns (shell, error page, `/assets/*`, `/api/*`, health/metrics).
+//     to every response it returns (shell, error page, `/assets/*`, `/api/*`, health/metrics). The
+//     dev composition root answers `/__dev/build-id` before that handler, so it carries none.
 //
 // Architecture: docs/architecture/web-foundation/architecture.md § Security headers.
 
@@ -89,10 +90,12 @@ function serialise(directives: Readonly<Record<string, readonly string[]>>): str
  *
  * `style-src` carries no `'unsafe-inline'`. The app's stylesheets are same-origin files, and React,
  * Radix, and uPlot set inline styles through the CSSOM (`element.style`), which CSP does not govern.
- * The one `<style>` element the app creates at runtime is react-remove-scroll's scroll lock (every
- * modal Radix dialog, sheet, select, and menu); it carries the per-response `styleNonce`, which the
- * client hands to `get-nonce` from the shell's nonce meta. A `style="…"` attribute in parsed markup
- * stays blocked. The zero-violation browser suite (`tests/browser/csp.test.ts`) guards all of it.
+ * Three libraries create `<style>` elements at runtime, and each carries the per-response
+ * `styleNonce`, which `main.tsx` hands to `get-nonce` from the shell's nonce meta:
+ * react-remove-scroll's scroll lock (every modal Radix dialog, sheet, select, and menu) reads
+ * `get-nonce` itself; the Radix Select and ScrollArea viewports take a `nonce` prop, which the
+ * vendored wrappers pass (`ui/lib/style-nonce.ts`). A `style="…"` attribute in parsed markup stays
+ * blocked. The zero-violation browser suite (`tests/browser/csp.test.ts`) guards all of it.
  *
  * @param scriptHashes - Hashes of the shell's inline scripts (manifest `inlineScriptHashes`).
  * @param styleNonce - This response's style nonce; omitted, no runtime `<style>` element applies.
@@ -185,12 +188,16 @@ function isHtml(res: Response): boolean {
  * whose headers are immutable is copied (its body stream is moved, not read).
  *
  * @param res - The response the router produced.
- * @param documentPolicy - The CSP for an HTML document that does not carry one.
+ * @param documentPolicy - The CSP for an HTML document that does not carry one, or a function that
+ *   builds it (called only when such a document is being sent).
  */
-export function withSecurityHeaders(res: Response, documentPolicy: string): Response {
+export function withSecurityHeaders(res: Response, documentPolicy: string | (() => string)): Response {
   const extra: Record<string, string> = { ...BASE_SECURITY_HEADERS };
   if (isHtml(res)) {
-    Object.assign(extra, DOCUMENT_SECURITY_HEADERS, { "content-security-policy": documentPolicy });
+    Object.assign(extra, DOCUMENT_SECURITY_HEADERS);
+    if (!res.headers.has("content-security-policy")) {
+      extra["content-security-policy"] = typeof documentPolicy === "function" ? documentPolicy() : documentPolicy;
+    }
   }
   const missing = Object.entries(extra).filter(([name]) => !res.headers.has(name));
   if (missing.length === 0) return res;

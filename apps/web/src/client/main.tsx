@@ -25,9 +25,10 @@ if (!root) throw new Error("[main] #app mount node missing from shell HTML");
 const buildId = readShellMeta(SHELL_MARKERS.buildIdMeta);
 const devMode = readShellMeta(SHELL_MARKERS.devMeta) === "1";
 
-// The per-response CSP style nonce (security-headers.ts). react-remove-scroll's scroll lock — the
-// one <style> element the app injects (modal dialogs, sheets, selects, menus) — reads it through
-// get-nonce; without it the strict `style-src` blocks that element. The value is in the meta's
+// The per-response CSP style nonce (security-headers.ts). Every runtime <style> element needs it, or
+// the strict `style-src` blocks it: react-remove-scroll's scroll lock (modal dialogs, sheets,
+// selects, menus) reads it through get-nonce, and the Radix Select / ScrollArea viewports get it as a
+// prop from `ui/lib/style-nonce.ts`, which reads the same store. The value is in the meta's
 // `nonce` property: browsers hide the attribute once the CSP header applies.
 const styleNonce = document.querySelector<HTMLMetaElement>(`meta[name="${SHELL_MARKERS.cspNonceMeta}"]`)?.nonce;
 if (styleNonce) setNonce(styleNonce);

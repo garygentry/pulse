@@ -325,7 +325,7 @@ console.log(shell.length, js?.contentType, assets.buildId?.());
 
 The loader never throws for missing or invalid client output. `MANIFEST_FILENAME`, `ASSET_PREFIX`, and `SHELL_MARKERS` define the shared file/HTML contract.
 
-`assets.inlineScriptHashes?.()` returns the CSP hashes the shell's `script-src` allows (see below).
+`assets.inlineScriptHashes?.()` returns the CSP hashes the shell's `script-src` allows: in production the manifest's recorded hashes (fail closed), in development the served shell's. `assets.shellDocument?.()` returns `{ html, scriptHashes }` from one loader snapshot; the router uses it for every shell response.
 
 ## Security Headers
 
@@ -341,7 +341,7 @@ Builds the SPA shell's policy. Without `styleNonce`, no runtime `<style>` elemen
 
 ### `withSecurityHeaders(res, documentPolicy): Response`
 
-Adds the base headers to any response. An HTML response also gets COOP, Permissions-Policy, and `documentPolicy` as its CSP, unless it already has one. It never overwrites a header, and it copies a response whose headers are immutable.
+Adds the base headers to any response. An HTML response also gets COOP, Permissions-Policy, and `documentPolicy` as its CSP, unless it already has one. `documentPolicy` may be a function, which is called only in that case. It never overwrites a header, and it copies a response whose headers are immutable.
 
 ### `newCspNonce()`, `withCspNonceMeta(shell, nonce)`, `staticPageContentSecurityPolicy(styleHashes)`
 

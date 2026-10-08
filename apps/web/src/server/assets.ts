@@ -89,6 +89,18 @@ export interface StaticAssets {
    *  `script-src` allows exactly these. OPTIONAL for the same reason as `buildId`; the router then
    *  allows no inline script. */
   inlineScriptHashes?(): readonly CspHash[];
+  /** `shell()` and `inlineScriptHashes()` read from ONE loader snapshot, so a dev rebuild between
+   *  the two reads can never pair a shell with another build's hashes. OPTIONAL like the others;
+   *  the router falls back to the two separate reads. */
+  shellDocument?(): ShellDocument;
+}
+
+/** A shell and the inline-script hashes its policy allows, from one loader snapshot. */
+export interface ShellDocument {
+  /** The composed shell HTML (as `shell()` returns it). */
+  html: string;
+  /** The hashes its CSP `script-src` allows (as `inlineScriptHashes()` returns them). */
+  scriptHashes: readonly CspHash[];
 }
 
 /** Options for `loadStaticAssets`. */
@@ -126,6 +138,15 @@ const FALLBACK_SHELL = `<!doctype html>
 <body><div id="app"></div></body></html>
 `;
 
+/** A manifest `buildId`: the build emits 12 hex chars; any short token-safe id is accepted, never
+ *  markup (it is interpolated into the shell's build-id meta, where it is also attribute-escaped). */
+export const BUILD_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** Escape a value for a double-quoted HTML attribute. */
+function escapeAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 /** Plain (non-null, non-array) object. */
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -149,7 +170,7 @@ export function parseClientManifest(text: string): ClientManifest | null {
     return null; // R1
   }
   if (!isRecord(doc)) return null; // R2
-  if (typeof doc["buildId"] !== "string") return null; // R3
+  if (typeof doc["buildId"] !== "string" || !BUILD_ID_PATTERN.test(doc["buildId"])) return null; // R3
   const entries = doc["entries"];
   if (!isRecord(entries)) return null; // R4
   if (!isAssetPathArray(entries["js"])) return null; // R5/R8
@@ -182,21 +203,33 @@ export function parseClientManifest(text: string): ClientManifest | null {
 }
 
 /**
- * The inline-script hashes the shell's policy allows. `buildClient` records them in the manifest;
- * the loader re-hashes the composed shell and checks the two agree. On any difference (a shell
- * edited in place after the build) the hashes of the bytes actually served win, with an
- * `assets_csp_hash_drift` log line, so the pre-paint script is never silently blocked. A manifest
- * without the field (an older build) uses the served hashes silently.
+ * The inline-script hashes the shell's policy allows.
+ *
+ * Production fails closed: the policy allows exactly the hashes `buildClient` recorded in the
+ * manifest. The loader re-hashes the composed shell, and if the two differ (the shell was edited in
+ * place after the build) it logs `assets_csp_hash_drift` at load and keeps the recorded hashes, so
+ * the edited inline script is blocked rather than trusted. With no recorded hashes (an older build,
+ * or directory-scan fallback) production allows no inline script.
+ *
+ * Development serves the hashes of the bytes it serves, so an `index.html` edit applies on rebuild
+ * without a manifest round-trip, and logs the same drift line.
  */
-function policyHashes(manifest: ClientManifest | null, shell: string): CspHash[] {
+function policyHashes(manifest: ClientManifest | null, shell: string, dev: boolean): CspHash[] {
   const served = inlineScriptHashes(shell);
-  const recorded = manifest?.inlineScriptHashes;
-  if (recorded === undefined) return served;
-  const same = recorded.length === served.length && recorded.every((h, i) => h === served[i]);
+  const recorded = manifest?.inlineScriptHashes as CspHash[] | undefined;
+  const same =
+    recorded !== undefined && recorded.length === served.length && recorded.every((h, i) => h === served[i]);
   if (!same) {
-    log({ event: "assets_csp_hash_drift", ok: false, recorded: recorded.length, served: served.length });
+    log({
+      event: "assets_csp_hash_drift",
+      ok: false,
+      recorded: recorded?.length ?? null,
+      served: served.length,
+      enforcing: dev ? "served" : "recorded",
+    });
   }
-  return served;
+  if (dev) return served;
+  return recorded ?? [];
 }
 
 /**
@@ -261,7 +294,7 @@ export function injectEntryTags(
   // Build-id meta — skip when the shell already has it.
   const buildIdTag = shell.includes(`name="${SHELL_MARKERS.buildIdMeta}"`)
     ? ""
-    : `    <meta name="${SHELL_MARKERS.buildIdMeta}" content="${manifest.buildId}">\n`;
+    : `    <meta name="${SHELL_MARKERS.buildIdMeta}" content="${escapeAttribute(manifest.buildId)}">\n`;
 
   // Chunk-css island — skip when already present. Payload is `chunkCss` (`{}` when absent).
   const island = shell.includes(`id="${SHELL_MARKERS.chunkCssIsland}"`)
@@ -409,7 +442,7 @@ export function loadStaticAssets(
       }
     }
 
-    const scriptHashes = policyHashes(manifest, shellHtml);
+    const scriptHashes = policyHashes(manifest, shellHtml, opts.dev === true);
     state = { manifest, buildId, assets, shell: shellHtml, mtimeMs, scriptHashes };
   };
 
@@ -444,6 +477,11 @@ export function loadStaticAssets(
     inlineScriptHashes() {
       checkForReload();
       return state.scriptHashes;
+    },
+    shellDocument() {
+      checkForReload();
+      const snapshot = state; // one read: `reload()` replaces `state` wholesale
+      return { html: snapshot.shell, scriptHashes: snapshot.scriptHashes };
     },
   };
 }

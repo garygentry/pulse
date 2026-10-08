@@ -131,19 +131,20 @@ export function createFetchHandler(
     let status = 200;
     // Every response leaves with the security headers for its type (security-headers.ts): the base
     // set everywhere, plus CSP/COOP/Permissions-Policy on HTML documents.
-    // A document without its own policy gets the shell policy minus the style nonce.
+    // A document without its own policy gets the shell policy minus the style nonce (computed only
+    // if such a response occurs; the shell and the error page both carry their own).
     const shellCsp = (): string => shellContentSecurityPolicy(assets.inlineScriptHashes?.() ?? []);
     try {
       const res = await dispatch(request, pathname, runtime, assets, services, mutationDispatcher);
       status = res.status;
-      return withSecurityHeaders(res, shellCsp());
+      return withSecurityHeaders(res, shellCsp);
     } catch (err) {
       // Top-level catch — an unexpected handler exception is a safe INTERNAL_ERROR + a structured
       // log; a route error NEVER kills the process. Model/source failure modes are handled below the
       // throw as normal, non-exceptional paths.
       status = 500;
       log({ event: "request_error", ok: false, route: routeLabel, error: (err as Error).message });
-      return withSecurityHeaders(errorFor("INTERNAL_ERROR", 500), shellCsp());
+      return withSecurityHeaders(errorFor("INTERNAL_ERROR", 500), shellCsp);
     } finally {
       recordHttpRequest(routeLabel, status); // pulse_web_http_requests_total{route,status} (§10)
     }
@@ -236,12 +237,14 @@ export async function dispatch(
   // (6) SPA shell fallback — any other GET path returns index.html (hash-routed client; 06). Each
   //     response carries a fresh CSP style nonce, in its policy and in the shell's nonce meta, so
   //     the shell is never stored (`no-store`) and a nonce is never replayed from a cache.
+  //     The shell and its hashes come from one loader snapshot (never a pair split by a rebuild).
+  const doc = assets.shellDocument?.() ?? { html: assets.shell(), scriptHashes: assets.inlineScriptHashes?.() ?? [] };
   const nonce = newCspNonce();
-  return new Response(withCspNonceMeta(assets.shell(), nonce), {
+  return new Response(withCspNonceMeta(doc.html, nonce), {
     headers: {
       ...HTML_HEADERS,
       "cache-control": "no-store",
-      "content-security-policy": shellContentSecurityPolicy(assets.inlineScriptHashes?.() ?? [], nonce),
+      "content-security-policy": shellContentSecurityPolicy(doc.scriptHashes, nonce),
     },
   });
 }

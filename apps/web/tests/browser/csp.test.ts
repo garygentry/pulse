@@ -9,9 +9,10 @@
 //     data island is present and parseable;
 //   • opens the surfaces that create DOM at runtime: the command palette, the theme menu, the alert
 //     detail pane and its Silence / Acknowledge dialogs, the Expire confirm, the Propose edit dialog,
-//     the density menu, a tooltip, the uPlot charts (Engine, Timeline detail), and the mobile sheet;
+//     the Findings Severity / Code Selects, the density menu, a tooltip, the uPlot charts (Engine, Timeline detail), and the mobile sheet;
 // and asserts ZERO `securitypolicyviolation` events and zero CSP console messages throughout.
-// Also checks the scroll-lock <style> the modal dialogs inject carries the response's style nonce.
+// Also checks every runtime <style> (react-remove-scroll's scroll lock, the Radix Select viewport,
+// and — in the dev run's /_ui workbench — the Radix ScrollArea viewport) carries the style nonce.
 //
 // SELF-SKIPS when Chromium is not provisioned (see _harness.browserDescribe).
 
@@ -250,6 +251,24 @@ browserDescribe()("browser: the Content-Security-Policy produces zero violations
         await openThenDismiss(page, page.getByRole("alertdialog"));
       });
 
+      await step("findings Severity and Code Selects (Radix Select injects its own <style>)", async () => {
+        await visit(page, base, "/estate?tab=findings");
+        for (const testId of ["estate-findings-sev", "estate-findings-code"]) {
+          await page.getByTestId(testId).click();
+          await page.getByRole("listbox").waitFor();
+          const viewportStyles = await page.evaluate(() => {
+            const nonce = document.querySelector<HTMLMetaElement>('meta[name="pulse-csp-nonce"]')?.nonce ?? "";
+            const styles = [...document.querySelectorAll("style")].filter((s) =>
+              (s.textContent ?? "").includes("data-radix-select-viewport"),
+            );
+            return { count: styles.length, nonced: styles.every((s) => nonce !== "" && s.nonce === nonce) };
+          });
+          expect(viewportStyles).toEqual({ count: 1, nonced: true });
+          await page.keyboard.press("Escape");
+          await page.getByRole("listbox").waitFor({ state: "hidden" });
+        }
+      });
+
       await step("density menu", async () => {
         await visit(page, base, "/estate?tab=coverage");
         await page.getByRole("button", { name: /^Density:/ }).click();
@@ -279,9 +298,29 @@ browserDescribe()("browser: the Content-Security-Policy produces zero violations
       });
 
       await page.waitForLoadState("networkidle");
-      expect(steps.length).toBe(9);
+      expect(steps.length).toBe(10);
       expect(violations, violations.join("\n")).toEqual([]);
     }, 300_000);
+
+    if (mode === "development") {
+      test("development: the /_ui workbench (every @/ui component, ScrollArea, Select) has zero violations", async () => {
+        const { page, violations } = await open();
+        await visit(page, server().base, "/_ui");
+        const scrollAreaStyles = await page.evaluate(() => {
+          const nonce = document.querySelector<HTMLMetaElement>('meta[name="pulse-csp-nonce"]')?.nonce ?? "";
+          const styles = [...document.querySelectorAll("style")].filter((s) =>
+            (s.textContent ?? "").includes("data-radix-scroll-area-viewport"),
+          );
+          return { some: styles.length > 0, nonced: styles.every((s) => nonce !== "" && s.nonce === nonce) };
+        });
+        expect(scrollAreaStyles).toEqual({ some: true, nonced: true });
+        await page.getByRole("combobox", { name: "Minimum severity" }).click();
+        await page.getByRole("listbox").waitFor();
+        await page.keyboard.press("Escape");
+        await page.waitForLoadState("networkidle");
+        expect(violations, violations.join("\n")).toEqual([]);
+      }, 120_000);
+    }
 
     test(`${mode}: the mobile navigation sheet opens with zero violations`, async () => {
       const { page, violations } = await open({ width: 375 });

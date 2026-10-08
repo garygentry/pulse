@@ -145,10 +145,9 @@ and must be configured to pass them through: Traefik's encoded-character filteri
 
 ### Security headers
 
-The web overview sets its own security headers on every response, so the proxy does not need to
-add any:
+The web overview sets its own security headers, so the proxy does not need to add any:
 
-- every response: `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`;
+- every app response: `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`;
 - HTML pages: a strict `Content-Security-Policy` (same-origin scripts, styles, fonts, and
   connections; no framing), `Cross-Origin-Opener-Policy: same-origin`, and a `Permissions-Policy`
   that turns off camera, microphone, geolocation, and similar features.
