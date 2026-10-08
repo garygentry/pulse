@@ -2,15 +2,19 @@
  * The curated icon set: every icon deck renders, keyed by the string token that
  * estate config, `registerPage` and feature state maps use.
  *
- * Import each Lucide icon by name here and nowhere else. Never use
- * `lucide-react/dynamic` or a namespace import: either one ships the whole set.
+ * Import each Lucide icon by name here (or, for an icon the shell renders, in
+ * `icons-shell.ts`) and nowhere else. Never use `lucide-react/dynamic` or a
+ * namespace import: either one ships the whole set.
+ *
+ * This module is a lazy chunk: `ViewHost` loads it alongside each view, and
+ * evaluating it registers the set with `<Icon>` (`icon-registry.ts`). Only the
+ * shell's icons ship on the initial route.
  *
  * Aliases (`check-circle` ≡ `circle-check`, Lucide's older names, and the
  * literal unicode glyphs legacy state maps still use) resolve to the same
  * component, so existing tokens keep working while features migrate.
  */
 import {
-  Activity,
   Archive,
   Ban,
   BookOpen,
@@ -20,8 +24,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Circle,
-  CircleCheck,
   CircleDashed,
   CircleMinus,
   CirclePlay,
@@ -47,28 +49,18 @@ import {
   FolderOpen,
   Gauge,
   GitCompareArrows,
-  Hourglass,
   House,
   Inbox,
-  Info,
-  LayoutGrid,
   Link,
   Link2Off,
   Minus,
-  Monitor,
-  Moon,
-  OctagonAlert,
   Play,
   RefreshCw,
   Search,
   SearchX,
-  Server,
   Slash,
-  Sun,
   SunMoon,
   Triangle,
-  TriangleAlert,
-  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -78,24 +70,20 @@ import {
   ChevronLeft,
   ChevronUp,
   CircleAlert,
-  Clock,
   Command,
   Keyboard,
   List,
-  Loader,
-  Maximize,
   Menu,
-  Network,
   PanelRight,
   TrendingUp,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
+import { iconRegistry } from "@/ui/lib/icon-registry";
+import { SHELL_ICONS } from "@/ui/lib/icons-shell";
 
 export const ICONS = {
+  // The shell's icons ship on the initial route (icons-shell.ts); the rest load lazily.
+  ...SHELL_ICONS,
   // Status.
-  "circle-check": CircleCheck,
-  "check-circle": CircleCheck,
   "database-check": DatabaseCheck,
   "circle-x": CircleX,
   "x-circle": CircleX,
@@ -108,16 +96,9 @@ export const ICONS = {
   "circle-slash": CircleSlash,
   "circle-stop": CircleStop,
   "circle-dashed": CircleDashed,
-  "triangle-alert": TriangleAlert,
-  "alert-triangle": TriangleAlert,
-  "octagon-alert": OctagonAlert,
-  "alert-octagon": OctagonAlert,
   "clock-alert": ClockAlert,
-  hourglass: Hourglass,
   "calendar-clock": CalendarClock,
   ban: Ban,
-  info: Info,
-  circle: Circle,
 
   // Objects and actions.
   inbox: Inbox,
@@ -141,7 +122,6 @@ export const ICONS = {
   "play-circle": CirclePlay,
   archive: Archive,
   "eye-off": EyeOff,
-  x: X,
   "chevron-right": ChevronRight,
   "chevron-down": ChevronDown,
   copy: Copy,
@@ -149,21 +129,15 @@ export const ICONS = {
   "refresh-cw": RefreshCw,
 
   // Navigation (page registrations and the shell).
-  "layout-grid": LayoutGrid,
-  server: Server,
   boxes: Boxes,
   "git-compare": GitCompareArrows,
-  activity: Activity,
   zap: Zap,
   "book-open": BookOpen,
   "file-cog": FileCog,
   house: House,
-  monitor: Monitor,
   gauge: Gauge,
 
   // Theme.
-  sun: Sun,
-  moon: Moon,
   "sun-moon": SunMoon,
 
   // Filtering and search.
@@ -173,43 +147,33 @@ export const ICONS = {
 
   // Legacy unicode glyphs from pre-migration state maps.
   "✓": Check,
-  "✕": X,
   "▲": Triangle,
-  "⚠": TriangleAlert,
   "◆": Diamond,
-  "○": Circle,
   "◐": Contrast,
   "◔": ChartPie,
   "∅": Ban,
-  ℹ: Info,
-  "☀": Sun,
-  "☾": Moon,
 
   // pulse additions.
   bell: Bell,
   "chevron-left": ChevronLeft,
   "chevron-up": ChevronUp,
   "circle-alert": CircleAlert,
-  clock: Clock,
   command: Command,
   keyboard: Keyboard,
   list: List,
-  loader: Loader,
-  maximize: Maximize,
   menu: Menu,
-  network: Network,
   "panel-right": PanelRight,
   "trending-up": TrendingUp,
   triangle: Triangle,
-  wifi: Wifi,
-  "wifi-off": WifiOff,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
 
-/** The neutral glyph rendered for an unknown token (e.g. a typo in estate config). */
-export const FALLBACK_ICON: LucideIcon = Circle;
+export { FALLBACK_ICON } from "@/ui/lib/icons-shell";
 
 export function isIconName(name: string): name is IconName {
   return Object.hasOwn(ICONS, name);
 }
+
+// Whoever imports the full set (the `@/ui` barrel, the lazy load in `loadIconSet`) registers it.
+iconRegistry.registerFullSet(ICONS);
