@@ -5,7 +5,8 @@
 //  • health region: estate name and the live/staleness pill; the stale-data callout;
 //  • display preferences: theme and density menus write the store;
 //  • kiosk: no sidebar, top-bar controls or palette;
-//  • palette: Ctrl/Cmd-K opens it over the ranked index; Enter navigates; Escape closes;
+//  • palette: Ctrl/Cmd-K opens it over the ranked index; Enter navigates; Escape closes; a failed
+//    chunk load shows an error state (with the shared reload) inside the palette;
 //  • ViewHost: retry → once-per-build reload escalation via an injected loadFor.
 import { afterEach, beforeEach, expect, it, mock, test } from "bun:test";
 import type { ComponentType } from "react";
@@ -21,8 +22,12 @@ import { groupNavViews, orderedNavViews } from "../src/client/shell/nav.js";
 import { CHUNK_RELOAD_SESSION_KEY, Shell, ViewHost } from "../src/client/shell/index.js";
 import { LiveStatusPill } from "../src/client/shell/HealthRegion.js";
 import { CommandPalette } from "../src/client/shell/CommandPalette.js";
-import { PaletteDialog } from "../src/client/shell/PaletteDialog.js";
+import { PaletteDialog, type PaletteDialogProps } from "../src/client/shell/PaletteDialog.js";
 import { VIEWS } from "../src/client/views/registry.js";
+import { installTriageKeyboard } from "../src/client/views/alerts/keyboard.js";
+import { signal } from "@preact/signals-core";
+import { useEffect } from "react";
+import type { ActiveAlert } from "@pulse/web-data/wire";
 import { NOW } from "./factories.js";
 
 import { describeUi, render, screen, userEvent, waitFor, within } from "./rtl.js";
@@ -189,6 +194,63 @@ describeUi("Shell frame", () => {
     screen.getByRole("main").focus();
     await userEvent.keyboard("{ArrowDown}");
     expect(screen.getByRole("main")).toHaveFocus();
+  });
+
+  it("j/k in the nav move the nav only; the alerts triage j/k does not also fire (issue #12)", async () => {
+    const selectedIndex = signal(-1);
+    const rows = [{ fingerprint: "a" }, { fingerprint: "b" }] as unknown as ActiveAlert[];
+    function AlertsStub() {
+      useEffect(
+        () =>
+          installTriageKeyboard({
+            selectedIndex,
+            rows: () => rows,
+            container: () => null,
+            scrollToIndex: () => {},
+            isFiringTabActive: () => true,
+            isPaneOpen: () => false,
+            openAlert: () => {},
+            closePane: () => {},
+          }),
+        [],
+      );
+      return <div>Alerts body</div>;
+    }
+    const views = STUB_VIEWS.map((v) =>
+      v.id === "alerts" ? { ...v, load: async () => AlertsStub as ComponentType<ViewProps> } : v,
+    );
+    const ctx = setup("alerts");
+    renderShell(ctx.store, ctx.router, views);
+    await screen.findByText("Alerts body");
+    const nav = screen.getByRole("navigation", { name: "Views" });
+    within(nav).getByRole("link", { name: "Alerts" }).focus();
+    await userEvent.keyboard("j");
+    expect(within(nav).getByRole("link", { name: "Timeline" })).toHaveFocus();
+    await userEvent.keyboard("k");
+    expect(within(nav).getByRole("link", { name: "Alerts" })).toHaveFocus();
+    expect(selectedIndex.value).toBe(-1); // the triage cursor never moved
+    // Outside the nav the triage shortcut still works.
+    screen.getByRole("main").focus();
+    await userEvent.keyboard("j");
+    expect(selectedIndex.value).toBe(0);
+  });
+
+  it("leaves Shift+Enter and Space on a nav link to the browser (no in-app navigation)", async () => {
+    const ctx = setup("overview");
+    const navigate = mock((_path: string) => {});
+    ctx.router.navigate = navigate as PathRouter["navigate"];
+    renderShell(ctx.store, ctx.router);
+    await screen.findByText("Overview body");
+    const link = within(screen.getByRole("navigation", { name: "Views" })).getByRole("link", { name: "Engine" });
+    link.focus();
+    const press = (init: KeyboardEventInit): boolean =>
+      link.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+    // Not claimed (not default-prevented), so the browser's own handling stands.
+    expect(press({ key: "Enter", shiftKey: true })).toBe(true);
+    expect(press({ key: " " })).toBe(true);
+    expect(press({ key: "Enter", ctrlKey: true })).toBe(true);
+    expect(press({ key: "Enter", metaKey: true })).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("keeps the roving contract on the collapsed icon rail", async () => {
@@ -402,8 +464,9 @@ describeUi("Shell command palette", () => {
     expect(screen.queryAllByRole("dialog")).toHaveLength(0);
 
     pressModK();
-    await screen.findByRole("dialog", { name: "Command palette" });
-    const input = screen.getByRole("combobox");
+    // The combobox, not the dialog: until the chunk lands the loading dialog carries the same name.
+    const input = await screen.findByRole("combobox");
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toContainElement(input);
     await waitFor(() => expect(input).toHaveFocus());
     // Empty query lists every view; they tie on tier and kind, so they rank by label.
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
@@ -465,9 +528,9 @@ describeUi("Shell command palette before its chunk loads", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const loader = mock(async () => {
+    const loader = mock(async (): Promise<ComponentType<PaletteDialogProps>> => {
       await gate;
-      return { PaletteDialog };
+      return PaletteDialog;
     });
     return { loader, release };
   }
@@ -481,7 +544,7 @@ describeUi("Shell command palette before its chunk loads", () => {
     render(
       <>
         <input aria-label="Page field" />
-        <CommandPalette store={ctx.store} router={ctx.router} loadDialog={loader} />
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loader} />
       </>,
     );
     const pageField = screen.getByRole("textbox", { name: "Page field" });
@@ -489,26 +552,117 @@ describeUi("Shell command palette before its chunk loads", () => {
 
     pressModK();
     expect(loader).toHaveBeenCalled();
-    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
     // Typed while loading: none of it reaches the focused page field.
     await userEvent.keyboard("enx{Backspace}g");
     expect(pageField).toHaveValue("");
 
+    // The loading dialog is open meanwhile (keys still buffer, not lost to it).
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading the command palette…");
+    expect(pageField).toHaveValue("");
+
     release();
-    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
-    const input = within(dialog).getByRole("combobox");
+    const input = await screen.findByRole("combobox");
     await waitFor(() => expect(input).toHaveFocus());
     expect(input).toHaveValue("eng");
     await waitFor(() => expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Engine"]));
     // Typing carries on after the buffered text.
+    // Let the replaced loading dialog's unmount (a timer) run: it must not move focus or select the text.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(input).toHaveFocus();
     await userEvent.keyboard("i");
     expect(input).toHaveValue("engi");
+  });
+
+  it("keys typed in the same task as Ctrl+K (before React renders) are kept", async () => {
+    const ctx = setup("overview");
+    const { loader, release } = deferredLoader();
+    render(
+      <>
+        <input aria-label="Page field" />
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loader} />
+      </>,
+    );
+    const pageField = screen.getByRole("textbox", { name: "Page field" });
+    pageField.focus();
+    const key = (k: string, init: KeyboardEventInit = {}): boolean =>
+      pageField.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init }));
+    pressModK();
+    // Same task: no render has happened yet. Printable keys (incl. an AltGr character and an astral
+    // one) are claimed; F-keys and browser chords are not.
+    expect(key("a")).toBe(false);
+    expect(key("€", { ctrlKey: true, altKey: true })).toBe(false);
+    expect(key("😀")).toBe(false);
+    expect(key("F5")).toBe(true);
+    expect(key("r", { ctrlKey: true })).toBe(true);
+    release();
+    const input = await screen.findByRole("combobox");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("a€😀");
+    expect(pageField).toHaveValue("");
+  });
+
+  it("buffered keys land in the field and Escape then returns focus to the opener", async () => {
+    const ctx = setup("overview");
+    const { loader, release } = deferredLoader();
+    render(
+      <>
+        <button type="button">Opener</button>
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loader} />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "Opener" });
+    opener.focus();
+    pressModK();
+    await userEvent.keyboard("tim");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    release();
+    const input = await screen.findByRole("combobox");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("tim");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryAllByRole("dialog")).toHaveLength(0));
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("a failed load drops the buffer; Tab reaches 'Reload page' and Enter activates it", async () => {
+    const ctx = setup("overview");
+    let fail: () => void = () => {};
+    const loader = (): Promise<ComponentType<PaletteDialogProps>> =>
+      new Promise((_resolve, reject) => {
+        fail = () => reject(new TypeError("Failed to fetch dynamically imported module"));
+      });
+    const reloadOnce = mock(() => {});
+    render(
+      <>
+        <input aria-label="Page field" />
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={reloadOnce} loadDialog={loader} />
+      </>,
+    );
+    const pageField = screen.getByRole("textbox", { name: "Page field" });
+    pageField.focus();
+    pressModK();
+    await userEvent.keyboard("abc");
+    fail();
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    await within(dialog).findByRole("button", { name: "Reload page" });
+    expect(pageField).toHaveValue(""); // the buffer never leaks to the page
+    // Focus moves to the action; Tab and Shift+Tab move within the modal (nothing is buffered any more).
+    const reloadButton = (): HTMLElement => screen.getByRole("button", { name: "Reload page" });
+    await waitFor(() => expect(document.activeElement).toBe(reloadButton()));
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(reloadButton());
+    await userEvent.keyboard("{Enter}");
+    expect(reloadOnce).toHaveBeenCalledTimes(1);
+    await userEvent.keyboard(" ");
+    expect(reloadOnce).toHaveBeenCalledTimes(2);
   });
 
   it("Escape while loading cancels the open; the next Ctrl+K starts empty", async () => {
     const ctx = setup("overview");
     const { loader, release } = deferredLoader();
-    render(<CommandPalette store={ctx.store} router={ctx.router} loadDialog={loader} />);
+    render(<CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loader} />);
 
     pressModK();
     await userEvent.keyboard("al{Escape}");
@@ -520,6 +674,110 @@ describeUi("Shell command palette before its chunk loads", () => {
     const input = await screen.findByRole("combobox");
     await waitFor(() => expect(input).toHaveFocus());
     expect(input).toHaveValue("");
+  });
+});
+
+describeUi("Shell command palette: chunk load failure", () => {
+  const pressModK = (): void => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+  };
+  const rejecting = (): { load: () => Promise<ComponentType<PaletteDialogProps>>; calls: () => number } => {
+    let calls = 0;
+    return {
+      load: async () => {
+        calls += 1;
+        throw new TypeError("Failed to fetch dynamically imported module");
+      },
+      calls: () => calls,
+    };
+  };
+
+  it("a rejected dynamic import shows an error state in the open palette; its action is the shared reload", async () => {
+    const ctx = setup("overview");
+    const loader = rejecting();
+    const reloadOnce = mock(() => {});
+    render(<CommandPalette store={ctx.store} router={ctx.router} reloadOnce={reloadOnce} loadDialog={loader.load} />);
+    // The idle prefetch (1 s timer fallback) fails quietly: nothing is open, nothing is shown.
+    await waitFor(() => expect(loader.calls()).toBe(1), { timeout: 3_000 });
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+
+    // Ctrl/Cmd-K no longer closes silently: the palette opens on an error state (tone, icon, text).
+    pressModK();
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("The command palette could not be loaded.");
+    expect(alert.closest("[data-slot=error-state]")).toHaveAttribute("data-tone", "danger");
+    expect(alert.querySelector("svg")).not.toBeNull();
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    // Browsers replay a failed import's rejection, so it is not retried in-page.
+    expect(loader.calls()).toBe(1);
+
+    await userEvent.click(within(alert).getByRole("button", { name: "Reload page" }));
+    expect(reloadOnce).toHaveBeenCalledTimes(1);
+  });
+
+  it("opening before the import settles shows a loading state, then the palette", async () => {
+    const ctx = setup("overview");
+    const { PaletteDialog } = await import("../src/client/shell/PaletteDialog.js");
+    let resolve: (c: ComponentType<PaletteDialogProps>) => void = () => {};
+    const loadDialog = () => new Promise<ComponentType<PaletteDialogProps>>((r) => (resolve = r));
+    render(<CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loadDialog} />);
+    pressModK();
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Loading the command palette…");
+    resolve(PaletteDialog);
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeInTheDocument());
+    expect(screen.queryByText("Loading the command palette…")).toBeNull();
+  });
+
+  it("a palette that loads while open (loading → ready) still returns focus to the opener on Escape", async () => {
+    const ctx = setup("overview");
+    const { PaletteDialog } = await import("../src/client/shell/PaletteDialog.js");
+    let resolve: (c: ComponentType<PaletteDialogProps>) => void = () => {};
+    const loadDialog = () => new Promise<ComponentType<PaletteDialogProps>>((r) => (resolve = r));
+    render(
+      <>
+        <button type="button">Opener</button>
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loadDialog} />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "Opener" });
+    opener.focus();
+
+    pressModK();
+    const loader = await screen.findByRole("dialog", { name: "Command palette" });
+    await waitFor(() => expect(loader).toContainElement(document.activeElement as HTMLElement));
+    expect(opener).not.toHaveFocus();
+
+    resolve(PaletteDialog);
+    const input = await screen.findByRole("combobox");
+    await waitFor(() => expect(input).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryAllByRole("dialog")).toHaveLength(0));
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("the error state closes with Escape, returns focus to the opener, and shows again on reopen", async () => {
+    const ctx = setup("overview");
+    const loader = rejecting();
+    render(
+      <>
+        <button type="button">Opener</button>
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loader.load} />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "Opener" });
+    opener.focus();
+
+    pressModK();
+    await screen.findByRole("alert");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryAllByRole("dialog")).toHaveLength(0));
+    await waitFor(() => expect(opener).toHaveFocus());
+
+    pressModK();
+    await screen.findByRole("alert");
+    expect(loader.calls()).toBe(1);
   });
 });
 

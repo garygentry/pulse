@@ -19,7 +19,8 @@ import type { Browser, BrowserContext, Page } from "playwright-core";
 import { browserDescribe, sharedBrowser } from "./_harness.js";
 
 const DEV_SCRIPT = resolve(import.meta.dir, "../../scripts/dev.ts");
-/** Pinned so the mock data, and so every page, is the same on every run. */
+/** Pins the mock scenario start, so the VM/Alertmanager/vmalert bodies are the same on every run.
+ *  It does not pin the app's "now": rendered ages and Gatus results still follow the real clock. */
 const CLOCK = "2026-01-01T12:00:00Z";
 
 /** Every route and tab, with the nav item that should be current there. */

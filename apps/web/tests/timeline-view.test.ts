@@ -70,6 +70,7 @@ import {
 } from "../src/client/views/timeline/lanes-model.js";
 import type { EvidenceSource, LaneBlock, LaneEvidenceContext, LaneRow } from "../src/client/views/timeline/lanes-model.js";
 import { buildLaneTree, targetKey } from "../src/client/views/timeline/model.js";
+import { normalizeTargetRef } from "../src/client/target-ref.js";
 import type { LaneNode, TargetKey } from "../src/client/views/timeline/model.js";
 import { createLaneEvidenceCache } from "../src/client/views/timeline/evidence.js";
 import type { LaneSegment } from "../src/client/views/timeline/evidence.js";
@@ -2196,7 +2197,9 @@ describeDom("timeline view — TimelineView (item 022)", (dom) => {
     key(firstHost, "Enter");
     await settle();
     expect(m.navs.at(-1)![1]).toBe(false);
-    expect(query().get("sel")).toBe(firstHost.getAttribute("data-lane-key"));
+    // The URL carries the canonical reference (host:<name>), not the internal lane key (host:host:<name>).
+    expect(query().get("sel")).toBe(normalizeTargetRef(firstHost.getAttribute("data-lane-key")!));
+    expect(query().get("sel")).toBe(SMALL.snapshot.hosts[0]!.drilldownId);
     expect(c.querySelector("[data-slot=timeline-detail]")).not.toBeNull();
     survives();
 
@@ -2243,7 +2246,7 @@ describeDom("timeline view — TimelineView (item 022)", (dom) => {
     const before = m.navs.length;
     const win = dom.win as unknown as Window;
     const E = TIMELINE_NOW_S;
-    const sel = hostKeyOf(SMALL.snapshot, 1);
+    const sel = SMALL.snapshot.hosts[1]!.drilldownId; // canonical: host:<name>
     win.history.replaceState({}, "", `/timeline?foo=bar&end=${E}&zoom=${E - 7200}-${E - 3600}&sel=${encodeURIComponent(sel)}`);
     win.dispatchEvent(new (dom.win as unknown as { PopStateEvent: typeof PopStateEvent }).PopStateEvent("popstate"));
     await settle();

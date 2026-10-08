@@ -37,6 +37,7 @@ import { LaneTree } from "../src/client/views/timeline/lanes.js";
 import { buildLaneBlocks, laneEvidence } from "../src/client/views/timeline/lanes-model.js";
 import type { LaneEvidenceContext } from "../src/client/views/timeline/lanes-model.js";
 import { buildLaneTree, targetKey } from "../src/client/views/timeline/model.js";
+import { normalizeTargetRef } from "../src/client/target-ref.js";
 import type { LaneNode, TargetKey } from "../src/client/views/timeline/model.js";
 import { createLaneEvidenceCache } from "../src/client/views/timeline/evidence.js";
 import { AlertSwimlane } from "../src/client/views/timeline/swimlane.js";
@@ -1690,7 +1691,7 @@ describeDom("timeline keyboard — mounted TimelineView (item 023)", (dom) => {
     // Enter on a host selects it: sel written with push, the detail region mounts.
     const e = await press("Enter");
     expect(e.defaultPrevented).toBe(true);
-    expect(query().get("sel")).toBe(h0);
+    expect(query().get("sel")).toBe(normalizeTargetRef(h0)); // canonical, not the host:host: lane key
     expect(m.navs.length).toBe(1);
     expect(m.navs[0]![1]).toBe(false);
     expect(row(h0).getAttribute("aria-selected")).toBe("true");

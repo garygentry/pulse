@@ -6,12 +6,11 @@
 // StatusBadges (icon + text label + data-status, never colour alone).
 import type { ReactElement } from "react";
 
-import { ALERT_SEVERITY, Button, StatusBadge, TARGET_STATUS, alertSeverityOf } from "@/ui";
+import { ALERT_SEVERITY, ALERT_STATE, Button, StatusBadge, alertSeverityOf, alertStateOf } from "@/ui";
 import type { ColumnDef } from "@/ui";
 import type { ActiveAlert } from "@pulse/web-data/wire";
 import { formatAge, formatTarget, summaryText } from "./columns-model.js";
 import { PendingMarker, StateBadge } from "../../../mutations/StateBadge.js";
-import { stateToStatus } from "../../../status/target-status.js";
 
 /** One firing-table column: a DataTable ColumnDef with a stable id. */
 export type TriageColumn = ColumnDef<ActiveAlert> & { readonly id: string };
@@ -68,23 +67,22 @@ function severityCell(a: ActiveAlert): ReactElement {
   );
 }
 
-/** Suppression state → marked, NEVER hidden. silenced/inhibited map to "suppressed" and carry a
- *  `bell` marker icon; the label is the literal AM state word. An acked alert adds a read-only
- *  'Acked' badge and the pending tracker's marker follows. */
+/** Suppression state → marked, NEVER hidden. The badge comes from ALERT_STATE: a firing alert takes
+ *  its severity's presentation and status (info → the info tone, `data-status="info"`); silenced and
+ *  inhibited are "suppressed" with the `bell` marker. The label is the literal AM state word. An
+ *  acked alert adds a read-only 'Acked' badge and the pending tracker's marker follows. */
 function stateCell(a: ActiveAlert): ReactElement {
-  const status = stateToStatus(a.state, a.severity);
-  const suppressed = a.state !== "firing";
-  // A firing alert takes its severity's presentation (info → info tone); suppressed stays suppressed.
-  const presentation = suppressed ? TARGET_STATUS[status] : ALERT_SEVERITY[alertSeverityOf(a.severity)];
+  const status = alertStateOf(a.state, a.severity);
+  const presentation = ALERT_STATE[status];
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap">
       <StatusBadge
         tone={presentation.tone}
-        icon={suppressed ? "bell" : presentation.icon}
+        icon={presentation.icon}
         label={a.state}
         {...(presentation.variant !== undefined ? { variant: presentation.variant } : {})}
         data-status={status}
-        {...(suppressed ? { "data-suppressed": "" } : {})}
+        {...(status === "suppressed" ? { "data-suppressed": "" } : {})}
       />
       {a.ack !== undefined ? <StateBadge state="acked" label="Acked" /> : null}
       <PendingMarker target={{ kind: "alert", fingerprint: a.fingerprint }} />

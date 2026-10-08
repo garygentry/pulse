@@ -51,10 +51,14 @@ want another device to reach the box.
 ## Deterministic runs
 
 ```
-bun run dev:web --mock --clock 2026-01-01T00:00:00Z
+bun run dev:web --mock --clock 2026-10-01T12:00:00Z
 ```
 
 Pins the scenario start. An unpinned clock rewinds on server restart; a pinned clock does not.
+Fixture timestamps (Alertmanager, vmalert, VM) are shifted onto the scenario start, so a pinned
+clock serves the same bodies on every run. It does not pin the app's "now": rendered ages and Gatus
+results still follow the real clock, so a clock far in the past shows large ages. For screenshots,
+omit `--clock` or pick a recent one. See the integration guide for details.
 
 ## What reloads when
 

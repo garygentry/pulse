@@ -129,6 +129,27 @@ describeDom("a11y shortcuts", (dom) => {
     registry.stop();
   });
 
+  test("a keydown a widget already handled (defaultPrevented) skips shortcuts unless allowDefaultPrevented", () => {
+    const doc = dom.win.document;
+    const registry = new ShortcutRegistry();
+    registry.start();
+    let plain = 0;
+    let forced = 0;
+    registry.register("j", () => {
+      plain += 1;
+    });
+    registry.register("j", () => {
+      forced += 1;
+    }, { allowDefaultPrevented: true });
+    const handled = new dom.win.KeyboardEvent("keydown", { key: "j", cancelable: true });
+    handled.preventDefault();
+    doc.dispatchEvent(handled);
+    expect([plain, forced]).toEqual([0, 1]);
+    doc.dispatchEvent(new dom.win.KeyboardEvent("keydown", { key: "j", cancelable: true }));
+    expect([plain, forced]).toEqual([1, 2]);
+    registry.stop();
+  });
+
   test("'mod+k' fires with the platform-appropriate modifier", () => {
     const doc = dom.win.document;
     const registry = new ShortcutRegistry();

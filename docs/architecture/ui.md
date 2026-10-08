@@ -91,6 +91,7 @@ carries an icon and a label, so status is never shown by colour alone. Pulse's m
 |---|---|
 | `TARGET_STATUS` | ok → `ok`, warning → `warn`, critical → `danger`, unknown → `neutral`, suppressed → `neutral` with an outline variant and its own icon |
 | `ALERT_SEVERITY` | critical, warning, info (its own `info` tone), unknown; free-form severities go through `alertSeverityOf` |
+| `ALERT_STATE` | a delivered alert's state badge: firing takes its severity's entry (so firing info is `info`, never `unknown`), silenced and inhibited are `suppressed` (outline, bell); keyed by `alertStateOf(state, severity)` |
 | `MUTATION_STATE` | acked, pending, failed, applied, rejected |
 
 Render a state with `<StatusBadge {...TARGET_STATUS[status]} />` or
@@ -181,9 +182,11 @@ estate name, the live and staleness pill, the theme menu and the density control
 `Callout` with `role="alert"` sits under it. `CommandPalette` is a Pulse pattern on shadcn
 `Command` inside `Dialog`. The shell loads it as a lazy chunk (prefetched when idle), registers
 `mod+k` through `a11y/shortcuts.ts`, and ranks results with the pure `shell/command-index.ts`. If
-Ctrl/Cmd-K lands before the chunk, the palette is open already: keys typed meanwhile are captured
-into the query (Backspace edits it, Escape cancels) and show in the search field, caret at the end,
-when the dialog mounts, so nothing typed reaches the page. In kiosk mode
+Ctrl/Cmd-K lands before the chunk, the palette opens on a loading state and keys typed meanwhile
+are captured into the query (printable keys including Alt/AltGr characters, and pasted text;
+Backspace edits, Escape closes; F-keys and Ctrl/Cmd chords pass), so they show in the search field,
+caret at the end, when the dialog mounts, and nothing typed reaches the page. If the chunk fails,
+the buffer is dropped and focus moves to the error state's Reload button. In kiosk mode
 (`?kiosk=1`) the shell renders no sidebar, top-bar controls or palette, and uses wallboard density.
 Rotation lives in `shell/kiosk.ts`.
 

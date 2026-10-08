@@ -24,6 +24,10 @@ export interface ShortcutOptions {
   /** When false (default), the shortcut does NOT fire while focus is in a text field (text-like
    *  input, textarea, select or contenteditable). */
   allowInInput?: boolean;
+  /** When false (default), the shortcut does NOT fire for a keydown a widget already handled
+   *  (`defaultPrevented`). Set it for a global toggle that must win regardless (Ctrl/Cmd-K, which
+   *  cmdk's own Ctrl-K binding cancels inside the open palette). */
+  allowDefaultPrevented?: boolean;
 }
 
 /** A resolved registration held internally. */
@@ -32,6 +36,7 @@ interface Registration {
   handler: ShortcutHandler;
   preventDefault: boolean;
   allowInInput: boolean;
+  allowDefaultPrevented: boolean;
 }
 
 /** Read the live `document` from `globalThis` at call time, or `undefined` when absent (SSR). A bare
@@ -205,6 +210,7 @@ export class ShortcutRegistry {
       handler,
       preventDefault: options?.preventDefault ?? true,
       allowInInput: options?.allowInInput ?? false,
+      allowDefaultPrevented: options?.allowDefaultPrevented ?? false,
     };
     this.registrations.push(registration);
     // Always (re)check the live document — start() is idempotent for the same document but re-binds
@@ -221,10 +227,15 @@ export class ShortcutRegistry {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
+    // A widget that already handled the key (a list's arrow/j/k navigation, a menu) claims it: a page
+    // shortcut on the same key must not act as well. Widgets listening on an element run before this
+    // document listener; window-level listeners run after it and so cannot pre-empt a shortcut.
+    const handled = event.defaultPrevented;
     const combo = normalizeEvent(event);
     // Snapshot: a disposer/register from within a handler must not perturb this dispatch.
     const matches = this.registrations.filter((r) => r.combo === combo);
     for (const registration of matches) {
+      if (handled && !registration.allowDefaultPrevented) continue;
       if (!registration.allowInInput && isInInput()) continue;
       if (registration.preventDefault) event.preventDefault();
       try {
