@@ -84,8 +84,9 @@ export function severityToStatus(severity: string): TargetStatus {
   return Object.hasOwn(SEVERITY_STATUS, severity) ? (SEVERITY_STATUS[severity] ?? "unknown") : "unknown";
 }
 
-/** Delivery state → status. silenced/inhibited render as "suppressed" (marked, not hidden); firing
- *  maps to the alert's own severity. */
+/** Delivery state → TargetStatus. silenced/inhibited are "suppressed" (marked, not hidden); firing
+ *  maps to the alert's own severity, with info collapsing to `unknown`. Alert state BADGES render
+ *  through `ALERT_STATE`/`alertStateOf` (`@/ui`) instead, where firing info keeps its own state. */
 export function stateToStatus(state: ActiveAlert["state"], severity: string): TargetStatus {
   return state === "firing" ? severityToStatus(severity) : "suppressed";
 }
