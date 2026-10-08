@@ -28,6 +28,9 @@ export const SHELL_MARKERS = {
   devMeta: "pulse-dev",
   /** `<script type="application/json" id="pulse-chunk-css">` — the inert `chunkCss` island. */
   chunkCssIsland: "pulse-chunk-css",
+  /** `<meta name="pulse-csp-nonce" nonce="<nonce>">` — the per-response CSP style nonce, stamped by
+   *  the router on every shell response (read through the element's `.nonce` property). */
+  cspNonceMeta: "pulse-csp-nonce",
 } as const;
 
 /** Client copy of `DEV_BUILD_ID_PATH` (`00 §2.2`). Duplicated, not imported — see file header. */

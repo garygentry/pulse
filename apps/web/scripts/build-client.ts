@@ -24,6 +24,7 @@ import tailwind from "bun-plugin-tailwind";
 
 import type { ClientManifest } from "../src/server/assets.js";
 import { ASSET_PREFIX, MANIFEST_FILENAME } from "../src/server/assets.js";
+import { inlineScriptHashes } from "../src/server/security-headers.js";
 
 /** Length of the hex build id (first 12 hex chars of SHA-256). */
 export const BUILD_ID_HEX_LEN = 12 as const;
@@ -856,12 +857,13 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
   const keep = emittedFiles(output.outputs, metafile, omitted);
   const pruneErrs = opts.clean ? [] : pruneDir(outdirAbs, keep);
 
-  // Step 8 — copy index.html.
+  // Step 8 — copy index.html, and record the CSP hash of each inline executable script it carries
+  // (the pre-paint theme stamp). The shell's `script-src` allows exactly these, so editing the
+  // inline script and rebuilding ships the matching hash; nothing is hand-maintained (issue #2).
   try {
-    await Bun.write(
-      resolve(outdirAbs, "index.html"),
-      Bun.file(resolve(clientRoot, "index.html")),
-    );
+    const shellHtml = readFileSync(resolve(clientRoot, "index.html"), "utf8");
+    await Bun.write(resolve(outdirAbs, "index.html"), shellHtml);
+    manifest.inlineScriptHashes = inlineScriptHashes(shellHtml);
   } catch (e) {
     return {
       ok: false,
