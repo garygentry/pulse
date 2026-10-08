@@ -497,6 +497,29 @@ function pruneDir(dir: string, keep: Set<string>): string[] {
 }
 
 /**
+ * Basenames of every file this build left in the output dir: the prune keep-set.
+ *
+ * Bun's metafile lists only JS/CSS outputs. It omits `file`-loader assets (the hashed Geist
+ * .woff2 files) and sourcemaps, so the keep-set is built from the build artifacts. Keeping only
+ * metafile outputs made every clean:false rebuild delete the fonts and .map files that this same
+ * build had just written (#8). The omitted chunk stylesheets and their maps are already off disk
+ * and stay out of the set.
+ */
+function emittedFiles(
+  artifacts: readonly { path: string }[],
+  metafile: BuildMetafile,
+  omitted: readonly string[],
+): Set<string> {
+  const dropped = new Set(omitted.flatMap((key) => [basename(key), `${basename(key)}.map`]));
+  const keep = new Set<string>();
+  for (const path of [...artifacts.map((a) => a.path), ...Object.keys(metafile.outputs)]) {
+    const name = basename(path);
+    if (!dropped.has(name)) keep.add(name);
+  }
+  return keep;
+}
+
+/**
  * Build the client into opts.outdir. Never throws; failures are values.
  */
 export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuildResult> {
@@ -636,7 +659,7 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
   const manifest: ClientManifest = { buildId, ...classified };
 
   // Step 7 — prune previous outputs on clean:false.
-  const keep = new Set<string>(Object.keys(metafile.outputs).map((k) => basename(k)));
+  const keep = emittedFiles(output.outputs, metafile, omitted);
   const pruneErrs = opts.clean ? [] : pruneDir(outdirAbs, keep);
 
   // Step 8 — copy index.html.
