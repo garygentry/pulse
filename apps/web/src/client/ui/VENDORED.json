@@ -27,8 +27,8 @@
     "app-css": "Pulse's Tailwind entry, kept in deck's file order with deck's base rules: `source(\"..\")` on the Tailwind import and an `@source not` for the workbench, `theme-pulse.css` instead of `hljs.css`, no `@fontsource` imports (the faces register from `styles/fonts.ts`), and pulse base rules (heading wrap, focus ring, inline monospace size, app-wide reduced motion).",
     "icons-additions": "Pulse additions: a second `lucide-react` import block and a \"pulse additions\" section at the end of `ICONS` (the shell and views' icons deck lacks). The shell's icons moved to the pulse-only `icons-shell.ts` (spread into `ICONS`, which keeps its type and contents) and `FALLBACK_ICON` with them; evaluating `icons.ts` registers the set with `icon-registry.ts` (pulse-only), so it can load as a lazy chunk.",
     "components-json": "`tailwind.css` points at `src/client/styles/app.css`.",
-    "barrel-exports": "No `ConfigGate` exports. Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, the `kbd`/`radio-group`/`textarea` primitives, `CommandPalette` + `commandGroupsFromIndex`, the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"` and `\"./viz\"`, and the DataTable virtualization exports (`DATA_TABLE_VIRTUALIZE_DEFAULTS`, `DataTableHandle`, `DataTableScrollAlign`, `DataTableVirtualizeOptions`).",
-    "data-table-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`; `data-table-viewport` scroll region, spacer rows, rows measured as they render with `rowHeight` as the estimate and minimum height, `aria-rowcount`/`aria-rowindex`, focused row kept rendered by row id; hysteresis: once virtualized it stays so until rows < `floor(threshold * 0.8)`) and a `ref` handle with `scrollToIndex`; a `focusable` prop (default `true`) drops the scroll region's tab stop on a wallboard. Below the threshold and with the defaults the output is deck's.",
+    "barrel-exports": "No `ConfigGate` exports. Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, the `kbd`/`radio-group`/`textarea` primitives, `CommandPalette` + `commandGroupsFromIndex`, the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"` and `\"./viz\"`, and the DataTable virtualization exports (`DATA_TABLE_VIRTUALIZE_DEFAULTS`, `DataTableHandle`, `DataTableScrollAlign`, `DataTableVirtualizeOptions`) and the TreeView ones (`TREE_VIEW_VIRTUALIZE_DEFAULTS`, `TreeViewVirtualizeOptions`).",
+    "data-table-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`, with `observeClientRect` from the pulse-only `lib/virtual.ts`; `data-table-viewport` scroll region, spacer rows, rows measured as they render with `rowHeight` as the estimate and minimum height, `aria-rowcount`/`aria-rowindex`, focused row kept rendered by row id; hysteresis: once virtualized it stays so until rows < `floor(threshold * 0.8)`) and a `ref` handle with `scrollToIndex`; a `focusable` prop (default `true`) drops the scroll region's tab stop on a wallboard. Below the threshold and with the defaults the output is deck's.",
     "freshness-types": "Imports `FreshnessStamp`/`FreshnessState` from `lib/freshness.ts` (deck imports them from its server contract).",
     "console-prefix": "Console prefix `[deck]` becomes `[pulse]`.",
     "icon-registry": "Resolves names through `lib/icon-registry.ts`: shell icons eager, the rest once the lazy icon chunk loads; an empty same-size svg until then, the fallback glyph if the load fails.",
@@ -43,7 +43,10 @@
     "text-entry-guard": "The `/` shortcut's guard is the shared `isTextEntryTarget` (adds contenteditable ancestors; a checkbox no longer blocks it) instead of a local `isEditable`.",
     "pulse-name": "The app name is Pulse (`APP_TITLE = \"Pulse\"`; the hook's doc comment).",
     "dom-text-entry": "Pulse `isTextEntryTarget` (text-like input, textarea, select, contenteditable; narrower than `isEditableTarget`, which also covers buttons and composite widgets).",
-    "status-variant": "Optional `StatusPresentation.variant` (badge shape per state, e.g. outline for suppressed)."
+    "status-variant": "Optional `StatusPresentation.variant` (badge shape per state, e.g. outline for suppressed).",
+    "tree-view-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`; at a visible-row threshold, default 300, the treeitems render flat in a `tree-view-viewport` scroll region with `aria-hidden` spacers, `aria-level`/`aria-setsize`/`aria-posinset` from the model, rows measured as they render, the focused row and the Tab stop kept rendered, keyboard moves over every visible row through `useListNavigation`'s `virtual` option; hysteresis as in `data-table.tsx`; below the threshold the output is deck's); `*` expands every sibling branch and printable keys move by label (type-ahead), both from the model; the row is `flex-wrap`, so a caller's meta can take a line of its own (`basis-full`) at narrow widths.",
+    "list-navigation-virtual": "Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones; optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead.",
+    "tree-row-position": "`VisibleTreeRow` carries `posInSet`/`setSize`."
   },
   "files": [
     {
@@ -98,8 +101,10 @@
       "local": "apps/web/src/client/ui/hooks/use-list-navigation.ts",
       "upstream": "apps/web/src/ui/hooks/use-list-navigation.ts",
       "upstreamBlob": "f2d02eb0b3377ca796ed0f235c8a0187564d1501",
-      "localBlob": "f2d02eb0b3377ca796ed0f235c8a0187564d1501",
-      "notes": []
+      "localBlob": "178d2aea084ce09137aafbad2579157ae591fce4",
+      "notes": [
+        "list-navigation-virtual"
+      ]
     },
     {
       "local": "apps/web/src/client/ui/hooks/use-mobile.ts",
@@ -149,7 +154,7 @@
       "local": "apps/web/src/client/ui/index.ts",
       "upstream": "apps/web/src/ui/index.ts",
       "upstreamBlob": "ec4d73df984d87e7f1ff169dcd51eabce2037e36",
-      "localBlob": "993806273d85ffb92cd74de07d7e93defd7dbb7e",
+      "localBlob": "6fc2a4e45390cbbc4c9d572a89b4a21d757379f7",
       "notes": [
         "barrel-exports"
       ]
@@ -243,9 +248,10 @@
       "local": "apps/web/src/client/ui/lib/tree.ts",
       "upstream": "apps/web/src/ui/lib/tree.ts",
       "upstreamBlob": "fbac18390986baffd5995f474a1dd12bcee8479d",
-      "localBlob": "a075891f41f44a1d662e92c66a096f8002cb1798",
+      "localBlob": "49d90b310b7ec65e12207552fa5749a4377329f1",
       "notes": [
-        "exact-optional"
+        "exact-optional",
+        "tree-row-position"
       ]
     },
     {
@@ -296,7 +302,7 @@
       "local": "apps/web/src/client/ui/patterns/data-table.tsx",
       "upstream": "apps/web/src/ui/patterns/data-table.tsx",
       "upstreamBlob": "6b3bc40d7036dca3bc2108825e3a5827b55e0b6f",
-      "localBlob": "b465f350c61afedf586c6fa5d4d24555c2880649",
+      "localBlob": "7986e94bd5402329faa5d1c8f4ace2a167072c01",
       "notes": [
         "data-table-virtualize"
       ]
@@ -526,9 +532,10 @@
       "local": "apps/web/src/client/ui/patterns/tree-view.tsx",
       "upstream": "apps/web/src/ui/patterns/tree-view.tsx",
       "upstreamBlob": "f48e6f83f263fc8ab07a5e2f962e89145b6d0666",
-      "localBlob": "12930ad93282938c67f71f515155a5e442695117",
+      "localBlob": "cd960abbf6c1053c27aaf6dbe6b03f656c516c7a",
       "notes": [
-        "tree-view-description"
+        "tree-view-description",
+        "tree-view-virtualize"
       ]
     },
     {
@@ -797,6 +804,11 @@
       "local": "apps/web/src/client/ui/lib/style-nonce.ts",
       "source": "pulse",
       "note": "`styleNonce()` / `styleNonceProps()` return the CSP style nonce (`get-nonce`, set by `main.tsx` from the shell) for primitives that render their own `<style>`; internal, not exported from the barrel"
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/virtual.ts",
+      "source": "pulse",
+      "note": "`observeClientRect`, shared by the virtualized `DataTable` and `TreeView`"
     },
     {
       "local": "apps/web/src/client/ui/primitives/radio-group.tsx",

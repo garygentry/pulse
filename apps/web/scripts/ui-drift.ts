@@ -717,7 +717,7 @@ export function main(argv: string[]): number {
     const notesOf = new Map(r.manifest.files.map((f) => [f.local, f.notes]));
     for (const p of r.relocated) {
       const notes = notesOf.get(p) ?? [];
-      console.log(`ui-drift: re-recorded ${p}: ${notes.length ? `check that ${notes.join(", ")} still describe it` : "identical to deck"}`);
+      console.log(`ui-drift: re-recorded ${p}: ${notes.length ? `check that its notes (${notes.join(", ")}) still describe it` : "identical to deck"}`);
     }
     console.log(`ui-drift: wrote ${args.manifest}${manifest.docs ? ` and ${manifest.docs}` : ""}`);
     return 0;

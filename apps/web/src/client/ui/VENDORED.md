@@ -8,7 +8,7 @@ the blob id of pulse's copy as last reviewed, and the divergence notes that expl
 difference. `bun run ui:drift` checks the record, and `bun test` runs the same check in CI.
 
 <!-- ui-drift:begin source (generated from VENDORED.json by `bun run ui:drift --record`; do not edit) -->
-Pinned upstream: https://github.com/garygentry/deck at `d6a1595` (deck v0.3.2; the public squash of e2e2661, the commit the port was copied from, with identical library files). Vendored files: 88, 43 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 2.
+Pinned upstream: https://github.com/garygentry/deck at `d6a1595` (deck v0.3.2; the public squash of e2e2661, the commit the port was copied from, with identical library files). Vendored files: 88, 44 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 2.
 <!-- ui-drift:end source -->
 
 The library is imported as `@/ui` (tsconfig `paths` `@/*` → `src/client/*`, Bundler resolution, so
@@ -92,7 +92,7 @@ the next sync turns them from pulse-only into vendored files.
 | `apps/web/src/client/ui/hooks/use-copy-to-clipboard.ts` | `apps/web/src/ui/hooks/use-copy-to-clipboard.ts` | None |
 | `apps/web/src/client/ui/hooks/use-document-title.ts` | `apps/web/src/ui/hooks/use-document-title.ts` | `pulse-name` |
 | `apps/web/src/client/ui/hooks/use-facet-filters.ts` | `apps/web/src/ui/hooks/use-facet-filters.ts` | None |
-| `apps/web/src/client/ui/hooks/use-list-navigation.ts` | `apps/web/src/ui/hooks/use-list-navigation.ts` | None |
+| `apps/web/src/client/ui/hooks/use-list-navigation.ts` | `apps/web/src/ui/hooks/use-list-navigation.ts` | `list-navigation-virtual` |
 | `apps/web/src/client/ui/hooks/use-mobile.ts` | `apps/web/src/ui/hooks/use-mobile.ts` | None |
 | `apps/web/src/client/ui/hooks/use-now.ts` | `apps/web/src/ui/hooks/use-now.ts` | None |
 | `apps/web/src/client/ui/hooks/use-page-heading-id.ts` | `apps/web/src/ui/hooks/use-page-heading-id.ts` | None |
@@ -111,7 +111,7 @@ the next sync turns them from pulse-only into vendored files.
 | `apps/web/src/client/ui/lib/list-navigation.ts` | `apps/web/src/ui/lib/list-navigation.ts` | None |
 | `apps/web/src/client/ui/lib/status.ts` | `apps/web/src/ui/lib/status.ts` | `status-variant` |
 | `apps/web/src/client/ui/lib/tone.ts` | `apps/web/src/ui/lib/tone.ts` | None |
-| `apps/web/src/client/ui/lib/tree.ts` | `apps/web/src/ui/lib/tree.ts` | `exact-optional` |
+| `apps/web/src/client/ui/lib/tree.ts` | `apps/web/src/ui/lib/tree.ts` | `exact-optional`, `tree-row-position` |
 | `apps/web/src/client/ui/lib/utils.ts` | `apps/web/src/ui/lib/utils.ts` | None |
 | `apps/web/src/client/ui/patterns/active-filters.tsx` | `apps/web/src/ui/patterns/active-filters.tsx` | None |
 | `apps/web/src/client/ui/patterns/callout.tsx` | `apps/web/src/ui/patterns/callout.tsx` | None |
@@ -147,7 +147,7 @@ the next sync turns them from pulse-only into vendored files.
 | `apps/web/src/client/ui/patterns/show-more.tsx` | `apps/web/src/ui/patterns/show-more.tsx` | `exact-optional` |
 | `apps/web/src/client/ui/patterns/stat-tile.tsx` | `apps/web/src/ui/patterns/stat-tile.tsx` | None |
 | `apps/web/src/client/ui/patterns/status-badge.tsx` | `apps/web/src/ui/patterns/status-badge.tsx` | `exact-optional`, `status-badge-variant` |
-| `apps/web/src/client/ui/patterns/tree-view.tsx` | `apps/web/src/ui/patterns/tree-view.tsx` | `tree-view-description` |
+| `apps/web/src/client/ui/patterns/tree-view.tsx` | `apps/web/src/ui/patterns/tree-view.tsx` | `tree-view-description`, `tree-view-virtualize` |
 | `apps/web/src/client/ui/patterns/visually-hidden.tsx` | `apps/web/src/ui/patterns/visually-hidden.tsx` | None |
 | `apps/web/src/client/ui/primitives/alert-dialog.tsx` | `apps/web/src/ui/primitives/alert-dialog.tsx` | `radix-scoped` |
 | `apps/web/src/client/ui/primitives/alert.tsx` | `apps/web/src/ui/primitives/alert.tsx` | None |
@@ -192,8 +192,8 @@ Not vendored:
 - **`app-css`** (`app.css`): Pulse's Tailwind entry, kept in deck's file order with deck's base rules: `source("..")` on the Tailwind import and an `@source not` for the workbench, `theme-pulse.css` instead of `hljs.css`, no `@fontsource` imports (the faces register from `styles/fonts.ts`), and pulse base rules (heading wrap, focus ring, inline monospace size, app-wide reduced motion).
 - **`icons-additions`** (`icons.ts`): Pulse additions: a second `lucide-react` import block and a "pulse additions" section at the end of `ICONS` (the shell and views' icons deck lacks). The shell's icons moved to the pulse-only `icons-shell.ts` (spread into `ICONS`, which keeps its type and contents) and `FALLBACK_ICON` with them; evaluating `icons.ts` registers the set with `icon-registry.ts` (pulse-only), so it can load as a lazy chunk.
 - **`components-json`** (`components.json`): `tailwind.css` points at `src/client/styles/app.css`.
-- **`barrel-exports`** (`index.ts`): No `ConfigGate` exports. Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, the `kbd`/`radio-group`/`textarea` primitives, `CommandPalette` + `commandGroupsFromIndex`, the `useDisposable` hook, `isTextEntryTarget`, `export * from "./status"` and `"./viz"`, and the DataTable virtualization exports (`DATA_TABLE_VIRTUALIZE_DEFAULTS`, `DataTableHandle`, `DataTableScrollAlign`, `DataTableVirtualizeOptions`).
-- **`data-table-virtualize`** (`data-table.tsx`): Pulse `virtualize` prop (`@tanstack/react-virtual`; `data-table-viewport` scroll region, spacer rows, rows measured as they render with `rowHeight` as the estimate and minimum height, `aria-rowcount`/`aria-rowindex`, focused row kept rendered by row id; hysteresis: once virtualized it stays so until rows < `floor(threshold * 0.8)`) and a `ref` handle with `scrollToIndex`; a `focusable` prop (default `true`) drops the scroll region's tab stop on a wallboard. Below the threshold and with the defaults the output is deck's.
+- **`barrel-exports`** (`index.ts`): No `ConfigGate` exports. Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, the `kbd`/`radio-group`/`textarea` primitives, `CommandPalette` + `commandGroupsFromIndex`, the `useDisposable` hook, `isTextEntryTarget`, `export * from "./status"` and `"./viz"`, and the DataTable virtualization exports (`DATA_TABLE_VIRTUALIZE_DEFAULTS`, `DataTableHandle`, `DataTableScrollAlign`, `DataTableVirtualizeOptions`) and the TreeView ones (`TREE_VIEW_VIRTUALIZE_DEFAULTS`, `TreeViewVirtualizeOptions`).
+- **`data-table-virtualize`** (`data-table.tsx`): Pulse `virtualize` prop (`@tanstack/react-virtual`, with `observeClientRect` from the pulse-only `lib/virtual.ts`; `data-table-viewport` scroll region, spacer rows, rows measured as they render with `rowHeight` as the estimate and minimum height, `aria-rowcount`/`aria-rowindex`, focused row kept rendered by row id; hysteresis: once virtualized it stays so until rows < `floor(threshold * 0.8)`) and a `ref` handle with `scrollToIndex`; a `focusable` prop (default `true`) drops the scroll region's tab stop on a wallboard. Below the threshold and with the defaults the output is deck's.
 - **`freshness-types`** (`freshness-badge.tsx`): Imports `FreshnessStamp`/`FreshnessState` from `lib/freshness.ts` (deck imports them from its server contract).
 - **`console-prefix`** (`fragment-boundary.tsx`, `icon.tsx`, `page-error-boundary.tsx`): Console prefix `[deck]` becomes `[pulse]`.
 - **`icon-registry`** (`icon.tsx`): Resolves names through `lib/icon-registry.ts`: shell icons eager, the rest once the lazy icon chunk loads; an empty same-size svg until then, the fallback glyph if the load fails.
@@ -209,6 +209,9 @@ Not vendored:
 - **`pulse-name`** (`use-document-title.ts`, `document-title.ts`): The app name is Pulse (`APP_TITLE = "Pulse"`; the hook's doc comment).
 - **`dom-text-entry`** (`dom.ts`): Pulse `isTextEntryTarget` (text-like input, textarea, select, contenteditable; narrower than `isEditableTarget`, which also covers buttons and composite widgets).
 - **`status-variant`** (`status.ts`): Optional `StatusPresentation.variant` (badge shape per state, e.g. outline for suppressed).
+- **`tree-view-virtualize`** (`tree-view.tsx`): Pulse `virtualize` prop (`@tanstack/react-virtual`; at a visible-row threshold, default 300, the treeitems render flat in a `tree-view-viewport` scroll region with `aria-hidden` spacers, `aria-level`/`aria-setsize`/`aria-posinset` from the model, rows measured as they render, the focused row and the Tab stop kept rendered, keyboard moves over every visible row through `useListNavigation`'s `virtual` option; hysteresis as in `data-table.tsx`; below the threshold the output is deck's); `*` expands every sibling branch and printable keys move by label (type-ahead), both from the model; the row is `flex-wrap`, so a caller's meta can take a line of its own (`basis-full`) at narrow widths.
+- **`list-navigation-virtual`** (`use-list-navigation.ts`): Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones; optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead.
+- **`tree-row-position`** (`tree.ts`): `VisibleTreeRow` carries `posInSet`/`setSize`.
 <!-- ui-drift:end notes -->
 
 ## Pulse-only additions
@@ -225,6 +228,7 @@ Files in the library directories that deck does not have. They follow the same c
 | `apps/web/src/client/ui/lib/icon-registry.ts` | pulse | Name → icon registry behind `Icon`: the shell set eagerly, the rest when the lazy `icons.ts` chunk registers |
 | `apps/web/src/client/ui/lib/icons-shell.ts` | pulse | The shell's icons and `FALLBACK_ICON`, split out of `icons.ts` so they stay on the initial route |
 | `apps/web/src/client/ui/lib/style-nonce.ts` | pulse | `styleNonce()` / `styleNonceProps()` return the CSP style nonce (`get-nonce`, set by `main.tsx` from the shell) for primitives that render their own `<style>`; internal, not exported from the barrel |
+| `apps/web/src/client/ui/lib/virtual.ts` | pulse | `observeClientRect`, shared by the virtualized `DataTable` and `TreeView` |
 | `apps/web/src/client/ui/primitives/radio-group.tsx` | shadcn/ui new-york v4 `radio-group` | Built on `@radix-ui/react-radio-group` |
 | `apps/web/src/client/ui/primitives/textarea.tsx` | shadcn/ui new-york v4 `textarea` | None |
 | `apps/web/src/client/ui/primitives/kbd.tsx` | shadcn/ui new-york v4 `kbd` | `Kbd` and `KbdGroup` |
@@ -243,7 +247,8 @@ Pulse-only additions that could move to deck:
 - `patterns/data-table.tsx` `virtualize`, the `scrollToIndex` handle and `focusable`.
 - `patterns/command-palette.tsx` (`CommandPalette`, `commandGroupsFromIndex`).
 - `patterns/filter-bar.tsx` `min-w-0` result count (a deck fix: the long count side-scrolls at 320px).
-- `patterns/tree-view.tsx` row meta as the treeitem's description (a deck a11y fix).
+- `patterns/tree-view.tsx` row meta as the treeitem's description (a deck a11y fix), `virtualize`,
+  `*` and type-ahead, and the `virtual`/`typeaheadActive` options of `hooks/use-list-navigation.ts`.
 - `patterns/disclosure.tsx` separated count in the trigger's accessible name (a deck a11y fix).
 - `patterns/status-badge.tsx` `fromMap` applying the entry's `variant`, with `StatusPresentation.variant`.
 - `patterns/page-error-boundary.tsx` `pageSlot` (the fallback keeps the page's root and `h1`) and focus to the page heading after Retry.
