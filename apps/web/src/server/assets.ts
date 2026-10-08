@@ -59,7 +59,7 @@ export interface ClientManifest {
   chunkCss?: Record<string, string[]>;
   /** CSP hash (`sha256-<base64>`) of each inline executable script in the shipped `index.html`,
    *  computed by `buildClient` from the file it publishes. The shell's `script-src` allows exactly
-   *  these. Optional so an older build still parses; the loader then hashes the shell itself. */
+   *  these. Optional so an older build still parses; production then allows no inline script (dev hashes the served shell). */
   inlineScriptHashes?: string[];
 }
 
