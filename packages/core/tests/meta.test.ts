@@ -14,7 +14,11 @@ import { join } from "node:path";
 import * as barrel from "../src/index.js";
 import { loadAndValidate, FINDING_CODES } from "../src/index.js";
 import { FindingCollector } from "../src/findings/collect.js";
-import { checkTimezone, checkEndpointAlertBinding } from "../src/validate/invariants.js";
+import {
+  checkTimezone,
+  checkEndpointAlertBinding,
+  checkGatusNames,
+} from "../src/validate/invariants.js";
 import type { ProvenanceIndex } from "../src/loader/index.js";
 import type { MergedInventory } from "../src/validate/index.js";
 import type { Finding, FindingCode } from "../src/index.js";
@@ -81,6 +85,18 @@ function codesFromInertAlertBindingDetector(): FindingCode[] {
   return c.drain().map((f) => f.code);
 }
 
+/** GATUS_UNSAFE_NAME (issue #1) fires when a name rendered into Gatus carries a `"`, `\\` or line
+ *  break. A direct detector call over a service whose ingress check name has a double quote. */
+function codesFromGatusNameDetector(): FindingCode[] {
+  const c = new FindingCollector();
+  checkGatusNames(
+    { services: [{ name: 'we"b', host: "h", ingress_url: "https://w.example" }] } as unknown as MergedInventory,
+    stubProv,
+    c,
+  );
+  return c.drain().map((f) => f.code);
+}
+
 describe("FINDING_CODES coverage (anti-rot guard, 07 §4)", () => {
   // Each covering case, using the real machinery. Together they must exercise every code.
   const CASES: Record<string, () => FindingCode[]> = {
@@ -101,6 +117,7 @@ describe("FINDING_CODES coverage (anti-rot guard, 07 §4)", () => {
     "bad-version/missing": () => codesFromLoad("bad-version/missing"),
     "missing-timezone (detector)": () => codesFromMissingTimezoneDetector(),
     "inert-alert-binding (detector)": () => codesFromInertAlertBindingDetector(),
+    "gatus-unsafe-name (detector)": () => codesFromGatusNameDetector(),
   };
 
   const covered = new Set<FindingCode>();

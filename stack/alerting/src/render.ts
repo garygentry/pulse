@@ -1,9 +1,10 @@
 // stack/alerting/src/render.ts
 // The transform harness (03 §2). Holds two things:
-//   1. `buildAlertingConfig` — the PURE orchestrator. Fans out to the three sub-builders
-//      (buildAlertmanagerConfig 007, buildDeepHealthRules + buildBackupRules 004), collects their
-//      findings into one array, applies the whole-or-nothing rule (any `error` finding → all three
-//      YAML strings are ""), and owns the single deterministic serialization of the AM config object.
+//   1. `buildAlertingConfig` — the PURE orchestrator. Fans out to the four sub-builders
+//      (buildAlertmanagerConfig 007, buildDeepHealthRules + buildBackupRules 004,
+//      buildSyntheticRules issue #1), collects their findings into one array, applies the
+//      whole-or-nothing rule (any `error` finding → all four YAML strings are ""), and owns the
+//      single deterministic serialization of the AM config object.
 //      No I/O, no clock, no randomness (determinism invariant 3).
 //   2. `renderToDisk`/`main` — the thin I/O wrapper. Loads + validates the estate (aborting before
 //      the transform on failure), parses the rendered routing + prober inputs (a parse failure is an
@@ -18,6 +19,7 @@ import type { AmRoutingRendered, ProberConfigRendered } from "./transform/render
 import type { AlertingFinding } from "./transform/findings.js";
 import { buildDeepHealthRules } from "./transform/deep-health-rules.js";
 import { buildBackupRules } from "./transform/backup-rules.js";
+import { buildSyntheticRules } from "./transform/synthetic-rules.js";
 import { buildAlertmanagerConfig } from "./transform/routing.js";
 
 /** The complete input the pure transform consumes (00 §4). Every source is read-only. */
@@ -38,6 +40,8 @@ export interface TransformOutput {
   deepHealthRules: string;
   /** Per-service backup-freshness rules YAML, or "" on abort. */
   backupRules: string;
+  /** Per-service synthetic-check (Gatus) rules YAML, or "" on abort (issue #1). */
+  syntheticRules: string;
   /** Every finding the sub-builders emitted (advisory + error). */
   findings: AlertingFinding[];
 }
@@ -48,7 +52,7 @@ export interface TransformOutput {
  *
  * @param input - Validated estate model + rendered routing + rendered prober config (00 §4).
  * @returns A complete `TransformOutput`, OR — if any sub-builder emitted a `severity: "error"`
- *          finding — one whose three YAML fields are the empty string and whose `findings` carry the
+ *          finding — one whose four YAML fields are the empty string and whose `findings` carry the
  *          error(s). Never a partial artifact (whole-or-nothing — REQ-CONFIG-01).
  */
 export function buildAlertingConfig(input: TransformInput): TransformOutput {
@@ -64,11 +68,18 @@ export function buildAlertingConfig(input: TransformInput): TransformOutput {
   // 004's scope — the inventory-derived vmalert rule families.
   const deepHealthRules = buildDeepHealthRules(input.prober, findings); // §4
   const backupRules = buildBackupRules(input.prober, findings); // §5
+  const syntheticRules = buildSyntheticRules(input.estate, findings); // issue #1
 
   // Whole-or-nothing (REQ-CONFIG-01): a single error-severity finding blanks ALL outputs so the I/O
   // wrapper writes nothing and the last known-good rendered tree is retained.
   if (findings.some((f) => f.severity === "error")) {
-    return { alertmanagerConfig: "", deepHealthRules: "", backupRules: "", findings };
+    return {
+      alertmanagerConfig: "",
+      deepHealthRules: "",
+      backupRules: "",
+      syntheticRules: "",
+      findings,
+    };
   }
 
   // The orchestrator owns the single YAML serialization of the AM config — deterministic, fixed key
@@ -76,7 +87,7 @@ export function buildAlertingConfig(input: TransformInput): TransformOutput {
   const alertmanagerConfig = amConfig
     ? stringifyYaml(amConfig, { sortMapEntries: true, lineWidth: 0 })
     : "";
-  return { alertmanagerConfig, deepHealthRules, backupRules, findings };
+  return { alertmanagerConfig, deepHealthRules, backupRules, syntheticRules, findings };
 }
 
 /** Options for the I/O wrapper (03 §2.3). */
@@ -84,7 +95,7 @@ export interface RenderOptions {
   /** Estate config directory passed to `@pulse/core` `loadAndValidate`. */
   estateDir: string;
   /** Root of the `rendered/` tree: holds `alertmanager/routing.yaml`, `prober/config.yaml`, and
-   *  receives `alertmanager/alertmanager.yml`, `vmalert/rules/{deep-health,backup}.yml`. */
+   *  receives `alertmanager/alertmanager.yml`, `vmalert/rules/{deep-health,backup,synthetic}.yml`. */
   renderedDir: string;
   /** When `false`, run the transform and report findings but write nothing (dry-run). Default `true`. */
   write?: boolean;
@@ -98,7 +109,7 @@ export interface RenderResult {
   estateFindings: Finding[];
   /** Transform findings (`AlertingFinding`, 00 §5). */
   findings: AlertingFinding[];
-  /** Absolute paths written. Empty on failure or dry-run. Either ALL three are written or none. */
+  /** Absolute paths written. Empty on failure or dry-run. Either ALL four are written or none. */
   written: string[];
 }
 
@@ -202,6 +213,7 @@ export function renderToDisk(opts: RenderOptions): RenderResult {
     [join(opts.renderedDir, "alertmanager", "alertmanager.yml"), out.alertmanagerConfig],
     [join(opts.renderedDir, "vmalert", "rules", "deep-health.yml"), out.deepHealthRules],
     [join(opts.renderedDir, "vmalert", "rules", "backup.yml"), out.backupRules],
+    [join(opts.renderedDir, "vmalert", "rules", "synthetic.yml"), out.syntheticRules],
   ];
   const temps: Array<[string, string]> = [];
   for (const [path, content] of targets) {

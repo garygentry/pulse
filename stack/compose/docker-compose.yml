@@ -55,7 +55,18 @@ services:
       - "-rule=/etc/vmalert/rules/*.yml"               # glob over alerting's mount slot (04-* §3.2); a bare dir path is read as a single file and fatals
       - "-datasource.url=http://victoriametrics:8428"   # engine-apis (00 §2)
       - "-remoteWrite.url=http://victoriametrics:8428"  # ALERTS/recording series back to VM
+      - "-remoteRead.url=http://victoriametrics:8428"   # on start, restore the state of rules with a `for:`
+                                                        #   window from the ALERTS_FOR_STATE series written above,
+                                                        #   so a vmalert restart doesn't restart their `for:` clock.
+                                                        #   (vmalert restores only `for:` rules; the `for:`-less
+                                                        #   GatusCheckFailed rule reads its own ALERTS series instead.)
       - "-notifier.url=http://alertmanager:9093"        # engine-apis (00 §2)
+      - "-datasource.queryStep=5m"                      # pinned (= the v1.102.1 default): how far back a raw selector finds
+                                                        #   a sample. The GatusCheckFailed hold reads its own ALERTS this way,
+                                                        #   so it tolerates ~5m of failed evaluations (stack/alerting, issue #1)
+      - "-rule.resendDelay=1m"                          # re-send firing alerts at most once a minute, so a 30s rule group's
+                                                        #   Alertmanager expiry stays 4m (4 × max(interval, resendDelay));
+                                                        #   1m groups are unchanged (synthetic-checks runs at 30s, issue #1)
       - "-external.label=estate=${PULSE_ESTATE_NAME}"   # web-app 07-* §3.6 defect fix: stamp estate on every
                                                         #   vmalert alert/series (estate-external-label + alerting webhook labels.estate)
       - "-httpListenAddr=:8880"
@@ -108,12 +119,11 @@ services:
       GATUS_CONFIG_PATH: /config                         # merge every YAML in the dir (tech-spec §3.7)
     networks: [pulse]
     volumes:
-      # stack-core's estate-agnostic Gatus→Alertmanager webhook provider (04-* §4.2, REQ-GATUS-02):
+      # stack-core's estate-agnostic Gatus config (`metrics: true`; no alerting provider — Gatus
+      # checks page through vmalert rules over gatus_results_total, issue #1):
       - ../gatus/alerting-provider.yaml:/config/00-alerting.yaml:ro
       # rendered endpoints — what to check (RENDERED_MOUNTS, 00 §6; renderer owns content):
       - ${PULSE_RENDERED_DIR:-../rendered}/gatus/config.yaml:/config/10-endpoints.yaml:ro
-    depends_on:
-      alertmanager: { condition: service_healthy }       # posts alerts to AM /api/v2/alerts
     # No container healthcheck: the pinned gatus image ships only the /gatus binary — no shell,
     # wget, curl, or one-shot health subcommand — so no in-container command can probe GET /health.
     # Gatus readiness is asserted out-of-band by the Tier-2 smoke's in-stack HTTP probe against

@@ -25,7 +25,7 @@ operator-authored, git-ignored `docker-compose.override.yml` (the same mechanism
   transform to emit a **native** Alertmanager config and remount that onto the config path.
 - **vmalert mounts only the static rule glob.** vmalert reads `-rule=/etc/vmalert/rules/*.yml`
   over the static mount `./config/vmalert/rules:/etc/vmalert/rules:ro`. The **rendered** rules
-  (`rendered/vmalert/rules/{deep-health,backup}.yml`, produced by the same transform) are
+  (`rendered/vmalert/rules/{deep-health,backup,synthetic}.yml`, produced by the same transform) are
   **not** mounted. You add them through the override so vmalert loads them.
 - **Alertmanager does not resolve secrets in its config file.** The native
   `alertmanager.yml` the transform emits carries every channel credential as an **unresolved**
@@ -104,7 +104,8 @@ amtool check-config examples/reference/rendered/alertmanager/alertmanager.yml
 
 confirm it prints `SUCCESS` and lists the parsed receivers — including `pulse-deadman` and
 the estate's channel receivers. The sibling rule files also appear:
-`ls examples/reference/rendered/vmalert/rules/` lists `deep-health.yml` and `backup.yml`.
+`ls examples/reference/rendered/vmalert/rules/` lists `deep-health.yml`, `backup.yml`, and
+`synthetic.yml` (the Gatus-check `GatusCheckFailed` rules).
 
 **Rollback:** `git checkout -- examples/reference/rendered/alertmanager/alertmanager.yml
 examples/reference/rendered/vmalert/rules/` restores the prior transform outputs. The
@@ -160,6 +161,8 @@ services:
       # would be read as a single file and fatal vmalert — mount each file, not the dir):
       - ../../examples/reference/rendered/vmalert/rules/backup.yml:/etc/vmalert/rules/rendered-backup.yml:ro
       - ../../examples/reference/rendered/vmalert/rules/deep-health.yml:/etc/vmalert/rules/rendered-deep-health.yml:ro
+      # Gatus synthetic checks page ONLY through this file (there is no Gatus alerting provider):
+      - ../../examples/reference/rendered/vmalert/rules/synthetic.yml:/etc/vmalert/rules/rendered-synthetic.yml:ro
 YAML
 cd stack/compose && docker compose up --wait --wait-timeout 180
 ```
@@ -169,7 +172,7 @@ cd stack/compose && docker compose up --wait --wait-timeout 180
 
 **Verify (content):** the merge is layered and the base tree is untouched —
 `docker compose config` shows the `alertmanager` service's config volume resolving to the
-`alertmanager.resolved.yml` and the two `vmalert` rule mounts under `/etc/vmalert/rules/`,
+`alertmanager.resolved.yml` and the three `vmalert` rule mounts under `/etc/vmalert/rules/`,
 and `git check-ignore stack/compose/docker-compose.override.yml` prints the path. Confirm the
 resolved config carries **no** leftover `${…}`/`op://` reference —
 `! grep -Eq '\$\{|op://' ../../examples/reference/rendered/alertmanager/alertmanager.resolved.yml`
@@ -222,8 +225,8 @@ promtool check rules \
 ```
 
 **Verify (content):** promtool prints `SUCCESS: N rules found` with **no** `FAILED` line, and
-the output includes `BackupStale`, `BackupCritical`, `BackupNoData`, and the deep-health rule
-names — confirming both the static library and the rendered families parse.
+the output includes `BackupStale`, `BackupCritical`, `BackupNoData`, `GatusCheckFailed`, and the
+deep-health rule names — confirming both the static library and the rendered families parse.
 
 **Rollback:** none — this is a read-only lint.
 

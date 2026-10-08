@@ -16,6 +16,7 @@ export const FINDING_CODES = {
   BACKUP_COMMAND_HOST: "backup_command_host",
   HOST_LOCAL_PROBE_HOST: "host_local_probe_host",
   INERT_ALERT_BINDING: "inert_alert_binding",
+  GATUS_UNSAFE_NAME: "gatus_unsafe_name",
   UNRESOLVED_HOST: "unresolved_host",
   UNRESOLVED_CHANNEL: "unresolved_channel",
   DUPLICATE_IDENTITY: "duplicate_identity",

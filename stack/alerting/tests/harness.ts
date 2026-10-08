@@ -45,6 +45,15 @@ export const AMTOOL_IMAGE = "prom/alertmanager:v0.27.0" as const;
  *  rule-format, so `promtool test rules` validates & unit-tests them. */
 export const PROMTOOL_IMAGE = "prom/prometheus:v2.53.2" as const;
 
+/** The stack's exact VictoriaMetrics pin (stack/compose/docker-compose.yml). The synthetic-check
+ *  suite evaluates rendered rules against a throwaway instance because MetricsQL's increase()
+ *  differs from Prometheus's (no extrapolation; a new series' first sample counts) — promtool
+ *  cannot stand in for it (issue #1). */
+export const VM_IMAGE = "victoriametrics/victoria-metrics:v1.102.1" as const;
+
+/** The stack's exact vmalert pin — validates rendered rule files with `-dryRun` (issue #1). */
+export const VMALERT_IMAGE = "victoriametrics/vmalert:v1.102.1" as const;
+
 /** Local loopback HTTP receiver image for the webhook container layer (§6.4). Pinned. */
 export const RECEIVER_IMAGE = "python:3.12-alpine" as const;
 

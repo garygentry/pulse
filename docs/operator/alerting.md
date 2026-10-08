@@ -71,9 +71,9 @@ A `stack/alerting` test (`runbook-coverage.test.ts`) enforces the mapping: every
 
 ## Synthetic (Gatus) paging: the `alerts:` binding
 
-Gatus blackbox checks page through Alertmanager **only for endpoints that declare an `alerts:`
-block**. Declare that binding on a service in the estate and the renderer emits it into the Gatus
-config, flipping the check from silent to paging:
+Gatus blackbox checks page **only for services that declare an `alerts:` binding**. Declare it on a
+service in the estate and the alerting transform renders a critical **`GatusCheckFailed`** vmalert
+rule for that service's ingress check into `rendered/vmalert/rules/synthetic.yml`:
 
 ```yaml
 services:
@@ -83,21 +83,87 @@ services:
     managed: true
     ingress_url: https://portal.aurora.example   # the check target
     alerts:
-      - type: custom                # the shipped Gatus→Alertmanager provider
-        failure_threshold: 3        # omitted fields inherit the provider's default-alert
-        send_on_resolved: true
+      - type: custom                # retained for compatibility; selects nothing
+        failure_threshold: 3        # failed checks before firing (default 3, max 60)
+        success_threshold: 2        # passing checks before resolving (default 2, max 60)
         description: "Portal ingress synthetic check failing"
 ```
 
+The rule reads Gatus's own `gatus_results_total` series (the stack enables Gatus's `/metrics` and
+scrapes it every 30s). Gatus checks nominally run every 60s. With F = `failure_threshold` and
+S = `success_threshold`:
+
+- **Fires** when, **within one window, there were at least F failed checks and no passing check**.
+  The rule runs every 30s and tests three windows: F minutes and F minutes + 30s, which fire at the
+  F-th consecutive failure (with the defaults, about 3 minutes after the last good check), and
+  4·F minutes, which still fires when a broad outage slows Gatus down. A phase sweep over check
+  cadences of 60–75s, every scrape and check phase, and ±150ms of jitter catches every outage of
+  exactly F failures and never fires on two-failures-then-a-pass. After a Gatus restart the rule
+  needs F fresh failures, and failures separated by a passing check never add up.
+- **Resolves** when, **within the clear window of ceil(1.5·S) + 1 minutes, there were at least S
+  passing checks and no failed check**: 4 minutes for the default S = 2, so about 4 minutes after
+  the last failure. With S = 1 it still needs a 3-minute window free of failures. A pass between
+  failures does not resolve it.
+- **Gatus down never resolves it.** While the alert fires, the rule reads its own state back from
+  the raw `ALERTS` series vmalert writes to VictoriaMetrics, and with no fresh check results nothing
+  can clear it. (A Gatus outage raises `AncillaryDown`; see the [engine runbook](/engine/).) A raw
+  selector finds a sample up to vmalert's query step old (`-datasource.queryStep=5m`, pinned in the
+  stack), so up to about 5 minutes of failed evaluations (a VictoriaMetrics restart, query
+  timeouts) don't drop the hold. When the alert resolves, vmalert writes a staleness marker that
+  ends the series at once, so a later single failure can't revive it.
+- **Slow checks delay firing, they don't flap.** Gatus runs checks one at a time and waits 60s
+  after each finishes, so a broad outage (many endpoints timing out) stretches the real cadence.
+  Moderately slow checks (up to about 90s apart) are still caught by the short windows. Slower than
+  that, the 4·F-minute window fires once it holds F failures and no pass, which is at least 4·F
+  minutes after the last good check. Once it fires, it holds until the resolve condition is met.
+
+Known limits:
+
+- Failures on both sides of a Gatus outage can add up to F and fire, if no passing check was
+  recorded within the 4·F-minute window.
+- If vmalert is down at the moment the resolve condition first holds, no staleness marker is
+  written. For the next 5 minutes, a single failure re-fires the alert (it is held until the
+  resolve condition holds again).
+- If vmalert is down for more than about 4 minutes while the alert is held only by its own state
+  (the check no longer meets the fire condition, e.g. Gatus is also down), Alertmanager expires
+  the alert (vmalert sends a 4-minute expiry, kept by `-rule.resendDelay=1m`). If vmalert is back
+  within 5 minutes the alert fires again (a new notification); after that, only once the fire
+  condition holds again. vmalert's `-remoteRead.url` restores only rules with a `for:` window, so
+  it does not change this.
+- After a vmalert restart, vmalert reports a new `activeAt` for a still-firing alert. Its labels
+  and fingerprint are unchanged, so Alertmanager treats it as the same alert and does not resolve
+  it.
+
+vmalert re-sends the alert on every evaluation while it fires, so a long outage stays firing in
+Alertmanager and the "resolved" notification arrives only when the check recovers. The alert carries
+`severity: critical`, `source: gatus`, `endpoint: <host>/<service>`, `group: <host>`, plus `name`
+(same value as `endpoint`), vmalert's `alertgroup: synthetic-checks` and the `estate` label, with
+`summary`, `description`, `url` (the ingress URL) and `runbook_url` (the
+[synthetic checks runbook](/synthetic/)).
+
 Field notes:
 
-- **`type`** names the Gatus provider to bind; `custom` is the shipped Alertmanager provider
-  (`stack/gatus/alerting-provider.yaml`).
-- Optional: **`enabled`**, **`description`**, **`failure_threshold`**, **`success_threshold`**,
-  **`send_on_resolved`**. Anything omitted inherits the provider's `default-alert` thresholds.
-- A binding only fires on a service that **renders a Gatus endpoint** — one with an `ingress_url`,
-  not suppressed. On any other service it is inert and raises an `inert_alert_binding` **warning** at
-  validation.
+- Optional: **`enabled`** (`false` renders no rule), **`description`**, **`failure_threshold`**,
+  **`success_threshold`**.
+- **`type`** and **`send_on_resolved`** are kept for compatibility and **have no effect**. Whether
+  you get resolve notifications is decided by each Alertmanager receiver (`send_resolved`). Setting
+  `send_on_resolved: false` raises an advisory `IGNORED_ALERT_FIELD` finding from the transform.
+- One rule per check: if a service declares several enabled bindings, the first is used (advisory
+  `IGNORED_ALERT_FIELD` finding).
+- A binding only fires on a service that **renders a Gatus endpoint**, meaning one with an
+  `ingress_url` that is not suppressed. On any other service it is inert and raises an
+  `inert_alert_binding` **warning** at validation.
+- The rule file is a rendered artifact like `deep-health.yml` and `backup.yml`: mount it into
+  vmalert as the [rollout session](/rollout-session/) shows, or no synthetic check pages.
+
+> **BREAKING for existing deployments: upgrading from the Gatus push provider.** Earlier revisions
+> paged Gatus checks through a Gatus `custom` alerting provider posting straight to Alertmanager.
+> That provider never resolved alerts correctly (issue #1) and has been removed. After upgrading you
+> **must** re-run the alerting transform and add the `synthetic.yml` mount to vmalert. If you
+> don't, Gatus checks **silently stop paging**: nothing errors, and the checks stay green in the
+> Gatus UI. No estate change is needed, since the same `alerts:` bindings drive the rules. Alerts
+> also change identity at cutover (new labels such as `estate`, `name` and `alertgroup`), so
+> existing silences matching on the full old label set need updating.
 
 ## The deadman: proving the pipeline is alive
 

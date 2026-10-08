@@ -76,6 +76,7 @@ resolves to these pages.
 | `churn` | [Container churn](/churn/) | ContainerRestarting, ContainerChurn |
 | `deep-health` | [Deep health](/deep-health/) | DeepHealthFailed (per-service functional) |
 | `backup-freshness` | [Backup freshness](/backup-freshness/) | BackupStale, BackupCritical, BackupNoData |
+| `synthetic` | [Synthetic checks](/synthetic/) | GatusCheckFailed (per-service Gatus ingress check) |
 | `engine` | [Engine self-monitoring](/engine/) | AlertPathDown, AncillaryDown |
 | `pipeline-health` | [Pipeline health](/pipeline-health/) | AlertRuleEvalErrors, AlertNotificationsFailing, AlertNotificationLatencyHigh, AlertRemoteWriteBacklog |
 | `deadman` | [Dead man's switch](/deadman/) | DeadMansSwitch (absence is the alarm) |

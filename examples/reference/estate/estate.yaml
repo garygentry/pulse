@@ -97,10 +97,10 @@ services:
       # series selector, so the expression references `status`, not a bare `pulse_deep_health_status`.
       alert_expression: status == 0
       credential: ${WEB_HEALTH_TOKEN}     # env SecretRef
-    # Per-endpoint alert binding (issue #15, V-002). Binds this service's synthetic ingress check to
-    # the Gatus→Alertmanager provider (type: custom) so a red blackbox check PAGES. Omitted fields
-    # inherit the provider's default-alert thresholds; here we override the failure threshold and set
-    # a description carried into the alert payload.
+    # Per-endpoint alert binding (issues #15, #1). Makes this service's synthetic ingress check PAGE:
+    # stack/alerting renders a GatusCheckFailed vmalert rule over the check's gatus_results_total
+    # series. Omitted thresholds default to failure 3 / success 2; the description becomes the alert
+    # annotation. `type` and `send_on_resolved` are kept for compatibility and change nothing.
     alerts:
       - type: custom
         description: "Portal ingress synthetic check failing"

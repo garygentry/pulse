@@ -3,23 +3,11 @@
 // Emits exactly one `gatus/config.yaml` (possibly with an empty `endpoints:` list) so the tree
 // shape is stable across estates (REQ-DET-01). Endpoints are derived from service ingress URLs,
 // probe-only host probes (by `probe.kind`), and estate domains. No credentials → no findings.
-import type { EstateModel, Host, EndpointAlert } from "@pulse/core";
+import type { EstateModel, Host, Service } from "@pulse/core";
 
 import { compareString } from "../order.js";
 import { toCanonicalYaml } from "../format.js";
 import type { EmitResult } from "./emit-result.js";
-
-/** One Gatus endpoint alert binding (issue #15). Kebab-case keys map 1:1 onto Gatus's
- *  `endpoints[].alerts[]` schema; omitted fields inherit the provider's `default-alert`
- *  (`stack/gatus/alerting-provider.yaml`). */
-export interface GatusEndpointAlert {
-  type: string;
-  enabled?: boolean;
-  description?: string;
-  "failure-threshold"?: number;
-  "success-threshold"?: number;
-  "send-on-resolved"?: boolean;
-}
 
 /** One Gatus endpoint (check) declaration. Fields map to Gatus's endpoint schema. */
 export interface GatusEndpoint {
@@ -33,11 +21,19 @@ export interface GatusEndpoint {
   /** DNS query parameters (Gatus `dns:` block); present only on a per-domain DNS endpoint. */
   dns?: { "query-name": string; "query-type": string };
   /** Ordered condition expressions (Gatus `conditions`). Gatus requires at least one condition
-   *  per endpoint, so every emitted endpoint declares this. */
+   *  per endpoint, so every emitted endpoint declares this. No `alerts:` block is ever emitted:
+   *  Gatus checks page through vmalert rules over Gatus's own metrics (issue #1), not a Gatus
+   *  alerting provider. */
   conditions?: string[];
-  /** Per-endpoint alert bindings (issue #15). Present iff the owning service declared `alerts:`;
-   *  binds the check to the Gatus→Alertmanager provider so it pages. */
-  alerts?: GatusEndpointAlert[];
+}
+
+/**
+ * The Gatus endpoint name for a service's ingress check: `<host>/<service>`. Single source of
+ * truth shared with `stack/alerting` (the synthetic-check rules select `gatus_results_total` by
+ * this `name` label), so the check and the rule that pages on it can never drift apart.
+ */
+export function gatusEndpointName(service: Pick<Service, "host" | "name">): string {
+  return `${service.host}/${service.name}`;
 }
 
 /** Compatibility default for DNS checks when an estate does not declare `dnsResolver`.
@@ -56,17 +52,16 @@ const DEFAULT_DNS_RESOLVER_URL = "1.1.1.1";
 export function emitGatus(model: EstateModel): EmitResult {
   const endpoints: GatusEndpoint[] = [];
 
-  // Service ingress (HTTPS). A suppressed service produces no check. A service that declares an
-  // `alerts:` binding (issue #15) additionally emits `endpoints[].alerts`, flipping the synthetic
-  // check from DEFINED-BUT-NOT-FIRING to firing through the Gatus→Alertmanager provider.
+  // Service ingress (HTTPS). A suppressed service produces no check. A service's `alerts:`
+  // binding does NOT change the endpoint: paging is a vmalert rule over this check's
+  // `gatus_results_total` series, rendered by stack/alerting (issue #1).
   for (const service of model.services) {
     if (service.ingressUrl === undefined || service.suppressed !== undefined) continue;
     endpoints.push({
-      name: `${service.host}/${service.name}`,
+      name: gatusEndpointName(service),
       group: service.host,
       url: service.ingressUrl,
       conditions: ["[STATUS] == 200"],
-      ...(service.alerts !== undefined ? { alerts: service.alerts.map(toGatusAlert) } : {}),
     });
   }
 
@@ -95,26 +90,6 @@ export function emitGatus(model: EstateModel): EmitResult {
   return {
     files: [{ path: "gatus/config.yaml", contents: toCanonicalYaml({ endpoints }) }],
     findings: [],
-  };
-}
-
-/**
- * Map a model `EndpointAlert` (camelCase, issue #15) to a Gatus `endpoints[].alerts[]` entry
- * (kebab-case). Optional fields are added conditionally so an omitted field inherits the
- * provider's `default-alert` rather than serializing an explicit value.
- */
-function toGatusAlert(alert: EndpointAlert): GatusEndpointAlert {
-  return {
-    type: alert.type,
-    ...(alert.enabled !== undefined ? { enabled: alert.enabled } : {}),
-    ...(alert.description !== undefined ? { description: alert.description } : {}),
-    ...(alert.failureThreshold !== undefined
-      ? { "failure-threshold": alert.failureThreshold }
-      : {}),
-    ...(alert.successThreshold !== undefined
-      ? { "success-threshold": alert.successThreshold }
-      : {}),
-    ...(alert.sendOnResolved !== undefined ? { "send-on-resolved": alert.sendOnResolved } : {}),
   };
 }
 

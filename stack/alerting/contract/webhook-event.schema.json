@@ -90,7 +90,7 @@
           },
           "generatorURL": {
             "type": "string",
-            "description": "Source query URL (vmalert/Gatus). No credential material (REQ-SEC-02)."
+            "description": "Source query URL (vmalert; Gatus synthetic checks are vmalert rules too). No credential material (REQ-SEC-02)."
           }
         }
       }
