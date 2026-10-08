@@ -198,6 +198,11 @@ document click interceptor.
 close, so a dialog opened from code restores focus itself (`mutations/dialog-frame.tsx` and the
 command palette do). Mutation dialogs stay lazy chunks, loaded with `useLazyDialog`.
 
+**Estate tree rows.** A `treeitem` cannot own an interactive control, so the estate inventory
+tree's rows show provenance as plain text and the provenance copy button lives on the entity page.
+The keyboard path there is Enter on a host or service row, and the tree's visible keyboard help
+(its `aria-describedby`) says so.
+
 **Overview grid.** The host grid stays bespoke (a 2-D `role="grid"` with spatial roving focus and
 change markers) and is restyled with token classes. Its cells use `React.memo` with an explicit
 equality function, so a live update re-renders only the cells that changed.
