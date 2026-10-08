@@ -8,7 +8,7 @@ import type {
   WebEstateHostV2,
   WebEstateServiceV2,
 } from "@pulse/renderer";
-import type { AvailabilitySection } from "@pulse/web-data/wire";
+import type { AvailabilitySection, DataAvailability } from "@pulse/web-data/wire";
 
 import type { IconName } from "@/ui";
 
@@ -192,3 +192,30 @@ export const COVERAGE_LABEL: Record<HostCoverage, string> = {
   suppressed: "Suppressed",
   unknown: "Coverage unknown",
 };
+
+/** A present coverage section's non-`current` availability, or `null` when it is current or absent
+ *  (absent already classifies every entity "unknown"). Mirrors `classifyAvailability`'s `stale`. */
+export type CoverageStaleness = Exclude<DataAvailability["state"], "current"> | null;
+
+export function coverageStaleness(coverage: AvailabilitySection<WebCoverageArtifact>): CoverageStaleness {
+  const { state } = coverage.availability;
+  return coverage.value === null || state === "current" ? null : state;
+}
+
+/** What a covered entity reads while coverage is not current. Kept to ≤14 characters so the word that
+ *  tells the states apart survives badge truncation at 375px. */
+const NON_CURRENT_COVERED_LABEL: Readonly<Record<Exclude<CoverageStaleness, null>, string>> = {
+  stale: "Stale coverage",
+  unavailable: "No coverage",
+  "not-configured": "Coverage off",
+};
+
+/**
+ * Badge text for a coverage classification. While coverage is not current a covered entity never
+ * reads "Covered" (invariant I3, never silent-green); its badge status is downgraded separately
+ * through `effectiveStatus`. Gap / suppressed / unknown are not ok and keep their text, matching the
+ * coverage tab, which downgrades only ok.
+ */
+export function coverageLabel(coverage: HostCoverage, staleness: CoverageStaleness): string {
+  return staleness !== null && coverage === "covered" ? NON_CURRENT_COVERED_LABEL[staleness] : COVERAGE_LABEL[coverage];
+}
