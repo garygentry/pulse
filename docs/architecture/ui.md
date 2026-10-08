@@ -180,7 +180,7 @@ into imports from the modules that own each name. Source code is unchanged: feat
 imports from `@/ui`. The plugin drops `type` specifiers and fails the build on a name the barrel
 does not export or on any other form of barrel import (namespace, re-export, dynamic), so nothing
 falls back to the barrel. The cost is more, smaller chunks, which compress less well as separate
-files: total JS rose ~15 KB gz while each view's first load fell 6–45 KB gz. The build budget test
+files: total JS rose ~15 KB gz while each view's first load fell 6–44 KB gz. The build budget test
 holds a first-load ceiling per view.
 
 **Scoped Radix.** Import Radix from the scoped `@radix-ui/react-*` packages, never the

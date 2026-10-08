@@ -64,8 +64,8 @@ import { initialRouteJsFiles, staticClosure } from "./initial-route.js";
  * holds. Final (every view on the library, legacy CSS deleted): measured 157,452 B; 169 KB is
  * measured + ~10%, so it stays the final ceiling. Icons off the initial route (only the shell's 19
  * of the curated set's 76 ship eagerly, −4.3 KB) and barrel imports rewritten per module (more,
- * smaller initial-route chunks, +4.6 KB of per-file gzip overhead): measured 158,278 B; the ceiling
- * holds.
+ * smaller initial-route chunks, +4.6 KB of per-file gzip overhead): measured 159,693 B (main before
+ * it: 159,063 B); the ceiling holds.
  */
 export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
 /**
@@ -85,11 +85,12 @@ export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
  * Final (every view on the library, legacy CSS deleted): measured 350,747 B. Measured + ~10% would
  * raise it, so the ceiling stays at 364 KB (+6%). Barrel imports rewritten per module (each view
  * chunk reaches only the library code it imports; icons split into a shell set and a lazy chunk):
- * measured 367,563 B. The same code in more, smaller chunks compresses less well file by file
- * (+15 KB gz, raw +12 KB), while each view's first load fell 6–45 KB gz (per-view ceilings below).
- * The ceiling holds.
+ * measured 368,091 B (main before it: 352,956 B). The same code in more, smaller chunks compresses
+ * less well file by file (+15 KB gz, raw +12 KB), while each view's first load fell 6–44 KB gz. That
+ * left the 364 KB ceiling 1.3% of headroom, so it is re-baselined to measured + ~10%; the per-view
+ * first-load ceilings below are the tight guard on what users download.
  */
-export const TOTAL_JS_BUDGET_BYTES = 364 * 1024;
+export const TOTAL_JS_BUDGET_BYTES = 395 * 1024;
 /** Total CSS ceiling (gz), all entry + chunk .css. Baseline ≈ 14 KB; charter starting ceiling.
  *  Re-measured with Tailwind and the legacy layer coexisting: 37,190 B (React-only build 31,162 B),
  *  so the ceiling (measured + ~10%) held unchanged as the temporary coexistence ceiling. Raised when
@@ -382,15 +383,15 @@ describe("the dev-only /_ui workbench never ships in a production build", () => 
  * route, the view's chunk with every chunk it imports statically, and the lazy icon chunk ViewHost
  * loads with it. Measured after feature code's `@/ui` imports were pointed at the owning modules at
  * build time (build-client.ts "Barrel imports"); before, every view shared one lazy chunk of library
- * code and its first load carried ~12–48 KB gz of modules only other views use. Ceilings at
+ * code and its first load carried ~12–55 KB gz of modules only other views use. Ceilings at
  * measured + ~10%.
  */
 export const VIEW_FIRST_LOAD_BUDGET_BYTES = {
-  overview: 209 * 1024, // measured 194,918 B (was 237,524 B through the barrel)
-  alerts: 245 * 1024, // measured 227,974 B (was 233,818 B)
-  estate: 245 * 1024, // measured 228,050 B (was 235,102 B)
-  engine: 242 * 1024, // measured 225,362 B (was 245,532 B)
-  timeline: 223 * 1024, // measured 207,611 B (was 251,882 B)
+  overview: 210 * 1024, // measured 196,390 B (238,200 B through the barrel)
+  alerts: 245 * 1024, // measured 228,381 B (234,394 B)
+  estate: 246 * 1024, // measured 229,598 B (235,747 B)
+  engine: 243 * 1024, // measured 226,830 B (246,151 B)
+  timeline: 224 * 1024, // measured 209,034 B (252,543 B)
 } as const;
 
 /** Sources (repo-relative from `apps/web/`) a JS file bundles, from its sourcemap. */
