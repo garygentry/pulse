@@ -54,6 +54,31 @@ function contentHeight(viewport: Element): number {
   return total;
 }
 
+/** Where the row `id` starts in the stubbed layout (px from the top of the list), or -1. */
+function offsetOf(id: string): number {
+  let offset = 0;
+  for (const li of document.querySelectorAll<HTMLElement>('[data-slot="tree-view-viewport"] ul[role=tree] > li')) {
+    if (li.getAttribute("data-tree-id") === id) return offset;
+    offset += li.getAttribute("data-slot") === "tree-view-spacer" ? Number.parseFloat(li.style.height) || 0 : ROW_HEIGHT;
+  }
+  return -1;
+}
+
+/** A fixed `performance.now`, advanced by hand, for the type-ahead window. */
+function fixedClock(): { advance: (ms: number) => void; restore: () => void } {
+  const realNow = performance.now.bind(performance);
+  let clock = 1_000;
+  performance.now = () => clock;
+  return {
+    advance: (ms) => {
+      clock += ms;
+    },
+    restore: () => {
+      performance.now = realNow;
+    },
+  };
+}
+
 function Tree(props: Partial<TreeViewProps<Node>> & { initial?: Iterable<string> }) {
   const { initial = ALL_HOSTS, ...rest } = props;
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(initial));
@@ -209,9 +234,7 @@ describeUi("@/ui TreeView virtualize", () => {
 
   it("type-ahead jumps to an unrendered row by label", async () => {
     // A fixed clock: under load, keystrokes must not fall outside the type-ahead window.
-    const realNow = performance.now.bind(performance);
-    let clock = 1_000;
-    performance.now = () => clock;
+    const clock = fixedClock();
     try {
       const user = userEvent.setup();
       render(<Tree />);
@@ -220,11 +243,11 @@ describeUi("@/ui TreeView virtualize", () => {
       await user.keyboard("host-37");
       await waitFor(() => expect(focusedId()).toBe("host-37"));
       // After a pause a new search starts: the next row starting with "s".
-      clock += 1_000;
+      clock.advance(1_000);
       await user.keyboard("s");
       await waitFor(() => expect(focusedId()).toBe("host-37/svc-00"));
     } finally {
-      performance.now = realNow;
+      clock.restore();
     }
   }, 30_000);
 
@@ -257,6 +280,75 @@ describeUi("@/ui TreeView virtualize", () => {
     await user.keyboard("{End}");
     await waitFor(() => expect(focusedId()).toBe(LAST_ID));
     expect(rendered().length).toBeLessThan(60);
+  }, 30_000);
+
+  it("* in an already-virtualized tree keeps the focused row in view as rows open above it", async () => {
+    const clock = fixedClock();
+    try {
+      const user = userEvent.setup();
+      // Hosts 40–49 open: 50 + 200 = 250 rows, past a threshold of 40.
+      render(<Tree initial={ALL_HOSTS.slice(40)} virtualize={{ threshold: 40 }} />);
+      act(() => byId("host-00")!.focus());
+      await user.keyboard("host-30");
+      await waitFor(() => expect(focusedId()).toBe("host-30"));
+      const viewport = document.querySelector<HTMLElement>('[data-slot="tree-view-viewport"]')!;
+      // Opens hosts 0–39: 30 × 20 rows land above host-30.
+      await user.keyboard("*");
+      expect(byId("host-30")).toHaveAttribute("aria-expanded", "true");
+      expect(focusedId()).toBe("host-30");
+      await waitFor(() => {
+        const top = offsetOf("host-30");
+        expect(top).toBe(30 * (SERVICES + 1) * ROW_HEIGHT);
+        expect(top).toBeGreaterThanOrEqual(viewport.scrollTop);
+        expect(top + ROW_HEIGHT).toBeLessThanOrEqual(viewport.scrollTop + VIEWPORT_HEIGHT);
+      });
+    } finally {
+      clock.restore();
+    }
+  }, 30_000);
+
+  it("j and k extend a live type-ahead search, and move focus outside one", async () => {
+    const clock = fixedClock();
+    try {
+      const user = userEvent.setup();
+      const names = ["alpha", "app-jellyfin", "app-kafka", "bravo"];
+      render(
+        <TreeView
+          aria-label="Estate"
+          nodes={names.map((name) => ({ id: name, name }))}
+          {...accessors}
+          virtualize={{ threshold: 1 }}
+        />,
+      );
+      act(() => byId("alpha")!.focus());
+      await user.keyboard("app-k");
+      expect(focusedId()).toBe("app-kafka");
+      clock.advance(1_000);
+      await user.keyboard("app-j");
+      expect(focusedId()).toBe("app-jellyfin");
+      // Outside a search, j and k are movement keys again.
+      clock.advance(1_000);
+      await user.keyboard("j");
+      expect(focusedId()).toBe("app-kafka");
+      clock.advance(1_000);
+      await user.keyboard("k");
+      expect(focusedId()).toBe("app-jellyfin");
+    } finally {
+      clock.restore();
+    }
+  }, 30_000);
+
+  it("focus that left the tree to nowhere is not pulled back when the layout switches", () => {
+    const view = (expanded: readonly string[]) => (
+      <TreeView aria-label="Estate" nodes={NODES} {...accessors} expanded={new Set(expanded)} virtualize />
+    );
+    const { rerender } = render(view([]));
+    act(() => byId("host-00")!.focus());
+    // Blur with no relatedTarget while the row is still in the document (a click on the page).
+    act(() => byId("host-00")!.blur());
+    rerender(view(ALL_HOSTS));
+    expect(tree().closest("[data-slot=tree-view]")).toHaveAttribute("data-virtualized");
+    expect(document.activeElement?.getAttribute("role")).not.toBe("treeitem");
   }, 30_000);
 
   it("Enter on a windowed row activates it", async () => {

@@ -180,8 +180,12 @@ from the model, so the set is described correctly while most of it is not in the
 measured as they render. The focused row and the Tab stop stay rendered, and keyboard moves go
 through `useListNavigation`'s `virtual` option (the full row count and a `focus(index)` that renders
 the row first), so ↑/↓, Home/End, `*` (expand every sibling) and type-ahead reach rows that are not
-rendered and scroll them into view. Switching layouts as the row count crosses the threshold keeps
-focus on the row that had it.
+rendered and scroll them into view. Typing j or k while a type-ahead search is live extends it
+(`useListNavigation`'s `typeaheadActive`); otherwise they move. Switching layouts as the row count crosses the threshold keeps focus on the row
+that had it, and `*` opening rows above the focused one scrolls it back into view. Known
+limitations: the browser's find (Ctrl/Cmd-F) only finds rendered rows, printing shows only the
+rendered window, and the 70vh scroll region uses `overscroll-contain`, so on a phone a swipe that
+reaches its end does not scroll the page; swipe outside the tree to scroll the page.
 
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell

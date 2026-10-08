@@ -81,8 +81,14 @@ browserDescribe()("browser: estate inventory tree over a large estate (virtualiz
 
       await page.keyboard.press("End");
       await page.waitForFunction((sel) => document.activeElement?.matches(sel) === true, LAST_SERVICE);
-      // Let the re-aim settle once the rows the scroll rendered are measured.
-      await page.waitForTimeout(300);
+      // The re-aim settles once the rows the scroll rendered are measured: wait until the row is in view.
+      await page.waitForFunction(() => {
+        const viewport = document.querySelector<HTMLElement>('[data-slot="tree-view-viewport"]');
+        const rect = document.activeElement?.getBoundingClientRect();
+        if (viewport === null || rect === undefined) return false;
+        const box = viewport.getBoundingClientRect();
+        return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom - viewport.clientTop + 0.5;
+      });
       const end = await treeState(page);
       expect(end.focused).toBe("svc:rack-49/svc-19");
       expect(end.level).toBe("3"); // group → host → service

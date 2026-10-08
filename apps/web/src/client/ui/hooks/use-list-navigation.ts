@@ -50,6 +50,11 @@ export interface UseListNavigationOptions {
     activeIndex: () => number;
     focus: (index: number) => void;
   };
+  /**
+   * True while the list's own type-ahead search is live: a printable key (j/k included) is then
+   * text for that search, so the hook leaves it alone instead of moving.
+   */
+  typeaheadActive?: () => boolean;
   /** Turn the listener off without unmounting. Default `true`. */
   enabled?: boolean;
 }
@@ -116,10 +121,20 @@ export function useListNavigation(options: UseListNavigationOptions): void {
           opts.onCollapse !== undefined ||
           opts.onToggle !== undefined,
       };
-      const intent = resolveListIntent(event, config, {
-        origin,
-        gPending: gPendingRef.current,
-      });
+      const typing =
+        origin === "list" &&
+        opts.typeaheadActive?.() === true &&
+        event.key.length === 1 &&
+        event.key !== " " &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey;
+      const intent = typing
+        ? "none"
+        : resolveListIntent(event, config, {
+            origin,
+            gPending: gPendingRef.current,
+          });
       gPendingRef.current = nextGPending(intent);
 
       const doc = (event.target as Node | null)?.ownerDocument ?? document;

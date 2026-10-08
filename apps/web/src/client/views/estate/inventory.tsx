@@ -208,9 +208,10 @@ const META = "flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap
  * Host and service meta. Below a wide tree (the `@container` on the tree region) it takes a line of
  * its own under the label, aligned with it (past the chevron and its gap), wrapping there, instead
  * of splitting the row with a truncated label into a very tall row. In a wide tree it sits beside the
- * label at its natural width (`basis-auto`), so its badges stay on one line.
+ * label at its natural width (`basis-auto`), up to three quarters of the row (it wraps past that), so
+ * the label always keeps a quarter.
  */
-const ENTITY_META = `${META} basis-full justify-start ps-5.5 @4xl:basis-auto @4xl:justify-end @4xl:ps-0`;
+const ENTITY_META = `${META} basis-full justify-start ps-5.5 @2xl:max-w-3/4 @2xl:grow-0 @2xl:basis-auto @2xl:justify-end @2xl:ps-0`;
 
 /**
  * A row's trailing content. Plain text and decorative badges only (tree rows hold no interactive
@@ -358,6 +359,10 @@ function SecondarySections(props: {
   );
 }
 
+/** A one-line row measures 30px: estimating that keeps a programmatic scroll from shifting once the
+ *  rows it lands on are measured. Stacked (narrow) rows are taller and are measured as they render. */
+const TREE_VIRTUALIZE = { rowHeight: 30 } as const;
+
 const INITIAL_EXPANDED: ReadonlySet<string> = new Set(CLASS_GROUPS.map((g) => `group:${g.class}`));
 
 /** The inventory landing tab: primary host tree + secondary relationship sections. */
@@ -503,7 +508,7 @@ export function Inventory(props: InventoryProps): ReactElement {
                 onSelect={onSelect}
                 renderIcon={renderRowIcon}
                 renderMeta={(node) => renderMeta(node)}
-                virtualize
+                virtualize={TREE_VIRTUALIZE}
               />
             ) : null}
             {tree.errors.length > 0 ? (
