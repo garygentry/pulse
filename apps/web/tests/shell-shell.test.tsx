@@ -149,6 +149,83 @@ describeUi("Shell frame", () => {
     expect(within(screen.getByRole("banner")).getByText("Engine")).toBeInTheDocument();
   });
 
+  it("makes the view links one Tab stop with ↑/↓, Home/End roving between them (issue #12)", async () => {
+    const ctx = setup("alerts");
+    const navigate = mock((_path: string) => {});
+    ctx.router.navigate = navigate as PathRouter["navigate"];
+    renderShell(ctx.store, ctx.router);
+    await screen.findByText("Alerts body");
+
+    const nav = screen.getByRole("navigation", { name: "Views" });
+    const link = (name: string): HTMLElement => within(nav).getByRole("link", { name });
+    // Only the active view is in the Tab order.
+    expect(within(nav).getAllByRole("link").filter((a) => a.tabIndex === 0)).toEqual([link("Alerts")]);
+
+    // Tab from the brand link lands on the active view; the next Tab leaves the nav.
+    screen.getByRole("link", { name: "Pulse" }).focus();
+    await userEvent.tab();
+    expect(link("Alerts")).toHaveFocus();
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(link("Timeline")).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+    expect(link("Overview")).toHaveFocus();
+    await userEvent.keyboard("{End}");
+    expect(link("Engine")).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(link("Overview")).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    expect(link("Timeline")).toHaveFocus();
+    // The stop follows focus, so Shift+Tab back into the nav returns to the last focused link.
+    expect(within(nav).getAllByRole("link").filter((a) => a.tabIndex === 0)).toEqual([link("Timeline")]);
+    await userEvent.tab();
+    expect(nav.contains(document.activeElement)).toBe(false);
+    await userEvent.tab({ shift: true });
+    expect(link("Timeline")).toHaveFocus();
+
+    // Arrow keys elsewhere on the page are not claimed by the nav.
+    screen.getByRole("main").focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByRole("main")).toHaveFocus();
+  });
+
+  it("keeps the roving contract on the collapsed icon rail", async () => {
+    const ctx = setup("overview");
+    renderShell(ctx.store, ctx.router);
+    await screen.findByText("Overview body");
+    await userEvent.click(screen.getByRole("button", { name: "Toggle navigation" }));
+    const nav = screen.getByRole("navigation", { name: "Views" });
+    const link = (name: string): HTMLElement => within(nav).getByRole("link", { name });
+    expect(within(nav).getAllByRole("link").filter((a) => a.tabIndex === 0)).toEqual([link("Overview")]);
+    link("Overview").focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(link("Alerts")).toHaveFocus();
+  });
+
+  it("keeps the roving contract in the mobile sheet", async () => {
+    const win = window as unknown as { innerWidth: number };
+    const width = win.innerWidth;
+    win.innerWidth = 375;
+    try {
+      const ctx = setup("estate");
+      renderShell(ctx.store, ctx.router);
+      await screen.findByText("Estate body");
+      expect(screen.queryAllByRole("navigation", { name: "Views" })).toHaveLength(0);
+      await userEvent.click(screen.getByRole("button", { name: "Toggle navigation" }));
+      const sheet = await screen.findByRole("dialog");
+      const nav = within(sheet).getByRole("navigation", { name: "Views" });
+      const link = (name: string): HTMLElement => within(nav).getByRole("link", { name });
+      expect(within(nav).getAllByRole("link").filter((a) => a.tabIndex === 0)).toEqual([link("Estate")]);
+      link("Estate").focus();
+      await userEvent.keyboard("{ArrowDown}");
+      expect(link("Engine")).toHaveFocus();
+      await userEvent.keyboard("{Home}");
+      expect(link("Overview")).toHaveFocus();
+    } finally {
+      win.innerWidth = width;
+    }
+  });
+
   it("puts the skip link first in tab order; activating it focuses the single <main id=main>", async () => {
     const ctx = setup("overview");
     renderShell(ctx.store, ctx.router);

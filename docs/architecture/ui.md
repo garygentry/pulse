@@ -173,7 +173,10 @@ tables).
 
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell
-renders no `h1`; each view's `PageHeader` supplies it. The top bar's health region shows the
+renders no `h1`; each view's `PageHeader` supplies it. The sidebar's view links are one Tab stop
+(a roving tabindex on the last focused link, else the active view), and ↑/↓ (or j/k) and Home/End
+move between them through `useListNavigation`, on the icon rail and in the mobile sheet alike.
+Ctrl/Cmd-B toggles the sidebar, except while focus is in a text field (`isTextEntryTarget`). The top bar's health region shows the
 estate name, the live and staleness pill, the theme menu and the density control. A stale-data
 `Callout` with `role="alert"` sits under it. `CommandPalette` is a Pulse pattern on shadcn
 `Command` inside `Dialog`. The shell loads it as a lazy chunk, registers `mod+k` through
