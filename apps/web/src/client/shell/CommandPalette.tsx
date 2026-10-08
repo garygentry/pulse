@@ -262,14 +262,15 @@ function PaletteLoadDialog(props: {
   onReload: () => void;
   returnFocusTo: HTMLElement | null;
 }): ReactElement {
-  // A failure while open: focus sat on the dialog itself (the loading state has no control), so move
-  // it to the Reload button, the one thing to do here.
+  // A failure while open: focus sat on the dialog itself or its Close button (the loading state has
+  // no other control), so move it to the Reload button, the one thing to do here.
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!props.failed) return;
     const content = contentRef.current;
     const active = content?.ownerDocument.activeElement ?? null;
-    if (content === null || (active !== content && active !== content.ownerDocument.body)) return;
+    if (content === null) return;
+    if (active !== null && active !== content.ownerDocument.body && !content.contains(active)) return;
     content.querySelector<HTMLElement>("[data-slot=error-state] button")?.focus();
   }, [props.failed]);
   return (
