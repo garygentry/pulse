@@ -1,8 +1,9 @@
 // apps/web/tests/ui-data-table-virtualize.test.tsx — DataTable `virtualize` and its `scrollToIndex` handle.
 //
 // happy-dom has no layout: the viewport's geometry is stubbed (offsetHeight/clientHeight/scrollHeight,
-// which the virtualizer reads) and `scrollTo` fires `scroll` on the next task, as a browser does.
-import { afterEach, beforeEach, expect, it, mock } from "bun:test";
+// which the virtualizer reads), each data row's `getBoundingClientRect().height` (which it measures)
+// is 36px or, for a "Tall" row, TALL_ROW_HEIGHT, and `scrollTo` fires `scroll` on the next task, as a browser does.
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRef } from "react";
 
 import { DataTable, ROW_LINK_SELECTOR, type ColumnDef, type DataTableHandle } from "@/ui";
@@ -24,6 +25,29 @@ const hosts = (count: number): Host[] =>
 
 /** Viewport height in px: 10 rows of the default 36px compact row height. */
 const VIEWPORT_HEIGHT = 360;
+/** The stubbed height of a row whose kind is "Tall" (a second line of text). */
+const TALL_ROW_HEIGHT = 56;
+
+/** A body row's stubbed layout height: a spacer's inline height, a data row's measured height. */
+function bodyRowHeight(tr: Element): number {
+  if (tr.getAttribute("data-slot") === "data-table-spacer") {
+    return Number.parseFloat((tr.firstElementChild as HTMLElement | null)?.style.height ?? "0") || 0;
+  }
+  return tr.textContent?.includes("Tall") === true ? TALL_ROW_HEIGHT : 36;
+}
+
+/** Where `tr` starts in the stubbed layout, in px from the top of the body. */
+function bodyOffset(tr: Element): number {
+  let offset = 0;
+  for (let sibling = tr.previousElementSibling; sibling !== null; sibling = sibling.previousElementSibling) {
+    offset += bodyRowHeight(sibling);
+  }
+  return offset;
+}
+
+/** The stubbed layout height of the whole body: rendered rows plus spacers. */
+const bodyHeight = (root: Element): number =>
+  Array.from(root.querySelectorAll("tbody > tr")).reduce((sum, tr) => sum + bodyRowHeight(tr), 0);
 
 describeUi("@/ui DataTable virtualize", () => {
   const undo: (() => void)[] = [];
@@ -31,18 +55,19 @@ describeUi("@/ui DataTable virtualize", () => {
   beforeEach(() => {
     const proto = (globalThis as unknown as { HTMLElement: { prototype: HTMLElement } }).HTMLElement.prototype;
     const isViewport = (el: HTMLElement) => el.getAttribute("data-slot") === "data-table-viewport";
-    const stubs: Record<string, (el: HTMLElement) => number> = {
-      offsetHeight: () => VIEWPORT_HEIGHT,
-      clientHeight: () => VIEWPORT_HEIGHT,
-      // Header row plus every data row at 36px.
-      scrollHeight: (el) => Number(el.querySelector("table")?.getAttribute("aria-rowcount") ?? 0) * 36,
+    const isDataRow = (el: HTMLElement) => el.tagName === "TR" && el.hasAttribute("data-row-index");
+    const stubs: Record<string, (el: HTMLElement) => number | undefined> = {
+      offsetHeight: (el) => (isViewport(el) ? VIEWPORT_HEIGHT : undefined),
+      clientHeight: (el) => (isViewport(el) ? VIEWPORT_HEIGHT : undefined),
+      // Every rendered row and spacer, at their stubbed heights.
+      scrollHeight: (el) => (isViewport(el) ? bodyHeight(el) : undefined),
     };
     for (const [name, value] of Object.entries(stubs)) {
       const original = Object.getOwnPropertyDescriptor(proto, name);
       Object.defineProperty(proto, name, {
         configurable: true,
         get(this: HTMLElement) {
-          return isViewport(this) ? value(this) : (original?.get?.call(this) ?? 0);
+          return value(this) ?? original?.get?.call(this) ?? 0;
         },
       });
       undo.push(() => {
@@ -50,6 +75,39 @@ describeUi("@/ui DataTable virtualize", () => {
         else delete (proto as unknown as Record<string, unknown>)[name];
       });
     }
+    // Each newly observed element is reported once, on the next task, as a browser's first
+    // ResizeObserver notification is: rows rendered while scrolling are measured this way.
+    const win = document.defaultView as unknown as { ResizeObserver?: unknown };
+    const realObserver = win.ResizeObserver;
+    win.ResizeObserver = class {
+      private readonly targets = new Set<Element>();
+      constructor(private readonly callback: (entries: { target: Element }[]) => void) {}
+      observe(target: Element) {
+        this.targets.add(target);
+        setTimeout(() => {
+          if (this.targets.has(target)) this.callback([{ target }]);
+        }, 0);
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target);
+      }
+      disconnect() {
+        this.targets.clear();
+      }
+    };
+    undo.push(() => {
+      win.ResizeObserver = realObserver;
+    });
+    const getRect = proto.getBoundingClientRect;
+    proto.getBoundingClientRect = function (this: HTMLElement) {
+      const rect = getRect.call(this);
+      if (!isDataRow(this)) return rect;
+      const height = bodyRowHeight(this);
+      return { ...rect.toJSON(), height, bottom: rect.top + height, toJSON: () => ({}) } as DOMRect;
+    };
+    undo.push(() => {
+      proto.getBoundingClientRect = getRect;
+    });
     const scrollTo = proto.scrollTo;
     proto.scrollTo = function (this: HTMLElement, ...args: Parameters<HTMLElement["scrollTo"]>) {
       const before = this.scrollTop;
@@ -240,6 +298,90 @@ describeUi("@/ui DataTable virtualize", () => {
     expect(container.querySelector('[data-slot="data-table-viewport"]')).toBeNull();
     rerender(<DataTable {...props} data={hosts(300)} />);
     expect(container.querySelector('[data-slot="data-table-viewport"]')).not.toBeNull();
+  });
+
+  describe("rows of varying height", () => {
+    /** Every `every`-th row (from 0) is "Tall": TALL_ROW_HEIGHT instead of 36px. */
+    const mixed = (count: number, every: number): Host[] =>
+      Array.from({ length: count }, (_, i) => ({ key: `host-${i}`, kind: i % every === 0 ? "Tall" : "VM" }));
+    const row = (name: string) => screen.getByRole("rowheader", { name }).closest("tr")!;
+
+    it("places rows and spacers by measured height as the window scrolls", async () => {
+      const data = mixed(1000, 3);
+      const realHeight = (r: Host) => (r.kind === "Tall" ? TALL_ROW_HEIGHT : 36);
+      const realOffset = (index: number) => data.slice(0, index).reduce((sum, r) => sum + realHeight(r), 0);
+      render(<DataTable caption="Hosts" columns={COLUMNS} data={data} getRowId={(r) => r.key} virtualize />);
+
+      // Scroll down in steps shorter than the viewport, so every row passes through the window
+      // (and is measured) on the way.
+      for (let top = 200; top <= 2400; top += 200) {
+        await act(async () => {
+          viewport().scrollTop = top;
+          viewport().dispatchEvent(new Event("scroll"));
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+      }
+
+      const rendered = dataRows();
+      expect(screen.queryByRole("rowheader", { name: "host-0" })).toBeNull();
+      // The spacer above the window is the real height of the rows it stands in for, so each
+      // rendered row starts where it would in an unvirtualized table.
+      for (const tr of rendered) {
+        expect(bodyOffset(tr)).toBe(realOffset(Number(tr.getAttribute("aria-rowindex")) - 2));
+      }
+      // The scroll height counts measured rows at their real height and the rest at the estimate.
+      const last = Number(rendered.at(-1)!.getAttribute("aria-rowindex")) - 2;
+      expect(bodyHeight(viewport())).toBe(realOffset(last + 1) + (data.length - last - 1) * 36);
+    });
+
+    it("scrollToIndex lands a far row at the top, below tall rows", async () => {
+      const ref = createRef<DataTableHandle>();
+      render(<DataTable ref={ref} caption="Hosts" columns={COLUMNS} data={mixed(1000, 3)} getRowId={(r) => r.key} virtualize />);
+
+      act(() => ref.current!.scrollToIndex(600, { align: "start" }));
+
+      await waitFor(() => expect(screen.getByRole("rowheader", { name: "host-600" })).toBeInTheDocument());
+      await waitFor(() => expect(bodyOffset(row("host-600"))).toBe(viewport().scrollTop));
+      expect(row("host-600")).toHaveAttribute("aria-rowindex", "602");
+      expect(rowIndexes().length).toBeLessThan(40);
+    });
+
+    it("scrollToIndex lands a row at the bottom edge when tall rows above it are measured late", async () => {
+      const ref = createRef<DataTableHandle>();
+      // Every row near the target is tall: the estimate puts the target ~200px too high.
+      render(<DataTable ref={ref} caption="Hosts" columns={COLUMNS} data={mixed(1000, 1)} getRowId={(r) => r.key} virtualize />);
+
+      act(() => ref.current!.scrollToIndex(500, { align: "end" }));
+
+      await waitFor(() => expect(screen.getByRole("rowheader", { name: "host-500" })).toBeInTheDocument());
+      await waitFor(() => {
+        const target = row("host-500");
+        expect(bodyOffset(target) + bodyRowHeight(target)).toBe(viewport().scrollTop + VIEWPORT_HEIGHT);
+      });
+    });
+
+    it("keyboard focus across the window keeps landing on the next tall row", async () => {
+      render(
+        <DataTable
+          caption="Hosts"
+          columns={COLUMNS}
+          data={mixed(1000, 2)}
+          getRowId={(r) => r.key}
+          rowLink={(r) => `/hosts/${r.key}`}
+          virtualize
+        />,
+      );
+      act(() => screen.getByRole("link", { name: "host-0" }).focus());
+      for (let i = 1; i <= 40; i += 1) {
+        await userEvent.tab();
+        expect(document.activeElement).toHaveAttribute("data-row-link", `host-${i}`);
+      }
+      const focused = document.activeElement!.closest("tr")!;
+      const top = bodyOffset(focused);
+      // The focused row is fully inside the viewport.
+      expect(top).toBeGreaterThanOrEqual(viewport().scrollTop);
+      expect(top + bodyRowHeight(focused)).toBeLessThanOrEqual(viewport().scrollTop + VIEWPORT_HEIGHT);
+    });
   });
 
   it("focusable={false} drops the scroll region's tab stop, plain and virtualized", () => {

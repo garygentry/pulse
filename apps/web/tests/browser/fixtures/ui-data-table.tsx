@@ -1,12 +1,13 @@
 // apps/web/tests/browser/fixtures/ui-data-table.tsx — browser fixture page: the `@/ui` DataTable
 // virtualized over 5,000 rows, with arrow-key navigation over its row links (useListNavigation,
-// scoped to the table). Bundled by _harness.buildFixturePage.
+// scoped to the table). Every 4th row carries a second line (a taller row), so the table's row
+// measurement is exercised; its handle is `window.__dataTable`. Bundled by _harness.buildFixturePage.
 // The global stylesheet first: its `@layer` order statement must lead the bundled CSS.
 import "../../../src/client/styles/app.css";
 
 import { useRef } from "react";
 
-import { DataTable, ROW_LINK_SELECTOR, useListNavigation, type ColumnDef } from "@/ui";
+import { DataTable, ROW_LINK_SELECTOR, useListNavigation, type ColumnDef, type DataTableHandle } from "@/ui";
 
 import { render } from "../../react-render.js";
 
@@ -26,7 +27,20 @@ const HOSTS: Host[] = Array.from({ length: ROW_COUNT }, (_, i) => ({
 
 const COLUMNS: ColumnDef<Host>[] = [
   { accessorKey: "key", header: "Host" },
-  { accessorKey: "kind", header: "Kind" },
+  {
+    accessorKey: "kind",
+    header: "Kind",
+    // Every 4th row: a second line under the kind, as the alert catalog's rule errors are.
+    cell: ({ row }) =>
+      row.index % 4 === 0 ? (
+        <span className="flex flex-col gap-1">
+          {row.original.kind}
+          <span className="text-xs text-muted-foreground">second line</span>
+        </span>
+      ) : (
+        row.original.kind
+      ),
+  },
   { accessorKey: "services", header: "Services", meta: { align: "end" } },
 ];
 
@@ -49,6 +63,9 @@ function Fixture() {
           getRowId={(row) => row.key}
           rowLink={(row) => `/hosts/${row.key}`}
           virtualize
+          ref={(handle) => {
+            (window as unknown as { __dataTable?: DataTableHandle | null }).__dataTable = handle;
+          }}
           className="max-h-96"
         />
       </div>

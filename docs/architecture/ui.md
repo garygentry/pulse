@@ -163,7 +163,10 @@ library patterns.
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable`, backed by
 `@tanstack/react-virtual`. It switches on at a row threshold (300 by default), keeps the focused
 row rendered by id, exposes `aria-rowcount` and `aria-rowindex`, and offers a ref handle with
-`scrollToIndex`. Below the threshold the output is deck's. The alerts triage table uses it.
+`scrollToIndex`. Rows are measured as they render (`virtualize.rowHeight` is the estimate and
+each row's minimum height), so rows that grow a second line, such as the alert catalog's rule
+errors, keep the spacers, the scrollbar and `scrollToIndex` exact. Below the threshold the output
+is deck's. The alerts triage table and the alert catalog use it.
 `focusable={false}` drops the scroll region's tab stop where nobody interacts (the kiosk engine
 tables).
 
