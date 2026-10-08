@@ -2,7 +2,9 @@
 //
 // Pure functions: `applyTimeline` folds a base scenario against every step whose offset lies at or
 // before elapsedMs; `freshenGatus` re-bases fixture timestamps onto the wall clock so a frozen
-// fixture stays inside the 300s Gatus staleness rule (spec 05 §2.4). No I/O, no clock reads.
+// fixture stays inside the 300s Gatus staleness rule (spec 05 §2.4); `rebaseAlertmanager`,
+// `rebaseVmalert`, and `rebaseVm` re-base the other fixture timestamps onto the scenario start so
+// alert ages are realistic (GitHub #3). No I/O, no clock reads.
 
 import type {
   AmAlertsResponse,
@@ -140,9 +142,18 @@ export interface ScenarioState {
   /** Number of timeline steps applied to reach this state. */ appliedSteps: number;
 }
 
-/** The fixed instant every committed Gatus `results[].timestamp` is authored against. */
-export const GATUS_FIXTURE_ANCHOR = "2026-01-01T00:00:00.000Z" as const;
-export const GATUS_FIXTURE_ANCHOR_MS = 1_767_225_600_000 as const;
+/**
+ * The fixture reference instant: every committed scenario timestamp (Gatus results, Alertmanager
+ * `startsAt`/`endsAt`/`updatedAt`, vmalert `lastEvaluation`/`activeAt`, VM sample times, and the
+ * `timeline.json` alerts, whose `startsAt` is this instant plus their `atMs`) is authored as if the
+ * scenario started at exactly this instant. The mock engine preserves each timestamp's offset from
+ * it, so author new fixtures against it too.
+ */
+export const FIXTURE_ANCHOR = "2026-01-01T00:00:00.000Z" as const;
+export const FIXTURE_ANCHOR_MS = 1_767_225_600_000 as const;
+/** Historical names for {@link FIXTURE_ANCHOR}; the Gatus re-base was the first user. */
+export const GATUS_FIXTURE_ANCHOR = FIXTURE_ANCHOR;
+export const GATUS_FIXTURE_ANCHOR_MS = FIXTURE_ANCHOR_MS;
 
 interface Accumulator {
   vm: VmQueryResponse;
@@ -264,4 +275,83 @@ export function freshenGatus(
     });
     return { ...ep, results };
   });
+}
+
+// ── Scenario-clock re-base (GitHub #3) ──────────────────────────────────────────────────────────
+//
+// `rebaseAlertmanager`/`rebaseVmalert`/`rebaseVm` shift every authored timestamp by
+// `scenarioStartMs - FIXTURE_ANCHOR_MS`, so each keeps its authored offset from the anchor but
+// relative to the scenario start (`--clock`, or process start). An alert authored 19 minutes before
+// the anchor is 19 minutes old when the scenario starts and ages normally from there; an `endsAt` in
+// the future stays in the future by the same margin, so firing/resolved semantics at scenario start
+// match the fixture. Timeline-fired alerts are covered too: they are authored at anchor + `atMs`, so
+// they read as just-fired when they appear.
+//
+// Unlike `freshenGatus` (anchored to the current wall clock, so check results never go stale) these
+// depend only on the scenario start, so a pinned `--clock` serves byte-identical bodies on every run.
+// At `scenarioStartMs === FIXTURE_ANCHOR_MS` the bodies come back unchanged. Unset sentinels (Go's
+// zero time `0001-01-01T00:00:00Z`, or anything at or before the epoch) and unparseable strings are
+// left as-is. All pure; none mutates its input.
+
+/** Shift one ISO-8601 instant by `deltaMs`; unset sentinels and unparseable strings pass through. */
+export function shiftInstant(iso: string, deltaMs: number): string {
+  if (deltaMs === 0) return iso;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms) || ms <= 0) return iso;
+  return new Date(ms + deltaMs).toISOString();
+}
+
+function shiftField<T extends object>(obj: T, key: string, deltaMs: number): T {
+  const value = (obj as Record<string, unknown>)[key];
+  if (typeof value !== "string") return obj;
+  return { ...obj, [key]: shiftInstant(value, deltaMs) };
+}
+
+const AM_TIME_FIELDS = ["startsAt", "endsAt", "updatedAt"] as const;
+
+/** Re-base Alertmanager alert `startsAt`/`endsAt`/`updatedAt` onto the scenario start. */
+export function rebaseAlertmanager(body: AmAlertsResponse, scenarioStartMs: number): AmAlertsResponse {
+  const deltaMs = scenarioStartMs - FIXTURE_ANCHOR_MS;
+  return body.map((alert) => {
+    let next = { ...alert };
+    for (const key of AM_TIME_FIELDS) next = shiftField(next, key, deltaMs);
+    return next;
+  });
+}
+
+/** Re-base vmalert group/rule `lastEvaluation` and rule `alerts[].activeAt` onto the scenario start. */
+export function rebaseVmalert(body: VmalertRulesResponse, scenarioStartMs: number): VmalertRulesResponse {
+  const deltaMs = scenarioStartMs - FIXTURE_ANCHOR_MS;
+  const groups = body.data.groups.map((group) => ({
+    ...shiftField(group, "lastEvaluation", deltaMs),
+    rules: group.rules.map((rule) => {
+      const next = shiftField({ ...rule }, "lastEvaluation", deltaMs);
+      if (!Array.isArray(rule.alerts)) return next;
+      return {
+        ...next,
+        alerts: rule.alerts.map((a) =>
+          typeof a === "object" && a !== null ? shiftField({ ...a }, "activeAt", deltaMs) : a,
+        ),
+      };
+    }),
+  }));
+  return { ...body, data: { ...body.data, groups } };
+}
+
+/** Re-base VM instant-query sample times (`value[0]`, epoch seconds) onto the scenario start. */
+export function rebaseVm(body: VmQueryResponse, scenarioStartMs: number): VmQueryResponse {
+  const deltaMs = scenarioStartMs - FIXTURE_ANCHOR_MS;
+  const data = body.data;
+  if (data === undefined || deltaMs === 0) return body;
+  return {
+    ...body,
+    data: {
+      ...data,
+      result: data.result.map((s) => {
+        const at = s.value[0];
+        if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) return { ...s };
+        return { ...s, value: [at + deltaMs / 1000, s.value[1]] };
+      }),
+    },
+  };
 }

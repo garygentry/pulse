@@ -26,6 +26,8 @@ Use a deterministic timeline clock for screenshots or repeatable debugging:
 bun run dev:web --mock degraded-mix --clock 2026-01-01T00:00:00Z
 ```
 
+`--clock` pins the scenario start (process start without it). Alertmanager, vmalert, and VictoriaMetrics fixture timestamps are shifted onto that start, keeping their authored offsets from the fixture anchor (`2026-01-01T00:00:00Z`): an alert authored 19 minutes before the anchor is 19 minutes old when the scenario starts. Gatus results follow the live wall clock instead, so checks never go stale. A pinned `--clock` serves the same Alertmanager, vmalert, and VictoriaMetrics bytes on every run; `--clock 2026-01-01T00:00:00Z` serves the fixtures verbatim.
+
 ### Connect to real engines
 
 Pass three comma-separated absolute URLs in VictoriaMetrics, Alertmanager, Gatus order:
@@ -139,6 +141,8 @@ my-scenario/
 ```
 
 The three required files must use the real upstream wire shapes because `loadScenario()` validates them with production source parsers.
+
+Author every timestamp relative to the fixture anchor `2026-01-01T00:00:00Z` (`FIXTURE_ANCHOR` in `src/server/dev/timeline.ts`), treating it as the scenario start. An alert-fire step's `startsAt` is the anchor plus its `atMs`. The mock engine keeps each timestamp's offset from the anchor and moves it onto the real scenario start. Go's zero time `0001-01-01T00:00:00Z` is left as-is.
 
 A timeline has ascending non-negative millisecond offsets:
 

@@ -4,7 +4,9 @@
 // `deps.fetchImpl` seam. Routes requests by base URL origin + fixed path to the four source
 // bodies from the scenario's current fold (`applyTimeline`); Gatus bodies are re-stamped to the
 // current wall clock (`freshenGatus`) so a frozen fixture stays under the 300s staleness rule
-// (spec 05 §2.3–§2.4). Never throws synchronously — an outage is a rejected promise shaped like a
+// (spec 05 §2.3–§2.4), and VM/Alertmanager/vmalert timestamps are shifted from the fixture anchor
+// onto the scenario start (`rebaseAlertmanager`/`rebaseVmalert`/`rebaseVm`) so alert ages read as
+// authored (GitHub #3). Never throws synchronously — an outage is a rejected promise shaped like a
 // real connection failure, an unknown path is a 404 JSON response.
 
 import { readdir, stat } from "node:fs/promises";
@@ -12,7 +14,15 @@ import { resolve } from "node:path";
 
 import type { FetchLike } from "../sources/types.js";
 import { DEFAULT_SCENARIO_DIR, SCENARIO_FILES, loadScenario } from "./scenario.js";
-import { applyTimeline, freshenGatus, type MockSource, type ScenarioState } from "./timeline.js";
+import {
+  applyTimeline,
+  freshenGatus,
+  rebaseAlertmanager,
+  rebaseVm,
+  rebaseVmalert,
+  type MockSource,
+  type ScenarioState,
+} from "./timeline.js";
 
 /** The four fixed engine sources the dev loop routes (REQ-MOCK-02, 00 §3); re-exported here per
  *  spec 00 §3.1's home-file promise. Leaf value union lives in `./timeline.js` so item 013 could
@@ -57,7 +67,8 @@ export const DEFAULT_SCENARIO = "all-green" as const;
 export interface MockEngineOptions {
   /** Named mock scenario to load. */ scenario: string;
   /** Override fixtures directory; defaults to the bundled engine fixtures. */ fixturesDir?: string;
-  /** Injected process start epoch milliseconds. */ startedAt?: number;
+  /** Scenario start epoch milliseconds (`--clock`, else `now()` at construction). Drives the
+   *  timeline offset and the instant fixture timestamps are re-based onto. */ startedAt?: number;
   /** Injected epoch-ms clock for deterministic timelines. */ now?: () => number;
 }
 
@@ -128,16 +139,16 @@ export async function createMockEngine(opts: MockEngineOptions): Promise<MockEng
     let body: unknown;
     switch (source) {
       case "vm":
-        body = current.vm;
+        body = rebaseVm(current.vm, startedAt);
         break;
       case "alertmanager":
-        body = current.alertmanager;
+        body = rebaseAlertmanager(current.alertmanager, startedAt);
         break;
       case "gatus":
         body = freshenGatus(current.gatus, now());
         break;
       case "vmalert":
-        body = current.vmalert;
+        body = rebaseVmalert(current.vmalert, startedAt);
         break;
     }
     return new Response(JSON.stringify(body), {
