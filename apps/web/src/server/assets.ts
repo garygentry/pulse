@@ -204,6 +204,30 @@ function escapeJsonForScript(json: string): string {
   return json.replaceAll("</", "<\\/").replaceAll("<!--", "<\\u0021--");
 }
 
+/** A static ESM import of a sibling chunk in a built module, minified or not: `from"./x.js"`. */
+const STATIC_CHUNK_IMPORT = /(?:\bfrom|\bimport)\s*["']\.\/([^"'/]+\.js)["']/g;
+
+/**
+ * Public paths of every chunk the entry scripts reach through static imports (not the entries
+ * themselves, not dynamic `import()` targets), for `<link rel="modulepreload">`. The build splits
+ * the initial route into many small chunks several import levels deep; without preloads the
+ * browser finds each level only after parsing the one above.
+ */
+export function modulePreloadPaths(manifest: ClientManifest, readModule: (path: string) => string | null): string[] {
+  const entries = new Set(manifest.entries.js);
+  const seen = new Set<string>();
+  const pending = [...manifest.entries.js];
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const text = readModule(path);
+    if (text === null) continue;
+    for (const match of text.matchAll(STATIC_CHUNK_IMPORT)) pending.push(`${ASSET_PREFIX}${match[1]}`);
+  }
+  return [...seen].filter((path) => !entries.has(path)).sort();
+}
+
 /**
  * Pure: splice the manifest's entry tags into `shell` (CSS before `</head>`, JS before `</body>`),
  * then the shell markers (build-id meta, `chunkCss` island, and dev meta under `opts.dev`). Emitted
@@ -212,12 +236,19 @@ function escapeJsonForScript(json: string): string {
 export function injectEntryTags(
   shell: string,
   manifest: ClientManifest,
-  opts: { dev: boolean },
+  opts: { dev: boolean; modulePreload?: readonly string[] },
 ): string {
   // CSS entry tags — skip a path already referenced in a full quoted-attribute form.
   const cssTags = manifest.entries.css
     .filter((path) => !shell.includes(`"${path}"`))
     .map((path) => `    <link rel="stylesheet" href="${path}" />\n`)
+    .join("");
+
+  // Module preloads for the chunks the entry imports statically, so the browser fetches them in
+  // parallel instead of discovering them one import level at a time (modulePreloadPaths).
+  const preloadTags = (opts.modulePreload ?? [])
+    .filter((path) => !shell.includes(`"${path}"`))
+    .map((path) => `    <link rel="modulepreload" href="${path}" />\n`)
     .join("");
 
   // Build-id meta — skip when the shell already has it.
@@ -238,7 +269,7 @@ export function injectEntryTags(
       ? `    <meta name="${SHELL_MARKERS.devMeta}" content="1">\n`
       : "";
 
-  const headBlock = `${cssTags}${buildIdTag}${island}${devTag}`;
+  const headBlock = `${cssTags}${preloadTags}${buildIdTag}${island}${devTag}`;
 
   // JS entry tags — skip a path already referenced.
   const jsTags = manifest.entries.js
@@ -347,7 +378,11 @@ export function loadStaticAssets(
       manifest = read.manifest;
       buildId = manifest.buildId;
       mtimeMs = read.mtimeMs;
-      shellHtml = injectEntryTags(shellTemplate, manifest, { dev: opts.dev === true });
+      const modulePreload = modulePreloadPaths(manifest, (path) => {
+        const asset = assets.get(path);
+        return asset === undefined ? null : new TextDecoder().decode(asset.body);
+      });
+      shellHtml = injectEntryTags(shellTemplate, manifest, { dev: opts.dev === true, modulePreload });
       log({
         event: "assets_manifest_loaded",
         ok: true,

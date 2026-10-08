@@ -294,38 +294,56 @@ function barrelModuleFile(dir: string, rel: string): string {
   throw new Error(`barrel: cannot resolve ${rel} from ${dir}`);
 }
 
+/** A module that re-exports from relative modules (a barrel, possibly nested in another). */
+const RELATIVE_REEXPORT = /\bexport\s+(?:\*|(?:type\s+)?\{[^}]*\})\s*from\s*["']\./;
+
 /**
  * Map every value a barrel file exports to the module that owns it. Understands the two re-export
  * forms barrels use, `export * from "./x"` (the module's own value exports, read with Bun's
  * scanner) and `export { a, b as c, type T } from "./x"`; type-only exports are skipped (they are
- * imported with `type`, which the bundler erases). `moduleSpecifier` names the owning module in
- * the rewritten import.
+ * imported with `type`, which the bundler erases). An `export *` of a module that is itself a
+ * barrel (`ui/status/index.ts`) is followed, so its names map to the modules that own them, not to
+ * the nested barrel. `moduleSpecifier` names the owning module (by absolute path) in the rewritten
+ * import; it must not leak the build machine's paths into the bundle.
  */
-export function barrelOwners(
-  barrelFile: string,
-  moduleSpecifier: (rel: string, file: string) => string,
-): Map<string, BarrelOwner> {
+export function barrelOwners(barrelFile: string, moduleSpecifier: (file: string) => string): Map<string, BarrelOwner> {
   const scanner = new Bun.Transpiler({ loader: "tsx" });
-  const dir = dirname(barrelFile);
-  const source = readFileSync(barrelFile, "utf8").replace(COMMENTS, "");
-  const owners = new Map<string, BarrelOwner>();
-  for (const [, rel] of source.matchAll(/\bexport\s+\*\s+from\s+["'](\.[^"']+)["']/g)) {
-    const file = barrelModuleFile(dir, rel!);
-    for (const name of scanner.scan(readFileSync(file, "utf8")).exports) {
-      owners.set(name, { module: moduleSpecifier(rel!, file), imported: name });
+  const owned = (file: string, seen: ReadonlySet<string>): Map<string, { file: string; imported: string }> => {
+    const dir = dirname(file);
+    const text = readFileSync(file, "utf8");
+    const source = text.replace(COMMENTS, "");
+    const owners = new Map<string, { file: string; imported: string }>();
+    for (const [, rel] of source.matchAll(/\bexport\s+\*\s+from\s+["'](\.[^"']+)["']/g)) {
+      const target = barrelModuleFile(dir, rel!);
+      if (seen.has(target)) continue;
+      const targetText = readFileSync(target, "utf8");
+      if (RELATIVE_REEXPORT.test(targetText.replace(COMMENTS, ""))) {
+        for (const [name, owner] of owned(target, new Set([...seen, target]))) owners.set(name, owner);
+      } else {
+        for (const name of scanner.scan(targetText).exports) owners.set(name, { file: target, imported: name });
+      }
     }
-  }
-  for (const [, typeOnly, names, rel] of source.matchAll(/\bexport\s+(type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
-    if (typeOnly || !rel!.startsWith(".")) continue;
-    const file = barrelModuleFile(dir, rel!);
-    for (const raw of names!.split(",")) {
-      const spec = raw.trim();
-      if (spec === "" || spec.startsWith("type ")) continue;
-      const [imported, exported = imported] = spec.split(/\s+as\s+/).map((s) => s.trim());
-      owners.set(exported!, { module: moduleSpecifier(rel!, file), imported: imported! });
+    for (const [, typeOnly, names, rel] of source.matchAll(/\bexport\s+(type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+      if (typeOnly || !rel!.startsWith(".")) continue;
+      const target = barrelModuleFile(dir, rel!);
+      for (const raw of names!.split(",")) {
+        const spec = raw.trim();
+        if (spec === "" || spec.startsWith("type ")) continue;
+        const [imported, exported = imported] = spec.split(/\s+as\s+/).map((s) => s.trim());
+        owners.set(exported!, { file: target, imported: imported! });
+      }
     }
+    // A nested barrel's own declarations (the top-level barrel is all re-exports).
+    if (seen.size > 1) {
+      for (const name of scanner.scan(text).exports) if (!owners.has(name)) owners.set(name, { file, imported: name });
+    }
+    return owners;
+  };
+  const result = new Map<string, BarrelOwner>();
+  for (const [name, { file, imported }] of owned(barrelFile, new Set([barrelFile]))) {
+    result.set(name, { module: moduleSpecifier(file), imported });
   }
-  return owners;
+  return result;
 }
 
 /**
@@ -373,21 +391,29 @@ function rewrittenBarrels(clientRoot: string): RewrittenBarrel[] {
   if (existsSync(uiIndex)) {
     barrels.push({
       specifier: "@/ui",
-      owners: barrelOwners(uiIndex, (rel) => `@/ui/${rel.replace(/^\.\//, "")}`),
+      owners: barrelOwners(uiIndex, (file) => `@/ui/${relative(uiRoot, file).split(sep).join("/").replace(/\.tsx?$/, "")}`),
       appliesTo: (file) => !file.startsWith(uiRoot + sep),
     });
   }
   // The ESM barrel the browser build bundles (`module`); Bun.resolveSync picks the CommonJS `main`.
-  let lucideIndex: string | null = null;
+  // Owners are named by package subpath (`lucide-react/dist/esm/icons/x.mjs`; the package has no
+  // `exports` map, so deep imports resolve), never by absolute path: the rewritten source is what
+  // the sourcemaps carry.
+  let lucide: { root: string; index: string } | null = null;
   try {
     const pkgJson = Bun.resolveSync("lucide-react/package.json", clientRoot);
     const pkg = JSON.parse(readFileSync(pkgJson, "utf8")) as { module?: string };
-    if (pkg.module) lucideIndex = resolve(dirname(pkgJson), pkg.module);
+    if (pkg.module) lucide = { root: dirname(pkgJson), index: resolve(dirname(pkgJson), pkg.module) };
   } catch {
     // Not resolvable from this entry.
   }
-  if (lucideIndex !== null) {
-    barrels.push({ specifier: "lucide-react", owners: barrelOwners(lucideIndex, (_rel, file) => file), appliesTo: () => true });
+  if (lucide !== null) {
+    const { root, index } = lucide;
+    barrels.push({
+      specifier: "lucide-react",
+      owners: barrelOwners(index, (file) => `lucide-react/${relative(root, file).split(sep).join("/")}`),
+      appliesTo: () => true,
+    });
   }
   return barrels;
 }

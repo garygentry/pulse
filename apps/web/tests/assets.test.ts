@@ -12,6 +12,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   loadStaticAssets,
   injectEntryTags,
+  modulePreloadPaths,
   parseClientManifest,
   MANIFEST_FILENAME,
   SHELL_MARKERS,
@@ -418,5 +419,51 @@ describe("injectEntryTags — pure splice with SHELL_MARKERS", () => {
     // …but the escaped form parses back to the original key.
     const parsed = JSON.parse(body) as Record<string, string[]>;
     expect(parsed["views/</script>-oddity/view"]).toEqual([]);
+  });
+});
+
+describe("modulepreload for the initial route's static imports", () => {
+  const manifest: ClientManifest = {
+    buildId: "p",
+    entries: { js: [`${ASSET_PREFIX}main.js`], css: [] },
+    chunks: [`${ASSET_PREFIX}a.js`, `${ASSET_PREFIX}b.js`, `${ASSET_PREFIX}lazy.js`, `${ASSET_PREFIX}deep.js`],
+    chunkCss: {},
+  };
+  const modules: Record<string, string> = {
+    [`${ASSET_PREFIX}main.js`]: 'import{a}from"./a.js";import"./b.js";const v=()=>import("./lazy.js");',
+    [`${ASSET_PREFIX}a.js`]: 'import { d } from "./deep.js";',
+    [`${ASSET_PREFIX}b.js`]: 'import{a}from"./a.js";',
+    [`${ASSET_PREFIX}lazy.js`]: 'import"./deep.js";',
+    [`${ASSET_PREFIX}deep.js`]: "export const d=1;",
+  };
+
+  test("modulePreloadPaths walks static imports from the entries, not dynamic ones or the entries", () => {
+    expect(modulePreloadPaths(manifest, (p) => modules[p] ?? null)).toEqual([
+      `${ASSET_PREFIX}a.js`,
+      `${ASSET_PREFIX}b.js`,
+      `${ASSET_PREFIX}deep.js`,
+    ]);
+  });
+
+  test("injectEntryTags emits a modulepreload link per path in <head>, before the entry script", () => {
+    const out = injectEntryTags(BARE_SHELL, manifest, { dev: false, modulePreload: [`${ASSET_PREFIX}a.js`] });
+    const link = out.indexOf(`<link rel="modulepreload" href="${ASSET_PREFIX}a.js" />`);
+    expect(link).toBeGreaterThan(-1);
+    expect(link).toBeLessThan(out.indexOf("</head>"));
+    expect(injectEntryTags(BARE_SHELL, manifest, { dev: false })).not.toContain("modulepreload");
+  });
+
+  test("loadStaticAssets preloads the built entry's static imports in the served shell", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pulse-assets-preload-"));
+    try {
+      writeFileSync(join(dir, "index.html"), BARE_SHELL);
+      for (const [path, text] of Object.entries(modules)) writeFileSync(join(dir, path.slice(ASSET_PREFIX.length)), text);
+      writeFileSync(join(dir, MANIFEST_FILENAME), JSON.stringify(manifest));
+      const shell = loadStaticAssets(dir).shell();
+      expect(shell).toContain(`<link rel="modulepreload" href="${ASSET_PREFIX}deep.js" />`);
+      expect(shell).not.toContain(`modulepreload" href="${ASSET_PREFIX}lazy.js"`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

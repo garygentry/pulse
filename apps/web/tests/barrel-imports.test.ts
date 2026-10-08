@@ -5,12 +5,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
 import { barrelOwners, rewriteBarrelImports, type BarrelOwner } from "../scripts/build-client.js";
 
 const UI_ROOT = resolve(import.meta.dir, "../src/client/ui");
-const owners = barrelOwners(resolve(UI_ROOT, "index.ts"), (rel) => `@/ui/${rel.replace(/^\.\//, "")}`);
+const owners = barrelOwners(resolve(UI_ROOT, "index.ts"), (file) => `@/ui/${relative(UI_ROOT, file).replace(/\.tsx?$/, "")}`);
 const rewrite = (source: string, map: ReadonlyMap<string, BarrelOwner> = owners): string =>
   rewriteBarrelImports(source, "@/ui", map, "demo.tsx");
 
@@ -19,6 +19,13 @@ describe("barrelOwners", () => {
     expect(owners.get("Icon")).toEqual({ module: "@/ui/patterns/icon", imported: "Icon" });
     expect(owners.get("Button")).toEqual({ module: "@/ui/primitives/button", imported: "Button" }); // export *
     expect(owners.get("ICONS")).toEqual({ module: "@/ui/lib/icons", imported: "ICONS" });
+  });
+
+  test("follows an export * of a nested barrel to the modules that own its names", () => {
+    expect(owners.get("TARGET_STATUS")).toEqual({ module: "@/ui/status/target-status", imported: "TARGET_STATUS" });
+    expect(owners.get("Sparkline")).toEqual({ module: "@/ui/viz/sparkline", imported: "Sparkline" });
+    expect(owners.get("TimeSeriesChart")).toEqual({ module: "@/ui/viz/time-series-chart", imported: "TimeSeriesChart" });
+    expect([...owners.values()].filter((o) => /^@\/ui\/(status|viz)(\/index)?$/.test(o.module))).toEqual([]);
   });
 
   test("skips type-only exports", () => {
@@ -42,11 +49,12 @@ describe("barrelOwners", () => {
 
   test("maps lucide-react's icon re-exports to the icon modules", () => {
     const pkg = resolve(import.meta.dir, "../node_modules/lucide-react");
-    const lucide = barrelOwners(resolve(pkg, "dist/esm/lucide-react.mjs"), (_rel, file) => file);
+    const lucide = barrelOwners(resolve(pkg, "dist/esm/lucide-react.mjs"), (file) => `lucide-react/${relative(pkg, file)}`);
     for (const name of ["X", "XIcon", "LucideX"]) {
-      expect(lucide.get(name)?.imported).toBe("default");
-      expect(lucide.get(name)?.module).toMatch(/lucide-react\/dist\/esm\/icons\/x\.mjs$/);
+      expect(lucide.get(name)).toEqual({ module: "lucide-react/dist/esm/icons/x.mjs", imported: "default" });
     }
+    // The bare subpath resolves (the package has no `exports` map), so the rewrite needs no absolute path.
+    expect(Bun.resolveSync("lucide-react/dist/esm/icons/x.mjs", import.meta.dir)).toMatch(/icons\/x\.mjs$/);
   });
 });
 

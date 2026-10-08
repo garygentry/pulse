@@ -4,7 +4,7 @@
  * rules below. The Geist faces are registered from styles/fonts.ts rather than imported here (see
  * there: Bun would inline the font files into this sheet).
  */
-@import "tailwindcss";
+@import "tailwindcss" source("..");
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
@@ -13,13 +13,13 @@
 @import "./theme.css";
 @import "./theme-pulse.css";
 
+/* `source("..")` on the import above roots Tailwind's source detection at the client source
+ * (src/client) instead of the build's working directory, so the sheet is the same wherever the
+ * build starts. It matters beyond determinism: modules loaded through the build's barrel-import
+ * plugin (scripts/build-client.ts "Barrel imports") skip Tailwind's per-module scan, so detection
+ * must cover them. */
 /* The dev-only /_ui workbench never ships; keep its classes out of the production sheet. */
 @source not "../views/_ui";
-/* Scan the client source explicitly rather than relying on automatic detection, which starts at the
- * build's working directory: the build loads modules that import a barrel through a plugin
- * (scripts/build-client.ts "Barrel imports"), and Tailwind does not scan those modules as they are
- * bundled, so the sheet must not depend on where the build was started. */
-@source "..";
 
 /*
  * shadcn's base defaults (Tailwind v4 borders are `currentColor` unless told

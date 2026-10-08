@@ -4,10 +4,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import { FALLBACK_ICON, Icon, ICONS, isIconName } from "@/ui";
-import { createIconRegistry, iconRegistry } from "@/ui/lib/icon-registry";
+import { createIconRegistry, createIconSetLoader, iconRegistry, ICON_LOAD_RETRY_DELAYS_MS } from "@/ui/lib/icon-registry";
+import { createIcon } from "@/ui/patterns/icon";
 import { SHELL_ICONS } from "@/ui/lib/icons-shell";
 
-import { cleanup, describeUi, render } from "./rtl.js";
+import { act, cleanup, describeUi, render } from "./rtl.js";
 
 // Resolve from the web package root.
 const webRoot = resolve(import.meta.dir, "..");
@@ -98,6 +99,104 @@ describe("icon chunks (shell set eager, the rest lazy)", () => {
     registry.registerFullSet(ICONS); // idempotent: no second notification
     expect(notified).toEqual([1]);
     unsubscribe();
+  });
+});
+
+describe("icon set loader", () => {
+  /** A loader whose imports the test settles by hand, with retries queued instead of timed. */
+  function harness() {
+    const registry = createIconRegistry({ server: ICONS.server });
+    const attempts: { resolve: () => void; reject: () => void }[] = [];
+    const retries: { run: () => void; ms: number }[] = [];
+    const loader = createIconSetLoader(
+      registry,
+      () => new Promise((resolve, reject) => attempts.push({ resolve: () => resolve({ ICONS }), reject: () => reject(new Error("chunk")) })),
+      (run, ms) => retries.push({ run, ms }),
+    );
+    return { registry, attempts, retries, loader };
+  }
+
+  it("marks the set unavailable on a failed load and retries on a bounded backoff", async () => {
+    const { registry, attempts, retries, loader } = harness();
+    const first = loader.load();
+    attempts[0]!.reject();
+    await expect(first).rejects.toThrow("chunk");
+    expect(registry.lookup("bell")).toBe("unavailable");
+    expect(retries.map((r) => r.ms)).toEqual([ICON_LOAD_RETRY_DELAYS_MS[0]]);
+    for (let i = 1; i <= ICON_LOAD_RETRY_DELAYS_MS.length; i += 1) {
+      retries[i - 1]!.run();
+      attempts[i]!.reject();
+      await Promise.resolve().then(() => Promise.resolve());
+    }
+    // One retry per delay, then it waits for the next call.
+    expect(retries.map((r) => r.ms)).toEqual([...ICON_LOAD_RETRY_DELAYS_MS]);
+    const late = loader.load();
+    attempts.at(-1)!.resolve();
+    await late;
+    expect(registry.lookup("bell")).toBe(ICONS.bell);
+  });
+
+  it("shares one attempt between concurrent calls and stops once loaded", async () => {
+    const { registry, attempts, loader } = harness();
+    const a = loader.load();
+    const b = loader.load();
+    expect(attempts).toHaveLength(1);
+    attempts[0]!.resolve();
+    await Promise.all([a, b]);
+    await loader.load();
+    expect(attempts).toHaveLength(1);
+    expect(registry.lookup("bell")).toBe(ICONS.bell);
+  });
+});
+
+describeUi("<Icon> before the full set loads", () => {
+  function setup() {
+    const registry = createIconRegistry({ server: ICONS.server });
+    let loads = 0;
+    const TestIcon = createIcon(registry, () => {
+      loads += 1;
+      return new Promise<void>(() => {});
+    });
+    return { registry, TestIcon, loads: () => loads };
+  }
+
+  it("renders a shell icon at once", () => {
+    const { TestIcon } = setup();
+    const svg = render(<TestIcon name="server" />).container.querySelector("svg")!;
+    expect(svg).toHaveClass("lucide-server");
+  });
+
+  it("renders an empty svg of the same size, asks for the set, and fills in when it registers", () => {
+    const { registry, TestIcon, loads } = setup();
+    const { container } = render(<TestIcon name="bell" size={20} className="text-muted-foreground" />);
+    const placeholder = container.querySelector("svg")!;
+    expect(placeholder.childElementCount).toBe(0);
+    expect(placeholder).toHaveAttribute("width", "20");
+    expect(placeholder).toHaveAttribute("height", "20");
+    expect(placeholder).toHaveAttribute("aria-hidden", "true");
+    expect(placeholder).toHaveAttribute("data-slot", "icon");
+    expect(placeholder).toHaveClass("text-muted-foreground");
+    expect(loads()).toBe(1);
+    act(() => registry.registerFullSet(ICONS));
+    const svg = container.querySelector("svg")!;
+    expect(svg).toHaveClass("lucide-bell");
+    expect(svg).toHaveAttribute("width", "20");
+  });
+
+  it("renders the fallback glyph after a failed load, without an unknown-icon warning, then fills in", () => {
+    const { registry, TestIcon } = setup();
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { container } = render(<TestIcon name="bell" />);
+      act(() => registry.markUnavailable());
+      const fallback = render(<FALLBACK_ICON />).container.querySelector("svg")!;
+      expect(container.querySelector("svg")!.getAttribute("class")).toBe(fallback.getAttribute("class"));
+      expect(warn).not.toHaveBeenCalled();
+      act(() => registry.registerFullSet(ICONS));
+      expect(container.querySelector("svg")).toHaveClass("lucide-bell");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

@@ -118,7 +118,11 @@ and Button spinner icons). `ICONS` spreads them in. `<Icon>` resolves names thro
 `icons.ts` chunk loads; `ViewHost` loads that chunk alongside every view chunk and renders the view
 once both are in, so a view's first render has every icon. A name asked for before then renders an
 empty svg of the same size (no layout shift) and fills in when the chunk lands; once the full set is
-in, an unknown token renders the fallback circle as before. Importing `icons.ts` registers it, so
+in, an unknown token renders the fallback circle as before. If the chunk fails to load, icons render
+the fallback circle (never a blank) and the registry retries on a bounded backoff (1, 2, 4, 8, 16,
+30 s), then on the next navigation; a browser caches a failed module fetch, so a retry imports the
+chunk URL the error names with a fresh query (Chromium, Firefox; where the error carries no URL the
+fallback stays until a reload). Importing `icons.ts` registers it, so
 tests (which import the `@/ui` barrel) resolve every icon synchronously.
 
 The trade-off: the ~5 KB gz icon chunk moved off the shell's critical path, not out of the first
@@ -148,7 +152,7 @@ a microtask so the StrictMode remount keeps the same instance and mount-once eff
 **Build.** There is no Vite. `scripts/build-client.ts` drives `Bun.build` with
 `bun-plugin-tailwind`, so the entry CSS is the one global Tailwind sheet. It defines
 `process.env.NODE_ENV` (React's production build) and `import.meta.env.DEV` (the library's dev
-warnings, which deck gets from Vite). Tailwind scans the client source (`@source ".."` in `styles/app.css`, plus automatic detection from the build's working directory, minus `@source not` exclusions) and the bundled modules for class names, so classes in a source file that never ships still reach the sheet. The explicit `@source` matters: modules loaded through the build's barrel-import plugin (below) skip Tailwind's per-module scan, so without it a build started outside the repository root lost most utilities. Never
+warnings, which deck gets from Vite). Tailwind scans the client source (`@import "tailwindcss" source("..")` in `styles/app.css` roots detection at `src/client`, minus `@source not` exclusions) and the bundled modules for class names, so classes in a source file that never ships still reach the sheet. Rooting detection at the client source, not the build's working directory, keeps the sheet the same wherever the build starts, and it matters: modules loaded through the build's barrel-import plugin (below) skip Tailwind's per-module scan, so a build started outside the repository root once lost most utilities. Never
 supply module contents through a Bun `onLoad` in the client build, because the plugin skips those
 modules.
 
@@ -179,9 +183,15 @@ loads each client module that imports one of these barrels through a plugin that
 into imports from the modules that own each name. Source code is unchanged: feature code still
 imports from `@/ui`. The plugin drops `type` specifiers and fails the build on a name the barrel
 does not export or on any other form of barrel import (namespace, re-export, dynamic), so nothing
-falls back to the barrel. The cost is more, smaller chunks, which compress less well as separate
+falls back to the barrel. An `export *` of a nested barrel (`ui/status`, `ui/viz`) is followed to
+the modules that own its names. Rewritten imports name modules by package subpath or `@/ui/…` path,
+never by absolute path: sourcemaps carry the rewritten source, and the bundle is public. The cost
+is more, smaller chunks, which compress less well as separate
 files: total JS rose ~15 KB gz while each view's first load fell 6–44 KB gz. The build budget test
-holds a first-load ceiling per view.
+holds a first-load ceiling per view and one for a session that opens them all. The initial route is
+now ~26 small files; the server's shell lists every chunk the entry imports statically as
+`<link rel="modulepreload">` (`modulePreloadPaths` in `src/server/assets.ts`), so the browser
+fetches them in parallel with the entry instead of after parsing it.
 
 **Scoped Radix.** Import Radix from the scoped `@radix-ui/react-*` packages, never the
 `radix-ui` umbrella. Through the umbrella, `Bun.build` puts every Radix package used anywhere onto
