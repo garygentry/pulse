@@ -7,7 +7,7 @@
 // derived by parsing a name.
 
 import type { ReactElement, ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import type {
   WebChannel,
   WebCoverageArtifact,
@@ -450,6 +450,9 @@ export function Inventory(props: InventoryProps): ReactElement {
   // A pointer click on a branch's chevron (the row's first child) only toggles it; anywhere else on
   // a host/service row navigates. Set in the capture phase, read by onSelect, cleared on bubble.
   const chevronClick = useRef(false);
+  // The tree's keyboard help (its accessible description). Rows hold no interactive controls (a
+  // treeitem cannot own one), so the provenance copy button lives on the entity page, one Enter away.
+  const treeHelpId = useId();
   const onSelect = (node: InventoryNode): void => {
     if (chevronClick.current && nodeChildren(node)?.length) return;
     const path = entityPath(node);
@@ -481,8 +484,15 @@ export function Inventory(props: InventoryProps): ReactElement {
             }}
           >
             {tree.nodes.length > 0 ? (
+              <p id={treeHelpId} className="m-0 text-xs text-muted-foreground">
+                ↑/↓ move, → and ← expand and collapse, * expands every host in a group, typing jumps
+                to a name, Enter opens a host or service page with its source location and copy button.
+              </p>
+            ) : null}
+            {tree.nodes.length > 0 ? (
               <TreeView<InventoryNode>
                 aria-label="Declared estate"
+                aria-describedby={treeHelpId}
                 nodes={tree.nodes}
                 getId={nodeId}
                 getLabel={nodeLabel}

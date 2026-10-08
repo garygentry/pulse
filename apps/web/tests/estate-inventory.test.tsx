@@ -316,6 +316,21 @@ describeUi("estate: inventory tree", () => {
     expect(queryItem("hostA-managed")).toBeNull();
   });
 
+  test("the tree's keyboard help names Enter as the path to the entity page; rows hold no controls", async () => {
+    const user = userEvent.setup();
+    const { router, calls } = makeRouter();
+    render(<Inventory {...propsFrom(makeEstatePayloadFixture(), { router })} />);
+    expect(tree()).toHaveAccessibleDescription(/Enter opens a host or service page with its source location and copy button/);
+    // A treeitem cannot own an interactive control: no button or link inside any row.
+    for (const row of within(tree()).getAllByRole("treeitem")) {
+      expect(within(rowOf(row)).queryAllByRole("button")).toHaveLength(0);
+      expect(within(rowOf(row)).queryAllByRole("link")).toHaveLength(0);
+    }
+    act(() => item("hostA-managed").focus());
+    await user.keyboard("{Enter}");
+    expect(calls).toEqual(["/estate/host/hostA-managed"]);
+  });
+
   test("a click on a host's chevron toggles it without navigating", async () => {
     const user = userEvent.setup();
     const { router, calls } = makeRouter();

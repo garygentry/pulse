@@ -75,7 +75,7 @@ export {
   type ListNavOrigin,
   type ListNavPreset,
 } from "./lib/list-navigation";
-export { cssEscape, focusIsLost, isEditableTarget } from "./lib/dom";
+export { cssEscape, focusIsLost, isEditableTarget, isTextEntryTarget } from "./lib/dom";
 export { APP_TITLE, formatDocumentTitle } from "./lib/document-title";
 export { useListNavigation, type UseListNavigationOptions } from "./hooks/use-list-navigation";
 export { hashTargetId, useScrollToHash, type UseScrollToHashOptions } from "./hooks/use-scroll-to-hash";

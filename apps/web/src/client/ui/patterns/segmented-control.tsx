@@ -18,6 +18,11 @@ export interface SegmentedControlProps<V extends string = string> {
   value: V;
   onValueChange: (value: V) => void;
   size?: "sm" | "default";
+  /**
+   * `aria-keyshortcuts` for page shortcuts that change the value (e.g. "[ ]" for previous/next).
+   * Set on every option, the focusable radios, so it is announced wherever focus lands.
+   */
+  keyShortcuts?: string;
   className?: string;
 }
 
@@ -31,6 +36,7 @@ export function SegmentedControl<V extends string = string>({
   value,
   onValueChange,
   size = "sm",
+  keyShortcuts,
   className,
 }: SegmentedControlProps<V>) {
   return (
@@ -52,6 +58,7 @@ export function SegmentedControl<V extends string = string>({
           key={option.value}
           value={option.value}
           disabled={option.disabled}
+          aria-keyshortcuts={keyShortcuts}
           className="text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-xs"
         >
           {option.icon ? <Icon name={option.icon} /> : null}

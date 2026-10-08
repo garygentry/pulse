@@ -148,11 +148,13 @@ describeDom("estate: coverage explorer", (dom) => {
         cov[id].forEach((e, i) => {
           const row = rows[i] as Element;
           expect(row.textContent).toContain(e.name);
-          // Artifact COUNT badge per row.
+          // Artifact COUNT per row: a Popover trigger when there are artifacts (the list is in the
+          // popover, keyboard-reachable; see estate-coverage-artifacts.test.tsx), never a title tooltip.
           const count = row.querySelector("[data-artifacts]") as Element;
-          expect(count.textContent).toBe(String(e.artifacts.length));
-          // The full artifact list stays available as non-colour title text.
-          expect(count.getAttribute("title")).toBe(e.artifacts.join("\n"));
+          expect(count.getAttribute("data-artifacts")).toBe(String(e.artifacts.length));
+          expect(count.textContent).toStartWith(String(e.artifacts.length));
+          expect(count.hasAttribute("title")).toBe(false);
+          expect(count.tagName === "BUTTON").toBe(e.artifacts.length > 0);
           const chip = row.querySelector('[data-slot="status-badge"][data-status]') as Element;
           expect(chip.getAttribute("data-status")).toBe(expected[id]);
           expect(chip.textContent).toBe(STATUS_LABEL[expected[id]]);

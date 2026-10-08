@@ -95,6 +95,8 @@ export interface TreeViewProps<T> {
   virtualize?: boolean | TreeViewVirtualizeOptions;
   "aria-label"?: string;
   "aria-labelledby"?: string;
+  /** The tree's description, e.g. the id of visible keyboard help. */
+  "aria-describedby"?: string;
   className?: string;
 }
 
@@ -516,7 +518,7 @@ interface VirtualTreeBodyProps<T> {
   focusRef: { current: ((id: string) => void) | null };
   itemEl: (id: string) => HTMLElement | null;
   renderItem: (row: VisibleTreeRow<T>, measure: VirtualItemProps) => ReactElement;
-  labelling: Pick<TreeViewProps<T>, "aria-label" | "aria-labelledby">;
+  labelling: Pick<TreeViewProps<T>, "aria-label" | "aria-labelledby" | "aria-describedby">;
 }
 
 /** An `aria-hidden` spacer standing in for `height` px of rows that are not rendered. */
