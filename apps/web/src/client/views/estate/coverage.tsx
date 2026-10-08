@@ -8,7 +8,7 @@
 // inside RegionErrorBoundary region="coverage explorer" by view.tsx; performs no fetch.
 
 import type { ReactElement, ReactNode } from "react";
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import type {
   AvailabilitySection,
   DataAvailability,
@@ -18,7 +18,25 @@ import type {
 } from "@pulse/web-data/wire";
 import type { CoverageEntry, WebCoverageArtifact } from "@pulse/renderer";
 
-import { Badge, DataTable, Icon, Section, StatGrid, StatTile, StatusBadge, TARGET_STATUS } from "@/ui";
+import {
+  Badge,
+  Button,
+  DataTable,
+  Icon,
+  List,
+  ListItem,
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+  Section,
+  StatGrid,
+  StatTile,
+  StatusBadge,
+  TARGET_STATUS,
+  VisuallyHidden,
+} from "@/ui";
 import type { ColumnDef } from "@/ui";
 import { STATUS_LABEL } from "../../a11y/index.js";
 import { DIFF_STATUS } from "../../status/target-status.js";
@@ -67,6 +85,55 @@ const NUMERIC = { align: "end", className: "tabular-nums", headerClassName: "tex
 
 // ── Coverage buckets ─────────────────────────────────────────────────────────
 
+/**
+ * An entry's artifact count. With artifacts it is a button opening a Popover that lists them (Tab
+ * reaches it, Enter/Space opens, Escape closes back to it); with none it is a plain count.
+ * Known edge: a virtualized table (a very large bucket) may scroll the row away and unmount the trigger,
+ * which closes the popover and drops focus.
+ */
+function ArtifactCount(props: { readonly entry: CoverageEntry }): ReactElement {
+  const { name, artifacts } = props.entry;
+  const titleId = useId();
+  const count = String(artifacts.length);
+  if (artifacts.length === 0) {
+    return (
+      <Badge variant="secondary" className="tabular-nums" data-artifacts={0}>
+        <Icon name="list" aria-hidden="true" />
+        {count}
+        <VisuallyHidden> artifacts</VisuallyHidden>
+      </Badge>
+    );
+  }
+  const noun = artifacts.length === 1 ? "artifact" : "artifacts";
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="xs"
+          className="tabular-nums"
+          aria-label={`${count} ${noun} for ${name}`}
+          data-artifacts={artifacts.length}
+        >
+          <Icon name="list" aria-hidden="true" />
+          {count}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" aria-labelledby={titleId} className="flex w-auto max-w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
+        <PopoverHeader>
+          <PopoverTitle id={titleId}>{`Artifacts for ${name}`}</PopoverTitle>
+        </PopoverHeader>
+        <List aria-labelledby={titleId}>
+          {artifacts.map((artifact, index) => (
+            <ListItem key={`${index}:${artifact}`} title={<code className="font-mono font-normal wrap-anywhere">{artifact}</code>} />
+          ))}
+        </List>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function bucketColumns(bucket: BucketSpec, stale: boolean): ColumnDef<CoverageEntry>[] {
   const status = effectiveStatus(bucket.status, stale);
   const columns: ColumnDef<CoverageEntry>[] = [
@@ -81,17 +148,7 @@ function bucketColumns(bucket: BucketSpec, stale: boolean): ColumnDef<CoverageEn
     {
       id: "artifacts",
       header: "Artifacts",
-      cell: cell((row: CoverageEntry) => (
-        <Badge
-          variant="secondary"
-          className="tabular-nums"
-          title={row.artifacts.join("\n")}
-          data-artifacts={row.artifacts.length}
-        >
-          <Icon name="list" aria-hidden="true" />
-          {String(row.artifacts.length)}
-        </Badge>
-      )),
+      cell: cell((row: CoverageEntry) => <ArtifactCount entry={row} />),
     },
   ];
   if (bucket.id === "suppressed") {

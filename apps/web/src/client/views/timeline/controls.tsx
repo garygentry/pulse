@@ -51,21 +51,22 @@ const RANGE_OPTIONS = TIMELINE_RANGES.map((r) => ({ value: r, label: r }));
  * Four-option segmented control (1h, 6h, 24h, 7d): a `radiogroup` "Time range" of `radio` buttons
  * with `aria-checked`. Arrow keys move focus between options (roving tabindex); Enter or Space
  * checks the focused one. Buttons, not native radios: the shortcut registry ignores keys typed into
- * INPUT elements (07 §2.1). The wrapper carries the `[` / `]` shortcut hint.
+ * INPUT elements (07 §2.1). Each radio (the focusable control) carries the `[` / `]` shortcut hint:
+ * `aria-keyshortcuts` takes KeyboardEvent `key` values, so the bracket characters themselves (not
+ * the `code` names BracketLeft/BracketRight), space-separated as two alternative shortcuts.
  */
 export function RangeSelector(props: RangeSelectorProps): ReactElement {
   const { value, onChange } = props;
   return (
-    <span data-slot="timeline-range" aria-keyshortcuts="[ ]" className="inline-flex">
-      <SegmentedControl<RangeId>
-        label="Time range"
-        options={RANGE_OPTIONS}
-        value={value}
-        onValueChange={(next) => {
-          if (next !== value) onChange(next);
-        }}
-      />
-    </span>
+    <SegmentedControl<RangeId>
+      label="Time range"
+      options={RANGE_OPTIONS}
+      value={value}
+      keyShortcuts="[ ]"
+      onValueChange={(next) => {
+        if (next !== value) onChange(next);
+      }}
+    />
   );
 }
 

@@ -1,8 +1,10 @@
 // Local edits (deck): SidebarInset renders a <div>, not <main>; the shell owns
-// the single <main id="main"> inside it.
+// the single <main id="main"> inside it. The Ctrl/Cmd-B toggle is ignored while
+// focus is in a text field (isTextEntryTarget), so the chord stays the field's.
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/ui/lib/utils"
+import { isTextEntryTarget } from "@/ui/lib/dom"
 import { PanelLeftIcon } from "lucide-react"
 import * as Slot from "@radix-ui/react-slot"
 
@@ -98,7 +100,8 @@ function SidebarProvider({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
+        (event.metaKey || event.ctrlKey) &&
+        !isTextEntryTarget(event.target)
       ) {
         event.preventDefault()
         toggleSidebar()
