@@ -57,14 +57,17 @@ Two contract points to hold:
   engine's relabel-through rewrites the scrape to hit the exporter and passes your target as
   `?target=`. Render the real endpoint; do not pre-point it at `pve-exporter`.
 
-### Gatus `alerts:` bindings (issue #15)
+### Gatus `alerts:` bindings (issues #15, #1)
 
-The Gatus→Alertmanager provider is defined in `stack/gatus/alerting-provider.yaml`, and Gatus
-fires it for endpoints that declare an `alerts:` block. A service declares that binding in the
-estate (`services[].alerts: [{ type: custom, ... }]`), and the renderer emits it onto the
-service's ingress endpoint as `endpoints[].alerts[]` — so paging is on for any service that binds
-it. The binding is inert (and warns, `inert_alert_binding`) on a service that renders no endpoint
-(no `ingress_url` / suppressed). No stack-core edit is needed.
+A service declares an `alerts:` binding in the estate (`services[].alerts: [{ type: custom, ... }]`)
+to make its Gatus ingress check page. The renderer does **not** emit it into `gatus/config.yaml`;
+instead the alerting transform renders a `GatusCheckFailed` vmalert rule per bound check into
+`rendered/vmalert/rules/synthetic.yml`, reading Gatus's `gatus_results_total` series (exposed by
+`metrics: true` in `stack/gatus/alerting-provider.yaml`, which carries no alerting provider). The
+endpoint `name` the rule selects comes from the renderer's exported `gatusEndpointName`, so the two
+cannot drift. The binding is inert (and warns, `inert_alert_binding`) on a service that renders no
+endpoint (no `ingress_url` / suppressed). No stack-core edit is needed; the rendered rule file is
+mounted into vmalert like the other rendered rule families.
 
 ## Filling a reserved slot
 

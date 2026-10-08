@@ -9,7 +9,7 @@ import { expect, test, describe } from "bun:test";
 import type { EstateModel, Host, Service, Provenance } from "@pulse/core";
 import { parse as parseYaml } from "yaml";
 
-import { emitGatus } from "../src/render/gatus.js";
+import { emitGatus, gatusEndpointName } from "../src/render/gatus.js";
 import type { GatusEndpoint } from "../src/render/gatus.js";
 
 const PROV: Provenance = { file: "estate.yaml", path: "", line: 1, col: 1 };
@@ -97,7 +97,7 @@ describe("emitGatus — service ingress", () => {
     expect(endpointsOf(model)).toEqual([]);
   });
 
-  test("a service alerts: binding emits endpoints[].alerts with kebab-case keys (issue #15)", () => {
+  test("an alerts: binding never emits endpoints[].alerts — paging is a vmalert rule (issue #1)", () => {
     const model = makeModel({
       estate: { name: "e", domains: [], timezone: "UTC", deadmanHook: "x", provenance: PROV },
       services: [
@@ -123,28 +123,19 @@ describe("emitGatus — service ingress", () => {
         group: "web01",
         url: "https://grafana.example.com",
         conditions: ["[STATUS] == 200"],
-        alerts: [
-          {
-            type: "custom",
-            description: "Grafana ingress synthetic check failing",
-            "failure-threshold": 3,
-            "success-threshold": 2,
-            "send-on-resolved": true,
-          },
-        ],
       },
     ]);
   });
 
-  test("an alerts: binding with only type inherits provider defaults (no extra keys emitted)", () => {
+  test("gatusEndpointName is the <host>/<service> name the ingress endpoint carries", () => {
+    expect(gatusEndpointName({ host: "web01", name: "grafana" })).toBe("web01/grafana");
     const model = makeModel({
       estate: { name: "e", domains: [], timezone: "UTC", deadmanHook: "x", provenance: PROV },
-      services: [
-        service({ name: "grafana", host: "web01", ingressUrl: "https://g", alerts: [{ type: "custom" }] }),
-      ],
+      services: [service({ name: "grafana", host: "web01", ingressUrl: "https://g" })],
     });
-    const [ep] = endpointsOf(model);
-    expect(ep.alerts).toEqual([{ type: "custom" }]);
+    expect(endpointsOf(model).map((e) => e.name)).toEqual([
+      gatusEndpointName({ host: "web01", name: "grafana" }),
+    ]);
   });
 });
 

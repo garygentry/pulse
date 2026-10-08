@@ -415,7 +415,8 @@ export function checkHostLocalProbeHost(
 /**
  * A service `alerts:` binding (issue #15) only takes effect on a service that renders a Gatus
  * endpoint — i.e. one with an `ingress_url` and not `suppressed`. On any other service the binding
- * is silently inert (no endpoint exists to attach it to), so warn (not error): the estate declared
+ * is silently inert (there is no check for stack/alerting's `GatusCheckFailed` rule to watch, so no
+ * rule is rendered — issue #1), so warn (not error): the estate declared
  * paging intent that will never fire. Mirrors the advisory shape of the other cross-field checks.
  */
 export function checkEndpointAlertBinding(
@@ -436,6 +437,56 @@ export function checkEndpointAlertBinding(
       `Service "${s?.name ?? "(unnamed)"}" declares an alerts: binding, but it renders no Gatus endpoint (${s?.suppressed !== undefined ? "the service is suppressed" : "it has no ingress_url"}), so the binding never fires.`,
       `Give the service an ingress_url (and remove any suppression) so a synthetic check is rendered, or drop the alerts: binding.`,
     );
+  });
+}
+
+// ── Names rendered into Gatus must be quote/backslash/newline-free (issue #1) ──
+
+/** Characters Gatus v5.13.1 cannot take in an endpoint name or group: it panics at startup on
+ *  them, which takes down EVERY synthetic check, not just the offending one. */
+const GATUS_UNSAFE_CHARS = /["\\\r\n]/;
+
+/**
+ * Every host or service name and estate domain that the renderer writes into `gatus/config.yaml`
+ * — the `name` (`<host>/<service>`, `host:<host>`, `dns:<domain>`) and `group` (`<host>`) of a
+ * service ingress check (a service with `ingress_url`, not suppressed), a probe-only host check, or
+ * a per-domain DNS check — must not contain `"`, `\` or a line break. Error: one such name would crash Gatus for the whole estate.
+ */
+export function checkGatusNames(
+  merged: MergedInventory,
+  prov: ProvenanceIndex,
+  collector: FindingCollector,
+): void {
+  const LABEL = { host: "Host name", service: "Service name", domain: "Estate domain" } as const;
+  const flag = (path: string, kind: keyof typeof LABEL, name: string, why: string): void =>
+    pushFinding(
+      collector,
+      prov,
+      path,
+      "error",
+      FINDING_CODES.GATUS_UNSAFE_NAME,
+      `${LABEL[kind]} ${JSON.stringify(name)} contains a double quote, backslash or line break, but it is rendered into a Gatus check (${why}); Gatus fails to start on such a name, stopping every synthetic check.`,
+      `${kind === "domain" ? "Fix the domain" : `Rename the ${kind}`} to drop the double quote, backslash and line breaks.`,
+    );
+  (merged.estate?.domains ?? []).forEach((domain, i) => {
+    if (typeof domain === "string" && GATUS_UNSAFE_CHARS.test(domain)) {
+      flag(`estate.domains[${i}]`, "domain", domain, `its dns:${domain} check`);
+    }
+  });
+  (merged.services ?? []).forEach((s, i) => {
+    if (s?.ingress_url === undefined || s?.suppressed !== undefined) return; // renders no check
+    if (typeof s.name === "string" && GATUS_UNSAFE_CHARS.test(s.name)) {
+      flag(`services[${i}].name`, "service", s.name, "its ingress check");
+    }
+    if (typeof s.host === "string" && GATUS_UNSAFE_CHARS.test(s.host)) {
+      flag(`services[${i}].host`, "host", s.host, `the ingress check of service "${String(s.name)}"`);
+    }
+  });
+  (merged.hosts ?? []).forEach((h, i) => {
+    if (h?.collection_class !== "probe-only") return;
+    if (typeof h.name === "string" && GATUS_UNSAFE_CHARS.test(h.name)) {
+      flag(`hosts[${i}].name`, "host", h.name, "its probe-only check");
+    }
   });
 }
 

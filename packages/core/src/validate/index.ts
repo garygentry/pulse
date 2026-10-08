@@ -21,6 +21,7 @@ import {
   checkBackupCommandHost,
   checkHostLocalProbeHost,
   checkEndpointAlertBinding,
+  checkGatusNames,
   checkCrossReferences,
 } from "./invariants.js";
 import { normalize } from "./normalize.js";
@@ -56,6 +57,7 @@ export function validateAndNormalize(
   checkBackupCommandHost(merged, prov, collector); // issue #3: backup command → managed-linux host
   checkHostLocalProbeHost(merged, prov, collector); // issue #8: host_local probe → managed-linux host
   checkEndpointAlertBinding(merged, prov, collector); // issue #15: alerts: binding needs an endpoint
+  checkGatusNames(merged, prov, collector); // issue #1: a quote/backslash/newline name crashes Gatus
   checkCrossReferences(merged, prov, collector); // service↔host, routing↔channel
 
   // --- Gate: build the model only when nothing (any layer) has erred (REQ-VAL-02). ---

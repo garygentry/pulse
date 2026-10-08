@@ -17,7 +17,8 @@ export type AlertingFindingCode =
   | "INVALID_RULE" // a generated/consumed rule is malformed (REQ-CONFIG-02)
   | "INVALID_ROUTE" // a route/receiver is malformed (REQ-CONFIG-02)
   | "INVALID_SUPPRESSION" // a suppression is malformed (REQ-CONFIG-02)
-  | "MISSING_RATIONALE"; // a known-expected suppression lacks a rationale (REQ-SUPP-02, invariant 6)
+  | "MISSING_RATIONALE" // a known-expected suppression lacks a rationale (REQ-SUPP-02, invariant 6)
+  | "IGNORED_ALERT_FIELD"; // a declared alert-binding field has no effect (advisory, issue #1)
 
 /** A machine-actionable, secret-safe finding (REQ-CONFIG-02, REQ-SEC-02). Structurally mirrors
  *  `@pulse/core` `Finding` (severity/code/file/path/message/fix) with the local code union above. */

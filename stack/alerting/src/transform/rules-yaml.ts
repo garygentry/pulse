@@ -1,6 +1,6 @@
 // stack/alerting/src/transform/rules-yaml.ts
-// The single deterministic vmalert rule-group serializer shared by both inventory-derived
-// rule builders (deep-health-rules.ts, backup-rules.ts) so key ordering and formatting are
+// The single deterministic vmalert rule-group serializer shared by every inventory-derived
+// rule builder (deep-health-rules.ts, backup-rules.ts, synthetic-rules.ts) so key ordering and formatting are
 // identical and golden-stable. Canonical shape: 03-transform-and-rendered-rules.md §3.3.
 import { stringify as stringifyYaml } from "yaml";
 
@@ -16,6 +16,7 @@ export interface AlertRuleYaml {
 /** One vmalert rule group. */
 export interface RuleGroupYaml {
   name: string;
+  interval?: string;                      // evaluation interval; omitted → vmalert's global default
   rules: AlertRuleYaml[];
 }
 

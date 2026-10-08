@@ -42,21 +42,27 @@ export const backupFreshnessSchema = z
   })
   .strict();
 
-/** Per-endpoint alert binding (issue #15, V-002). Maps 1:1 onto a Gatus `endpoints[].alerts[]`
- *  entry so a synthetic (blackbox) check pages through the Gatus→Alertmanager provider
- *  (`stack/gatus/alerting-provider.yaml`). Declaring even a single `{ type: custom }` binding on a
- *  service is what flips its ingress check from DEFINED-BUT-NOT-FIRING to firing; omitted fields
- *  inherit the provider's `default-alert` thresholds. `type` names the Gatus provider to bind
- *  (`custom` = the shipped Alertmanager provider). Additive/optional → schema_version stays 1. A
- *  binding only takes effect on a service that renders a Gatus endpoint (i.e. has `ingress_url` and
- *  is not suppressed); on any other service it is inert (checkEndpointAlertBinding warns). */
+/** Per-endpoint alert binding (issue #15). Declaring a binding on a service makes its synthetic
+ *  (blackbox) Gatus ingress check page: stack/alerting renders a `GatusCheckFailed` vmalert rule
+ *  over the check's `gatus_results_total` series (issue #1 retired the Gatus→Alertmanager push
+ *  provider, which could not resolve alerts correctly). `failure_threshold` F (default 3) fires the
+ *  rule once ≥F failed checks and no pass fall in one window (F min, F min + 30s, or 4·F min for
+ *  slowed checks); `success_threshold` S (default 2) resolves it once ≥S passes and no failure fall in
+ *  ceil(1.5·S) + 1 minutes (each 1–60; see EndpointAlert). `enabled: false` renders no rule; `description` becomes the alert
+ *  annotation. `type` and `send_on_resolved` are retained for compatibility and select/affect
+ *  nothing (resolve notifications follow each Alertmanager receiver's `send_resolved`).
+ *  Additive/optional → schema_version stays 1. A binding only takes effect on a service that
+ *  renders a Gatus endpoint (i.e. has `ingress_url` and is not suppressed); on any other service it
+ *  is inert (checkEndpointAlertBinding warns). */
 export const endpointAlertSchema = z
   .object({
     type: z.string().min(1),
     enabled: z.boolean().optional(),
     description: z.string().min(1).optional(),
-    failure_threshold: z.number().int().positive().optional(),
-    success_threshold: z.number().int().positive().optional(),
+    // Capped at 60 checks (an hour at Gatus's 60s cadence): the rendered rule's windows scale with
+    // the thresholds, and an unbounded value would render an unbounded look-back.
+    failure_threshold: z.number().int().positive().max(60).optional(),
+    success_threshold: z.number().int().positive().max(60).optional(),
     send_on_resolved: z.boolean().optional(),
   })
   .strict();

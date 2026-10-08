@@ -3,6 +3,8 @@
 // that inject synthetic series and assert each rule's firing state, severity/identity labels, and
 // `for`/NoData timing. Covers all SIX static families (availability, capacity, engine,
 // pipeline-health, churn, deadman — 06 §11.3) plus the rendered deep-health functional family.
+// The rendered synthetic-check (Gatus) family is NOT tested here: its logic rides on MetricsQL
+// increase() semantics promtool does not share — see synthetic.vm.test.ts (issue #1).
 //
 // promtool is a TEST-ONLY tool (PROMTOOL_IMAGE, a pinned Prometheus image); it is NEVER wired into
 // the VM/vmalert runtime compose tree (CON-04). vmalert rules are Prometheus rule-format, so

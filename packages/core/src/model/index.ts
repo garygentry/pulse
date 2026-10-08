@@ -141,21 +141,30 @@ export interface Service {
   provenance: Provenance;
 }
 
-/** One per-endpoint alert binding (issue #15). CamelCase model vocabulary; the renderer maps it
- *  onto Gatus's kebab-case `endpoints[].alerts[]` entry. Omitted optional fields inherit the
- *  provider's `default-alert`. */
+/** One per-endpoint alert binding (issue #15). CamelCase model vocabulary. A binding on a service
+ *  that renders a Gatus endpoint makes stack/alerting emit a `GatusCheckFailed` vmalert rule over
+ *  that check's `gatus_results_total` series (issue #1); Gatus itself carries no alerting config.
+ *  Omitted thresholds take the rule builder's defaults (failure 3, success 2). */
 export interface EndpointAlert {
-  /** Gatus provider type to bind, e.g. `"custom"` (the shipped Alertmanager provider). */
+  /** Retained for compatibility; selects nothing. Historically the Gatus provider type to bind
+   *  (`"custom"`, the retired Gatus→Alertmanager provider). Any non-empty value is accepted. */
   type: string;
-  /** Whether this binding is active; omitted → inherits the provider default (enabled). */
+  /** Whether this binding is active; omitted → enabled. `false` → no rule is rendered. */
   enabled?: boolean;
-  /** Human-readable description surfaced in the alert payload; omitted → provider default. */
+  /** Human-readable description carried as the alert's `description` annotation. */
   description?: string;
-  /** Consecutive failures before firing; omitted → provider `default-alert` threshold. */
+  /** Failed checks needed to fire (F, 1–60); omitted → 3. The rule (evaluated every 30s) fires
+   *  when, within ONE window, there were ≥ F failed checks and no passing check — tested over F
+   *  minutes and F minutes + 30s (the F-th consecutive failure at Gatus's nominal 60s cadence) and
+   *  over 4·F minutes (so slowed-down checks still fire, later). */
   failureThreshold?: number;
-  /** Consecutive successes before resolving; omitted → provider `default-alert` threshold. */
+  /** Passing checks needed to resolve (S, 1–60); omitted → 2. A firing alert resolves when, within
+   *  the clear window of ceil(1.5·S) + 1 minutes, there were ≥ S passing checks and no failed check
+   *  (so S = 1 still needs a 3-minute failure-free window). With no fresh results (Gatus down) it
+   *  keeps firing. */
   successThreshold?: number;
-  /** Whether to emit a resolve notification; omitted → provider default. */
+  /** Retained for compatibility; has no effect. Resolve notifications are governed by each
+   *  Alertmanager receiver's `send_resolved`; `false` draws an advisory alerting finding. */
   sendOnResolved?: boolean;
 }
 

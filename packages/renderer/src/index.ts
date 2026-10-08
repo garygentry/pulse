@@ -98,3 +98,7 @@ export type {
 
 // init guidance-pack seam (00 §7)
 export type { GuidancePack, GuidancePackFile } from "./init-seam.js";
+
+// Gatus endpoint naming (issue #1): shared with stack/alerting, whose synthetic-check rules select
+// `gatus_results_total` by the endpoint `name` the renderer emits.
+export { gatusEndpointName } from "./render/gatus.js";

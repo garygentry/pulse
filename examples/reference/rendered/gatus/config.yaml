@@ -13,12 +13,7 @@ endpoints:
       query-type: A
     name: dns:nimbus.example
     url: 10.20.0.53
-  - alerts:
-      - description: Portal ingress synthetic check failing
-        failure-threshold: 3
-        send-on-resolved: true
-        type: custom
-    conditions:
+  - conditions:
       - "[STATUS] == 200"
     group: harbor-web-01
     name: harbor-web-01/portal-web

@@ -492,6 +492,380 @@ describe("SC-4: anchor interception", () => {
   });
 });
 
+// ── URL fragment: carried through navigate, the interceptor and popstate (#7) ────────────────────
+
+describe("URL fragment (#hash)", () => {
+  type ScrollCall = [number, number];
+
+  /** Record `scrollTo` calls for the duration of `body`. */
+  async function withScrollSpy(body: (calls: ScrollCall[]) => void | Promise<void>): Promise<void> {
+    const calls: ScrollCall[] = [];
+    const original = win.scrollTo.bind(win);
+    (win as unknown as { scrollTo: (x: number, y: number) => void }).scrollTo = (x, y) => {
+      calls.push([x, y]);
+    };
+    try {
+      await body(calls);
+    } finally {
+      (win as unknown as { scrollTo: unknown }).scrollTo = original;
+    }
+  }
+
+  /** Let a few animation frames run (the router retries a not-yet-rendered target per frame). */
+  const frames = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 100));
+
+  /** Poll until `cond` holds (or ~900 ms pass, inside the router's 1 s wait), then return. */
+  async function until(cond: () => boolean): Promise<void> {
+    for (let i = 0; i < 45 && !cond(); i++) await new Promise((r) => setTimeout(r, 20));
+  }
+
+  /** Pretend the page is scrolled to `y` for the duration of `body`. */
+  function atScrollY(y: number, body: () => void): void {
+    Object.defineProperty(win, "scrollY", { value: y, configurable: true });
+    try {
+      body();
+    } finally {
+      delete (win as unknown as { scrollY?: number }).scrollY;
+    }
+  }
+
+  const savedScrollY = (): unknown => (win.history.state as { scrollY?: unknown } | null)?.scrollY;
+
+  /** Append an element with `id` whose `scrollIntoView` records into `hits`. */
+  function section(id: string, hits: string[]): { remove(): void } {
+    const doc = win.document as unknown as {
+      createElement(name: string): HTMLElement & { remove(): void };
+      body: { appendChild(el: unknown): void };
+    };
+    const el = doc.createElement("section");
+    el.id = id;
+    (el as unknown as { scrollIntoView: () => void }).scrollIntoView = () => hits.push(id);
+    doc.body.appendChild(el);
+    return el;
+  }
+
+  function anchor(href: string): {
+    dispatchEvent(event: unknown): boolean;
+    remove(): void;
+  } {
+    const doc = win.document as unknown as {
+      createElement(name: string): HTMLAnchorElement & { remove(): void };
+      body: { appendChild(el: unknown): void };
+    };
+    const a = doc.createElement("a");
+    a.setAttribute("href", href);
+    doc.body.appendChild(a);
+    return a;
+  }
+
+  function click(a: { dispatchEvent(event: unknown): boolean }): boolean {
+    const MouseEventCtor = (win as unknown as {
+      MouseEvent: new (type: string, init: Record<string, unknown>) => { defaultPrevented: boolean };
+    }).MouseEvent;
+    const event = new MouseEventCtor("click", { bubbles: true, cancelable: true, button: 0 });
+    a.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  test("an intercepted link keeps its fragment in location.hash", () => {
+    const router = buildRouter("/overview");
+    const a = anchor("/estate/host/nas-01?tab=disks#alerts");
+    try {
+      expect(click(a)).toBe(true);
+      expect(win.location.pathname).toBe("/estate/host/nas-01");
+      expect(win.location.search).toBe("?tab=disks");
+      expect(win.location.hash).toBe("#alerts");
+      expect(router.current().view).toBe("estate");
+    } finally {
+      a.remove();
+      router.stop();
+    }
+  });
+
+  test("a same-document fragment link (current path + query) stays browser-owned", () => {
+    const router = buildRouter("/alerts?sort=age");
+    const a = anchor("/alerts?sort=age#firing");
+    try {
+      expect(click(a)).toBe(false);
+    } finally {
+      a.remove();
+      router.stop();
+    }
+  });
+
+  test("a fragment link that also changes the query is intercepted", () => {
+    const router = buildRouter("/alerts?sort=age");
+    const a = anchor("/alerts?sort=name#firing");
+    try {
+      expect(click(a)).toBe(true);
+      expect(win.location.search).toBe("?sort=name");
+      expect(win.location.hash).toBe("#firing");
+    } finally {
+      a.remove();
+      router.stop();
+    }
+  });
+
+  test("navigate to another path carries the target fragment and kiosk", () => {
+    const router = buildRouter("/overview?kiosk=1");
+    try {
+      router.navigate("/alerts#firing");
+      expect(win.location.pathname).toBe("/alerts");
+      expect(win.location.search).toBe("?kiosk=1");
+      expect(win.location.hash).toBe("#firing");
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("navigate to another path without a fragment drops the current one (regression guard)", () => {
+    const router = buildRouter("/alerts#firing");
+    try {
+      router.navigate("/overview");
+      expect(win.location.pathname).toBe("/overview");
+      expect(win.location.hash).toBe("");
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("a same-path query rewrite keeps the current fragment (push and replace)", () => {
+    const router = buildRouter("/alerts?sort=age#firing");
+    try {
+      router.navigate("/alerts?sort=name", { replace: true });
+      expect(win.location.search).toBe("?sort=name");
+      expect(win.location.hash).toBe("#firing");
+      router.navigate("/alerts?sort=age");
+      expect(win.location.search).toBe("?sort=age");
+      expect(win.location.hash).toBe("#firing");
+      expect(router.current().query).toEqual({ sort: "age" });
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("a bare trailing # clears the fragment on a same-path navigate", () => {
+    const router = buildRouter("/alerts?sort=age#firing");
+    try {
+      router.navigate("/alerts?sort=age#", { replace: true });
+      expect(win.location.hash).toBe("");
+      expect(win.location.search).toBe("?sort=age");
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("the same-URL dedupe compares fragments", () => {
+    const router = buildRouter("/alerts#firing");
+    try {
+      const length = win.history.length;
+      let calls = 0;
+      router.subscribe(() => calls++);
+      router.navigate("/alerts#firing");
+      router.navigate("/alerts"); // same path, no fragment named → keeps #firing → same URL
+      expect(win.history.length).toBe(length);
+      // A different fragment on the same path+query is a real navigation (pushes, no re-render).
+      router.navigate("/alerts#history");
+      expect(win.location.hash).toBe("#history");
+      expect(win.history.length).toBe(length + 1);
+      expect(calls).toBe(0);
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("a fragment-only navigate pushes, scrolls to the target, and does not re-render", async () => {
+    const router = buildRouter("/alerts");
+    const hits: string[] = [];
+    const el = section("firing", hits);
+    try {
+      await withScrollSpy((calls) => {
+        const length = win.history.length;
+        let notified = 0;
+        router.subscribe(() => notified++);
+        router.navigate("/alerts#firing");
+        expect(win.location.hash).toBe("#firing");
+        expect(win.history.length).toBe(length + 1);
+        expect(notified).toBe(0);
+        expect(hits).toEqual(["firing"]);
+        expect(calls).toEqual([]); // jumped to the target, not the top
+      });
+    } finally {
+      el.remove();
+      router.stop();
+    }
+  });
+
+  test("a fragment whose target is missing falls back to the top", async () => {
+    const router = buildRouter("/alerts");
+    try {
+      await withScrollSpy((calls) => {
+        router.navigate("/alerts#nowhere");
+        expect(win.location.hash).toBe("#nowhere");
+        expect(calls).toContainEqual([0, 0]);
+      });
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("a push to a new page lands on the fragment target once the page renders it", async () => {
+    const router = buildRouter("/overview");
+    const hits: string[] = [];
+    const stale = section("firing", hits); // same id on the outgoing page: must not be used
+    let fresh: { remove(): void } | null = null;
+    try {
+      // The "view" renders after notify, replacing the outgoing page's DOM.
+      router.subscribe(() => {
+        stale.remove();
+        setTimeout(() => (fresh = section("firing", hits)), 20);
+      });
+      await withScrollSpy(async (calls) => {
+        router.navigate("/alerts#firing");
+        expect(hits).toEqual([]);
+        expect(calls).toEqual([[0, 0]]); // top while the new page renders
+        await until(() => hits.length > 0);
+        expect(hits).toEqual(["firing"]);
+      });
+    } finally {
+      stale.remove();
+      (fresh as { remove(): void } | null)?.remove();
+      router.stop();
+    }
+  });
+
+  test("a query-changing push with a fragment scrolls to its target", async () => {
+    const router = buildRouter("/alerts");
+    const hits: string[] = [];
+    const el = section("spot2", hits);
+    try {
+      await withScrollSpy(async () => {
+        router.navigate("/alerts?kiosk=1#spot2");
+        expect(win.location.search).toBe("?kiosk=1");
+        await until(() => hits.length > 0);
+        expect(hits).toEqual(["spot2"]);
+      });
+    } finally {
+      el.remove();
+      router.stop();
+    }
+  });
+
+  test("a superseded fragment wait does not scroll", async () => {
+    const router = buildRouter("/overview");
+    const hits: string[] = [];
+    try {
+      await withScrollSpy(async () => {
+        router.navigate("/alerts#later");
+        router.navigate("/overview");
+        const el = section("later", hits);
+        await frames();
+        el.remove();
+        expect(hits).toEqual([]);
+      });
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("user scrolling during a fragment wait wins over a late target", async () => {
+    const router = buildRouter("/overview");
+    const hits: string[] = [];
+    try {
+      await withScrollSpy(async () => {
+        router.navigate("/alerts#later");
+        win.dispatchEvent(new win.Event("wheel"));
+        const el = section("later", hits);
+        await frames();
+        el.remove();
+        expect(hits).toEqual([]);
+      });
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("Forward onto another page's fragment entry re-matches and scrolls to the target once rendered", async () => {
+    const router = buildRouter("/overview");
+    const hits: string[] = [];
+    let el: { remove(): void } | null = null;
+    try {
+      router.subscribe((m) => {
+        if (m.view === "alerts") setTimeout(() => (el = section("firing", hits)), 20);
+      });
+      await withScrollSpy(async (calls) => {
+        win.history.replaceState({}, "", "/alerts#firing"); // no saved offset
+        win.dispatchEvent(new win.Event("popstate"));
+        expect(router.current().view).toBe("alerts");
+        expect(win.location.hash).toBe("#firing");
+        expect(calls).toEqual([[0, 0]]);
+        await until(() => hits.length > 0);
+        expect(hits).toEqual(["firing"]);
+      });
+    } finally {
+      (el as { remove(): void } | null)?.remove();
+      router.stop();
+    }
+  });
+
+  test("a fragment-less link clears the current fragment; navigate() keeps it", () => {
+    const router = buildRouter("/alerts#spot");
+    const a = anchor("/alerts?sort=x");
+    try {
+      router.navigate("/alerts?sort=y"); // programmatic: same path keeps #spot
+      expect(win.location.hash).toBe("#spot");
+      expect(click(a)).toBe(true); // a link names its whole URL
+      expect(win.location.search).toBe("?sort=x");
+      expect(win.location.hash).toBe("");
+    } finally {
+      a.remove();
+      router.stop();
+    }
+  });
+
+  test("a browser-owned fragment link saves the outgoing offset for Back", () => {
+    for (const href of ["#spot", "/alerts?sort=age#spot"]) {
+      const router = buildRouter("/alerts?sort=age");
+      const a = anchor(href);
+      try {
+        expect(savedScrollY()).toBeUndefined();
+        atScrollY(1500, () => {
+          // happy-dom does not perform the default fragment navigation, so the current entry is
+          // still the outgoing one here.
+          expect(click(a)).toBe(false);
+        });
+        expect(savedScrollY()).toBe(1500);
+      } finally {
+        a.remove();
+        router.stop();
+      }
+    }
+  });
+
+  test("popstate onto a same-page fragment entry without a saved offset scrolls to its target", async () => {
+    const router = buildRouter("/alerts");
+    const hits: string[] = [];
+    const el = section("firing", hits);
+    try {
+      await withScrollSpy((calls) => {
+        // e.g. Forward onto an entry the browser created for a fragment link (no scrollY).
+        win.history.replaceState({}, "", "/alerts#firing");
+        win.dispatchEvent(new win.Event("popstate"));
+        expect(hits).toEqual(["firing"]);
+        expect(calls).toEqual([]);
+
+        // An entry that recorded an offset restores the offset instead.
+        win.history.replaceState({ scrollY: 120 }, "", "/alerts#firing");
+        win.dispatchEvent(new win.Event("popstate"));
+        expect(calls).toEqual([[0, 120]]);
+      });
+    } finally {
+      el.remove();
+      router.stop();
+    }
+  });
+});
+
 // ── §7 reserved-prefix navigate → location.assign ───────────────────────────────────────────────
 
 describe("navigate — reserved prefixes leave the SPA", () => {
