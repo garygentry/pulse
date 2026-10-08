@@ -185,16 +185,51 @@ describe("scenario-clock rebase (GitHub #3)", () => {
   const offset = (iso: string, anchor: number): number => Date.parse(iso) - anchor;
 
   test("every shipped fixture timestamp is authored around the shared anchor", async () => {
-    // Guard for future fixtures: a timestamp far from the anchor would re-base to a nonsense age.
+    // Guard for future fixtures: a timestamp authored against some other reference would re-base to
+    // a nonsense age. Covers every field the mock engine shifts.
+    const NEAR_MS = 2 * 86_400_000;
+    const ENDS_MAX_MS = 400 * 86_400_000; // Alertmanager endsAt is resolve-timeout-far in the future
+    const near = (iso: string | undefined, what: string): void => {
+      expect({ what, ok: iso !== undefined && Math.abs(offset(iso, FIXTURE_ANCHOR_MS)) <= NEAR_MS }).toEqual({ what, ok: true });
+    };
+    const ends = (a: { startsAt: string; endsAt?: string }, what: string): void => {
+      const e = Date.parse(a.endsAt ?? "");
+      const ok = e > Date.parse(a.startsAt) && e - FIXTURE_ANCHOR_MS <= ENDS_MAX_MS;
+      expect({ what, ok }).toEqual({ what, ok: true });
+    };
+    const anchorIso = new Date(FIXTURE_ANCHOR_MS).toISOString();
     for (const scenario of ["all-green", "degraded-mix", "source-outage"]) {
       const base = await loadBase(scenario);
       for (const a of base.alertmanager) {
-        expect(Math.abs(offset(a.startsAt, FIXTURE_ANCHOR_MS))).toBeLessThanOrEqual(2 * 86_400_000);
+        const id = `${scenario} alertmanager ${a.labels.alertname}`;
+        near(a.startsAt, `${id} startsAt`);
+        near(a.updatedAt, `${id} updatedAt`);
+        ends(a, `${id} endsAt`);
       }
       for (const g of base.vmalert.data.groups) {
+        if (g.lastEvaluation !== undefined) expect(g.lastEvaluation).toBe(anchorIso);
         for (const r of g.rules) {
-          if (r.lastEvaluation !== undefined) expect(r.lastEvaluation).toBe(new Date(FIXTURE_ANCHOR_MS).toISOString());
+          if (r.lastEvaluation !== undefined) expect(r.lastEvaluation).toBe(anchorIso);
+          for (const alert of r.alerts ?? []) {
+            near((alert as { activeAt?: string }).activeAt, `${scenario} vmalert ${r.name} activeAt`);
+          }
         }
+      }
+      for (const sample of base.vm.data?.result ?? []) {
+        expect(sample.value[0] * 1000).toBe(FIXTURE_ANCHOR_MS);
+      }
+      let timeline: Timeline;
+      try {
+        timeline = await loadTimeline(scenario);
+      } catch {
+        continue; // timeline.json is optional
+      }
+      for (const { atMs, step } of timeline.steps) {
+        if (step.op !== "alert-fire") continue;
+        const id = `${scenario} timeline ${step.alert.labels.alertname}`;
+        expect({ id, startsAt: Date.parse(step.alert.startsAt) }).toEqual({ id, startsAt: FIXTURE_ANCHOR_MS + atMs });
+        near(step.alert.updatedAt, `${id} updatedAt`);
+        ends(step.alert, `${id} endsAt`);
       }
     }
   });

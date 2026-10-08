@@ -20,13 +20,17 @@ bun run dev:web --mock degraded-mix
 bun run dev:web --mock source-outage
 ```
 
-Use a deterministic timeline clock for screenshots or repeatable debugging:
+For screenshots, run a scenario without `--clock`. The scenario then starts when the process starts, so alerts show their authored ages (for example 19m, 40m, 1h) and keep aging from there.
+
+`--clock <iso-8601>` pins the scenario start instead. Use it when you need the same response bodies on every run, for example to compare runs while debugging:
 
 ```bash
-bun run dev:web --mock degraded-mix --clock 2026-01-01T00:00:00Z
+bun run dev:web --mock degraded-mix --clock 2026-10-01T12:00:00Z
 ```
 
-`--clock` pins the scenario start (process start without it). Alertmanager, vmalert, and VictoriaMetrics fixture timestamps are shifted onto that start, keeping their authored offsets from the fixture anchor (`2026-01-01T00:00:00Z`): an alert authored 19 minutes before the anchor is 19 minutes old when the scenario starts. Gatus results follow the live wall clock instead, so checks never go stale. A pinned `--clock` serves the same Alertmanager, vmalert, and VictoriaMetrics bytes on every run; `--clock 2026-01-01T00:00:00Z` serves the fixtures verbatim.
+Alertmanager, vmalert, and VictoriaMetrics fixture timestamps are shifted onto the scenario start. Each keeps its offset from the fixture anchor (`2026-01-01T00:00:00Z`), so an alert authored 19 minutes before the anchor started 19 minutes before the scenario start. With `--clock`, those bodies are byte-identical on every run. A clock equal to the anchor leaves the timestamps exactly as authored.
+
+`--clock` does not pin the app's idea of now. The server and browser still compute ages and staleness from the real clock, and the timeline offset is real time minus the pinned start. A clock in the past therefore shows large ages and applies every timeline step at once; the anchor itself shows alerts hundreds of days old. A clock in the future shows ages of 0s. Pick a recent clock if rendered ages matter. vmalert `lastEvaluation` stays at the scenario start rather than following the live clock, which is what keeps pinned bodies identical. Gatus results are the one exception: they follow the real clock so checks never go stale, so Gatus bodies are not pinned.
 
 ### Connect to real engines
 
@@ -168,7 +172,7 @@ Supported operations are:
 Validate the scenario by starting it:
 
 ```bash
-bun run dev:web --mock my-scenario --clock 2026-01-01T00:00:00Z
+bun run dev:web --mock my-scenario
 ```
 
 An unknown name fails at startup and lists available scenarios. Invalid fixture or timeline content fails once at scenario construction rather than degrading silently at request time.
