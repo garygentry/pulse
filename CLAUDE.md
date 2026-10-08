@@ -6,8 +6,8 @@ See `docs/architecture/ui.md` for the full picture. The rules that matter most:
   for things a pattern covers (tables, lists, cards, trees, filters, status, empty/loading/error).
   Entry code (`shell/`, `app.tsx`, `main.tsx`) deep-imports with a `// ui-deep-import:` comment.
 - Status is a **tone** (`ok`/`warn`/`danger`/`info`/`pending`/`neutral`) mapped with
-  `defineStatusMap` (`TARGET_STATUS`, `ALERT_SEVERITY`, `MUTATION_STATE`), always shown with an
-  icon and text. Never pick colours directly.
+  `defineStatusMap` (`TARGET_STATUS`, `ALERT_SEVERITY`, `ALERT_STATE`, `MUTATION_STATE`), always
+  shown with an icon and text. Never pick colours directly.
 - Style with Tailwind token classes only: no hex/`rgb()`/`oklch()` literals, and `style={…}`
   only for dynamic geometry. Icons come from `<Icon name>` with names from `ui/lib/icons.ts`.
 - A component that reads a signal's `.value` during render (directly or through a helper) calls
