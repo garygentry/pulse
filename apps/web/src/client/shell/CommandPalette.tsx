@@ -11,6 +11,13 @@
 // the life of the document (a second import() of the same chunk rejects without a request), so the
 // error state's recovery is a page reload through the shared once-only `reloadOnce`, not an in-page
 // re-import. A deploy that removed the chunk is also covered by live-state's version-skew reload.
+// While the import is in flight, keys typed into the open palette are not lost: a capture-phase
+// listener (attached synchronously as Ctrl/Cmd-K opens it) buffers printable input, including
+// Alt/AltGr/Option characters and pasted text, into the query, so it shows in the search field,
+// caret at the end, when the dialog mounts. Backspace edits the buffer, Escape closes, navigation
+// keys are held off the page; F-keys and Ctrl/Cmd chords (Ctrl/Cmd-K, reload, new tab) pass through.
+// A failed import drops the buffer and stops listening, so the error state's Reload button gets
+// Tab/Enter/Space.
 import type { ComponentType, ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useComputed } from "@preact/signals-react";
@@ -77,15 +84,105 @@ export function CommandPalette({
   const loading = useRef(false);
   const loadDialogRef = useRef(loadDialog);
   loadDialogRef.current = loadDialog;
+  const loaded = useRef(false);
+  const failed = useRef(false);
+
+  // Key buffering while the chunk loads (see the header). `stopBuffering` is idempotent.
+  const bufferStop = useRef<(() => void) | null>(null);
+  const stopBuffering = useCallback((): void => {
+    bufferStop.current?.();
+    bufferStop.current = null;
+  }, []);
+  const closeRef = useRef<() => void>(() => {});
+  const startBuffering = useCallback((): void => {
+    if (bufferStop.current !== null || loaded.current || failed.current) return;
+    const doc = (globalThis as { document?: Document }).document;
+    if (doc === undefined) return;
+    const append = (text: string): void => setQuery((q) => q + text);
+    const swallow = (event: Event): void => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      // IME composition: nothing sensible to buffer; keep it out of any page field.
+      if (event.isComposing || event.key === "Process" || event.keyCode === 229) return swallow(event);
+      // Ctrl/Cmd chords pass: Ctrl/Cmd-K closes, browser shortcuts work, paste fires its own event.
+      // Ctrl+Alt is AltGr on Windows, so it is character input, not a chord.
+      if (event.metaKey || (event.ctrlKey && !event.altKey)) return;
+      if ([...event.key].length === 1) {
+        swallow(event);
+        append(event.key);
+        return;
+      }
+      switch (event.key) {
+        case "Escape":
+          swallow(event);
+          closeRef.current();
+          return;
+        case "Backspace":
+          swallow(event);
+          setQuery((q) => [...q].slice(0, -1).join(""));
+          return;
+        case "Enter":
+        case "Tab":
+        case "Dead":
+        case "Delete":
+        case "ArrowUp":
+        case "ArrowDown":
+        case "ArrowLeft":
+        case "ArrowRight":
+        case "Home":
+        case "End":
+        case "PageUp":
+        case "PageDown":
+          swallow(event);
+          return;
+        default:
+          // F-keys, modifiers, media keys: the browser's.
+          return;
+      }
+    };
+    const onPaste = (event: ClipboardEvent): void => {
+      swallow(event);
+      const text = event.clipboardData?.getData("text") ?? "";
+      if (text !== "") append(text.replace(/\s+/g, " "));
+    };
+    // Belt and braces: any text insertion that slipped past keydown stays out of page fields.
+    const onBeforeInput = (event: Event): void => swallow(event);
+    doc.addEventListener("keydown", onKeyDown, true);
+    doc.addEventListener("paste", onPaste, true);
+    doc.addEventListener("beforeinput", onBeforeInput, true);
+    bufferStop.current = () => {
+      doc.removeEventListener("keydown", onKeyDown, true);
+      doc.removeEventListener("paste", onPaste, true);
+      doc.removeEventListener("beforeinput", onBeforeInput, true);
+    };
+  }, []);
+  useEffect(() => stopBuffering, [stopBuffering]);
+
   const load = useCallback((): void => {
     if (loading.current) return;
     loading.current = true;
     loadDialogRef.current().then(
-      (component) => setDialog(() => component),
-      () => setLoadFailed(true),
+      (component) => {
+        // Buffering stops once the dialog has mounted and focused its field (the effect below).
+        loaded.current = true;
+        setDialog(() => component);
+      },
+      () => {
+        // Nothing to type into: drop the buffer, and let the error state have the keyboard.
+        failed.current = true;
+        stopBuffering();
+        setQuery("");
+        setLoadFailed(true);
+      },
     );
-  }, []);
+  }, [stopBuffering]);
   useEffect(() => whenIdle(load), [load]);
+  // Child effects (Radix's focus into the search field) run first, so keys typed from here on reach it.
+  useEffect(() => {
+    if (Dialog !== null) stopBuffering();
+  }, [Dialog, stopBuffering]);
 
   // Opening starts from an empty query and records the opener: focus returns to it on close, from
   // the loading/error dialog or the palette, even when the palette replaces the loading dialog while
@@ -98,16 +195,23 @@ export function CommandPalette({
         setQuery("");
         const active = globalThis.document?.activeElement;
         setOpener(active instanceof HTMLElement && active !== active.ownerDocument.body ? active : null);
+        // Synchronously, so the keys typed in the frame before the loading dialog renders are kept.
+        startBuffering();
       }
+      if (!next) stopBuffering();
       setOpenState(next);
     },
-    [load],
+    [load, startBuffering, stopBuffering],
   );
+  closeRef.current = () => setOpen(false);
 
   // Register mod+k for as long as the palette is MOUNTED. allowInInput so the toggle still fires when
   // focus is in a text field (including the palette's own, to close it).
   useEffect(
-    () => registerShortcut("mod+k", () => setOpen(!openRef.current), { allowInInput: true }),
+    () => registerShortcut("mod+k", () => setOpen(!openRef.current), {
+        allowInInput: true,
+        allowDefaultPrevented: true,
+      }),
     [setOpen],
   );
 
@@ -158,11 +262,30 @@ function PaletteLoadDialog(props: {
   onReload: () => void;
   returnFocusTo: HTMLElement | null;
 }): ReactElement {
+  // A failure while open: focus sat on the dialog itself or its Close button (the loading state has
+  // no other control), so move it to the Reload button, the one thing to do here.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!props.failed) return;
+    const content = contentRef.current;
+    const active = content?.ownerDocument.activeElement ?? null;
+    if (content === null) return;
+    if (active !== null && active !== content.ownerDocument.body && !content.contains(active)) return;
+    content.querySelector<HTMLElement>("[data-slot=error-state] button")?.focus();
+  }, [props.failed]);
   return (
     <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
+        ref={contentRef}
         data-slot="command-palette-loader"
         onCloseAutoFocus={(event) => {
+          // Unmounted while still open: the loaded palette replaced it and already holds focus (with
+          // any buffered text, caret at the end). Moving focus away now would make the palette's
+          // focus trap pull it back with the field's text all selected, so the next key replaced it.
+          if (props.open) {
+            event.preventDefault();
+            return;
+          }
           const target = props.returnFocusTo;
           if (target === null || !target.isConnected) return;
           event.preventDefault();

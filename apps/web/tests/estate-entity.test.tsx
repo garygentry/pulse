@@ -452,8 +452,7 @@ describeUi("estate entity page", () => {
       const slot = within(section("Declared")).getByTestId("estate-entity-actions");
       expect(within(slot).getByRole("button", { name: "Propose edit…" })).toBeTruthy();
       await waitFor(() => {
-        const disclosure = slot.querySelector('[data-testid="proposal-list"] [data-slot="disclosure"] button[aria-expanded]');
-        expect(disclosure?.textContent).toBe("Proposals (0)");
+        expect(within(slot).getByRole("button", { name: /^Proposals ?, 0 items$/ })).toHaveAttribute("aria-expanded", "false");
       });
       // a seeded session is never refetched; only the proposal list is loaded
       expect(urls).toEqual(["/api/proposals?kind=host&id=host%3AhostA-managed"]);
