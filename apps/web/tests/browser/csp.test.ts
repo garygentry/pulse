@@ -9,7 +9,7 @@
 //     data island is present and parseable;
 //   • opens the surfaces that create DOM at runtime: the command palette, the theme menu, the alert
 //     detail pane and its Silence / Acknowledge dialogs, the Expire confirm, the Propose edit dialog,
-//     the Findings Severity / Code Selects, the density menu, a tooltip, the uPlot charts (Engine, Timeline detail), and the mobile sheet;
+//     the Findings Severity / Code Selects, the coverage artifacts Popover, the density menu, a tooltip, the uPlot charts (Engine, Timeline detail), and the mobile sheet;
 // and asserts ZERO `securitypolicyviolation` events and zero CSP console messages throughout.
 // Also checks every runtime <style> (react-remove-scroll's scroll lock, the Radix Select viewport,
 // and — in the dev run's /_ui workbench — the Radix ScrollArea viewport) carries the style nonce.
@@ -269,6 +269,13 @@ browserDescribe()("browser: the Content-Security-Policy produces zero violations
         }
       });
 
+      await step("coverage artifacts Popover", async () => {
+        await visit(page, base, "/estate?tab=coverage");
+        await page.locator("main button[data-artifacts]").first().click();
+        const popover = page.getByRole("dialog", { name: /^Artifacts for / });
+        await openThenDismiss(page, popover);
+      });
+
       await step("density menu", async () => {
         await visit(page, base, "/estate?tab=coverage");
         await page.getByRole("button", { name: /^Density:/ }).click();
@@ -298,7 +305,7 @@ browserDescribe()("browser: the Content-Security-Policy produces zero violations
       });
 
       await page.waitForLoadState("networkidle");
-      expect(steps.length).toBe(10);
+      expect(steps.length).toBe(11);
       expect(violations, violations.join("\n")).toEqual([]);
     }, 300_000);
 
