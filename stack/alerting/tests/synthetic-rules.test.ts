@@ -62,7 +62,7 @@ function build(services: Service[]): { yaml: string; findings: AlertingFinding[]
 
 /** The rendered expression for web-01/portal with default thresholds (F=3, S=2). */
 const DEFAULT_EXPR =
-  '((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[12m])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[3m])) > 0)) or on (name, group) (max by (name, group) (time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 90) unless on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[3m])) >= 2) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[3m])) > 0)))';
+  '(((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[210s])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[210s])) > 0)) or on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[12m])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[12m])) > 0))) or on (name, group) (max by (name, group) (time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 330) unless on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[4m])) >= 2) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[4m])) > 0)))';
 
 const PORTAL = svc({
   name: "portal",
@@ -157,7 +157,7 @@ describe("buildSyntheticRules — selection", () => {
         ],
       }),
     ]);
-    expect(rulesOf(yaml)[0]!.expr).toContain("[16m])) >= 4)");
+    expect(rulesOf(yaml)[0]!.expr).toContain("[16m])) >= 4)"); // F=4 → slow window 16m
   });
 
   test("rules are sorted by endpoint name regardless of estate order (determinism)", () => {
@@ -180,35 +180,41 @@ describe("buildSyntheticRules — selection", () => {
 describe("buildSyntheticRules — thresholds", () => {
   const withBinding = (b: Partial<NonNullable<Service["alerts"]>[number]>): Rule =>
     rulesOf(build([svc({ ...PORTAL, alerts: [{ type: "custom", ...b }] })]).yaml)[0]!;
-  /** Every `[window]` in the expression, in order: fail-count, no-pass, clear-pass, clear-fail. */
+  /** Every `[window]` in the expression, in order: nominal fire (fail, pass), slow fire (fail,
+   *  pass), clear (pass, fail). */
   const windows = (r: Rule): string[] => r.expr.match(/\[(\w+)\]/g) ?? [];
 
-  test("defaults F=3/S=2: ≥3 failures in 12m, no pass in 3m; clear = ≥2 passes, no failure in 3m", () => {
+  test("defaults F=3/S=2: fire windows 210s and 12m (fail AND pass each); clear window 4m", () => {
     const rule = withBinding({});
-    expect(windows(rule)).toEqual(["[12m]", "[3m]", "[3m]", "[3m]"]);
-    expect(rule.expr).toContain(")) >= 3)");
+    expect(windows(rule)).toEqual(["[210s]", "[210s]", "[12m]", "[12m]", "[4m]", "[4m]"]);
+    expect(rule.expr.split(")) >= 3)").length - 1).toBe(2); // both fire windows count ≥ F failures
     expect(rule.expr).toContain(")) >= 2)");
-    expect(rule.keep_firing_for).toBeUndefined();
     expect(rule.for).toBeUndefined();
   });
 
-  test("failureThreshold F → ≥F failures in a 4·F-minute window, no pass in F minutes", () => {
+  test("failureThreshold F → windows F min + 30s and 4·F min", () => {
     const rule = withBinding({ failureThreshold: 5 });
-    expect(windows(rule).slice(0, 2)).toEqual(["[20m]", "[5m]"]);
+    expect(windows(rule).slice(0, 4)).toEqual(["[330s]", "[330s]", "[20m]", "[20m]"]);
     expect(rule.expr).toContain(")) >= 5)");
-    expect(windows(withBinding({ failureThreshold: 1 })).slice(0, 2)).toEqual(["[4m]", "[1m]"]);
+    expect(windows(withBinding({ failureThreshold: 1 })).slice(0, 4)).toEqual([
+      "[90s]",
+      "[90s]",
+      "[4m]",
+      "[4m]",
+    ]);
   });
 
-  test("successThreshold S → ≥S passes and no failure in (S+1) minutes", () => {
-    const rule = withBinding({ successThreshold: 4 });
-    expect(windows(rule).slice(2)).toEqual(["[5m]", "[5m]"]);
-    expect(rule.expr).toContain(")) >= 4)");
-    expect(windows(withBinding({ successThreshold: 1 })).slice(2)).toEqual(["[2m]", "[2m]"]);
+  test("successThreshold S → clear window ceil(1.5·S) + 1 minutes", () => {
+    expect(windows(withBinding({ successThreshold: 1 })).slice(4)).toEqual(["[3m]", "[3m]"]);
+    expect(windows(withBinding({ successThreshold: 4 })).slice(4)).toEqual(["[7m]", "[7m]"]);
+    const s10 = withBinding({ successThreshold: 10 });
+    expect(windows(s10).slice(4)).toEqual(["[16m]", "[16m]"]);
+    expect(s10.expr).toContain(")) >= 10)");
   });
 
-  test("the HOLD term reads only fresh firing state of this exact alert", () => {
+  test("the HOLD term reads this exact alert's firing state, up to 330s old", () => {
     expect(withBinding({}).expr).toContain(
-      'time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 90',
+      'time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 330',
     );
   });
 });
@@ -264,7 +270,7 @@ describe("buildSyntheticRules — advisory findings", () => {
         ],
       }),
     ]);
-    expect(rulesOf(yaml)[0]!.expr).toContain("[8m])) >= 2)");
+    expect(rulesOf(yaml)[0]!.expr).toContain("[8m])) >= 2)"); // F=2 → slow window 8m
     expect(findings.map((f) => [f.code, f.severity, f.path])).toEqual([
       ["IGNORED_ALERT_FIELD", "inconsistency", "services[name=portal].alerts"],
     ]);

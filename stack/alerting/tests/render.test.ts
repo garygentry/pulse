@@ -313,7 +313,7 @@ describe("renderToDisk (03 §2.3)", () => {
     const synthetic = readFileSync(OUTPUT_PATHS(renderedDir)[3]!, "utf8");
     expect(synthetic).toContain("GatusCheckFailed");
     expect(synthetic).toContain(
-      'gatus_results_total{name="web-01/portal",group="web-01",success="false"}[8m])) >= 2',
+      'gatus_results_total{name="web-01/portal",group="web-01",success="false"}[150s])) >= 2',
     );
     // No staging temp survives a successful rename.
     const amDir = readdirSync(join(renderedDir, "alertmanager"));

@@ -51,6 +51,9 @@ export const PROMTOOL_IMAGE = "prom/prometheus:v2.53.2" as const;
  *  cannot stand in for it (issue #1). */
 export const VM_IMAGE = "victoriametrics/victoria-metrics:v1.102.1" as const;
 
+/** The stack's exact vmalert pin — validates rendered rule files with `-dryRun` (issue #1). */
+export const VMALERT_IMAGE = "victoriametrics/vmalert:v1.102.1" as const;
+
 /** Local loopback HTTP receiver image for the webhook container layer (§6.4). Pinned. */
 export const RECEIVER_IMAGE = "python:3.12-alpine" as const;
 

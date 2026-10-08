@@ -79,11 +79,14 @@ export const METRICS = {
  *  a broad outage (many endpoints × 10s timeouts) the real cadence is slower. The windows below
  *  are sized so slow cadence DELAYS firing rather than making the alert flap.
  *
- *  For a binding with failure threshold F and success threshold S (I = checkIntervalSeconds):
- *    - fire:    ≥ F failed checks in the last `failureWindowFactor`·F·I seconds AND no passing
- *               check in the last F·I seconds;
- *    - resolve: (while firing) ≥ S passing checks AND no failed check in the last (S+1)·I seconds.
- *               With no fresh results at all (Gatus down), it keeps firing.
+ *  For a binding with failure threshold F and success threshold S (I = checkIntervalSeconds), the
+ *  rendered rule (see synthetic-rules.ts `syntheticExpr`):
+ *    - fires when, within ONE window, there were ≥ F failed checks and NO passing check — tested
+ *      over the nominal window F·I + `nominalWindowSlackSeconds` and over the slow-cadence window
+ *      `slowWindowFactor`·F·I;
+ *    - once firing, holds until, within the clear window ceil(`clearWindowFactor`·S)·I + I, there
+ *      were ≥ S passing checks and NO failed check. With no fresh results (Gatus down) nothing
+ *      clears it.
  *  The threshold defaults are the retired Gatus provider's `default-alert` values. */
 export const GATUS_CHECKS = {
   /** Gatus's default endpoint interval (the renderer emits none). */
@@ -92,17 +95,24 @@ export const GATUS_CHECKS = {
   defaultFailureThreshold: 3,
   /** Passing checks needed to resolve when a binding omits `successThreshold`. */
   defaultSuccessThreshold: 2,
-  /** The failure-count window is this many times the nominal F checks: F failures still fit in
-   *  it when checks run up to this factor slower than nominal (default 3 → 6m tolerates ~120s). */
-  failureWindowFactor: 4,
+  /** Slack on the nominal fire window for the 30s scrape: F checks at the nominal cadence span
+   *  (F−1)·I, and the window must reach past the F-th failure's scrape yet exclude the last pass. */
+  nominalWindowSlackSeconds: 30,
+  /** The slow-cadence fire window is this many times the nominal F checks: F failures with no pass
+   *  still fit in it when checks run up to this factor slower than nominal (default 3 → 12m). */
+  slowWindowFactor: 4,
+  /** The clear window holds this many times S checks (rounded up) plus one interval, so S passes
+   *  still fit in it when checks run somewhat slower than nominal (default 2 → 4m). */
+  clearWindowFactor: 1.5,
   /** The rule group's evaluation interval, pinned in the rendered group (`interval:`) because the
    *  HOLD term below depends on it. */
   evaluationIntervalSeconds: 60,
-  /** The rule reads its own previous state back from the ALERTS series vmalert remote-writes to VM.
-   *  Only a sample from the immediately preceding evaluation (≈ one interval old at query time)
-   *  counts as "currently firing"; this bound leaves 30s of slack and rejects anything older, so a
-   *  resolved alert cannot be resurrected from a stale sample even without staleness markers. */
-  firingStateMaxAgeSeconds: 90,
+  /** The rule reads its own firing state back from the ALERTS series vmalert remote-writes to VM.
+   *  A sample up to this old still counts, so the hold survives several failed evaluations in a row
+   *  (a VictoriaMetrics restart, a query timeout, a vmalert restart): 5 intervals + 30s eval delay.
+   *  A resolved alert is NOT resurrected inside this bound: vmalert writes a staleness marker for
+   *  ALERTS when the alert resolves, which ends the series immediately. */
+  firingStateMaxAgeSeconds: 330,
 } as const;
 
 /** The DeadMansSwitch internal label value (NOT in the `Severity` union — §3). */

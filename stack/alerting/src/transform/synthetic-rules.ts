@@ -51,34 +51,56 @@ export interface SyntheticTiming {
 }
 
 /**
- * The `GatusCheckFailed` expression for one Gatus endpoint (`name` + `group`). Three terms:
+ * The `GatusCheckFailed` expression for one Gatus endpoint (`name` + `group`), built from named
+ * parts. For the defaults (F=3, S=2) it renders, with <id> = `name="<n>",group="<g>"`:
  *
- *  1. FIRE: ≥ F failed checks in the failure window (`failureWindowFactor`·F·I) and no passing
- *     check in the last F·I. Counting failures (`>= F`, not `> 0`) keeps the threshold after a
- *     Gatus restart: VictoriaMetrics' increase() counts a new series' first sample, so `> 0` would
- *     fire on the first failure.
- *  2. HOLD: while the alert is already firing — read back from the ALERTS series vmalert
- *     remote-writes (`time() - timestamp(…) < maxAge`, so a stale sample never counts) —
- *  3. … keep firing UNLESS it is CLEAR: ≥ S passing checks and no failed check in the last
- *     (S+1)·I. With no fresh results (Gatus down) nothing is clear, so it never false-resolves.
+ *   FIRE  = ALL_FAILED[210s] or on (name, group) ALL_FAILED[12m]
+ *   ALL_FAILED[w] = (sum by (name, group) (increase(gatus_results_total{<id>,success="false"}[w])) >= 3)
+ *         unless on (name, group) (sum by (name, group) (increase(gatus_results_total{<id>,success="true"}[w])) > 0)
+ *   FIRING = max by (name, group) (time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",<id>}) < 330)
+ *   CLEAR = (sum by (name, group) (increase(gatus_results_total{<id>,success="true"}[4m])) >= 2)
+ *         unless on (name, group) (sum by (name, group) (increase(gatus_results_total{<id>,success="false"}[4m])) > 0)
+ *   expr  = (FIRE) or on (name, group) (FIRING unless on (name, group) (CLEAR))
  *
- * Every term is aggregated `by (name, group)`, so the alert's label set is the same whichever term
+ * Semantics:
+ *  - FIRE: within ONE window, ≥ F failed checks and no passing check. The nominal window
+ *    (F·I + slack) fires at about the F-th consecutive failure; the slow window (4·F·I) still finds
+ *    F failures when a broad outage slows Gatus, so slow checks fire later instead of never.
+ *    Counting failures (`>= F`, not `> 0`) keeps the threshold after a Gatus restart: VictoriaMetrics'
+ *    increase() counts a new series' first sample. Requiring zero passes in the same window means
+ *    old failures separated from new ones by a pass never add up.
+ *  - FIRING: the alert is already firing — read back from the ALERTS series vmalert remote-writes
+ *    (a sample up to 330s old counts, so a few failed evaluations don't drop the hold).
+ *  - CLEAR: within the clear window, ≥ S passing checks and no failed check. While FIRING it keeps
+ *    firing until CLEAR; with no fresh results (Gatus down) nothing is clear, so it never
+ *    false-resolves, and a pass between failures doesn't resolve it.
+ *
+ * Every part is aggregated `by (name, group)`, so the alert's label set is the same whichever part
  * holds it (a stable alert identity), and equal names in different groups stay independent.
+ *
+ * Residual: failures on both sides of a Gatus outage, with no pass recorded within the slow
+ * window, can add up to F and fire.
  */
 export function syntheticExpr(endpoint: string, group: string, timing: SyntheticTiming): string {
-  const I = GATUS_CHECKS.checkIntervalSeconds;
+  const C = GATUS_CHECKS;
+  const I = C.checkIntervalSeconds;
   const { failures: F, successes: S } = timing;
-  const failWindow = formatDuration(GATUS_CHECKS.failureWindowFactor * F * I);
-  const noPassWindow = formatDuration(F * I);
-  const clearWindow = formatDuration((S + 1) * I);
+  const nominalWindow = formatDuration(F * I + C.nominalWindowSlackSeconds);
+  const slowWindow = formatDuration(C.slowWindowFactor * F * I);
+  const clearWindow = formatDuration(Math.ceil(C.clearWindowFactor * S) * I + I);
   const ids = `name=${promqlString(endpoint)},group=${promqlString(group)}`;
   const count = (success: "true" | "false", window: string): string =>
     `sum by (name, group) (increase(${METRICS.gatusResults}{${ids},success="${success}"}[${window}]))`;
+  const failed = (w: string): string => count("false", w);
+  const passed = (w: string): string => count("true", w);
+
+  const allFailed = (w: string): string =>
+    `(${failed(w)} >= ${F}) unless on (name, group) (${passed(w)} > 0)`;
+  const fire = `(${allFailed(nominalWindow)}) or on (name, group) (${allFailed(slowWindow)})`;
   const firing =
     `max by (name, group) (time() - timestamp(ALERTS{alertname="${ALERT}",alertstate="firing",${ids}})` +
-    ` < ${GATUS_CHECKS.firingStateMaxAgeSeconds})`;
-  const fire = `(${count("false", failWindow)} >= ${F}) unless on (name, group) (${count("true", noPassWindow)} > 0)`;
-  const clear = `(${count("true", clearWindow)} >= ${S}) unless on (name, group) (${count("false", clearWindow)} > 0)`;
+    ` < ${C.firingStateMaxAgeSeconds})`;
+  const clear = `(${passed(clearWindow)} >= ${S}) unless on (name, group) (${failed(clearWindow)} > 0)`;
   return `(${fire}) or on (name, group) (${firing} unless on (name, group) (${clear}))`;
 }
 
