@@ -3,7 +3,8 @@
 // The wire already carries canonical, kind-prefixed ids for declared targets: hosts are
 // `host:<name>` and services `svc:<host>/<name>` (web-data `toTargetIdentity`, the overview
 // `drilldownId`). Composing `${kind}:${id}` over them doubles the prefix (`host:host:web01`), so every
-// operator-facing string and every alerts `hs` value goes through `targetRef` instead.
+// operator-facing string, every alerts `hs` value and the timeline `sel` value (GitHub #17) go
+// through `targetRef` instead.
 //
 // Endpoint ids are raw Gatus endpoint names (`web01/grafana`, `host:web01`, `dns:example.org`): they
 // carry no kind prefix of their own and can collide with a host id, so they keep an explicit
@@ -23,7 +24,7 @@ export function targetRef(target: TargetIdentity): string {
   return target.kind === "endpoint" ? `endpoint:${target.id}` : target.id;
 }
 
-/** Pre-#10 alerts `hs` values composed `${kind}:${id}` over the canonical id. */
+/** Pre-#10 alerts `hs` and pre-#17 timeline `sel` values composed `${kind}:${id}` over the canonical id. */
 const LEGACY_REF_PREFIXES = [
   ["host:host:", "host:"],
   ["service:svc:", "svc:"],
