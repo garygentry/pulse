@@ -379,6 +379,36 @@ describe("y-axis ticks (#15 unit-aware axis)", () => {
     expect(axisSplits(NaN, 4, "count", 6)).toEqual([]);
   });
 
+  test("stays bounded and fast on huge magnitudes and spans below float resolution", () => {
+    const cases: [number, number][] = [
+      [1e17, 1e17 + 16], // flat-ish large counter (span at float resolution)
+      [1e17, 1e17],
+      [1e300, 1e300 * (1 + 1e-15)],
+      [1e300, 1.5e300],
+      [2 ** 53, 2 ** 53 + 2],
+      [2 ** 53 - 1, 2 ** 53 + 1],
+      [1e15, 1e15 + 1e-3], // tiny span on a huge offset
+      [-1e17 - 16, -1e17],
+      [-1e300, -1e299],
+      [-Number.MAX_VALUE, Number.MAX_VALUE],
+      [0, Number.MAX_VALUE],
+    ];
+    for (const unit of ["count", "bytes", "seconds", "milliseconds", "percent"] as const) {
+      for (const [min, max] of cases) {
+        const t0 = performance.now();
+        const sp = axisSplits(min, max, unit, 6);
+        expect(performance.now() - t0).toBeLessThan(50);
+        expect(sp.length).toBeGreaterThan(0);
+        expect(sp.length).toBeLessThanOrEqual(6);
+        for (const v of sp) expect(Number.isFinite(v)).toBe(true);
+        formatAxisTicks(sp, unit); // never throws
+      }
+    }
+    expect(axisSplits(1e17, 1e17 + 16, "count", 6)).toEqual([1e17, 1e17 + 16]);
+    // An absurd tick budget is capped.
+    expect(axisSplits(0, 1e6, "count", 1e9).length).toBeLessThanOrEqual(50);
+  });
+
   test("the axis and the readout pick the same unit (shared displayScale thresholds)", () => {
     expect(formatChartValue(0.0002, "seconds")).toBe("200 µs");
     expect(axis(0, 0.0004, "seconds")).toContain("200 µs");

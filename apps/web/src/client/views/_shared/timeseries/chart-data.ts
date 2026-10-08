@@ -426,6 +426,9 @@ export function formatChartValue(v: number, unit: ClientQueryMeta["unit"]): stri
 // Y-axis ticks
 // ---------------------------------------------------------------------------
 
+/** Upper bound on the tick budget a caller may ask for (keeps axisSplits' loop small). */
+const MAX_AXIS_TICKS = 50;
+
 /** Round step multipliers per decade, by display-unit kind. */
 const DECIMAL_STEPS = [1, 2, 2.5, 5] as const;
 /** Seconds and minutes step on clock-friendly values; below 1 and from 60 up they go decimal. */
@@ -453,7 +456,9 @@ function candidateSteps(kind: DisplayScale["kind"], span: number): number[] {
  * away from their gridline): GiB ticks step by 0.1/0.2/0.25/0.5/1… GiB, minute ticks by
  * 1/2/5/10/15/30 min, hour ticks by 1/2/3/6/12 h, percent and counts by 1/2/2.5/5 × 10ⁿ.
  * The display unit is {@link displayScale} of the larger end of the range. The step is the
- * smallest candidate giving at most `maxTicks` ticks. Pure; degenerate input returns [] or [min].
+ * smallest candidate giving at most `maxTicks` ticks (capped at 50). Pure and bounded: a span below
+ * float resolution at its magnitude (a flat series near 1e17, values past 2^53) returns
+ * `[min, max]`; degenerate input returns [] or [min].
  *
  * @param min - Scale minimum (base unit).
  * @param max - Scale maximum (base unit).
@@ -468,14 +473,27 @@ export function axisSplits(min: number, max: number, unit: ClientQueryMeta["unit
   const lo = min / scale.div;
   const hi = max / scale.div;
   const span = hi - lo;
-  const limit = Math.max(2, Math.floor(maxTicks));
-  const steps = candidateSteps(scale.kind, span);
-  const step = steps.find((s) => Math.floor(hi / s + 1e-9) - Math.ceil(lo / s - 1e-9) + 1 <= limit) ?? steps[steps.length - 1]!;
+  const limit = Math.max(2, Math.min(MAX_AXIS_TICKS, Math.floor(maxTicks) || 2));
+  // A span below float resolution at this magnitude (a flat series near 1e17, values past 2^53)
+  // cannot be stepped: integer multiples of a step stop being distinct. Show the two ends.
+  if (!Number.isFinite(span) || span <= Math.max(Math.abs(lo), Math.abs(hi)) * 1e-9) return [min, max];
+  const count = (st: number): number => Math.floor(hi / st + 1e-9) - Math.ceil(lo / st - 1e-9) + 1;
+  const steps = candidateSteps(scale.kind, span).filter((st) => Number.isFinite(st) && st > 0);
+  const step = steps.find((st) => {
+    const n = count(st);
+    return Number.isFinite(n) && n <= limit;
+  });
+  if (step === undefined) return [min, max];
   const out: number[] = [];
-  for (let k = Math.ceil(lo / step - 1e-9); k * step <= hi + step * 1e-9; k++) {
+  const first = Math.ceil(lo / step - 1e-9);
+  // Hard cap: never more than `limit` iterations, and stop if k stops changing in float.
+  for (let k = first, i = 0; i < limit && k * step <= hi + step * 1e-9; k++, i++) {
+    if (k + 1 === k) break;
     // Rebuild from the integer multiple so float drift never reaches the label formatter.
-    out.push(Number((k * step).toPrecision(12)) * scale.div);
+    const tick = Number((k * step).toPrecision(12)) * scale.div;
+    if (Number.isFinite(tick)) out.push(tick);
   }
+  return out.length > 0 ? out : [min, max];
   return out;
 }
 
