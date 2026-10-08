@@ -727,29 +727,37 @@ describe("signals: render-time reads call useSignals()", () => {
 //
 // The defined set is derived, never listed by hand:
 // - Tailwind utilities: the installed Tailwind compiler builds the real entry (`styles/app.css`, which
-//   imports theme.css and theme-pulse.css) over every class-like token in src/client. A token utility
-//   resolves when the compiled sheet has a rule for it (variants included, so `dark:bg-mutd` fails).
+//   imports theme.css and theme-pulse.css) over every class candidate in src/client. A theme-backed
+//   utility resolves when the compiled sheet has a rule for it (variants included, so `dark:bg-mutd`
+//   fails). Theme-backed roots: the colour roots (`bg-`, `text-`, `border-*`, `ring-`, `inset-ring-`,
+//   `outline-`, `fill-`, `stroke-`, `divide-`, `from-`/`via-`/`to-`, `shadow-`, `inset-shadow-`,
+//   `accent-`, `caret-`, `decoration-`, `placeholder-`) plus `font-`, `rounded-*`, `tracking-`,
+//   `leading-`, `animate-`, `ease-`, `drop-shadow-`, `blur-`, `backdrop-blur-` and `max-w-`.
 // - Colour utilities must also name a colour of the app theme (`--color-*` in `@theme` blocks of the
 //   client stylesheets), or an absolute/keyword colour (black, white, transparent, current, inherit).
 //   Tailwind's chromatic default palette (`bg-red-500`) compiles but bypasses the tones, so it fails.
 // - Custom properties: the declarations in that compiled sheet, split by theme: light (`:root`), dark
 //   (`.dark`) and wallboard (`:root[data-density="wallboard"]`). Tailwind emits only the theme
 //   variables some utility uses, so a `var(--text-lg)` read only from an inline style fails here as it
-//   would in the browser. Names a component sets at runtime (a `"--x": …` style key or
-//   `setProperty("--x", …)`) count as defined, as do `--radix-*` (set by Radix on its popper content)
-//   and `--tw-*` (Tailwind internals).
+//   would in the browser. A name the SAME module sets at runtime (a `"--x": …` style key or
+//   `setProperty("--x", …)`) counts as defined there; so do the `--radix-*` names the installed Radix
+//   packages set (read from their dist, not listed) and `--tw-*` (Tailwind internals).
 // - Theme parity: every dark token overrides a light one, every light colour token has a dark value,
 //   and every wallboard token overrides a real (Tailwind or app) theme variable.
 //
-// Scope and limits (static, no type checker): candidates are the whitespace-separated tokens of every
-// string and template literal in src/client .ts/.tsx (className strings, cn()/cva() arguments and
-// variant maps, tone→class records), plus the `var()` references in the client stylesheets. A
-// `${…}` interpolation becomes a wildcard: `text-status-${tone}-fg` must match at least one theme
-// colour and `--status-${tone}-fg` at least one defined property; the values the expression can take
-// are not checked. Classes assembled by string concatenation (`"bg-" + x`) or read from data are not
-// seen. Only utilities with a theme-backed root (colour roots, `font-`, `rounded-`, `shadow-`) are
-// checked, so a typo in a layout utility (`flx`) is out of scope (ui-tailwind-classes covers the
-// library's classes against the bundler's compiler).
+// Class candidates (static, no type checker) are the tokens of string/template literals in a class
+// context: a JSX `className`/`class`/`*ClassName` attribute; an argument (keys and values, nested
+// objects, arrays and conditionals included) of `cn`/`cva`/`clsx`/`twMerge`/`cx`; or a variable or
+// property initializer whose every token is class-shaped (tone → class records, `const CELL = "…"`).
+// Literals passed to any other call (`setAttribute("stroke-width")`, `getPropertyValue(…)`) and
+// prose are not candidates. A `${…}` interpolation becomes a wildcard: `text-status-${tone}-fg` must
+// match at least one theme colour and `--status-${tone}-fg` at least one defined property; the values
+// the expression can take are not checked. Not seen: classes assembled by concatenation
+// (`"bg-" + x`), returned from a helper function, or read from data. A bare `"--x"` literal outside
+// `var()` is a reference only as a `getPropertyValue` argument or when its first segment names a
+// declared namespace (`--chart-9` fails, `--help` is ignored). Layout utilities without a theme
+// namespace (`flx`) are out of scope; ui-tailwind-classes covers the library's classes against the
+// bundler's compiler.
 
 const SENTINEL = "\u0000";
 
@@ -773,6 +781,52 @@ function literalFragments(src: Source): { text: string; node: ts.Node }[] {
 /** Class-like tokens (lower-case start, variants, arbitrary values, important, negative). */
 const CLASS_TOKEN = /^[!a-z@*[(-][^\s]*$/;
 
+/** Class-composition helpers whose arguments are class strings (or cva variant maps). */
+const CLASS_FNS = new Set(["cn", "cva", "clsx", "twMerge", "cx"]);
+const CLASS_ATTR = /^(?:className|class|\w+ClassName)$/;
+
+/** Is this literal a class string? `strict`: in a className attribute or a class helper call;
+ *  `shaped`: a variable/property initializer, accepted when every token is class-like. */
+function classContext(node: ts.Node): "strict" | "shaped" | null {
+  let n: ts.Node = node;
+  for (;;) {
+    const p: ts.Node = n.parent;
+    if (
+      ts.isParenthesizedExpression(p) || ts.isConditionalExpression(p) || ts.isBinaryExpression(p) ||
+      ts.isTemplateSpan(p) || ts.isTemplateExpression(p) || ts.isArrayLiteralExpression(p) ||
+      ts.isObjectLiteralExpression(p) || ts.isSpreadElement(p) || ts.isAsExpression(p) ||
+      ts.isSatisfiesExpression(p) || ts.isNonNullExpression(p) || ts.isJsxExpression(p) ||
+      ts.isComputedPropertyName(p)
+    ) {
+      n = p;
+      continue;
+    }
+    if (ts.isPropertyAssignment(p)) {
+      if (CLASS_ATTR.test(p.name.getText())) return "strict";
+      n = p;
+      continue;
+    }
+    if (ts.isJsxAttribute(p)) return CLASS_ATTR.test(p.name.getText()) ? "strict" : null;
+    if (ts.isCallExpression(p)) {
+      const name = calleeName(p.expression);
+      return name !== null && CLASS_FNS.has(name) && p.arguments.some((a) => a === n) ? "strict" : null;
+    }
+    if ((ts.isVariableDeclaration(p) || ts.isPropertyDeclaration(p)) && p.initializer === n) return "shaped";
+    return null;
+  }
+}
+
+/** The class strings of a module: literal fragments in a class context. */
+function classFragments(src: Source): string[] {
+  return literalFragments(src).flatMap(({ text, node }) => {
+    const context = classContext(node);
+    if (context === null) return [];
+    const tokens = text.split(/\s+/).filter((t) => t !== "");
+    if (context === "shaped" && !tokens.every((t) => CLASS_TOKEN.test(t.replaceAll(SENTINEL, "x")))) return [];
+    return [text];
+  });
+}
+
 /** Split a candidate at its top-level `:` (not inside `[]`/`()`): variants and the utility. */
 function splitVariants(token: string): { variants: string[]; base: string } {
   const parts: string[] = [];
@@ -790,8 +844,10 @@ function splitVariants(token: string): { variants: string[]; base: string } {
 }
 
 const COLOUR_ROOTS =
-  "bg|text|border(?:-[xytrblse])?|ring-offset|ring|outline|fill|stroke|divide|from|via|to|inset-shadow|shadow|accent|caret|decoration|placeholder";
-const THEME_ROOT = new RegExp(`^(${COLOUR_ROOTS}|font|rounded(?:-(?:[trblse]|tl|tr|br|bl|ss|se|es|ee))?)-(.+)$`);
+  "bg|text|border(?:-[xytrblse])?|ring-offset|inset-ring|ring|outline|fill|stroke|divide|from|via|to|inset-shadow|shadow|accent|caret|decoration|placeholder";
+const OTHER_THEME_ROOTS =
+  "font|rounded(?:-(?:[trblse]|tl|tr|br|bl|ss|se|es|ee))?|tracking|leading|animate|ease|drop-shadow|backdrop-blur|blur|max-w";
+const THEME_ROOT = new RegExp(`^(${COLOUR_ROOTS}|${OTHER_THEME_ROOTS})-(.+)$`);
 const COLOUR_ROOT = new RegExp(`^(?:${COLOUR_ROOTS})$`);
 /** Colour values that are not theme colours but are allowed: keywords and the absolute black/white
  *  (the vendored shadcn scrim `bg-black/50` and on-destructive `text-white`). */
@@ -822,7 +878,7 @@ const wildcard = (s: string): RegExp =>
 /** Every token utility in the sources, as `{ rel, utility }`. */
 function tokenUtilities(sources: readonly Source[]): { rel: string; utility: TokenUtility }[] {
   return sources.flatMap((src) =>
-    literalFragments(src).flatMap(({ text }) =>
+    classFragments(src).flatMap((text) =>
       text.split(/\s+/).flatMap((t) => {
         const utility = tokenUtility(t);
         return utility === null ? [] : [{ rel: src.rel, utility }];
@@ -892,17 +948,20 @@ interface VarUse {
   readonly rel: string;
   /** `--name`; may contain SENTINEL for a `${…}` interpolation. */
   readonly name: string;
+  /** A bare `"--x"` literal (not `var()`, not a getPropertyValue argument): a reference only when its
+   *  first segment names a declared namespace, so an unrelated `"--help"` is not one. */
+  readonly bare?: boolean;
 }
 
 const VAR_REF = /var\(\s*(--[\w\u0000-]+)/g;
-/** Tailwind v4 shorthand: `duration-(--motion-base)`, `w-(--sidebar-width)`. */
-const PAREN_REF = /-\((--[\w\u0000-]+)\)/g;
+/** Tailwind v4 shorthand: `duration-(--motion-base)`, `w-(--sidebar-width)`, typed `border-(color:--x)`. */
+const PAREN_REF = /-\((?:[\w-]+:)?(--[\w\u0000-]+)\)/g;
 const BARE_PROP = /^--[\w\u0000-]+$/;
 
-/** References to custom properties in TS/TSX literals, and names set at runtime. */
-function propertyUses(sources: readonly Source[]): { refs: VarUse[]; set: Set<string> } {
+/** References to custom properties in TS/TSX literals, and the names each module sets at runtime. */
+function propertyUses(sources: readonly Source[]): { refs: VarUse[]; set: Map<string, Set<string>> } {
   const refs: VarUse[] = [];
-  const set = new Set<string>();
+  const set = new Map<string, Set<string>>();
   for (const src of sources) {
     for (const { text, node } of literalFragments(src)) {
       for (const m of text.matchAll(VAR_REF)) refs.push({ rel: src.rel, name: m[1]! });
@@ -910,10 +969,15 @@ function propertyUses(sources: readonly Source[]): { refs: VarUse[]; set: Set<st
       if (!BARE_PROP.test(text)) continue;
       const p = node.parent;
       const isStyleKey = ts.isPropertyAssignment(p) && p.name === node;
-      const isSetProperty =
-        ts.isCallExpression(p) && p.arguments[0] === node && calleeName(p.expression) === "setProperty";
-      if (isStyleKey || isSetProperty) set.add(text);
-      else refs.push({ rel: src.rel, name: text }); // a read by name: getPropertyValue("--x")
+      const call = ts.isCallExpression(p) && p.arguments[0] === node ? calleeName(p.expression) : null;
+      if (isStyleKey || call === "setProperty") {
+        if (!set.has(src.rel)) set.set(src.rel, new Set());
+        set.get(src.rel)!.add(text);
+      } else {
+        // A read by name. `getPropertyValue` arguments always count; any other bare literal counts
+        // when it is in a declared namespace (checked in unresolvedProperties via `bare`).
+        refs.push({ rel: src.rel, name: text, bare: call !== "getPropertyValue" });
+      }
     }
   }
   return { refs, set };
@@ -948,16 +1012,33 @@ function declaredProperties(css: string): ThemeBlocks {
   return blocks;
 }
 
-const RUNTIME_PREFIXES = ["--radix-", "--tw-"];
-
-/** References whose name no theme block, runtime setter or runtime prefix defines. */
-function unresolvedProperties(refs: readonly VarUse[], blocks: ThemeBlocks, runtime: ReadonlySet<string>): string[] {
-  const defined = new Set([...blocks.light.keys(), ...blocks.dark.keys(), ...blocks.wallboard.keys(), ...blocks.other.keys(), ...runtime]);
+/** The `--radix-*` properties the installed scoped Radix packages set (read from their dist). */
+function radixProperties(): Set<string> {
+  const { dependencies } = JSON.parse(readFileSync(join(WEB_ROOT, "package.json"), "utf8")) as { dependencies: Record<string, string> };
   const out = new Set<string>();
-  for (const { rel, name } of refs) {
-    if (RUNTIME_PREFIXES.some((p) => name.startsWith(p))) continue;
+  for (const name of Object.keys(dependencies).filter((d) => d.startsWith("@radix-ui/"))) {
+    const dist = join(dirname(Bun.resolveSync(`${name}/package.json`, WEB_ROOT)), "dist/index.mjs");
+    for (const m of readFileSync(dist, "utf8").matchAll(/["'`](--radix-[\w-]+)["'`]/g)) out.add(m[1]!);
+  }
+  return out;
+}
+
+/** References whose name no theme block, same-module runtime setter, Radix or Tailwind internal defines. */
+function unresolvedProperties(
+  refs: readonly VarUse[],
+  blocks: ThemeBlocks,
+  runtime: ReadonlyMap<string, ReadonlySet<string>>,
+  radix: ReadonlySet<string>,
+): string[] {
+  const defined = new Set([...blocks.light.keys(), ...blocks.dark.keys(), ...blocks.wallboard.keys(), ...blocks.other.keys(), ...radix]);
+  const namespaces = new Set([...defined].map((d) => d.split("-")[2]));
+  const out = new Set<string>();
+  for (const { rel, name, bare } of refs) {
+    if (name.startsWith("--tw-")) continue;
+    if (bare === true && !namespaces.has(name.split("-")[2])) continue;
+    const local = runtime.get(rel) ?? new Set<string>();
     const re = name.includes(SENTINEL) ? wildcard(name) : null;
-    const ok = re === null ? defined.has(name) : [...defined].some((d) => re.test(d));
+    const ok = re === null ? defined.has(name) || local.has(name) : [...defined, ...local].some((d) => re.test(d));
     if (!ok) out.add(`${rel}: ${name.replaceAll(SENTINEL, "${…}")}`);
   }
   return [...out].sort();
@@ -995,12 +1076,13 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
   let blocks: ThemeBlocks;
   const found = tokenUtilities(files);
   const colours = themeColours(stylesheets);
+  const radix = radixProperties();
 
   beforeAll(async () => {
     compiler = await referenceCompiler();
     const candidates = new Set<string>();
     for (const src of files) {
-      for (const { text } of literalFragments(src)) {
+      for (const text of classFragments(src)) {
         for (const t of text.split(/\s+/)) if (CLASS_TOKEN.test(t)) candidates.add(t);
       }
     }
@@ -1018,6 +1100,28 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
     expect(tokenUtility("bg-[var(--x)]")).toBeNull();
     expect(tokenUtility("flex")).toBeNull();
     expect(tokenUtility("Firing")).toBeNull();
+    expect(tokenUtility("tracking-tight")).toMatchObject({ root: "tracking", value: "tight" });
+    expect(tokenUtility("max-w-prose")).toMatchObject({ root: "max-w", value: "prose" });
+  });
+
+  test("only class contexts are candidates: className, class helpers, class-shaped initializers", () => {
+    const frag = (text: string): string[] => classFragments({ rel: "src/client/views/demo/view.tsx", text });
+    expect(frag('<p className={cn("bg-muted", ok && "text-sm", { "border-2": wide })} />')).toEqual(["bg-muted", "text-sm", "border-2"]);
+    expect(frag('const v = cva("p-2", { variants: { tone: { ok: "text-status-ok-fg" } }, defaultVariants: { tone: "ok" } });')).toEqual([
+      "p-2",
+      "text-status-ok-fg",
+      "ok",
+    ]);
+    expect(frag('const TONE = { ok: "bg-status-ok-bg", warn: "bg-status-warn-bg" }; const CELL = "border-b px-2";')).toEqual([
+      "bg-status-ok-bg",
+      "bg-status-warn-bg",
+      "border-b px-2",
+    ]);
+    expect(frag('createElement("td", { className: `${CELL} whitespace-nowrap` });')).toEqual(["\u0000 whitespace-nowrap"]);
+    // Not class strings: other calls' arguments, prose, attribute values.
+    expect(frag('el.setAttribute("stroke-width", "2"); cs.getPropertyValue("border-top-color");')).toEqual([]);
+    expect(frag('const hint = "Use text-red-500 sparingly";')).toEqual([]);
+    expect(frag('<a title="bg-red-500" aria-label="text-mutd" />')).toEqual([]);
   });
 
   test("the rule fires on a typo'd token, a typo'd variant, a palette colour and a dynamic miss", () => {
@@ -1042,7 +1146,7 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
     const view = (text: string): Source => ({ rel: "src/client/views/demo/view.tsx", text });
     const check = (text: string): string[] => {
       const { refs, set } = propertyUses([view(text)]);
-      return unresolvedProperties(refs, blocks, set);
+      return unresolvedProperties(refs, blocks, set, radix);
     };
     expect(check('const s = "calc(var(--spacng) * 2)";')).toEqual(["src/client/views/demo/view.tsx: --spacng"]);
     expect(check('<i className="duration-(--motion-bse)" />')).toEqual(["src/client/views/demo/view.tsx: --motion-bse"]);
@@ -1052,7 +1156,14 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
     expect(check('<i style={{ "--depth": 2 }} className="pl-[calc(var(--depth)*1rem)]" />')).toEqual([]);
     expect(check('el.style.setProperty("--kiosk-top", "4px"); const s = "var(--kiosk-top)";')).toEqual([]);
     expect(check('const s = "var(--radix-select-trigger-width) var(--tw-ring-shadow)";')).toEqual([]);
-    expect(unresolvedProperties([{ rel: "x.css", name: "--undefined-token" }], blocks, new Set())).toEqual(["x.css: --undefined-token"]);
+    expect(check('const s = "var(--radix-select-trigger-widht)";')).toEqual(["src/client/views/demo/view.tsx: --radix-select-trigger-widht"]);
+    expect(check('<i className="border-(color:--bordr) w-(length:--spacing)" />')).toEqual(["src/client/views/demo/view.tsx: --bordr"]);
+    expect(check('const args = ["--help", "--verbose"];')).toEqual([]);
+    expect(check('cs.getPropertyValue("--nonesuch")')).toEqual(["src/client/views/demo/view.tsx: --nonesuch"]);
+    // A runtime setter defines the name for its own module only.
+    const { refs, set } = propertyUses([view('<i style={{ "--depth": 2 }} />'), { rel: "src/client/views/demo/other.tsx", text: 'const s = "var(--depth)";' }]);
+    expect(unresolvedProperties(refs, blocks, set, radix)).toEqual(["src/client/views/demo/other.tsx: --depth"]);
+    expect(unresolvedProperties([{ rel: "x.css", name: "--undefined-token" }], blocks, new Map(), radix)).toEqual(["x.css: --undefined-token"]);
   });
 
   test("the parity rule fires on dark-only, light-only colour and unknown wallboard tokens", () => {
@@ -1071,6 +1182,7 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
     expect(blocks.dark.has("--background")).toBe(true);
     expect(blocks.wallboard.has("--spacing")).toBe(true);
     expect(colours.has("status-ok-fg")).toBe(true);
+    expect(radix.has("--radix-select-trigger-width")).toBe(true);
     // Sanity: the scan sees the app's token utilities (hundreds), not a handful.
     expect(found.length).toBeGreaterThan(300);
   });
@@ -1082,10 +1194,10 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
   test("every var(--…) reference in src/client (sources and stylesheets) resolves", () => {
     const { refs, set } = propertyUses(files);
     expect(refs.length).toBeGreaterThan(10);
-    expect(unresolvedProperties([...refs, ...stylesheetRefs(stylesheets)], blocks, set), "define the token or fix the name").toEqual([]);
+    expect(unresolvedProperties([...refs, ...stylesheetRefs(stylesheets)], blocks, set, radix), "define the token or fix the name").toEqual([]);
   });
 
-  test("light, dark and wallboard themes define matching token sets", () => {
+  test("dark overrides light tokens, every light colour has a dark value, wallboard overrides real tokens", () => {
     expect(themeParity(blocks, themeVariables(stylesheets))).toEqual([]);
   });
 });
@@ -1094,15 +1206,16 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
 //
 // A list, table or tree keyboard is `useListNavigation` (or a pattern built on it: DataTable,
 // TreeView, CardGrid). This flags a module that hand-rolls one instead:
-// - a vertical list key compared in a handler: `e.key === "ArrowUp"`, `case "ArrowDown":`, or
-//   `e.key === "j"`/`"k"` (the vim preset's keys);
+// - a vertical list key compared with the event's key: `e.key === "ArrowUp"`, `case "ArrowDown":`,
+//   `e.key.toLowerCase() === "j"`, `e.code === "KeyJ"`, any member chain ending in `.key`/`.code`;
+// - an inline key list tested against it: `["ArrowUp", "ArrowDown"].includes(e.key)`,
+//   `new Set(["j", "k"]).has(event.key)`;
 // - a `rovingTabindex(…)` call that is not `orientation: "horizontal"` (vertical and 2-D roving are
 //   list/grid keyboards; horizontal roving is a toolbar or radio group);
-// - `registerShortcut("j" | "k" | "arrowup" | "arrowdown", …)`: list movement through the global
-//   shortcut registry.
-// Limits: AST, per module, no data flow. A key read from a map (`KEYS[e.key]`) or a key set used for
-// something else (DataTable's scroll-key set) is not a handler comparison and is not flagged; a
-// handler written only with ArrowLeft/ArrowRight (a cursor or a horizontal widget) is out of scope.
+// - `registerShortcut` of a list key, alone or with Shift (`"j"`, `"shift+j"`, `"arrowdown"`; `"mod+k"` is a command).
+// Limits: AST, per module, no data flow. A key list held in a named constant (`KEYS.has(e.key)`,
+// e.g. DataTable's scroll-key set), a key read through a map, or a handler that only uses
+// ArrowLeft/ArrowRight (a cursor or a horizontal widget) is not flagged.
 
 /** The list-navigation building blocks themselves. */
 const LIST_NAV_INFRA = new Set([
@@ -1123,8 +1236,12 @@ const BESPOKE_LIST_KEYBOARDS: Readonly<Record<string, string>> = {
     "the overview host grid: a 2-D spatial role=grid with change markers, documented as bespoke in docs/architecture/ui.md (Overview grid).",
 };
 
+/** Vertical widgets that are not lists (a slider, a spin button, a vertical splitter) may handle
+ *  ArrowUp/ArrowDown themselves: list them here, one reason each (rel → why). None today. */
+const VERTICAL_WIDGET_EXEMPTIONS: Readonly<Record<string, string>> = {};
+
 const VERTICAL_KEYS = new Set(["ArrowUp", "ArrowDown"]);
-const VIM_KEYS = new Set(["j", "k"]);
+const VIM_KEYS = new Set(["j", "k", "J", "K", "KeyJ", "KeyK"]);
 const SHORTCUT_LIST_KEYS = new Set(["j", "k", "arrowup", "arrowdown", "up", "down"]);
 
 /** `rel:line` for every bespoke list-key handler construct in a module. */
@@ -1138,17 +1255,42 @@ function bespokeListKeys(src: Source): string[] {
     const x = unwrap(e);
     return ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) ? x.text : null;
   };
-  const isKeyRead = (e: ts.Expression): boolean => /(?:^|\.)key$/.test(unwrap(e).getText());
-  /** A list key compared with the event key (`ArrowUp`/`ArrowDown` against anything, `j`/`k` against `.key`). */
+  /** The event key: a member chain ending in `.key`/`.code`, optionally case-folded. */
+  const isKeyRead = (e: ts.Expression): boolean => {
+    let x = unwrap(e);
+    if (ts.isCallExpression(x) && x.arguments.length === 0 && ts.isPropertyAccessExpression(x.expression) && /^to(?:Lower|Upper|LocaleLower|LocaleUpper)Case$/.test(x.expression.name.text)) {
+      x = unwrap(x.expression.expression);
+    }
+    return (ts.isPropertyAccessExpression(x) && (x.name.text === "key" || x.name.text === "code")) || (ts.isIdentifier(x) && (x.text === "key" || x.text === "code"));
+  };
+  /** A list key compared with the event key (`ArrowUp`/`ArrowDown` against anything, `j`/`k` against a key read). */
   const listKey = (lit: string | null, other: ts.Expression): boolean =>
     lit !== null && (VERTICAL_KEYS.has(lit) || (VIM_KEYS.has(lit) && isKeyRead(other)));
+  /** An inline array/Set literal of keys containing a list key. */
+  const inlineKeyList = (e: ts.Expression): boolean => {
+    let x = unwrap(e);
+    if (ts.isNewExpression(x) && x.arguments?.[0] !== undefined) x = unwrap(x.arguments[0]);
+    return ts.isArrayLiteralExpression(x) && x.elements.some((el) => {
+      const lit = literal(el as ts.Expression);
+      return lit !== null && (VERTICAL_KEYS.has(lit) || VIM_KEYS.has(lit));
+    });
+  };
   const visit = (n: ts.Node): void => {
-    if (ts.isBinaryExpression(n) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(n.operatorToken.kind)) {
+    if (ts.isBinaryExpression(n) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken].includes(n.operatorToken.kind)) {
       if (listKey(literal(n.right), n.left) || listKey(literal(n.left), n.right)) at(n);
     }
     if (ts.isCaseClause(n) && ts.isSwitchStatement(n.parent.parent) && listKey(literal(n.expression), n.parent.parent.expression)) at(n);
     if (ts.isCallExpression(n)) {
       const name = calleeName(n.expression);
+      if (
+        (name === "includes" || name === "has" || name === "indexOf") &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        n.arguments[0] !== undefined &&
+        isKeyRead(n.arguments[0]) &&
+        inlineKeyList(n.expression.expression)
+      ) {
+        at(n);
+      }
       if (name === "rovingTabindex") {
         const opts = n.arguments[1] === undefined ? null : unwrap(n.arguments[1]);
         const orientation =
@@ -1159,7 +1301,10 @@ function bespokeListKeys(src: Source): string[] {
       }
       if (name === "registerShortcut" && n.arguments[0] !== undefined) {
         const combo = literal(n.arguments[0]);
-        if (combo !== null && SHORTCUT_LIST_KEYS.has(combo.toLowerCase())) at(n);
+        // A list key alone or with Shift moves through a list; with Ctrl/Cmd/Alt (`mod+k`) it is a command.
+        const parts = combo?.toLowerCase().split("+") ?? [];
+        const key = parts.pop();
+        if (key !== undefined && SHORTCUT_LIST_KEYS.has(key) && parts.every((m) => m === "shift")) at(n);
       }
     }
     ts.forEachChild(n, visit);
@@ -1167,6 +1312,9 @@ function bespokeListKeys(src: Source): string[] {
   visit(sf);
   return hits;
 }
+
+/** Every exempt module, bespoke list keyboards and vertical non-list widgets alike. */
+const isExempt = (rel: string): boolean => rel in BESPOKE_LIST_KEYBOARDS || rel in VERTICAL_WIDGET_EXEMPTIONS;
 
 describe("keyboard: list keyboards go through useListNavigation", () => {
   const view = (text: string, rel = "src/client/views/demo/list.tsx"): string[] => bespokeListKeys({ rel, text });
@@ -1181,25 +1329,34 @@ describe("keyboard: list keyboards go through useListNavigation", () => {
     expect(view('rovingTabindex(grid, { orientation: "both" });')).toHaveLength(1);
     expect(view('registerShortcut("j", () => move(1));')).toHaveLength(1);
     expect(view('registerShortcut("ArrowDown", () => move(1));')).toHaveLength(1);
+    expect(view('registerShortcut("shift+j", () => move(5));')).toHaveLength(1);
+    expect(view('if (["ArrowUp", "ArrowDown"].includes(e.key)) move(e.key);')).toHaveLength(1);
+    expect(view('if (new Set(["j", "k"]).has(event.key)) move();')).toHaveLength(1);
+    expect(view('if (e.key.toLowerCase() === "j") next();')).toHaveLength(1);
+    expect(view('if (e.nativeEvent.key === "k") prev();')).toHaveLength(1);
+    expect(view('if (e.code === "KeyJ") next();')).toHaveLength(1);
+    expect(view('switch (e.key.toLowerCase()) { case "k": prev(); }')).toHaveLength(1);
   });
 
   test("the rule ignores horizontal widgets, non-list keys, key sets and the infrastructure", () => {
     expect(view('if (e.key === "ArrowLeft" || e.key === "ArrowRight") step();')).toEqual([]);
     expect(view('rovingTabindex(toolbar, { orientation: "horizontal" });')).toEqual([]);
     expect(view('registerShortcut("mod+k", open); registerShortcut("[", prev);')).toEqual([]);
-    expect(view('const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp"]);')).toEqual([]);
+    expect(view('const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp"]); if (SCROLL_KEYS.has(e.key)) cancel();')).toEqual([]);
+    expect(view('if (["ArrowLeft", "ArrowRight"].includes(e.key)) step();')).toEqual([]);
+    expect(view('registerShortcut("shift+[", prev);')).toEqual([]);
     expect(view('if (mode === "j") jump();')).toEqual([]);
     expect(view("useListNavigation({ getItems, keys: \"arrows\" });")).toEqual([]);
     expect(view('switch (e.key) { case "ArrowDown": next(); }', "src/client/ui/lib/list-navigation.ts")).toEqual([]);
   });
 
   test("no new bespoke list keyboards (use useListNavigation, or a pattern built on it)", () => {
-    const offenders = files.flatMap(bespokeListKeys).filter((hit) => !(hit.split(":")[0]! in BESPOKE_LIST_KEYBOARDS));
+    const offenders = files.flatMap(bespokeListKeys).filter((hit) => !isExempt(hit.split(":")[0]!));
     expect(offenders, "drive the list with useListNavigation (or DataTable/TreeView/CardGrid)").toEqual([]);
   });
 
   test("every bespoke-keyboard exemption still applies (no stale entries)", () => {
     const flagged = new Set(files.flatMap(bespokeListKeys).map((hit) => hit.split(":")[0]!));
-    expect(Object.keys(BESPOKE_LIST_KEYBOARDS).filter((rel) => !flagged.has(rel))).toEqual([]);
+    expect([...Object.keys(BESPOKE_LIST_KEYBOARDS), ...Object.keys(VERTICAL_WIDGET_EXEMPTIONS)].filter((rel) => !flagged.has(rel))).toEqual([]);
   });
 });

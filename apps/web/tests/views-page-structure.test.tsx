@@ -3,7 +3,8 @@
 // For every view the app registers (`VIEWS` plus the development-only `devViews`), every route it owns
 // (its `/<id>` path, each tab, each deep route) is rendered through the registry's own `load()` with
 // React Testing Library, against fixture payloads, in both a loaded and a no-data (loading) state.
-// Each render must have:
+// The third state is a render fault (every payload signal throws on read), which must reach the
+// view's page boundary. Each render must have:
 //   • a page root carrying `data-slot="<…>-page"` as the view's outermost element;
 //   • exactly one level-1 heading (`getAllByRole("heading", { level: 1 })`), rendered by PageHeader
 //     (`data-slot="page-header"`), never one written by hand.
@@ -11,7 +12,7 @@
 // suite. The browser suite (tests/browser/routes-a11y.test.ts) checks the same shape on the composed
 // app over live mock data when Chromium is available; this one runs everywhere.
 
-import { afterAll, afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { batch } from "@preact/signals-core";
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -21,6 +22,8 @@ import { createPathRouter, routesFromViews, type PathRouter } from "../src/clien
 import { createAppStore, type AppStore } from "../src/client/store/index.js";
 import { devViews } from "../src/client/views/dev-views.js";
 import { VIEWS } from "../src/client/views/registry.js";
+import { TRIAGE_TAB_IDS } from "../src/client/views/alerts/view-model.js";
+import { DEFAULT_TAB as ESTATE_DEFAULT_TAB, TAB_IDS as ESTATE_TAB_IDS } from "../src/client/views/estate/types.js";
 import { FIXTURE_FINGERPRINTS, makeAlertsPayload } from "./alerts-fixtures.js";
 import { isolateDomGlobals } from "./alerts-dom-isolation.js";
 import { delivery, makeEngineSnapshot, makeEnginePayload, makeObservation } from "./engine-fixtures.js";
@@ -78,14 +81,18 @@ const SEEDS: Readonly<Record<string, Seed>> = {
   "_ui": () => {},
 };
 
-/** Every route of every registered view: the view's own path, each tab, each deep route. */
+/** `?tab=` routes for every tab but the default (which is the view's base route). */
+const tabRoutes = (base: string, ids: readonly string[], defaultId: string): string[] =>
+  ids.filter((id) => id !== defaultId).map((id) => `${base}?tab=${id}`);
+
+/** Every route of every registered view: its base `/<id>` path, each tab (from the view's exported tab
+ *  ids, never hand-listed) and a concrete path for each deep route. */
 const ROUTES: Readonly<Record<string, readonly string[]>> = {
   overview: ["/overview"],
-  alerts: ["/alerts", "/alerts?tab=catalog", "/alerts?tab=silences", `/alerts/${FIXTURE_FINGERPRINTS.hostDown}`],
+  alerts: ["/alerts", ...tabRoutes("/alerts", TRIAGE_TAB_IDS, "firing"), `/alerts/${FIXTURE_FINGERPRINTS.hostDown}`],
   estate: [
     "/estate",
-    "/estate?tab=coverage",
-    "/estate?tab=findings",
+    ...tabRoutes("/estate", ESTATE_TAB_IDS, ESTATE_DEFAULT_TAB),
     "/estate/host/hostA-managed",
     "/estate/service/hostA-managed/grafana",
   ],
@@ -93,6 +100,24 @@ const ROUTES: Readonly<Record<string, readonly string[]>> = {
   timeline: ["/timeline"],
   "_ui": ["/_ui"],
 };
+
+/** The store's payload signals. The render-fault state replaces each with one whose read throws, the
+ *  way a malformed payload faults a view body. */
+const PAYLOAD_SIGNALS = ["snapshot", "alerts", "engine", "estate", "timeline"] as const;
+
+function faultPayloads(store: AppStore): void {
+  const boom = (): never => {
+    throw new Error("views-page-structure: simulated render fault");
+  };
+  for (const key of PAYLOAD_SIGNALS) {
+    Object.defineProperty(store, key, { value: { get value(): never { return boom(); }, peek: boom, subscribe: boom } });
+  }
+}
+
+/** The workbench reads no payload, so it has no render-fault state to drive. */
+const NO_PAYLOAD_VIEWS = new Set(["_ui"]);
+
+type State = "loaded" | "no data" | "render fault";
 
 const originalFetch = globalThis.fetch;
 
@@ -110,7 +135,7 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
     globalThis.fetch = originalFetch;
   });
 
-  async function renderRoute(view: ViewDefinition, path: string, loaded: boolean): Promise<HTMLElement> {
+  async function renderRoute(view: ViewDefinition, path: string, state: State): Promise<HTMLElement> {
     const win = (globalThis as unknown as { window: Window }).window;
     win.history.replaceState({}, "", path);
     const router = createPathRouter({ routes: routesFromViews(ALL_VIEWS), fallback: "/overview", win });
@@ -118,11 +143,12 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
     const store = createAppStore({ storage: null, initialQuery: router.current().query });
     batch(() => {
       store.route.value = router.current();
-      if (loaded) {
+      if (state !== "no data") {
         SEEDS[view.id]?.(store);
         liveConnection(store);
       }
     });
+    if (state === "render fault") faultPayloads(store);
     expect(store.route.value.view, `${path} routes to ${view.id}`).toBe(view.id);
     const View = await view.load();
     let container!: HTMLElement;
@@ -147,6 +173,7 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
 
   test("every registered view has routes and a seed here", () => {
     for (const view of ALL_VIEWS) {
+      expect(ROUTES[view.id]?.includes(`/${view.id}`), `${view.id}: cover its base route /${view.id}`).toBe(true);
       expect(ROUTES[view.id], `add ${view.id}'s routes to ROUTES`).toBeDefined();
       expect(SEEDS[view.id], `add a ${view.id} seed to SEEDS`).toBeDefined();
       // Deep routes the registry declares are each covered by a concrete path.
@@ -160,10 +187,21 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
 
   for (const view of ALL_VIEWS) {
     for (const path of ROUTES[view.id] ?? []) {
-      for (const loaded of [true, false]) {
-        const state = loaded ? "loaded" : "no data";
+      const states: State[] = NO_PAYLOAD_VIEWS.has(view.id) ? ["loaded", "no data"] : ["loaded", "no data", "render fault"];
+      for (const state of states) {
         test(`${path} (${state}): data-slot page root, one PageHeader h1`, async () => {
-          expectPageStructure(await renderRoute(view, path, loaded), `${path} (${state})`);
+          const quiet = state === "render fault" ? spyOn(console, "error").mockImplementation(() => {}) : null;
+          try {
+            const container = await renderRoute(view, path, state);
+            expectPageStructure(container, `${path} (${state})`);
+            if (state === "render fault") {
+              // The fault really reached the page boundary, which kept the view's root.
+              expect(container.firstElementChild?.getAttribute("data-state"), `${path}: page fallback`).toBe("error");
+              expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
+            }
+          } finally {
+            quiet?.mockRestore();
+          }
         }, 30_000);
       }
     }

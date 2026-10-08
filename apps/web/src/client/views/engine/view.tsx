@@ -47,6 +47,7 @@ function logViewFault(error: unknown): void {
 export default function EngineView(props: ViewProps): ReactElement {
   return (
     <PageErrorBoundary
+      pageSlot="engine-page"
       title="The engine view hit a rendering error"
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}

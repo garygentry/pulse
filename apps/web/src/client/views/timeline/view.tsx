@@ -3,16 +3,15 @@
 // Loaded by the frozen registry entry `load: () => import("./timeline/view.js").then((m) => m.default)`.
 // The store is read ONLY through the model.ts readers (05 §3.1). The URL is the source of truth for
 // range/end/zoom/sel (05 §4); every write goes through writeUrl and a 05 `with*` transition. Each
-// region sits in its own RegionErrorBoundary (02 §9.1), the whole body in the private
-// ViewErrorBoundary (02 §9.2). Kiosk is read from the URL only; the view owns no rotation (CON-08).
+// region sits in its own RegionErrorBoundary (02 §9.1), the whole body in a PageErrorBoundary
+// (02 §9.2) that keeps the timeline-page root and its h1. Kiosk is read from the URL only; the view owns no rotation (CON-08).
 
-import { Component } from "react";
-import type { ReactNode, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import { batch, useComputed, useSignal, useSignalEffect } from "@preact/signals-react";
 import { HISTORY_TTL_MS, type EndpointHistoryPayload, type OverviewSnapshotV2, type RangeId, type TimelineDomain, type TimelinePayload } from "@pulse/web-data/wire";
 
-import { EmptyState, ErrorState, LoadingState, PageHeader, Callout, Section, StatusBadge, TARGET_STATUS, useDisposable } from "@/ui";
+import { EmptyState, LoadingState, PageErrorBoundary, PageHeader, Callout, Section, StatusBadge, TARGET_STATUS, useDisposable } from "@/ui";
 import { announce } from "../../a11y/index.js";
 import { isKiosk } from "../../shell/kiosk.js";
 import { createEstateClock } from "../../format.js";
@@ -66,48 +65,29 @@ const INITIAL_STEP_SECONDS = 60;
  */
 const READOUT_ID = "pulse-timeline-readout";
 
-interface BoundaryState {
-  /** Set once a descendant render/lifecycle throws. */
-  readonly error: Error | null;
-}
-
-/** View-level render error boundary (REQ-OBS-01). Private to view.tsx; never exported (02 §9.2). */
-class ViewErrorBoundary extends Component<{ children?: ReactNode }, BoundaryState> {
-  override state: BoundaryState = { error: null };
-  static getDerivedStateFromError(error: Error): BoundaryState {
-    return { error };
-  }
-  override componentDidCatch(error: Error): void {
-    console.error("[timeline-view] render fault", error);
-  }
-  override render(): ReactNode {
-    if (this.state.error !== null) {
-      return (
-        <div data-slot="timeline-page" data-state="error" className="flex min-w-0 flex-col gap-4 p-4 [@media(max-width:30rem)]:gap-2 [@media(max-width:30rem)]:p-2">
-          <ErrorState
-            title="The timeline view hit a rendering error"
-            message="Reload to try again — other views are unaffected."
-          />
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+/** View-level render fault (REQ-OBS-01): logged, the page keeps its root and h1. */
+function logViewFault(error: unknown): void {
+  console.error("[timeline-view] render fault", error);
 }
 
 /**
  * The /timeline incident-reconstruction view (timeline-view contract; REQ-EXPOSE-02).
- * Fills the pre-registered `timeline` slot. The private ViewErrorBoundary wraps the whole body,
- * so a render fault shows a contained card and never crashes the shell (REQ-OBS-01).
+ * Fills the pre-registered `timeline` slot. A PageErrorBoundary wraps the whole body,
+ * so a render fault shows the page heading and an error state and never crashes the shell (REQ-OBS-01).
  *
  * @param props - Shell-provided store, router and optional rotation context (not read: CON-08).
  * @returns The page.
  */
 export default function TimelineView(props: ViewProps): ReactElement {
   return (
-    <ViewErrorBoundary>
+    <PageErrorBoundary
+      pageSlot="timeline-page"
+      title="The timeline view hit a rendering error"
+      message="Reload to try again — other views are unaffected."
+      onError={logViewFault}
+    >
       <TimelineViewBody store={props.store} router={props.router} />
-    </ViewErrorBoundary>
+    </PageErrorBoundary>
   );
 }
 

@@ -3,8 +3,6 @@
  *
  * - Wallboard density: `[data-density="wallboard"]` (kiosk, or the density control) scales
  *   Tailwind's spacing and type scale for 3–4 m legibility. Desk density is theme.css as is.
- * - Canvas tokens: uPlot draws to <canvas>, which cannot resolve var(); the chart reads these
- *   names through getComputedStyle. Status strokes use the tone each TargetStatus maps to.
  * - Motion tokens for the few animated state changes.
  * - Inline monospace size (`--code-font-size`) for code/kbd/samp/pre in running text.
  *
@@ -24,16 +22,6 @@
 }
 
 :root {
-  --canvas-axis: var(--border);
-  --canvas-grid: var(--border);
-  --canvas-text: var(--muted-foreground);
-  --canvas-series: var(--chart-1);
-  --canvas-status-ok: var(--status-ok-fg);
-  --canvas-status-warning: var(--status-warn-fg);
-  --canvas-status-critical: var(--status-danger-fg);
-  --canvas-status-unknown: var(--status-neutral-fg);
-  --canvas-status-suppressed: var(--status-neutral-fg);
-
   /* Motion: durations and easing for the few animated changes (the overview change marker and
      grid fade). The reduced-motion rule in app.css overrides them. */
   --motion-base: 160ms;

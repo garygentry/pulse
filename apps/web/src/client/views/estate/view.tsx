@@ -14,7 +14,7 @@ import type { ViewProps } from "../../../shared/registry.js";
 import type { AppStore } from "../../store/index.js";
 import { refetchView } from "../../store/live-state.js";
 import type { PathRouter } from "../../router.js";
-import { Icon, PageHeader, Tabs, TabsContent, TabsList, TabsTrigger, usePageHeadingId } from "@/ui";
+import { Icon, PageErrorBoundary, PageHeader, Tabs, TabsContent, TabsList, TabsTrigger, usePageHeadingId } from "@/ui";
 import type { IconName } from "@/ui";
 import { CoverageExplorer } from "./coverage.js";
 import { renderDelivery } from "./degrade.js";
@@ -144,8 +144,28 @@ function EstateFrame({ children }: { readonly children: ReactNode }): ReactEleme
   );
 }
 
-/** The estate view (default export — the only public symbol, 01 §3). */
+/** The estate view (default export — the only public symbol, 01 §3). A PageErrorBoundary contains a
+ *  render fault outside the per-region boundaries (the delivery frame, the landing, an entity page),
+ *  keeping the estate-page root and an h1. */
 export default function EstateView(props: ViewProps): ReactElement {
+  return (
+    <PageErrorBoundary
+      pageSlot="estate-page"
+      title="The estate view hit a rendering error"
+      message="Reload to try again — other views are unaffected."
+      onError={logViewFault}
+    >
+      <EstateViewBody store={props.store} router={props.router} />
+    </PageErrorBoundary>
+  );
+}
+
+/** Page-level render fault: logged; the boundary renders the fallback. */
+function logViewFault(error: unknown): void {
+  console.error("[estate-view] render fault", error);
+}
+
+function EstateViewBody(props: ViewProps): ReactElement {
   useSignals();
   const { store, router } = props;
   const route = store.route.value;

@@ -216,7 +216,7 @@ const GRID_REGION_CLASS =
 /** The overview composition with explicit test/fixture seams (see {@link OverviewCompositionProps}). */
 export function OverviewComposition(props: OverviewCompositionProps): ReactElement {
   return (
-    <PageErrorBoundary title={OVERVIEW_PAGE_ERROR_TITLE} message="Reload to try again — other views are unaffected.">
+    <PageErrorBoundary pageSlot="overview-page" title={OVERVIEW_PAGE_ERROR_TITLE} message="Reload to try again — other views are unaffected.">
       <OverviewPage {...props} />
     </PageErrorBoundary>
   );

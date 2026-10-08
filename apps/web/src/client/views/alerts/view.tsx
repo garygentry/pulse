@@ -74,6 +74,7 @@ function toQueryString(query: Readonly<Record<string, string>>): string {
 export default function AlertsView(props: ViewProps): ReactElement {
   return (
     <PageErrorBoundary
+      pageSlot="alerts-page"
       title="The alerts view hit a rendering error"
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}
