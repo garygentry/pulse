@@ -64,15 +64,31 @@ describe("decodeTimelineUrl — 05 §4.8 worked examples (now = 1_790_208_000)",
     });
   });
 
-  test("REQ-URL-01: full valid query decodes as given; sel splits at the first ':'", () => {
+  test("REQ-URL-01: full valid query decodes as given; sel is the canonical reference, its prefix names the kind", () => {
     const d = decodeTimelineUrl(
-      { range: "6h", end: "1790200000", zoom: "1790190000-1790195000", sel: "host:host:web01" },
+      { range: "6h", end: "1790200000", zoom: "1790190000-1790195000", sel: "host:web01" },
       NOW,
     );
     expect(d).toEqual({
       state: { range: "6h", end: 1790200000, zoom: { start: 1790190000, end: 1790195000 }, sel: { kind: "host", id: "host:web01" } },
       notices: [],
     });
+    expect(decodeTimelineUrl({ sel: "svc:web01/nginx" }, NOW)).toEqual({
+      state: { ...LIVE, sel: { kind: "service", id: "svc:web01/nginx" } },
+      notices: [],
+    });
+  });
+
+  test("#17: pre-fix double-prefixed sel links (host:host:…, service:svc:…) still select the same lane", () => {
+    expect(decodeTimelineUrl({ sel: "host:host:web01" }, NOW)).toEqual(decodeTimelineUrl({ sel: "host:web01" }, NOW));
+    expect(decodeTimelineUrl({ sel: "host:host:web01" }, NOW).state.sel).toEqual({ kind: "host", id: "host:web01" });
+    expect(decodeTimelineUrl({ sel: "service:svc:web01/nginx" }, NOW)).toEqual({
+      state: { ...LIVE, sel: { kind: "service", id: "svc:web01/nginx" } },
+      notices: [],
+    });
+    // Re-encoding an old link writes the canonical form.
+    const old = decodeTimelineUrl({ range: "6h", sel: "service:svc:web01/nginx" }, NOW).state;
+    expect(encodeTimelineUrl(old, {})).toBe("?range=6h&sel=svc%3Aweb01%2Fnginx");
   });
 
   test("REQ-URL-02: end in the future (> now + 60) → live with notice", () => {
@@ -197,11 +213,11 @@ describe("decodeTimelineUrl — 05 §4.2 notice rows (REQ-URL-02)", () => {
   });
 
   test("REQ-URL-02: sel malformed (kind, empty id, id over 512, no colon)", () => {
-    for (const raw of ["endpoint:x", "hostweb01", "host:", ":web01", "Host:web01", `host:${"a".repeat(513)}`]) {
+    for (const raw of ["endpoint:x", "hostweb01", "host:", "svc:", ":web01", "Host:web01", "service:web01/nginx", "host:host:", `host:${"a".repeat(508)}`]) {
       expect(messages({ sel: raw })).toEqual([`Invalid selection '${raw.length <= 40 ? raw : raw.slice(0, 40) + "…"}' — showing no selection`]);
     }
-    const max = `service:${"b".repeat(512)}`;
-    expect(decodeTimelineUrl({ sel: max }, NOW).state.sel).toEqual({ kind: "service", id: "b".repeat(512) });
+    const max = `svc:${"b".repeat(508)}`;
+    expect(decodeTimelineUrl({ sel: max }, NOW).state.sel).toEqual({ kind: "service", id: max });
   });
 
   test("REQ-URL-02: displayRaw passes 40 code units through and truncates longer values with '…'", () => {
@@ -290,7 +306,8 @@ function genState(rand: () => number): TimelineUrlState {
     const len = int(1, 40);
     let id = "";
     for (let i = 0; i < len; i++) id += ID_ALPHABET[int(0, ID_ALPHABET.length - 1)];
-    sel = { kind: rand() < 0.5 ? "host" : "service", id };
+    // Lane ids are canonical drilldown ids, prefixed by their kind.
+    sel = rand() < 0.5 ? { kind: "host", id: `host:${id}` } : { kind: "service", id: `svc:${id}` };
   }
   return { range, end, zoom, sel };
 }
@@ -321,7 +338,7 @@ describe("encodeTimelineUrl (REQ-URL-01, REQ-SEC-04)", () => {
         { range: "6h", end: 1790200000, zoom: null, sel: { kind: "service", id: "svc:web01/nginx" } },
         { kiosk: "1", rotate: "overview,timeline", range: "24h" },
       ),
-    ).toBe("?kiosk=1&rotate=overview%2Ctimeline&range=6h&end=1790200000&sel=service%3Asvc%3Aweb01%2Fnginx");
+    ).toBe("?kiosk=1&rotate=overview%2Ctimeline&range=6h&end=1790200000&sel=svc%3Aweb01%2Fnginx");
   });
 
   test("REQ-URL-01: defaults omitted; empty state and no unrelated keys → ''", () => {
@@ -335,7 +352,7 @@ describe("encodeTimelineUrl (REQ-URL-01, REQ-SEC-04)", () => {
       { sel: "host:old", tab: "catalog", kiosk: "1", zoom: "1-2", rotate: "overview", z: "last" },
     );
     expect(qs).toBe(
-      "?tab=catalog&kiosk=1&rotate=overview&z=last&range=1h&end=1790200000&zoom=1790197000-1790199000&sel=host%3Ahost%3Aweb01",
+      "?tab=catalog&kiosk=1&rotate=overview&z=last&range=1h&end=1790200000&zoom=1790197000-1790199000&sel=host%3Aweb01",
     );
   });
 
@@ -347,7 +364,7 @@ describe("encodeTimelineUrl (REQ-URL-01, REQ-SEC-04)", () => {
 
   test("REQ-SEC-04: ':', '/', '&', '=', '#' are percent-encoded in keys and values", () => {
     const qs = encodeTimelineUrl(
-      { ...LIVE, sel: { kind: "host", id: "a:b/c&d=e#f" } },
+      { ...LIVE, sel: { kind: "host", id: "host:a:b/c&d=e#f" } },
       { "we&ird=key#": "v/a:l&u=e#" },
     );
     expect(qs).toBe("?we%26ird%3Dkey%23=v%2Fa%3Al%26u%3De%23&sel=host%3Aa%3Ab%2Fc%26d%3De%23f");
@@ -361,7 +378,7 @@ describe("encodeTimelineUrl (REQ-URL-01, REQ-SEC-04)", () => {
     const s: TimelineUrlState = { ...LIVE, sel: { kind: "service", id: "svc:web01/nginx&x=1" } };
     const params = new URLSearchParams(encodeTimelineUrl(s, {}));
     expect(params.has("x")).toBe(false);
-    expect(params.get("sel")).toBe("service:svc:web01/nginx&x=1");
+    expect(params.get("sel")).toBe("svc:web01/nginx&x=1");
     expect(decodeTimelineUrl(parse(encodeTimelineUrl(s, {})), NOW).state).toEqual(s);
   });
 });
@@ -393,15 +410,15 @@ describe("validateSel (REQ-URL-02)", () => {
     const s: TimelineUrlState = { range: "6h", end: 1790200000, zoom: null, sel: { kind: "host", id: "host:ghost" } };
     expect(validateSel(s, tree)).toEqual({
       state: { ...s, sel: null },
-      notice: { key: "sel", message: "Unknown target 'host:host:ghost' — showing no selection" },
+      notice: { key: "sel", message: "Unknown target 'host:ghost' — showing no selection" },
     });
   });
 
   test("REQ-URL-02: a service id given with the host kind is unknown; long ids truncate via displayRaw", () => {
     const wrongKind: TimelineUrlState = { ...LIVE, sel: { kind: "host", id: svc.target.id } };
     expect(validateSel(wrongKind, tree).state.sel).toBeNull();
-    const long: TimelineUrlState = { ...LIVE, sel: { kind: "service", id: "z".repeat(100) } };
-    const key = `service:${"z".repeat(100)}`;
+    const key = `svc:${"z".repeat(100)}`;
+    const long: TimelineUrlState = { ...LIVE, sel: { kind: "service", id: key } };
     expect(validateSel(long, tree).notice?.message).toBe(`Unknown target '${key.slice(0, 40)}…' — showing no selection`);
   });
 });

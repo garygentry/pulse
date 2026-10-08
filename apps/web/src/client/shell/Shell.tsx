@@ -71,7 +71,8 @@ export interface ShellProps {
   /** Development-only views (the `/_ui` workbench). The outlet hosts them, but they stay out of the
    *  side nav and kiosk rotation, which read `views` only. Empty or absent in production builds. */
   devViews?: readonly ViewDefinition[] | undefined;
-  /** The shared once-only reload (`LiveStateHandle.reloadOnce`) — passed to `ViewHost` (REQ-VIEW-04).
+  /** The shared once-only reload (`LiveStateHandle.reloadOnce`) — passed to `ViewHost` (REQ-VIEW-04)
+   *  and to the command palette, whose chunk-failure state recovers by reloading.
    *  Never call `location.reload` directly. */
   reloadOnce: () => void;
   /** `<meta name="pulse-build-id">` content; `null` in manifest-fallback mode. Keys the chunk-reload
@@ -323,7 +324,7 @@ export function Shell(props: ShellProps): ReactElement {
         <StaleDataCallout store={store} clock={clock} />
         {outlet}
       </SidebarInset>
-      <CommandPalette store={store} router={router} />
+      <CommandPalette store={store} router={router} reloadOnce={reloadOnce} />
     </SidebarProvider>
   );
 }

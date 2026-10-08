@@ -7,7 +7,6 @@
 
 import type { ProposalState } from "@pulse/core/proposals";
 import type {
-  ActiveAlert,
   DeclaredScrapeComparison,
   HealthState,
   RuleState,
@@ -82,12 +81,6 @@ export const SEVERITY_STATUS: Readonly<Record<string, TargetStatus>> = {
 /** Map every severity string to a status; values outside the known map are unknown. */
 export function severityToStatus(severity: string): TargetStatus {
   return Object.hasOwn(SEVERITY_STATUS, severity) ? (SEVERITY_STATUS[severity] ?? "unknown") : "unknown";
-}
-
-/** Delivery state → status. silenced/inhibited render as "suppressed" (marked, not hidden); firing
- *  maps to the alert's own severity. */
-export function stateToStatus(state: ActiveAlert["state"], severity: string): TargetStatus {
-  return state === "firing" ? severityToStatus(severity) : "suppressed";
 }
 
 /** History StatusInterval.state → timeline segment status. */

@@ -97,8 +97,9 @@ export function readTimelineConnectionPhase(store: AppStore): ConnectionPhase {
 // ---------------------------------------------------------------------------
 
 /**
- * Stable string key for a target identity: `${kind}:${id}` (00 §5.3). Used as Map/Set keys and as
- * the `sel` URL value. Examples: {kind:"host", id:"host:web01"} → "host:host:web01";
+ * Stable string key for a target identity: `${kind}:${id}` (00 §5.3). Internal only (Map/Set keys,
+ * chart ids); never shown or written to the URL, where `sel` uses the single-prefixed `targetRef`.
+ * Examples: {kind:"host", id:"host:web01"} → "host:host:web01";
  * {kind:"service", id:"svc:web01/nginx"} → "service:svc:web01/nginx".
  */
 export function targetKey(target: TargetIdentity): TargetKey {

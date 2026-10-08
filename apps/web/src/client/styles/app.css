@@ -59,6 +59,24 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+  /* Pulse: inline monospace a step below the text around it (Preflight's 1em reads large in Geist
+     Mono). Monospace nested in a pre or a Badge (already a small text step) keeps its container's
+     size instead of shrinking again. Components that size their own code/kbd (Kbd, CodeBlock,
+     table cells) override this with utilities. */
+  code,
+  kbd,
+  samp,
+  pre {
+    font-size: var(--code-font-size);
+  }
+  pre code,
+  pre kbd,
+  pre samp,
+  [data-slot="badge"] code,
+  [data-slot="badge"] kbd,
+  [data-slot="badge"] samp {
+    font-size: inherit;
+  }
   /* Tailwind v4 Preflight dropped the pointer cursor on buttons; keep it. */
   button:not(:disabled),
   [role="button"]:not(:disabled) {
