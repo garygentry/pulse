@@ -609,8 +609,14 @@ describe("ProposalList helpers (REQ-PROP-06, REQ-SEC-07)", () => {
 });
 
 /** The disclosure trigger's text (its accessible name; the chevron icon has none). */
+/** The proposal disclosure trigger's accessible name: label, a visually hidden separator, the count. */
 function disclosureText(container: Element): string {
-  return container.querySelector<HTMLButtonElement>('[data-slot="disclosure"] button[aria-expanded]')!.textContent ?? "";
+  const trigger = container.querySelector<HTMLButtonElement>('[data-slot="disclosure"] button[aria-expanded]')!;
+  const hidden = [...trigger.querySelectorAll('[aria-hidden="true"]')];
+  // aria-hidden content (the chevron, the visual pill) is not part of the name.
+  const visible = (node: Node): string =>
+    hidden.some((h) => h === node) ? "" : node.nodeType === 3 ? (node.textContent ?? "") : [...node.childNodes].map(visible).join("");
+  return visible(trigger);
 }
 
 /** Expand the (collapsed by default) disclosure so its panel mounts. */
@@ -630,7 +636,7 @@ describeUi("ProposalList renders inert, state-chipped proposals (REQ-PROP-06, RE
     const { container, unmount } = await dom.mount(createElement(ProposalList, { target }) as ReactElement);
     await flush(150);
     expect(calls[0]!.url).toBe("/api/proposals?kind=host&id=host%3Aapp-01");
-    expect(disclosureText(container)).toBe("Proposals (3)");
+    expect(disclosureText(container)).toBe("Proposals, 3 items");
     await expand(container);
     const items = [...container.querySelectorAll("li[data-proposal-id]")];
     expect(items.map((li) => li.querySelector("[data-state]")?.textContent)).toEqual(["Pending", "Applied", "Rejected"]);
@@ -667,12 +673,12 @@ describeUi("ProposalList renders inert, state-chipped proposals (REQ-PROP-06, RE
     stubFetch({ list: { status: 200, json: EMPTY_LIST } });
     const { container, unmount } = await dom.mount(createElement(ProposalList, { target }) as ReactElement);
     await flush(150);
-    expect(disclosureText(container)).toBe("Proposals (0)");
+    expect(disclosureText(container)).toBe("Proposals, 0 items");
     stubFetch({ list: { status: 200, json: LIST } });
     proposalListRefresh.value += 1;
     await flush(150);
     expect(calls.length).toBe(1);
-    expect(disclosureText(container)).toBe("Proposals (3)");
+    expect(disclosureText(container)).toBe("Proposals, 3 items");
     unmount();
   });
 });

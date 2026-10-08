@@ -42,7 +42,7 @@ function ProposalItem(p: { readonly v: ProposalView }): ReactElement {
 type Load = { readonly kind: "loading" } | { readonly kind: "failed" } | { readonly kind: "ready"; readonly body: ProposalListBody };
 
 /**
- * Disclosure "Proposals (N)", keyboard-operable. Refetches on mount, target
+ * Disclosure "Proposals" with an N pill (named "Proposals, N items"), keyboard-operable. Refetches on mount, target
  * change and proposalListRefresh change. enabled:false → nothing (the capability is false then too).
  */
 export function ProposalList(p: { readonly target: { readonly kind: "host" | "service"; readonly id: string } }): ReactElement | null {
@@ -60,11 +60,11 @@ export function ProposalList(p: { readonly target: { readonly kind: "host" | "se
   }, [kind, id, refresh]);
 
   if (load.kind === "ready" && !load.body.enabled) return null;
-  // The count is part of the label text so the trigger's accessible name reads "Proposals (3)".
-  const label = load.kind === "ready" ? `Proposals (${load.body.proposals.length})` : "Proposals";
+  // The count is the Disclosure's pill; the trigger's accessible name reads "Proposals, 3 items".
+  const count = load.kind === "ready" ? load.body.proposals.length : undefined;
   return (
     <div data-testid="proposal-list">
-      <Disclosure label={label} contentClassName="flex flex-col gap-2">
+      <Disclosure label="Proposals" {...(count !== undefined ? { count } : {})} contentClassName="flex flex-col gap-2">
         {load.kind === "loading" ? <p className={HINT}>Loading proposals…</p> : null}
         {load.kind === "failed" ? <p className="m-0 text-sm font-medium text-foreground">Proposals could not be loaded.</p> : null}
         {load.kind === "ready" ? (
