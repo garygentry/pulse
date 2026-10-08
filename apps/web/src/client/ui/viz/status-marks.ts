@@ -1,5 +1,5 @@
 import type { TargetStatus } from "@pulse/web-data/wire";
-import type { Tone } from "@/ui/lib/status";
+import type { StatusPresentation, Tone } from "@/ui/lib/status";
 import { TARGET_STATUS } from "@/ui/status/target-status";
 
 /**
@@ -14,12 +14,17 @@ export interface VizStatusMark {
   pattern: VizMarkPattern;
 }
 
+/**
+ * The mark for any status-map entry: its tone, hatched/dashed when the entry is an outline badge
+ * (suppressed in `TARGET_STATUS` and `ALERT_STATE`), solid otherwise.
+ */
+export function presentationMark(presentation: StatusPresentation): VizStatusMark {
+  return { tone: presentation.tone, pattern: presentation.variant === "outline" ? "hatched" : "solid" };
+}
+
 /** A status's mark: the tone from `TARGET_STATUS`, hatched/dashed for suppressed. */
 export function vizStatusMark(status: TargetStatus): VizStatusMark {
-  return {
-    tone: TARGET_STATUS[status].tone,
-    pattern: status === "suppressed" ? "hatched" : "solid",
-  };
+  return presentationMark(TARGET_STATUS[status]);
 }
 
 /** Line dash for a pattern (SVG `stroke-dasharray` and uPlot `dash`). */

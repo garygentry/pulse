@@ -63,6 +63,12 @@ export const ENGINE_BOARD_UID = "pulse-engine" as const;
 /** Copy for a value whose source is not current (REQ-NOTIFY-01, REQ-CAP-01, REQ-DEGRADE-01). */
 export const UNAVAILABLE = "unavailable" as const;
 
+/** Screen-reader description of an absent stat-tile value, per TileValue kind (#15). */
+export const ABSENT_TILE_DESCRIPTION: Readonly<Record<"not-reported" | "unavailable", string>> = {
+  "not-reported": "the source did not include this metric",
+  unavailable: "source not current, so no value is shown",
+};
+
 /** Copy used when a source has never had a successful read (no last-good time). */
 export const NO_LAST_GOOD = "no successful read yet" as const;
 

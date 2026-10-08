@@ -79,6 +79,26 @@ export function yAxisSize(values: readonly string[] | null | undefined): number 
   return Math.max(Y_AXIS_MIN_SIZE, Math.ceil(longest * AXIS_CHAR_PX) + Y_AXIS_GUTTER_PX);
 }
 
+/** A uPlot `axis.values` callback from a tick formatter. */
+export function yTickValues(format: (splits: readonly number[]) => string[]): uPlot.Axis.DynamicValues {
+  return (_self, splits) => format(splits);
+}
+
+/** Default px between y ticks (uPlot's own y-axis `space`). */
+const Y_TICK_SPACE = 30;
+
+/**
+ * A uPlot `axis.splits` callback from a split function. The tick budget comes from the chart height
+ * (the plot is a little shorter than the canvas; 80% leaves room for the x axis).
+ */
+export function yTickSplits(
+  split: (min: number, max: number, maxTicks: number) => number[],
+  height: number,
+): (self: uPlot, axisIdx: number, scaleMin: number, scaleMax: number) => number[] {
+  const maxTicks = Math.max(2, Math.floor((height * 0.8) / Y_TICK_SPACE));
+  return (_self, _axisIdx, scaleMin, scaleMax) => split(scaleMin, scaleMax, maxTicks);
+}
+
 /** uPlot options from props, the container width and the resolved colours. */
 export function buildOptions(
   props: TimeSeriesChartProps,
@@ -107,7 +127,14 @@ export function buildOptions(
     ],
     axes: [
       { ...axis, space: X_TICK_SPACE },
-      { ...axis, size: (_self, values) => yAxisSize(values) },
+      {
+        ...axis,
+        size: (_self, values) => yAxisSize(values),
+        ...(props.formatYTicks !== undefined ? { values: yTickValues(props.formatYTicks) } : {}),
+        ...(props.splitYTicks !== undefined
+          ? { splits: yTickSplits(props.splitYTicks, props.height ?? TIME_SERIES_DEFAULT_HEIGHT) }
+          : {}),
+      },
     ],
     legend: { show: props.series.length > 1 },
   };
@@ -179,7 +206,7 @@ export default function UplotChart(props: TimeSeriesChartProps) {
       chart?.destroy();
       chart = null;
     };
-  }, [props.timestamps, props.series, height]);
+  }, [props.timestamps, props.series, height, props.formatYTicks, props.splitYTicks]);
 
   return (
     <div

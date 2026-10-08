@@ -202,7 +202,13 @@ Colours come only from the tone and chart tokens. uPlot draws to a `<canvas>`, w
 resolve `var()`, so `ui/viz/uplot-chart.tsx` reads the theme tokens from the chart root's computed
 style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--chart-1` to
 `--chart-5` for series by index, and `--status-<tone>-fg` for a series that carries a status.
-Suppressed marks are hatched or dashed on the neutral tone. The timeline view's lanes, overlay and swimlane stay in that view; they are not
+Suppressed marks are hatched or dashed on the neutral tone. `StatusTimeline` draws each segment
+from a status map: `TARGET_STATUS` by default, or the caller's own `statusMap` for another
+vocabulary (the alert swimlane passes each bar's severity with `ALERT_SEVERITY`, so info bars take
+the info tone). An outline entry is hatched. `TimeSeriesChart` takes optional `splitYTicks` and
+`formatYTicks`; `SyncedChart` passes `axisSplits` and `formatAxisTicks` (`chart-data.ts`), so y
+ticks fall on steps that are round in the display unit (`5.2 GiB`, `30 min`, `99.5 %`) and use the
+same unit rule (`displayScale`) as the cursor readout. The timeline view's lanes, overlay and swimlane stay in that view; they are not
 library patterns.
 
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable`, backed by
@@ -215,6 +221,21 @@ is deck's. The alerts triage table and catalog, the estate inventory, coverage a
 and the `/_ui` workbench use it.
 `focusable={false}` drops the scroll region's tab stop where nobody interacts (the kiosk engine
 tables).
+
+**TreeView `virtualize`.** The same opt-in on `TreeView`, for trees whose expanded branches can
+reach thousands of rows (the estate inventory). At a threshold of visible rows (300 by default,
+with the same hysteresis) the treeitems render flat, without `group` nesting, in a bounded scroll
+viewport; each carries `aria-level`, `aria-setsize`, `aria-posinset` and `aria-expanded` computed
+from the model, so the set is described correctly while most of it is not in the DOM. Rows are
+measured as they render. The focused row and the Tab stop stay rendered, and keyboard moves go
+through `useListNavigation`'s `virtual` option (the full row count and a `focus(index)` that renders
+the row first), so ↑/↓, Home/End, `*` (expand every sibling) and type-ahead reach rows that are not
+rendered and scroll them into view. Typing j or k while a type-ahead search is live extends it
+(`useListNavigation`'s `typeaheadActive`); otherwise they move. Switching layouts as the row count crosses the threshold keeps focus on the row
+that had it, and `*` opening rows above the focused one scrolls it back into view. Known
+limitations: the browser's find (Ctrl/Cmd-F) only finds rendered rows, printing shows only the
+rendered window, and the 70vh scroll region uses `overscroll-contain`, so on a phone a swipe that
+reaches its end does not scroll the page; swipe outside the tree to scroll the page.
 
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell

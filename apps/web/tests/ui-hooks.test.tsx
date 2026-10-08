@@ -273,6 +273,32 @@ describeUi("@/ui hooks", () => {
       expect(active()).toBe("bravo");
     });
 
+    it("leaves printable keys (j/k included) to a live type-ahead search, but still moves on arrows", () => {
+      let live = true;
+      render(<Fixture keys="arrows" scope="element" typeaheadActive={() => live} />);
+      act(() => screen.getByRole("link", { name: "alpha" }).focus());
+      expect(press("j")).toBe(false);
+      expect(press("k")).toBe(false);
+      expect(active()).toBe("alpha");
+      expect(press("ArrowDown")).toBe(true);
+      expect(active()).toBe("bravo");
+      live = false;
+      expect(press("j")).toBe(true);
+      expect(active()).toBe("charlie");
+    });
+
+    it("moves over a virtual list's full count with `virtual`, not just the rendered items", () => {
+      const focus = mock((_index: number) => {});
+      render(
+        <Fixture keys="arrows" scope="element" virtual={{ count: () => 1_000, activeIndex: () => 0, focus }} />,
+      );
+      act(() => screen.getByRole("link", { name: "alpha" }).focus());
+      expect(press("End")).toBe(true);
+      expect(focus).toHaveBeenLastCalledWith(999);
+      expect(press("ArrowDown")).toBe(true);
+      expect(focus).toHaveBeenLastCalledWith(1);
+    });
+
     it("activates with Space, and leaves g/G to the browser", () => {
       const onOpen = mock();
       render(<Fixture keys="arrows" scope="element" onOpen={onOpen} />);

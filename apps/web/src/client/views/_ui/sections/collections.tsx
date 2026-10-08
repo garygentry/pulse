@@ -218,6 +218,35 @@ function TreeDemo({ initialFilter = "", defaultExpanded }: { initialFilter?: str
   );
 }
 
+// 40 hosts × 12 services, every host open: 520 rows, past the virtualization threshold.
+interface HostNode {
+  id: string;
+  name: string;
+  children?: HostNode[];
+}
+const BIG_TREE: HostNode[] = Array.from({ length: 40 }, (_, h) => ({
+  id: `node-${h}`,
+  name: `node-${String(h).padStart(2, "0")}`,
+  children: Array.from({ length: 12 }, (_, s) => ({ id: `node-${h}/svc-${s}`, name: `service-${String(s).padStart(2, "0")}` })),
+}));
+const BIG_TREE_OPEN = BIG_TREE.map((n) => n.id);
+
+function VirtualTreeDemo() {
+  return (
+    <div className="flex w-72 flex-col">
+      <TreeView
+        aria-label="Hosts"
+        nodes={BIG_TREE}
+        getId={(n) => n.id}
+        getLabel={(n) => n.name}
+        getChildren={(n) => n.children}
+        defaultExpanded={BIG_TREE_OPEN}
+        virtualize
+      />
+    </div>
+  );
+}
+
 function SelectableList() {
   const [selected, setSelected] = useState("disk");
   const rows = [
@@ -348,6 +377,9 @@ function Demo() {
       </Specimen>
       <Specimen label="TreeView · filter with no matches">
         <TreeDemo initialFilter="zzz" />
+      </Specimen>
+      <Specimen label="TreeView · virtualize, 520 rows (a window rendered; End / type-ahead / * reach every row)">
+        <VirtualTreeDemo />
       </Specimen>
     </div>
   );

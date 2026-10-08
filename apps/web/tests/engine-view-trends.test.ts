@@ -29,6 +29,7 @@ import { StubChart, resetChartStub } from "./chart-stub.js";
 import { envelope, installHistoryStub, makeSeriesHistory } from "./timeline-fixtures.js";
 import type { StubRoute } from "./timeline-fixtures.js";
 import { act } from "./react-render.js";
+import { within } from "./rtl.js";
 
 isolateDomGlobals();
 
@@ -231,6 +232,42 @@ describeDom("engine view — EngineTrends (item 016)", (dom) => {
     expect(stub.calls.some((u) => u.includes("end="))).toBe(false);
     expect(maxInFlight).toBeLessThanOrEqual(4);
     expect(maxInFlight).toBeGreaterThan(0);
+  });
+
+  // --- #15: one visible caption per card ---------------------------------------------------------
+
+  test("#15: each trend figure is named by its h3 and described by its meta line, with no second visible caption", async () => {
+    const stub = installHistoryStub(routes());
+    cleanups.push(() => stub.restore());
+    const { container: c } = await mountTrends();
+    for (let i = 0; i < 4; i++) {
+      await settle();
+      await new Promise<void>((r) => setTimeout(r, 10));
+    }
+    await settle();
+
+    for (const id of ENGINE_TREND_QUERIES) {
+      const card = within(item(c, id));
+      const label = TREND_LABEL[id];
+      const heading = card.getByRole("heading", { level: 3, name: label.title });
+      const figure = card.getByRole("figure", { name: label.title });
+      expect(figure).toHaveAttribute("aria-labelledby", heading.id);
+      const meta = `${RANGE_LABEL[rangeOf(id)]} · ${label.unit} · Times in America/Chicago`;
+      expect(figure).toHaveAccessibleDescription(expect.stringContaining(meta));
+      expect(figure).toHaveAccessibleDescription(expect.stringContaining("resolution: "));
+      // Every description id resolves to an element with text (no empty detail node).
+      for (const ref of figure.getAttribute("aria-describedby")!.split(" ")) {
+        expect(c.ownerDocument.getElementById(ref)?.textContent?.trim()).toBeTruthy();
+      }
+      // The title, range and zone are printed once: no figcaption repeats them.
+      expect(figure.querySelector("figcaption")).toBeNull();
+      expect(card.getAllByText(label.title)).toHaveLength(1);
+      expect(card.getAllByText(/Times in America\/Chicago/)).toHaveLength(1);
+      // The plot's own name uses the same unit wording as the meta line (never the "count" kind).
+      // (The stubbed chart keeps the aria-label but not the real chart's role="img".)
+      const plot = figure.querySelector("[data-slot=time-series-chart]")!;
+      expect(plot.getAttribute("aria-label")).toBe(`${label.title}, ${rangeOf(id)}, ${label.unit}`);
+    }
   });
 
   // --- REQ-KIOSK-04 / CON-08 ---------------------------------------------------------------------

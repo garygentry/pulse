@@ -8,6 +8,10 @@
 // per severity) are overlaid to give the findings tab real rows under axe; live rows span every
 // health state so the grayscale suite scans more than one [data-status].
 //
+// `?estate=large` swaps the reference model for a generated one (LARGE_HOSTS hosts × LARGE_SERVICES
+// services, invented names cloned from the first reference host and service) so the inventory tree
+// crosses the TreeView virtualization threshold once its hosts are expanded.
+//
 // The route to mount comes from `?route=` on the fixture URL (default `/estate`) — serveDir only
 // serves index.html at `/`, so the fixture rewrites the location with replaceState BEFORE the router
 // reads it. The `<html>` theme stamp (`.dark` class) seeds store.theme before first render (as fixture.tsx does).
@@ -40,12 +44,35 @@ const root = document.getElementById("app");
 if (root === null) throw new Error("[estate-fixture] #app mount node missing");
 
 // Mount at the requested estate route before the router reads window.location.
-const route = new URLSearchParams(window.location.search).get("route") ?? "/estate";
+const fixtureParams = new URLSearchParams(window.location.search);
+const route = fixtureParams.get("route") ?? "/estate";
 window.history.replaceState(null, "", route);
 
 const stampedTheme = (document.documentElement.classList.contains("dark") ? "dark" : "light");
 
-const estate = referenceModel as unknown as WebEstateModelV2;
+const LARGE_HOSTS = 50;
+const LARGE_SERVICES = 20;
+
+/** The reference model, or with `?estate=large` a generated one of LARGE_HOSTS × LARGE_SERVICES. */
+function estateModel(): WebEstateModelV2 {
+  const reference = referenceModel as unknown as WebEstateModelV2;
+  if (fixtureParams.get("estate") !== "large") return reference;
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const [baseHost, baseService] = [reference.hosts[0]!, reference.services[0]!];
+  const hosts = Array.from({ length: LARGE_HOSTS }, (_, h) => {
+    const name = `rack-${pad(h)}`;
+    return { ...baseHost, name, drilldownId: `host:${name}` };
+  });
+  const services = hosts.flatMap((host) =>
+    Array.from({ length: LARGE_SERVICES }, (_, s) => {
+      const name = `svc-${pad(s)}`;
+      return { ...baseService, host: host.name, name, drilldownId: `svc:${host.name}/${name}` };
+    }),
+  );
+  return { ...reference, hosts, services };
+}
+
+const estate = estateModel();
 const coverage = referenceCoverage as unknown as WebCoverageArtifact;
 const findings: WebFindingsArtifact = {
   ...(referenceFindings as unknown as WebFindingsArtifact),
