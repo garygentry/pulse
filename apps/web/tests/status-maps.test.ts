@@ -6,7 +6,6 @@ import { describe, expect, test } from "bun:test";
 
 import type { ProposalState } from "@pulse/core/proposals";
 import type {
-  ActiveAlert,
   DeclaredScrapeComparison,
   HealthState,
   RuleState,
@@ -31,7 +30,6 @@ import {
   SEVERITY_STATUS,
   SWIM_ROW_STATUS,
   severityToStatus,
-  stateToStatus,
 } from "../src/client/status/target-status.js";
 import { PRESENTATION_ICON, componentPresentation, deadmanPresentation, toStatus } from "../src/client/views/engine/labels.js";
 import { makeComponent, makeEnginePayload } from "./engine-fixtures.js";
@@ -98,12 +96,10 @@ describe("status maps", () => {
     expect(SWIM_ROW_STATUS.info).toBe(severityToStatus("info"));
   });
 
-  test("alert severity and delivery state resolve totally", () => {
+  test("alert severity resolves totally (delivery state badges go through ALERT_STATE)", () => {
     expect(severityToStatus("critical")).toBe("critical");
     expect(severityToStatus("info")).toBe("unknown");
     expect(severityToStatus("toString")).toBe("unknown");
-    const states: readonly ActiveAlert["state"][] = ["firing", "silenced", "inhibited"];
-    expect(states.map((s) => stateToStatus(s, "warning"))).toEqual(["warning", "suppressed", "suppressed"]);
   });
 
   test("no view module defines its own domain → TargetStatus Record", async () => {
