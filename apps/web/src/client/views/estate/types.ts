@@ -16,7 +16,8 @@ import type { AppStore } from "../../store/index.js";
 export type EstateTabId = "inventory" | "coverage" | "findings";
 export const DEFAULT_TAB: EstateTabId = "inventory";
 
-const TAB_IDS: readonly EstateTabId[] = ["inventory", "coverage", "findings"];
+/** Every landing tab id, in display order. */
+export const TAB_IDS: readonly EstateTabId[] = ["inventory", "coverage", "findings"];
 
 /** The full landing query vocabulary. Read from store.route.value.query. */
 export interface EstateQuery {
