@@ -14,7 +14,7 @@ apps/web/src/client/
     primitives/   shadcn/ui source (Radix-based): Button, Dialog, Sheet, Sidebar, Tabs, Tooltip, …
     patterns/     composites: StatusBadge, DataTable, FilterBar, TreeView, PageHeader, CommandPalette, …
     hooks/        useListNavigation, useFacetFilters, useDocumentTitle, useNow, …
-    lib/          cn(), icons.ts (curated Lucide set), status.ts (tones), format.ts, filters.ts, tree.ts
+    lib/          cn(), icons.ts (curated Lucide set; icons-shell.ts the eager part), status.ts (tones), format.ts, filters.ts, tree.ts
     status/       pulse status maps: TARGET_STATUS, ALERT_SEVERITY, MUTATION_STATE
     viz/          pulse charts: Sparkline, StatusTimeline, Gauge, TimeSeriesChart (lazy uPlot)
     index.ts      the public barrel: code outside ui/ imports from "@/ui"
@@ -103,10 +103,29 @@ distinct with colour removed.
 
 ### Icons
 
-Icons are Lucide components, imported **by name** in `ui/lib/icons.ts` and nowhere else, and
-rendered with `<Icon name="…">`. Never use `lucide-react/dynamic` or a namespace import: either
-ships the whole set. To use a new icon, add its named import and an entry to `ICONS`. The build
-budget test checks that curated icons are bundled and a sample of non-curated ones is not.
+Icons are Lucide components, imported **by name** in `ui/lib/icons.ts` (or `ui/lib/icons-shell.ts`,
+below) and nowhere else, and rendered with `<Icon name="…">`. Never use `lucide-react/dynamic` or a
+namespace import: either ships the whole set. To use a new icon, add its named import and an entry
+to `ICONS`. The build budget test checks that curated icons are bundled and a sample of non-curated
+ones is not.
+
+**Shell icons eager, the rest lazy.** `ICONS` and `IconName` are the whole curated set, as before,
+but only the icons entry code can render before a view loads ship on the initial route:
+`ui/lib/icons-shell.ts` (`SHELL_ICONS`: nav, theme menu, health region, and the Callout, ErrorState
+and Button spinner icons). `ICONS` spreads them in. `<Icon>` resolves names through
+`ui/lib/icon-registry.ts`, which starts with the shell set and gains the full set when the
+`icons.ts` chunk loads; `ViewHost` loads that chunk alongside every view chunk and renders the view
+once both are in, so a view's first render has every icon. A name asked for before then renders an
+empty svg of the same size (no layout shift) and fills in when the chunk lands; once the full set is
+in, an unknown token renders the fallback circle as before. Importing `icons.ts` registers it, so
+tests (which import the `@/ui` barrel) resolve every icon synchronously.
+
+The trade-off: the ~5 KB gz icon chunk moved off the shell's critical path, not out of the first
+page load; every first view load fetches it in parallel with the view chunk. Per-view icon maps
+would shave that further but need the names each view renders, which are runtime strings (status
+maps, config tokens), so they were not worth a second registration contract. If you render a new
+icon from entry code, add it to `SHELL_ICONS`: the build budget test scans every initial-route
+module for icon tokens and fails on one that is not a shell icon.
 
 ## Pulse deltas from deck
 
@@ -128,7 +147,7 @@ a microtask so the StrictMode remount keeps the same instance and mount-once eff
 **Build.** There is no Vite. `scripts/build-client.ts` drives `Bun.build` with
 `bun-plugin-tailwind`, so the entry CSS is the one global Tailwind sheet. It defines
 `process.env.NODE_ENV` (React's production build) and `import.meta.env.DEV` (the library's dev
-warnings, which deck gets from Vite). Tailwind scans the source tree (automatic source detection, minus `@source not` exclusions in `styles/app.css`) plus the bundled modules for class names, so classes in a source file that never ships still reach the sheet. Never
+warnings, which deck gets from Vite). Tailwind scans the client source (`@source ".."` in `styles/app.css`, plus automatic detection from the build's working directory, minus `@source not` exclusions) and the bundled modules for class names, so classes in a source file that never ships still reach the sheet. The explicit `@source` matters: modules loaded through the build's barrel-import plugin (below) skip Tailwind's per-module scan, so without it a build started outside the repository root lost most utilities. Never
 supply module contents through a Bun `onLoad` in the client build, because the plugin skips those
 modules.
 
@@ -147,6 +166,21 @@ that only lazy views need into the entry chunk. The barrel tree-shakes because
 `apps/web/package.json` declares `"sideEffects": ["*.css"]`. One consequence: an effect-only
 `import "./x"` of a `.ts` file is dropped, so such a file must be added to that list. A build test
 fails if lazy-only library code reaches the initial route.
+
+**Barrel imports are rewritten at build time.** Bun.build tree-shakes a barrel, but it assigns
+modules to chunks by reachability: everything a barrel re-exports counts as used by every chunk
+that imports it. Through `@/ui`, every library module was reachable from every lazy view, so they
+all shared one chunk and each view's first load carried the others' modules (the overview's carried
+the data table, TanStack Virtual and Radix Select, ~46 KB gz it never ran). The `lucide-react`
+barrel did the same to icons: every curated icon rode the initial route. So `build-client.ts`
+loads each client module that imports one of these barrels through a plugin that rewrites
+`import { A, B } from "@/ui"` (outside `ui/`) and `import { X } from "lucide-react"` (anywhere)
+into imports from the modules that own each name. Source code is unchanged: feature code still
+imports from `@/ui`. The plugin drops `type` specifiers and fails the build on a name the barrel
+does not export or on any other form of barrel import (namespace, re-export, dynamic), so nothing
+falls back to the barrel. The cost is more, smaller chunks, which compress less well as separate
+files: total JS rose ~15 KB gz while each view's first load fell 6–45 KB gz. The build budget test
+holds a first-load ceiling per view.
 
 **Scoped Radix.** Import Radix from the scoped `@radix-ui/react-*` packages, never the
 `radix-ui` umbrella. Through the umbrella, `Bun.build` puts every Radix package used anywhere onto
@@ -232,9 +266,9 @@ from a production build.
 - **Visual review:** there are no committed visual baselines. Screenshots of a changed view at
   375, 768 and 1280 px in light and dark (and wallboard for overview and kiosk) are captured to the
   git-ignored `screenshots/` directory and reviewed locally.
-- **Budgets:** `tests/build-budget.test.ts` holds the initial-route JS, total JS and total CSS
-  ceilings, uPlot's absence from the initial route, the curated-icon checks, barrel tree-shaking
-  and the workbench's absence. `tests/client-build.test.ts` holds the initial-route JS + entry
+- **Budgets:** `tests/build-budget.test.ts` holds the initial-route JS, total JS, total CSS and
+  per-view first-load ceilings, uPlot's absence from the initial route, the curated-icon and
+  shell-icon checks, barrel tree-shaking and the workbench's absence. `tests/client-build.test.ts` holds the initial-route JS + entry
   CSS ceiling. Raising a ceiling is a deliberate, reviewed change.
 
 ## Guardrails

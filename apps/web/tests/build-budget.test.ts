@@ -16,6 +16,11 @@
 //   • "uplot" is ABSENT from the initial-route JS (REQ-PERF-3) — uPlot must never ship on the initial
 //     route. The complementary "uPlot present in a lazy chunk" assertion lives with the chart's
 //     consumer, engine-health-timeline (timeline-view-chunk.test.ts).
+//   • each view's first load (initial route + view chunk closure + icon chunk) gz ≤ its ceiling, and
+//     the overview's first load carries no data table (the `@/ui` barrel no longer merges views'
+//     library code into one chunk; build-client.ts "Barrel imports")
+//   • only the shell's icons ride the initial route, and every icon token an initial-route module
+//     renders is one of them (ui/lib/icons-shell.ts)
 //   • only imported (curated) icons land in the bundle (REQ-UI-04) — the curated lucide icons
 //     appear by name; a representative sample of NON-curated lucide icons is absent (the whole barrel
 //     is tree-shaken).
@@ -41,7 +46,9 @@ import { basename, join, resolve } from "node:path";
 
 import type { ClientManifest } from "../src/server/assets.js";
 import type { ClientBuildResult } from "../scripts/build-client.js";
-import { initialRouteJsFiles } from "./initial-route.js";
+import { SHELL_ICONS } from "../src/client/ui/lib/icons-shell.js";
+import { ICONS } from "../src/client/ui/lib/icons.js";
+import { initialRouteJsFiles, staticClosure } from "./initial-route.js";
 
 /**
  * Initial-route JS ceiling (gz): the entry plus every chunk it imports statically, so the framework
@@ -55,7 +62,10 @@ import { initialRouteJsFiles } from "./initial-route.js";
  * mutations UI measured 164,205 B (lazy-only Radix rode the entry through the `radix-ui` umbrella);
  * with scoped `@radix-ui/react-*` imports 159,717 B. Measured + ~10% is above 169 KB, so the ceiling
  * holds. Final (every view on the library, legacy CSS deleted): measured 157,452 B; 169 KB is
- * measured + ~10%, so it stays the final ceiling.
+ * measured + ~10%, so it stays the final ceiling. Icons off the initial route (only the shell's 19
+ * of the curated set's 76 ship eagerly, −4.3 KB) and barrel imports rewritten per module (more,
+ * smaller initial-route chunks, +4.6 KB of per-file gzip overhead): measured 158,278 B; the ceiling
+ * holds.
  */
 export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
 /**
@@ -73,7 +83,11 @@ export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
  * SegmentedControl, Kbd, the alert-severity map and the library StatusTimeline, all lazy; no module
  * emitted twice) measured 338,220 B; re-baselined to measured + ~10%. The initial route is unchanged.
  * Final (every view on the library, legacy CSS deleted): measured 350,747 B. Measured + ~10% would
- * raise it, so the ceiling stays at 364 KB (+6%).
+ * raise it, so the ceiling stays at 364 KB (+6%). Barrel imports rewritten per module (each view
+ * chunk reaches only the library code it imports; icons split into a shell set and a lazy chunk):
+ * measured 367,563 B. The same code in more, smaller chunks compresses less well file by file
+ * (+15 KB gz, raw +12 KB), while each view's first load fell 6–45 KB gz (per-view ceilings below).
+ * The ceiling holds.
  */
 export const TOTAL_JS_BUDGET_BYTES = 364 * 1024;
 /** Total CSS ceiling (gz), all entry + chunk .css. Baseline ≈ 14 KB; charter starting ceiling.
@@ -119,8 +133,9 @@ function allCss(): string[] {
 
 /** Run build-client.ts as a subprocess (minified, i.e. production, unless `minify` is false) and
  *  return its manifest. */
-function buildInto(dir: string, entry?: string, minify = true): ClientManifest {
+function buildInto(dir: string, entry?: string, minify = true, cwd?: string): ClientManifest {
   const proc = Bun.spawnSync({
+    ...(cwd ? { cwd } : {}),
     cmd: [
       "bun",
       BUILD_CLIENT,
@@ -359,6 +374,138 @@ describe("the dev-only /_ui workbench never ships in a production build", () => 
     const carriers = devJs().filter((p) => readDev(p).includes(WORKBENCH_MARKER));
     expect(carriers.length).toBeGreaterThan(0);
     for (const p of carriers) expect(initial.has(basename(p)), `${p} is on the initial route`).toBe(false);
+  });
+});
+
+/**
+ * Per-view first load ceilings (gz): what a first page load on each view downloads — the initial
+ * route, the view's chunk with every chunk it imports statically, and the lazy icon chunk ViewHost
+ * loads with it. Measured after feature code's `@/ui` imports were pointed at the owning modules at
+ * build time (build-client.ts "Barrel imports"); before, every view shared one lazy chunk of library
+ * code and its first load carried ~12–48 KB gz of modules only other views use. Ceilings at
+ * measured + ~10%.
+ */
+export const VIEW_FIRST_LOAD_BUDGET_BYTES = {
+  overview: 209 * 1024, // measured 194,918 B (was 237,524 B through the barrel)
+  alerts: 245 * 1024, // measured 227,974 B (was 233,818 B)
+  estate: 245 * 1024, // measured 228,050 B (was 235,102 B)
+  engine: 242 * 1024, // measured 225,362 B (was 245,532 B)
+  timeline: 223 * 1024, // measured 207,611 B (was 251,882 B)
+} as const;
+
+/** Sources (repo-relative from `apps/web/`) a JS file bundles, from its sourcemap. */
+function bundledSources(dir: string, file: string): string[] {
+  const { sources } = JSON.parse(readFileSync(join(dir, `${basename(file)}.map`), "utf8")) as { sources: string[] };
+  return sources;
+}
+
+/** The emitted chunk that bundles a source module (matched by path suffix). */
+function chunkWith(suffix: string): string {
+  const hit = allJs().find((p) => bundledSources(outdir, p).some((s) => s.endsWith(suffix)));
+  if (!hit) throw new Error(`no chunk bundles ${suffix}`);
+  return basename(hit);
+}
+
+/** Every JS file a first page load on view `id` downloads. */
+function viewFirstLoadFiles(id: string): string[] {
+  const roots = [...manifest.entries.js, chunkWith(`views/${id}/view.tsx`), chunkWith("ui/lib/icons.ts")];
+  return staticClosure(roots, outdir);
+}
+
+describe("per-view first load", () => {
+  for (const [id, budget] of Object.entries(VIEW_FIRST_LOAD_BUDGET_BYTES)) {
+    test(`${id}: first load gz ≤ ${budget}`, () => {
+      const files = viewFirstLoadFiles(id);
+      const total = files.reduce((acc, p) => acc + gzSize(p), 0);
+      expect(total, `${id} first load gz = ${total} over ${files.length} files`).toBeLessThanOrEqual(budget);
+    });
+  }
+
+  // The regression the split fixed: through the barrel, the overview's first load carried the data
+  // table (TanStack Table and Virtual), which only the alerts, estate and engine views render.
+  test("the overview's first load does not carry the data table", () => {
+    const sources = viewFirstLoadFiles("overview").flatMap((f) => bundledSources(outdir, f));
+    expect(sources.some((s) => s.endsWith("views/overview/view.tsx"))).toBe(true); // not vacuous
+    expect(sources.filter((s) => /ui\/patterns\/data-table\.tsx$|@tanstack\//.test(s))).toEqual([]);
+    const alerts = viewFirstLoadFiles("alerts").flatMap((f) => bundledSources(outdir, f));
+    expect(alerts.some((s) => s.endsWith("ui/patterns/data-table.tsx"))).toBe(true); // detection works
+  });
+});
+
+describe("the stylesheet does not depend on the build's working directory", () => {
+  // Modules that import a barrel are loaded through the build's rewrite plugin, and Tailwind does not
+  // scan a plugin-loaded module as it is bundled; styles/app.css names the client source with
+  // `@source` so the sheet still has every class. Without it, a build started from another directory
+  // (the browser suites' dev server) dropped most utilities, `md:block` on the sidebar among them.
+  let otherDir: string;
+  let other: ClientManifest;
+  beforeAll(() => {
+    otherDir = mkdtempSync(join(tmpdir(), "pulse-build-budget-cwd-"));
+    other = buildInto(otherDir, undefined, true, resolve(import.meta.dir, "fixtures"));
+  }, BUILD_HOOK_TIMEOUT_MS);
+  afterAll(() => {
+    if (otherDir) rmSync(otherDir, { recursive: true, force: true });
+  });
+
+  // Automatic detection still adds the odd candidate from files under the working directory (a
+  // test's class string), so the sheets are compared by size, not byte for byte; the regression
+  // this guards against lost ~90% of the rules.
+  test("a build started from another directory emits the client's classes", () => {
+    const sheet = (dir: string, m: ClientManifest): string =>
+      m.entries.css.map((p) => readFileSync(join(dir, basename(p)), "utf8")).join("\n");
+    const rules = (css: string): number => css.split("}").length;
+    const here = sheet(outdir, manifest);
+    const there = sheet(otherDir, other);
+    expect(here).toContain("md\\:block"); // detection is not vacuous
+    expect(there).toContain("md\\:block");
+    expect(rules(there)).toBeGreaterThanOrEqual(Math.floor(rules(here) * 0.98));
+  });
+});
+
+describe("only the shell's icons ride the initial route", () => {
+  /** Lucide icon modules (by file name) bundled into a set of files. */
+  const lucideIcons = (files: readonly string[]): Set<string> =>
+    new Set(
+      files
+        .flatMap((f) => bundledSources(outdir, f))
+        .map((s) => /lucide-react\/dist\/esm\/icons\/([\w-]+)\.mjs$/.exec(s)?.[1])
+        .filter((name): name is string => name !== undefined),
+    );
+
+  test("curated icons the shell does not use load lazily", () => {
+    const initial = lucideIcons(initialRouteJsFiles(manifest, outdir));
+    const lazy = lucideIcons([chunkWith("ui/lib/icons.ts")]);
+    // Shell icons are on the initial route; the rest of the curated set is in the icon chunk.
+    for (const name of ["server", "wifi-off", "triangle-alert"]) expect(initial.has(name), name).toBe(true);
+    for (const name of ["bell", "trending-up", "keyboard", "inbox", "zap"]) {
+      expect(initial.has(name), `${name} is on the initial route`).toBe(false);
+      expect(lazy.has(name), `${name} is not in the icon chunk`).toBe(true);
+    }
+    // Only the shell's icons, plus the few the shell's primitives import directly (dropdown and
+    // sidebar chevrons, check, panel), may ride the initial route.
+    expect(initial.size).toBeLessThanOrEqual(new Set(Object.values(SHELL_ICONS)).size + 4);
+  });
+
+  // Icon tokens in an initial-route module must resolve before the icon chunk loads, or the shell
+  // paints an empty placeholder until it does. A token is a curated name in an icon position: an
+  // object value (`icon: "server"`, a tone→icon map), a `name=`/`icon=` prop, or a `?`/`??` branch.
+  test("every icon token in an initial-route module is a shell icon", () => {
+    const TOKEN = /(?:(?:\bname|\bicon)\s*=\s*\{?\s*|[:?]\s*)["']([^"'\n]{1,32})["']/g;
+    const missing: string[] = [];
+    let scanned = 0;
+    for (const file of initialRouteJsFiles(manifest, outdir)) {
+      const map = JSON.parse(readFileSync(join(outdir, `${file}.map`), "utf8")) as { sources: string[]; sourcesContent?: string[] };
+      map.sources.forEach((src, i) => {
+        if (!src.includes("src/client/") || /ui\/lib\/icons(-shell)?\.ts$/.test(src)) return;
+        scanned += 1;
+        const code = (map.sourcesContent?.[i] ?? "").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+        for (const [, token] of code.matchAll(TOKEN)) {
+          if (Object.hasOwn(ICONS, token!) && !Object.hasOwn(SHELL_ICONS, token!)) missing.push(`${src.replace(/.*src\/client\//, "")}: ${token}`);
+        }
+      });
+    }
+    expect(scanned).toBeGreaterThan(20); // sourcesContent is present: the scan is not vacuous
+    expect(missing, "add these to ui/lib/icons-shell.ts").toEqual([]);
   });
 });
 

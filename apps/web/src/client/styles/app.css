@@ -13,6 +13,11 @@
 @import "./theme.css";
 @import "./theme-pulse.css";
 
+/* Scan the client source explicitly rather than relying on automatic detection, which starts at the
+ * build's working directory: the build loads modules that import a barrel through a plugin
+ * (scripts/build-client.ts "Barrel imports"), and Tailwind does not scan those modules as they are
+ * bundled, so the sheet must not depend on where the build was started. */
+@source "..";
 /* The dev-only /_ui workbench never ships; keep its classes out of the production sheet. */
 @source not "../views/_ui";
 

@@ -4,6 +4,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import { FALLBACK_ICON, Icon, ICONS, isIconName } from "@/ui";
+import { createIconRegistry, iconRegistry } from "@/ui/lib/icon-registry";
+import { SHELL_ICONS } from "@/ui/lib/icons-shell";
 
 import { cleanup, describeUi, render } from "./rtl.js";
 
@@ -65,6 +67,37 @@ describe("icon registry", () => {
   it("does not treat inherited object keys as icon names", () => {
     expect(isIconName("toString")).toBe(false);
     expect(isIconName("constructor")).toBe(false);
+  });
+});
+
+describe("icon chunks (shell set eager, the rest lazy)", () => {
+  it("the shell set is part of the curated set, with the same components", () => {
+    for (const [name, component] of Object.entries(SHELL_ICONS)) {
+      expect(isIconName(name), name).toBe(true);
+      expect(ICONS[name as keyof typeof ICONS], name).toBe(component);
+    }
+    expect(Object.keys(SHELL_ICONS).length).toBeLessThan(Object.keys(ICONS).length / 2);
+  });
+
+  it("importing the curated set registers it with <Icon>'s registry", () => {
+    expect(iconRegistry.lookup("bell")).toBe(ICONS.bell);
+    expect(iconRegistry.lookup("lantern")).toBe("unknown");
+  });
+
+  it("a registry resolves its seed at once and the rest after the full set registers", () => {
+    const registry = createIconRegistry({ server: ICONS.server });
+    const notified: number[] = [];
+    const unsubscribe = registry.subscribe(() => notified.push(registry.version()));
+    expect(registry.lookup("server")).toBe(ICONS.server);
+    expect(registry.lookup("bell")).toBe("pending");
+    expect(registry.lookup("lantern")).toBe("pending");
+    registry.registerFullSet(ICONS);
+    expect(registry.lookup("bell")).toBe(ICONS.bell);
+    expect(registry.lookup("lantern")).toBe("unknown");
+    expect(registry.lookup("toString")).toBe("unknown");
+    registry.registerFullSet(ICONS); // idempotent: no second notification
+    expect(notified).toEqual([1]);
+    unsubscribe();
   });
 });
 

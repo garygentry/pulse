@@ -258,6 +258,172 @@ function chunkTagPlugin(tagged: ReadonlyMap<string, TaggedEntry>): BunPlugin {
   };
 }
 
+// ─── Barrel imports ──────────────────────────────────────────────────────────────────────────────
+//
+// Bun.build tree-shakes a barrel whose package declares `"sideEffects"`, but it assigns modules to
+// chunks by reachability: every module a barrel re-exports counts as used by every chunk that
+// imports the barrel. Through the `@/ui` barrel, all library modules shared one lazy chunk, so a
+// view's first load carried the data table, Radix Select and the rest whether it used them or not
+// (measured: ~46 KB gz unused on the overview's first load). Through the `lucide-react` barrel,
+// every curated icon rode the initial route with the shell's handful. barrelImportPlugin rewrites
+// named imports of these barrels into imports of the modules that own each name, at build time, so
+// the source keeps one import site per barrel and each chunk reaches only what it imports.
+
+/** Where a barrel export lives: the module to import it from, and its name there. */
+export interface BarrelOwner {
+  module: string;
+  imported: string;
+}
+
+/** A barrel the build rewrites, and which client modules it rewrites it in. */
+interface RewrittenBarrel {
+  specifier: string;
+  owners: ReadonlyMap<string, BarrelOwner>;
+  /** Whether a module (absolute path) gets this barrel's imports rewritten. */
+  appliesTo: (file: string) => boolean;
+}
+
+const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+
+/** Resolve a barrel-relative module (`./patterns/icon`) to its file. */
+function barrelModuleFile(dir: string, rel: string): string {
+  for (const ext of ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+    const file = resolve(dir, `${rel}${ext}`);
+    if (existsSync(file) && statSync(file).isFile()) return file;
+  }
+  throw new Error(`barrel: cannot resolve ${rel} from ${dir}`);
+}
+
+/**
+ * Map every value a barrel file exports to the module that owns it. Understands the two re-export
+ * forms barrels use, `export * from "./x"` (the module's own value exports, read with Bun's
+ * scanner) and `export { a, b as c, type T } from "./x"`; type-only exports are skipped (they are
+ * imported with `type`, which the bundler erases). `moduleSpecifier` names the owning module in
+ * the rewritten import.
+ */
+export function barrelOwners(
+  barrelFile: string,
+  moduleSpecifier: (rel: string, file: string) => string,
+): Map<string, BarrelOwner> {
+  const scanner = new Bun.Transpiler({ loader: "tsx" });
+  const dir = dirname(barrelFile);
+  const source = readFileSync(barrelFile, "utf8").replace(COMMENTS, "");
+  const owners = new Map<string, BarrelOwner>();
+  for (const [, rel] of source.matchAll(/\bexport\s+\*\s+from\s+["'](\.[^"']+)["']/g)) {
+    const file = barrelModuleFile(dir, rel!);
+    for (const name of scanner.scan(readFileSync(file, "utf8")).exports) {
+      owners.set(name, { module: moduleSpecifier(rel!, file), imported: name });
+    }
+  }
+  for (const [, typeOnly, names, rel] of source.matchAll(/\bexport\s+(type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+    if (typeOnly || !rel!.startsWith(".")) continue;
+    const file = barrelModuleFile(dir, rel!);
+    for (const raw of names!.split(",")) {
+      const spec = raw.trim();
+      if (spec === "" || spec.startsWith("type ")) continue;
+      const [imported, exported = imported] = spec.split(/\s+as\s+/).map((s) => s.trim());
+      owners.set(exported!, { module: moduleSpecifier(rel!, file), imported: imported! });
+    }
+  }
+  return owners;
+}
+
+/**
+ * Rewrite a module's `import { … } from "<specifier>"` statements into imports from the modules
+ * that own each name, keeping the line count (sourcemaps stay aligned). `type` specifiers and
+ * `import type` statements are dropped. Throws on a value the barrel does not export, and on any
+ * other form of reference to the barrel (namespace, default, side-effect, re-export, dynamic), so
+ * nothing falls back to the barrel silently.
+ */
+export function rewriteBarrelImports(
+  source: string,
+  specifier: string,
+  owners: ReadonlyMap<string, BarrelOwner>,
+  file: string,
+): string {
+  const quoted = `["']${escapeRegExp(specifier)}["']`;
+  const named = new RegExp(`\\bimport\\s+(type\\s+)?\\{([^}]*)\\}\\s*from\\s*${quoted}\\s*;?`, "g");
+  const rewritten = source.replace(named, (statement, typeOnly: string | undefined, names: string) => {
+    const pad = "\n".repeat(statement.split("\n").length - 1);
+    if (typeOnly) return pad;
+    const byModule = new Map<string, string[]>();
+    for (const raw of names.replace(COMMENTS, "").split(",")) {
+      const spec = raw.trim();
+      if (spec === "" || spec.startsWith("type ")) continue;
+      const [name, local = name] = spec.split(/\s+as\s+/).map((s) => s.trim());
+      const owner = owners.get(name!);
+      if (!owner) throw new Error(`${file}: "${name}" is not a value export of "${specifier}"`);
+      const binding = owner.imported === local ? local! : `${owner.imported} as ${local}`;
+      byModule.set(owner.module, [...(byModule.get(owner.module) ?? []), binding]);
+    }
+    const imports = [...byModule].map(([module, bindings]) => `import { ${bindings.join(", ")} } from ${JSON.stringify(module)};`);
+    return `${imports.join(" ")}${pad}`;
+  });
+  if (new RegExp(`(?:\\bfrom|\\bimport)\\s*\\(?\\s*${quoted}`).test(rewritten.replace(COMMENTS, ""))) {
+    throw new Error(`${file}: only named imports (import { … } from "${specifier}") of this barrel are supported`);
+  }
+  return rewritten;
+}
+
+/** The barrels the client build rewrites: `@/ui` in feature code, `lucide-react` everywhere. */
+function rewrittenBarrels(clientRoot: string): RewrittenBarrel[] {
+  const barrels: RewrittenBarrel[] = [];
+  const uiRoot = resolve(clientRoot, "ui");
+  const uiIndex = resolve(uiRoot, "index.ts");
+  if (existsSync(uiIndex)) {
+    barrels.push({
+      specifier: "@/ui",
+      owners: barrelOwners(uiIndex, (rel) => `@/ui/${rel.replace(/^\.\//, "")}`),
+      appliesTo: (file) => !file.startsWith(uiRoot + sep),
+    });
+  }
+  // The ESM barrel the browser build bundles (`module`); Bun.resolveSync picks the CommonJS `main`.
+  let lucideIndex: string | null = null;
+  try {
+    const pkgJson = Bun.resolveSync("lucide-react/package.json", clientRoot);
+    const pkg = JSON.parse(readFileSync(pkgJson, "utf8")) as { module?: string };
+    if (pkg.module) lucideIndex = resolve(dirname(pkgJson), pkg.module);
+  } catch {
+    // Not resolvable from this entry.
+  }
+  if (lucideIndex !== null) {
+    barrels.push({ specifier: "lucide-react", owners: barrelOwners(lucideIndex, (_rel, file) => file), appliesTo: () => true });
+  }
+  return barrels;
+}
+
+/** Load the client modules that import a rewritten barrel with those imports rewritten (see above).
+ *  Tailwind skips its candidate scan for a module an onLoad supplies; its source-tree detection
+ *  still sees these files. */
+function barrelImportPlugin(clientRoot: string): BunPlugin {
+  return {
+    name: "pulse-barrel-imports",
+    setup(build) {
+      const barrels = rewrittenBarrels(clientRoot);
+      const mentions = barrels.map((b) => new RegExp(`["']${escapeRegExp(b.specifier)}["']`));
+      const importers: string[] = [];
+      for (const rel of new Bun.Glob("**/*.{ts,tsx}").scanSync(clientRoot)) {
+        const file = resolve(clientRoot, rel);
+        try {
+          const text = readFileSync(file, "utf8");
+          if (barrels.some((b, i) => b.appliesTo(file) && mentions[i]!.test(text))) importers.push(file);
+        } catch {
+          // Unreadable: Bun.build reports it itself.
+        }
+      }
+      if (importers.length === 0) return;
+      const filter = new RegExp(`^(?:${importers.map(escapeRegExp).join("|")})$`);
+      build.onLoad({ filter }, (args) => {
+        let contents = readFileSync(args.path, "utf8");
+        for (const barrel of barrels) {
+          if (barrel.appliesTo(args.path)) contents = rewriteBarrelImports(contents, barrel.specifier, barrel.owners, args.path);
+        }
+        return { contents, loader: args.path.endsWith(".tsx") ? "tsx" : "ts" };
+      });
+    },
+  };
+}
+
 /** The top-level rules and statements of a stylesheet, comments removed and whitespace collapsed. */
 function topLevelRules(css: string): string[] {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
@@ -577,7 +743,9 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
     jsx: { development: !opts.minify },
     // Tailwind v4 compiles every stylesheet that imports it (styles/app.css), scanning the source
     // tree (automatic detection, minus `@source not`) plus the bundled modules for candidate classes.
-    plugins: [tailwind, chunkTagPlugin(tagged)],
+    // barrelImportPlugin points `@/ui` and `lucide-react` imports at the owning modules, so each
+    // chunk reaches only what it imports (see "Barrel imports").
+    plugins: [tailwind, chunkTagPlugin(tagged), barrelImportPlugin(clientRoot)],
     // Fonts ship as hashed files next to the bundle (same-origin, cacheable), never inlined into
     // the entry stylesheet as data: URLs.
     loader: { ".woff2": "file", ".woff": "file" },
