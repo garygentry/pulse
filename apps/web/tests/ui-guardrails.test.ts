@@ -232,7 +232,7 @@ const STYLE_ALLOWLIST: Readonly<Record<string, string>> = {
   "src/client/ui/patterns/code-block.tsx": "maxHeight prop (dynamic geometry)",
   "src/client/ui/patterns/log-output.tsx": "maxHeight prop (dynamic geometry)",
   "src/client/ui/patterns/meter.tsx": "fill width from the value (dynamic geometry)",
-  "src/client/ui/patterns/tree-view.tsx": "--tree-depth CSS var per row (indentation geometry)",
+  "src/client/ui/patterns/tree-view.tsx": "--tree-depth CSS var per row (indentation geometry); virtualized spacer heights",
   "src/client/ui/patterns/data-table.tsx": "virtualized viewport height, spacer rows and row heights",
   "src/client/ui/viz/time-series-chart.tsx": "loading fallback height (chart geometry)",
   "src/client/ui/viz/uplot-chart.tsx": "chart container height (chart geometry)",

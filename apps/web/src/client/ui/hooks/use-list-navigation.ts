@@ -39,6 +39,17 @@ export interface UseListNavigationOptions {
   onExpand?: (item: HTMLElement, index: number) => void;
   onCollapse?: (item: HTMLElement, index: number) => void;
   onToggle?: (item: HTMLElement, index: number) => void;
+  /**
+   * A virtualized list renders only some of its items, so moves (↑/↓, Home/End, …) are worked out
+   * over the whole list instead of `getItems()`: `count()` is the number of items, `activeIndex()`
+   * the focused one's index among them (-1 for none), and `focus(index)` renders that item if it
+   * must and focuses it. The other intents still act on the focused element in `getItems()`.
+   */
+  virtual?: {
+    count: () => number;
+    activeIndex: () => number;
+    focus: (index: number) => void;
+  };
   /** Turn the listener off without unmounting. Default `true`. */
   enabled?: boolean;
 }
@@ -167,6 +178,13 @@ function apply(
     default: {
       const raw = opts.grid?.columns ?? 1;
       const columns = typeof raw === "function" ? raw() : raw;
+      if (opts.virtual !== undefined) {
+        const from = opts.virtual.activeIndex();
+        const to = nextListIndex(from, intent, opts.virtual.count(), columns);
+        if (to < 0) return false;
+        if (to !== from) opts.virtual.focus(to);
+        return true;
+      }
       const next = nextListIndex(index, intent, items.length, columns);
       const item = next >= 0 ? items[next] : undefined;
       if (item === undefined) return false;

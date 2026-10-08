@@ -158,7 +158,13 @@ export {
 export { LinkTile, type LinkTileProps } from "./patterns/link-tile";
 export { CardGrid, type CardGridProps } from "./patterns/card-grid";
 export { columnsFromOffsets } from "./lib/grid";
-export { TreeView, type TreeNodeState, type TreeViewProps } from "./patterns/tree-view";
+export {
+  TREE_VIEW_VIRTUALIZE_DEFAULTS,
+  TreeView,
+  type TreeNodeState,
+  type TreeViewProps,
+  type TreeViewVirtualizeOptions,
+} from "./patterns/tree-view";
 export {
   ancestorIds,
   filterTreeNodes,

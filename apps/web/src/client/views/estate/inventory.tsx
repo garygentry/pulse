@@ -204,6 +204,13 @@ interface RowContext {
 }
 
 const META = "flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1";
+/**
+ * Host and service meta. Below a wide tree (the `@container` on the tree region) it takes a line of
+ * its own under the label, aligned with it (past the chevron and its gap), wrapping there, instead
+ * of splitting the row with a truncated label into a very tall row. In a wide tree it sits beside the
+ * label at its natural width (`basis-auto`), so its badges stay on one line.
+ */
+const ENTITY_META = `${META} basis-full justify-start ps-5.5 @4xl:basis-auto @4xl:justify-end @4xl:ps-0`;
 
 /**
  * A row's trailing content. Plain text and decorative badges only (tree rows hold no interactive
@@ -221,7 +228,7 @@ function renderRowMeta(node: InventoryNode, ctx: RowContext): ReactNode {
   if (node.kind === "host") {
     const host = node.host;
     return (
-      <span data-testid="estate-host-row" data-host={host.name} className={META}>
+      <span data-testid="estate-host-row" data-host={host.name} className={ENTITY_META}>
         <span className="text-xs text-muted-foreground">{CLASS_LABEL.get(host.collectionClass) ?? host.collectionClass}</span>
         <CoverageBadge coverage={classifyIn(ctx.coverageIndex, "host", host.name)} staleness={ctx.coverageStaleness} />
         <LiveBadge entity={host} liveById={ctx.liveById} />
@@ -232,7 +239,7 @@ function renderRowMeta(node: InventoryNode, ctx: RowContext): ReactNode {
   }
   const service = node.service;
   return (
-    <span data-testid="estate-service-row" data-host={service.host} data-service={service.name} className={META}>
+    <span data-testid="estate-service-row" data-host={service.host} data-service={service.name} className={ENTITY_META}>
       <Badge variant="outline">{service.kind}</Badge>
       <CoverageBadge
         coverage={classifyIn(ctx.coverageIndex, "service", `${service.host}/${service.name}`)}
@@ -463,7 +470,7 @@ export function Inventory(props: InventoryProps): ReactElement {
         ) : (
           <div
             data-region="estate-tree"
-            className="flex flex-col gap-2"
+            className="@container flex flex-col gap-2"
             onClickCapture={(e) => {
               const target = e.target as Element;
               const chevron = target.closest?.("[data-tree-row]")?.firstElementChild ?? null;
@@ -486,6 +493,7 @@ export function Inventory(props: InventoryProps): ReactElement {
                 onSelect={onSelect}
                 renderIcon={renderRowIcon}
                 renderMeta={(node) => renderMeta(node)}
+                virtualize
               />
             ) : null}
             {tree.errors.length > 0 ? (
