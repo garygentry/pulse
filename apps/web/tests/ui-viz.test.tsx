@@ -414,5 +414,18 @@ describeUi("ui/viz render", () => {
       expect(yAxisSize(["10,000,000,000"])).toBeGreaterThan(50);
       expect(yAxisSize(["1,000,000"])).toBeLessThan(yAxisSize(["100,000,000,000"]));
     });
+
+    it("uses formatYTicks for the y tick labels when given, uPlot's default otherwise", async () => {
+      const { buildOptions } = await loadImpl();
+      const colors = { axis: "a", grid: "g", text: "t", strokes: ["s"] };
+      const base = { timestamps: [1], series: [{ label: "x", data: [1] }] };
+      expect(buildOptions(base, 500, colors).axes![1]!.values).toBeUndefined();
+      const formatYTicks = (splits: readonly number[]) => splits.map((v) => `${v} u`);
+      const values = buildOptions({ ...base, formatYTicks }, 500, colors).axes![1]!.values as (
+        self: unknown,
+        splits: number[],
+      ) => string[];
+      expect(values(null, [0, 5])).toEqual(["0 u", "5 u"]);
+    });
   });
 });

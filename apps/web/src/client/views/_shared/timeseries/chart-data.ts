@@ -379,3 +379,107 @@ export function formatChartValue(v: number, unit: ClientQueryMeta["unit"]): stri
     default: return MAX_2.format(v);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Y-axis tick labels
+// ---------------------------------------------------------------------------
+
+/** One axis scale: tick values are divided by `div` and printed with `suffix`. */
+interface AxisScale {
+  readonly div: number;
+  readonly suffix: string;
+}
+
+/** Decimal magnitude suffixes for counts and plain values, largest first (same letters as COMPACT). */
+const COUNT_SCALES: readonly AxisScale[] = [
+  { div: 1e12, suffix: "T" },
+  { div: 1e9, suffix: "B" },
+  { div: 1e6, suffix: "M" },
+  { div: 1e3, suffix: "K" },
+];
+
+/** Most decimals an axis label gets before it switches to scientific notation. */
+const AXIS_MAX_DECIMALS = 6;
+
+/** The time unit for a span in seconds; same thresholds as formatSeconds, plus µs below 1 ms. */
+function secondsScale(maxAbs: number): AxisScale {
+  if (maxAbs === 0) return { div: 1, suffix: " s" };
+  if (maxAbs < 1e-3) return { div: 1e-6, suffix: " µs" };
+  if (maxAbs < 1) return { div: 1e-3, suffix: " ms" };
+  if (maxAbs < 120) return { div: 1, suffix: " s" };
+  if (maxAbs < 7200) return { div: 60, suffix: " min" };
+  return { div: 3600, suffix: " h" };
+}
+
+/** The scale every tick of one axis shares, chosen from the largest magnitude on the axis. */
+function axisScale(maxAbs: number, unit: ClientQueryMeta["unit"]): AxisScale {
+  switch (unit) {
+    case "percent":
+      return { div: 1, suffix: " %" };
+    case "bytes": {
+      let u = 0;
+      while (u < BYTE_UNITS.length - 1 && maxAbs >= 1024 ** (u + 1)) u++;
+      return { div: 1024 ** u, suffix: ` ${BYTE_UNITS[u]}` };
+    }
+    case "seconds":
+      return secondsScale(maxAbs);
+    case "milliseconds": {
+      const s = secondsScale(maxAbs / 1000);
+      return { div: s.div * 1000, suffix: s.suffix };
+    }
+    default:
+      return COUNT_SCALES.find((s) => maxAbs >= s.div) ?? { div: 1, suffix: "" };
+  }
+}
+
+/** True when `x` is an integer up to floating-point noise. */
+function nearInteger(x: number): boolean {
+  return Math.abs(x - Math.round(x)) <= 1e-6 * Math.max(1, Math.abs(x));
+}
+
+/**
+ * Y-axis tick labels for one axis, by unit, so large values never widen the axis
+ * (`6000000000` bytes → `5.6 GiB`). Units match {@link formatChartValue}, so the axis and the cursor
+ * readout agree: binary bytes (B/KiB/MiB/GiB/TiB), compact counts (K/M/B/T), ms/s/min/h durations
+ * (µs below 1 ms), `%` for percentages.
+ *
+ * Every tick of an axis shares one scale (chosen from the largest magnitude). Decimals are the
+ * fewest that print the tick step exactly, capped at three significant digits of the largest tick,
+ * trailing zeros trimmed (`0.5 GiB`, `1 GiB`, `1.5 GiB`; `1.86 GiB` for a decimal step on a binary
+ * scale), and raised when needed to keep distinct ticks distinct. Ticks too close together for six
+ * decimals use scientific notation. Zero and
+ * negative zero print as `0`; a non-finite tick prints as an empty label. Pure; never throws.
+ *
+ * @param splits - uPlot's tick values for the axis.
+ * @param unit - The query's display unit.
+ * @returns One label per split, index for index.
+ */
+export function formatAxisTicks(splits: readonly number[], unit: ClientQueryMeta["unit"]): string[] {
+  const finite = splits.filter((v) => typeof v === "number" && Number.isFinite(v));
+  if (finite.length === 0) return splits.map(() => "");
+  const maxAbs = finite.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  const scale = axisScale(maxAbs, unit);
+  const scaled = [...new Set(finite.map((v) => v / scale.div))].sort((a, b) => a - b);
+  let step = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < scaled.length; i++) step = Math.min(step, scaled[i]! - scaled[i - 1]!);
+  // Decimals: the fewest that print the step exactly, but no more than three significant digits of
+  // the largest tick (uPlot picks decimal steps, so a binary-scaled byte axis would otherwise print
+  // 1.862645 GiB), and always enough to keep distinct ticks distinct.
+  const top = maxAbs / scale.div;
+  const cap = Math.min(AXIS_MAX_DECIMALS, Math.max(0, 2 - Math.floor(Math.log10(top || 1))));
+  // A single tick has no step: it gets the cap (zeros are trimmed anyway).
+  let decimals = Number.isFinite(step) ? 0 : cap;
+  while (decimals < cap && !nearInteger(step * 10 ** decimals)) decimals++;
+  const plain = (d: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: d });
+  const distinct = (f: Intl.NumberFormat) => new Set(scaled.map((v) => f.format(v))).size === scaled.length;
+  let fmt = plain(decimals);
+  while (!distinct(fmt) && decimals < AXIS_MAX_DECIMALS) fmt = plain(++decimals);
+  if (!distinct(fmt)) fmt = new Intl.NumberFormat("en-US", { notation: "scientific", maximumFractionDigits: 2 });
+  // A value that rounds to zero prints "0", never "-0".
+  const label = (v: number): string => {
+    if (v === 0) return "0";
+    const text = fmt.format(v / scale.div);
+    return /^-0(\.0*)?(E0)?$/.test(text) ? text.slice(1) : text;
+  };
+  return splits.map((v) => (typeof v === "number" && Number.isFinite(v) ? `${label(v)}${scale.suffix}` : ""));
+}

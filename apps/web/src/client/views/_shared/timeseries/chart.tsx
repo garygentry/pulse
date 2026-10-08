@@ -11,7 +11,7 @@ import type { EstateClock } from "../../../format.js";
 import type { TimeAxis } from "./axis.js";
 import { formatStepLabel } from "./axis.js";
 import type { ClientQueryMeta } from "./query-meta.js";
-import { chartFractionMap, sameChartData, toChartData } from "./chart-data.js";
+import { chartFractionMap, formatAxisTicks, sameChartData, toChartData } from "./chart-data.js";
 import type { ChartData } from "./chart-data.js";
 import { PlotOverlay } from "./overlay.js";
 import type { OverlayPlacement, OverlayRect } from "./overlay-gesture.js";
@@ -112,6 +112,7 @@ export function SyncedChart(props: SyncedChartProps): ReactElement {
   useSignals();
   const { chartId, title, unit, range, payload, axis, clock, interactive, readout } = props;
   const height = props.height ?? 200;
+  const formatYTicks = useMemo(() => (splits: readonly number[]) => formatAxisTicks(splits, unit), [unit]);
 
   const view = axis.view.value; // the only signal read in render
   const fresh = payload === null ? null : toChartData(payload, view, clock.timezone);
@@ -264,7 +265,13 @@ export function SyncedChart(props: SyncedChartProps): ReactElement {
         </span>
       </figcaption>
       <div ref={plotRef} data-slot="timeseries-plot" data-overlay-state={overlayState} className="relative">
-        <TimeSeriesChart timestamps={ts} series={series} height={height} ariaLabel={`${title}, ${range}, ${UNIT_LABEL[unit]}`} />
+        <TimeSeriesChart
+          timestamps={ts}
+          series={series}
+          height={height}
+          ariaLabel={`${title}, ${range}, ${UNIT_LABEL[unit]}`}
+          formatYTicks={formatYTicks}
+        />
         {payload === null ? (
           <div data-slot="timeseries-plot-loading" className="absolute inset-0" aria-hidden="true">
             <Skeleton className="size-full" />

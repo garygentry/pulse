@@ -23,6 +23,11 @@ export interface TimeSeriesChartProps {
   height?: number;
   /** Accessible label. Default "time series chart". */
   ariaLabel?: string;
+  /**
+   * Y-axis tick labels, one per tick value (e.g. unit-aware `5.6 GiB`). Default: uPlot's own
+   * number formatting. Pass a stable function: the chart reads it when it builds.
+   */
+  formatYTicks?: (splits: readonly number[]) => string[];
   className?: string;
 }
 

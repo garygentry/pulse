@@ -7,6 +7,7 @@ import type { ChartData, SeriesSamples } from "../src/client/views/_shared/times
 import {
   TARGET_LABEL_KEYS,
   chartFractionMap,
+  formatAxisTicks,
   formatChartValue,
   nearestSample,
   sameChartData,
@@ -317,6 +318,89 @@ describe("formatChartValue", () => {
     for (const u of ["count", "bytes", "seconds", "percent", "scalar", "milliseconds", "state"] as const) {
       expect(formatChartValue(NaN, u)).toBe("no value");
       expect(formatChartValue(Infinity, u)).toBe("no value");
+    }
+  });
+});
+
+describe("formatAxisTicks (#15 unit-aware y axis)", () => {
+  const GiB = 1024 ** 3;
+
+  test("bytes: binary scale shared by the axis, trimmed decimals, never the raw byte count", () => {
+    expect(formatAxisTicks([0, 0.5 * GiB, GiB, 1.5 * GiB], "bytes")).toEqual(["0 GiB", "0.5 GiB", "1 GiB", "1.5 GiB"]);
+    // uPlot's decimal splits on a binary scale: three significant digits, not 1.862645 GiB.
+    const ticks = formatAxisTicks([0, 2e9, 4e9, 6e9], "bytes");
+    expect(ticks).toEqual(["0 GiB", "1.86 GiB", "3.73 GiB", "5.59 GiB"]);
+    expect(ticks.join("")).not.toContain("000");
+    expect(formatAxisTicks([0, 256, 512, 768], "bytes")).toEqual(["0 B", "256 B", "512 B", "768 B"]);
+    expect(formatAxisTicks([2 ** 50], "bytes")).toEqual(["1,024 TiB"]);
+  });
+
+  test("bytes: the axis and the cursor readout use the same unit", () => {
+    const v = 6e9;
+    expect(formatChartValue(v, "bytes")).toBe("5.6 GiB");
+    expect(formatAxisTicks([v], "bytes")[0]).toBe("5.59 GiB");
+  });
+
+  test("counts and plain values: compact K/M/B/T like the readout", () => {
+    expect(formatAxisTicks([0, 500, 1000, 1500], "count")).toEqual(["0K", "0.5K", "1K", "1.5K"]);
+    expect(formatAxisTicks([0, 2e6, 4e6], "count")).toEqual(["0M", "2M", "4M"]);
+    expect(formatAxisTicks([0, 2e12], "count")).toEqual(["0T", "2T"]);
+    expect(formatAxisTicks([0, 0.2, 0.4, 0.6], "count")).toEqual(["0", "0.2", "0.4", "0.6"]);
+    expect(formatAxisTicks([0, 1, 2], "scalar")).toEqual(["0", "1", "2"]);
+    expect(formatAxisTicks([0, 1], "state")).toEqual(["0", "1"]);
+    expect(formatChartValue(1_500_000, "count")).toBe("1.5M");
+    expect(formatAxisTicks([0, 1.5e6], "count")[1]).toBe("1.5M");
+  });
+
+  test("durations: µs/ms/s/min/h with the readout's thresholds; milliseconds go through seconds", () => {
+    expect(formatAxisTicks([0, 0.05, 0.1, 0.15], "seconds")).toEqual(["0 ms", "50 ms", "100 ms", "150 ms"]);
+    expect(formatAxisTicks([0, 0.0002, 0.0004], "seconds")).toEqual(["0 µs", "200 µs", "400 µs"]);
+    expect(formatAxisTicks([0, 30, 60, 90], "seconds")).toEqual(["0 s", "30 s", "60 s", "90 s"]);
+    expect(formatAxisTicks([0, 1800, 3600], "seconds")).toEqual(["0 min", "30 min", "60 min"]);
+    expect(formatAxisTicks([0, 7200, 14400], "seconds")).toEqual(["0 h", "2 h", "4 h"]);
+    expect(formatAxisTicks([0, 500, 1000, 1500], "milliseconds")).toEqual(["0 s", "0.5 s", "1 s", "1.5 s"]);
+    expect(formatAxisTicks([0, 200, 400], "milliseconds")).toEqual(["0 ms", "200 ms", "400 ms"]);
+  });
+
+  test("percent", () => {
+    expect(formatAxisTicks([0, 25, 50, 75, 100], "percent")).toEqual(["0 %", "25 %", "50 %", "75 %", "100 %"]);
+    // Three significant digits, raised only as far as distinctness needs.
+    expect(formatAxisTicks([99.5, 99.75, 100], "percent")).toEqual(["99.5 %", "99.8 %", "100 %"]);
+  });
+
+  test("edge cases: zero, negative zero, negatives, NaN/Infinity, tiny and very large values", () => {
+    expect(formatAxisTicks([0], "count")).toEqual(["0"]);
+    expect(formatAxisTicks([-0, 1], "count")).toEqual(["0", "1"]);
+    expect(formatAxisTicks([-1e-12, 1], "count")).toEqual(["0", "1"]);
+    expect(formatAxisTicks([0], "bytes")).toEqual(["0 B"]);
+    expect(formatAxisTicks([-1, -0.5, 0, 0.5, 1], "count")).toEqual(["-1", "-0.5", "0", "0.5", "1"]);
+    expect(formatAxisTicks([-2 * GiB, 0, 2 * GiB], "bytes")).toEqual(["-2 GiB", "0 GiB", "2 GiB"]);
+    expect(formatAxisTicks([-0.1, 0, 0.1], "seconds")).toEqual(["-100 ms", "0 ms", "100 ms"]);
+    // Non-finite ticks are blank, finite neighbours still format; an all-non-finite axis is all blank.
+    expect(formatAxisTicks([NaN, 0, 1, Infinity, -Infinity], "scalar")).toEqual(["", "0", "1", "", ""]);
+    expect(formatAxisTicks([NaN, NaN], "bytes")).toEqual(["", ""]);
+    expect(formatAxisTicks([], "count")).toEqual([]);
+    // Tiny steps keep ticks distinct (scientific below six decimals), never "NaN" or "-0".
+    const tiny = formatAxisTicks([0, 2e-10, 4e-10], "count");
+    expect(new Set(tiny).size).toBe(3);
+    expect(tiny[0]).toBe("0");
+    expect(tiny.join(" ")).not.toMatch(/NaN|-0\b/);
+    expect(formatAxisTicks([0, 0.001, 0.002], "scalar")).toEqual(["0", "0.001", "0.002"]);
+    // Very large values stay short at the largest unit.
+    const huge = formatAxisTicks([0, 5e15, 1e16], "count");
+    expect(huge).toEqual(["0T", "5,000T", "10,000T"]);
+    expect(formatAxisTicks([0, 1e300], "count").every((t) => t.length < 20 || t.includes("T"))).toBe(true);
+    // Floating-point noise in splits does not add decimals.
+    expect(formatAxisTicks([0.1 + 0.2, 0.6, 0.9], "scalar")).toEqual(["0.3", "0.6", "0.9"]);
+  });
+
+  test("labels stay short enough for the default axis width", () => {
+    for (const [splits, unit] of [
+      [[0, 2e9, 4e9, 6e9], "bytes"],
+      [[0, 2.5e6, 5e6, 7.5e6, 1e7], "count"],
+      [[0, 0.25, 0.5], "seconds"],
+    ] as const) {
+      for (const label of formatAxisTicks(splits, unit)) expect(label.length).toBeLessThanOrEqual(9);
     }
   });
 });

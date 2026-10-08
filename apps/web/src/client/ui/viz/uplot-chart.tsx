@@ -79,6 +79,11 @@ export function yAxisSize(values: readonly string[] | null | undefined): number 
   return Math.max(Y_AXIS_MIN_SIZE, Math.ceil(longest * AXIS_CHAR_PX) + Y_AXIS_GUTTER_PX);
 }
 
+/** A uPlot `axis.values` callback from a tick formatter. */
+export function yTickValues(format: (splits: readonly number[]) => string[]): uPlot.Axis.DynamicValues {
+  return (_self, splits) => format(splits);
+}
+
 /** uPlot options from props, the container width and the resolved colours. */
 export function buildOptions(
   props: TimeSeriesChartProps,
@@ -107,7 +112,11 @@ export function buildOptions(
     ],
     axes: [
       { ...axis, space: X_TICK_SPACE },
-      { ...axis, size: (_self, values) => yAxisSize(values) },
+      {
+        ...axis,
+        size: (_self, values) => yAxisSize(values),
+        ...(props.formatYTicks !== undefined ? { values: yTickValues(props.formatYTicks) } : {}),
+      },
     ],
     legend: { show: props.series.length > 1 },
   };
@@ -179,7 +188,7 @@ export default function UplotChart(props: TimeSeriesChartProps) {
       chart?.destroy();
       chart = null;
     };
-  }, [props.timestamps, props.series, height]);
+  }, [props.timestamps, props.series, height, props.formatYTicks]);
 
   return (
     <div
