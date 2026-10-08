@@ -27,7 +27,8 @@ const GIT_ENV = {
   GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
 };
 
-function git(dir: string, ...args: string[]): string {
+/** Runs git in `dir` with the fixture's isolated config and identity. */
+export function git(dir: string, ...args: string[]): string {
   const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env: GIT_ENV });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout.trim();

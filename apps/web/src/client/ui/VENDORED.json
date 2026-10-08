@@ -46,7 +46,8 @@
     "status-variant": "Optional `StatusPresentation.variant` (badge shape per state, e.g. outline for suppressed).",
     "tree-view-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`; at a visible-row threshold, default 300, the treeitems render flat in a `tree-view-viewport` scroll region with `aria-hidden` spacers, `aria-level`/`aria-setsize`/`aria-posinset` from the model, rows measured as they render, the focused row and the Tab stop kept rendered, keyboard moves over every visible row through `useListNavigation`'s `virtual` option; hysteresis as in `data-table.tsx`; below the threshold the output is deck's); `*` expands every sibling branch and printable keys move by label (type-ahead), both from the model; the row is `flex-wrap`, so a caller's meta can take a line of its own (`basis-full`) at narrow widths.",
     "list-navigation-virtual": "Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones; optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead.",
-    "tree-row-position": "`VisibleTreeRow` carries `posInSet`/`setSize`."
+    "tree-row-position": "`VisibleTreeRow` carries `posInSet`/`setSize`.",
+    "stat-tile-absent": "Optional `valueState: \"absent\"` (placeholder text such as \"not reported\" renders small and muted on the neutral tone, whatever `tone` says, so \"no data\" never reads as a headline number) with an optional screen-reader `absentDescription`; the root and the value carry `data-value-state`."
   },
   "files": [
     {
@@ -515,8 +516,10 @@
       "local": "apps/web/src/client/ui/patterns/stat-tile.tsx",
       "upstream": "apps/web/src/ui/patterns/stat-tile.tsx",
       "upstreamBlob": "18c69a61154c990757005aa014500e6f1a4b651d",
-      "localBlob": "18c69a61154c990757005aa014500e6f1a4b651d",
-      "notes": []
+      "localBlob": "fe2803f2ad8504618ecd04063e09cbd33fa4a04a",
+      "notes": [
+        "stat-tile-absent"
+      ]
     },
     {
       "local": "apps/web/src/client/ui/patterns/status-badge.tsx",

@@ -27,7 +27,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export const DEFAULT_MANIFEST = "apps/web/src/client/ui/VENDORED.json";
@@ -90,33 +90,86 @@ function inScope(path: string, scope: readonly string[]): boolean {
 // ---------------------------------------------------------------------------------------------
 // Hashing and file listing
 
-/** The git blob id of `content` (what `git hash-object` prints), with CRLF normalised to LF. */
+/**
+ * The git blob id of `content` after CRLF → LF normalisation. For an LF file that is what
+ * `git hash-object` prints; for a CRLF checkout (`core.autocrlf`) it is the id of the LF blob git
+ * stores, which is what the upstream side (read from git trees) is compared in. Both sides are
+ * therefore compared as LF text.
+ */
 export function blobId(content: Uint8Array): string {
   let bytes = Buffer.from(content);
   if (bytes.includes(13)) bytes = Buffer.from(bytes.toString("latin1").replace(/\r\n/g, "\n"), "latin1");
   return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
-function localBlob(root: string, path: string): string | null {
-  const abs = join(root, path);
-  if (!existsSync(abs) || !statSync(abs).isFile()) return null;
-  return blobId(readFileSync(abs));
-}
-
-function walk(root: string, rel: string, out: string[]): void {
-  const abs = join(root, rel);
-  if (!existsSync(abs)) return;
-  if (statSync(abs).isFile()) {
-    out.push(rel);
-    return;
+function lstatOrNull(abs: string) {
+  try {
+    return lstatSync(abs);
+  } catch {
+    return null;
   }
-  for (const name of readdirSync(abs).sort()) walk(root, rel.endsWith("/") ? rel + name : `${rel}/${name}`, out);
 }
 
-function listLocal(root: string, scope: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const s of scope) walk(root, s, out);
-  return [...new Set(out)].sort();
+/** Why `path` cannot be read as a regular file (a symlink is never followed), or null. */
+function notRegular(root: string, path: string): string | null {
+  const st = lstatOrNull(join(root, path));
+  if (!st) return "missing";
+  if (st.isSymbolicLink()) return `a symlink (-> ${readlinkSync(join(root, path))}), not followed`;
+  return st.isFile() ? null : "not a regular file";
+}
+
+function localBlob(root: string, path: string): string | null {
+  if (notRegular(root, path) !== null) return null;
+  return blobId(readFileSync(join(root, path)));
+}
+
+export interface LocalListing {
+  files: string[];
+  /** Symlinks in the local scope: skipped, never followed (outside the repo, or into a loop). */
+  symlinks: string[];
+}
+
+function describeSymlink(root: string, rel: string): string {
+  const abs = join(root, rel);
+  const target = readlinkSync(abs);
+  return existsSync(abs) ? `${rel} -> ${target}` : `${rel} -> ${target} (dangling)`;
+}
+
+function walk(root: string, rel: string, out: LocalListing): void {
+  const st = lstatOrNull(join(root, rel));
+  if (!st) return;
+  if (st.isSymbolicLink()) out.symlinks.push(describeSymlink(root, rel));
+  else if (st.isFile()) out.files.push(rel);
+  else if (st.isDirectory())
+    for (const name of readdirSync(join(root, rel)).sort()) walk(root, rel.endsWith("/") ? rel + name : `${rel}/${name}`, out);
+}
+
+/** The repository's tracked files under `scope`, or null when `root` is not a git work tree root. */
+function gitTracked(root: string, scope: readonly string[]): string[] | null {
+  const top = spawnSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (top.status !== 0 || realpathSync(top.stdout.trim()) !== realpathSync(root)) return null;
+  const r = spawnSync("git", ["-C", root, "ls-files", "-z", "--cached", "--", ...scope], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) return null;
+  return r.stdout.split("\0").filter(Boolean);
+}
+
+/**
+ * The files under the local scope. In a git work tree that is the tracked files, so editor swap
+ * files, `.orig`/`.rej` leftovers and `.DS_Store` never count; elsewhere (the test fixtures) it
+ * walks the directories. Either way symlinks are listed apart and not followed.
+ */
+export function listLocal(root: string, scope: readonly string[]): LocalListing {
+  const out: LocalListing = { files: [], symlinks: [] };
+  const tracked = gitTracked(root, scope);
+  if (tracked === null) for (const s of scope) walk(root, s, out);
+  else
+    for (const rel of tracked) {
+      const st = lstatOrNull(join(root, rel));
+      if (!st) continue; // deleted in the work tree; a vendored one is reported as missing
+      if (st.isSymbolicLink()) out.symlinks.push(describeSymlink(root, rel));
+      else if (st.isFile()) out.files.push(rel);
+    }
+  return { files: [...new Set(out.files)].sort(), symlinks: [...new Set(out.symlinks)].sort() };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -143,7 +196,11 @@ export interface OfflineReport {
   unlisted: string[];
   /** Manifest-level problems (bad note references, stale docs, missing pulse-only paths, …). */
   problems: string[];
+  /** Non-fatal findings: symlinks in the local scope (skipped, not followed), dangling ones flagged. */
+  warnings: string[];
 }
+
+const RECORD = "`bun run ui:drift --record`";
 
 const BLOB_RE = /^[0-9a-f]{40}$/;
 
@@ -178,33 +235,46 @@ export function checkOffline(root: string, manifest: Manifest, manifestPath = DE
   const files: FileResult[] = manifest.files.map((f) => {
     const actual = localBlob(root, f.local);
     const base = { local: f.local, upstream: f.upstream, notes: f.notes, actualBlob: actual };
-    if (actual === null) return { ...base, state: "missing", detail: "vendored file is missing in pulse" };
-    if (actual !== f.localBlob)
+    if (actual === null) {
+      const why = notRegular(root, f.local);
+      return { ...base, state: "missing", detail: why === "missing" ? "vendored file is missing in pulse" : `vendored file is ${why}` };
+    }
+    if (actual !== f.localBlob) {
+      const notes = f.notes.length
+        ? `check that its notes (${f.notes.join(", ")}) in ${manifestPath} still describe it`
+        : actual === f.upstreamBlob
+          ? "it matches deck again"
+          : `add a divergence note to its entry in ${manifestPath}`;
       return {
         ...base,
         state: "undocumented",
-        detail: `changed since recorded (blob ${actual.slice(0, 7)}, recorded ${f.localBlob.slice(0, 7)}): review its divergence notes, then run --record`,
+        detail: `changed since recorded (blob ${actual.slice(0, 7)}, recorded ${f.localBlob.slice(0, 7)}): ${notes}, then run ${RECORD}`,
       };
+    }
     if (actual === f.upstreamBlob) {
-      if (f.notes.length > 0) return { ...base, state: "undocumented", detail: `identical to upstream but lists notes (${f.notes.join(", ")}): drop them` };
+      if (f.notes.length > 0)
+        return { ...base, state: "undocumented", detail: `identical to upstream but lists notes (${f.notes.join(", ")}): drop them from its entry in ${manifestPath}, then run ${RECORD}` };
       return { ...base, state: "identical" };
     }
-    if (f.notes.length === 0) return { ...base, state: "undocumented", detail: "differs from upstream at the pin but lists no divergence note" };
+    if (f.notes.length === 0)
+      return { ...base, state: "undocumented", detail: `differs from upstream at the pin but lists no divergence note: add one to its entry in ${manifestPath}, then run ${RECORD}` };
     return { ...base, state: "diverged" };
   });
 
   const vendored = new Set(manifest.files.map((f) => f.local));
   const ignored = new Set([manifestPath, manifest.docs].filter((p): p is string => !!p));
-  const unlisted = listLocal(root, manifest.scope.local).filter(
+  const listing = listLocal(root, manifest.scope.local);
+  const warnings = listing.symlinks.map((l) => `symlink in the local scope, skipped (not followed): ${l}`);
+  const unlisted = listing.files.filter(
     (p) => !vendored.has(p) && !ignored.has(p) && !inScope(p, manifest.localOnly.map((o) => o.local)),
   );
   for (const o of manifest.localOnly) {
-    if (!existsSync(join(root, o.local))) problems.push(`pulse-only path ${o.local} does not exist`);
+    if (!lstatOrNull(join(root, o.local))) problems.push(`pulse-only path ${o.local} does not exist`);
     if (vendored.has(o.local)) problems.push(`${o.local} is both vendored and pulse-only`);
   }
 
   if (manifest.docs) problems.push(...docsProblems(root, manifest));
-  return { pin: manifest.upstream.commit, describe: manifest.upstream.describe, files, unlisted, problems };
+  return { pin: manifest.upstream.commit, describe: manifest.upstream.describe, files, unlisted, problems, warnings };
 }
 
 export function offlineFailed(r: OfflineReport): boolean {
@@ -477,6 +547,11 @@ export interface RecordResult {
   relocated: string[];
   /** Files whose recorded upstream blob changed (pin bump). */
   rebased: string[];
+  /**
+   * Diverged files deck changed between the old and the new pin while pulse's copy stayed the
+   * same: deck's change was most likely never merged. Refused unless `acceptUnmerged`.
+   */
+  unmerged: string[];
   manifest: Manifest;
 }
 
@@ -484,8 +559,16 @@ export interface RecordResult {
  * Re-record hashes and regenerate the docs. With `src`, the upstream blobs are re-read at
  * `src.pin`, which becomes the manifest's pin (that is how the pin is bumped). Writes nothing
  * unless the result passes the offline check (and, with `src`, the pin check).
+ *
+ * A bump also refuses a diverged file whose deck blob moved while pulse's copy did not: after the
+ * bump, reports compare from the new pin, so deck's unmerged change would silently disappear.
+ * `acceptUnmerged` records it anyway (deck's change does not apply to pulse, or is already in).
  */
-export function record(root: string, manifest: Manifest, opts: { src?: UpstreamSource; manifestPath?: string; dryRun?: boolean } = {}): RecordResult {
+export function record(
+  root: string,
+  manifest: Manifest,
+  opts: { src?: UpstreamSource; manifestPath?: string; dryRun?: boolean; acceptUnmerged?: boolean } = {},
+): RecordResult {
   const manifestPath = opts.manifestPath ?? DEFAULT_MANIFEST;
   const next: Manifest = structuredClone(manifest);
   const errors: string[] = [];
@@ -514,13 +597,21 @@ export function record(root: string, manifest: Manifest, opts: { src?: UpstreamS
       f.localBlob = actual;
     }
   }
+  const unmerged = rebased.filter((p) => !relocated.includes(p) && (next.files.find((f) => f.local === p)?.notes.length ?? 0) > 0);
+  if (!opts.acceptUnmerged)
+    for (const p of unmerged) {
+      const notes = next.files.find((f) => f.local === p)?.notes ?? [];
+      errors.push(
+        `${p}: deck changed it since the old pin but pulse's copy is unchanged (notes: ${notes.join(", ")}); merge deck's change, or pass --accept-unmerged if it does not apply`,
+      );
+    }
   const report = checkOffline(root, next, manifestPath);
   errors.push(
     ...report.problems.filter((p) => !p.includes("generated sections are stale")),
     ...report.unlisted.map((p) => `${p} is in the local scope but neither vendored nor pulse-only: add it to files or localOnly`),
     ...report.files.filter((f) => f.state === "undocumented" || f.state === "missing").map((f) => `${f.local}: ${f.detail}`),
   );
-  const result: RecordResult = { written: false, errors, relocated, rebased, manifest: next };
+  const result: RecordResult = { written: false, errors, relocated, rebased, unmerged, manifest: next };
   if (errors.length > 0 || opts.dryRun) return result;
   writeFileSync(join(root, manifestPath), serializeManifest(next));
   if (next.docs) {
@@ -544,7 +635,9 @@ export function formatText(off: OfflineReport, up?: UpstreamReport): string {
   for (const f of off.files) if (f.state === "undocumented" || f.state === "missing") lines.push(`  ${f.state.toUpperCase()} ${f.local}: ${f.detail}`);
   for (const p of off.unlisted) lines.push(`  UNLISTED ${p}: neither vendored nor pulse-only`);
   for (const p of off.problems) lines.push(`  PROBLEM ${p}`);
+  for (const w of off.warnings) lines.push(`  warning: ${w}`);
   if (!offlineFailed(off)) lines.push("  ok: every vendored file matches its recorded hash and divergence notes");
+  else lines.push(`  fix: edit the entries' notes in the manifest, then run ${RECORD} (VENDORED.md, "Changing a vendored file")`);
   if (up) {
     lines.push("", `upstream (${up.source}): pin ${short(up.pin)}`);
     if (up.pinMismatch.length === 0 && up.unaccountedAtPin.length === 0) lines.push("  ok: recorded upstream blobs match the pin, and every upstream file at the pin is vendored or excluded");
@@ -577,6 +670,7 @@ export function formatMarkdown(off: OfflineReport, up?: UpstreamReport): string 
     for (const p of off.unlisted) out.push(`| ${code(p)} | unlisted | neither vendored nor pulse-only |`);
     for (const p of off.problems) out.push(`| | problem | ${p} |`);
   }
+  if (off.warnings.length) out.push("", ...off.warnings.map((w) => `- warning: ${w}`));
   if (up) {
     out.push("", `#### Upstream (${up.source})`, "");
     out.push(up.pinMismatch.length || up.unaccountedAtPin.length ? "Pin check **failed**:" : `Pin ${code(short(up.pin))}: recorded blobs match, every upstream file is vendored or excluded.`);
@@ -620,6 +714,8 @@ Options:
   --record               Re-record local hashes and regenerate VENDORED.md. With a source and
                          --pin <ref>, also re-read the upstream blobs at that commit (bump).
   --pin <ref>            The commit to pin with --record (default: the current pin).
+  --accept-unmerged      With --record --pin: record diverged files deck changed between the
+                         pins although pulse's copy did not change (deck's change does not apply).
   --format <f>           text (default), markdown or json.
   --root <dir>           Repository root (default: this repository).
   --manifest <path>      Manifest path relative to the root (default: ${DEFAULT_MANIFEST}).
@@ -638,12 +734,13 @@ interface Args {
   strict: boolean;
   record: boolean;
   pin?: string;
+  acceptUnmerged: boolean;
   format: "text" | "markdown" | "json";
   help: boolean;
 }
 
 export function parseArgs(argv: string[]): Args {
-  const a: Args = { root: REPO_ROOT, manifest: DEFAULT_MANIFEST, fetch: false, diff: false, strict: false, record: false, format: "text", help: false };
+  const a: Args = { root: REPO_ROOT, manifest: DEFAULT_MANIFEST, fetch: false, diff: false, strict: false, record: false, acceptUnmerged: false, format: "text", help: false };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = () => {
@@ -663,6 +760,7 @@ export function parseArgs(argv: string[]): Args {
       case "--strict": a.strict = true; break;
       case "--record": a.record = true; break;
       case "--pin": a.pin = value(); break;
+      case "--accept-unmerged": a.acceptUnmerged = true; break;
       case "--format": {
         const f = value();
         if (f !== "text" && f !== "markdown" && f !== "json") throw new Error(`unknown format ${f}`);
@@ -676,6 +774,7 @@ export function parseArgs(argv: string[]): Args {
   }
   if (a.deck && a.fetch) throw new Error("--deck and --fetch are exclusive");
   if (a.pin && !a.record) throw new Error("--pin only applies with --record");
+  if (a.acceptUnmerged && !a.pin) throw new Error("--accept-unmerged only applies with --record --pin");
   if (a.pin && !a.deck && !a.fetch) throw new Error("--pin needs a source (--deck or --fetch)");
   return a;
 }
@@ -694,11 +793,22 @@ export function main(argv: string[]): number {
   }
   const manifest = loadManifest(args.root, args.manifest);
   const pin = args.pin ?? manifest.upstream.commit;
+  if (args.record && args.ref) console.error(`ui-drift: warning: --ref is ignored with --record (bump the pin with --pin)`);
   const ref = args.record ? undefined : args.ref === "none" ? undefined : (args.ref ?? manifest.upstream.defaultRef);
 
   let src: UpstreamSource | undefined;
   try {
-    if (args.deck) src = localSource(args.deck, pin, ref);
+    if (args.deck) {
+      src = localSource(args.deck, pin, ref);
+      // A defaulted ref names the checkout's local branch, which may lag its remote.
+      if (src.ref && !args.ref) {
+        const remote = resolveCommit(args.deck, `origin/${src.ref.name}`);
+        if (remote && remote !== src.ref.sha)
+          console.error(
+            `ui-drift: note: ${src.ref.name} is the local branch (${short(src.ref.sha)}); origin/${src.ref.name} is ${short(remote)}. Pass --ref origin/${src.ref.name} to compare with the remote.`,
+          );
+      }
+    }
     else if (args.fetch) src = fetchSource(resolve(args.root, args.cache ?? DEFAULT_CACHE), args.repo ?? manifest.upstream.repo, pin, ref);
   } catch (e) {
     console.error(`ui-drift: ${(e as Error).message}`);
@@ -706,7 +816,7 @@ export function main(argv: string[]): number {
   }
 
   if (args.record) {
-    const r = record(args.root, manifest, { manifestPath: args.manifest, ...(src ? { src } : {}) });
+    const r = record(args.root, manifest, { manifestPath: args.manifest, acceptUnmerged: args.acceptUnmerged, ...(src ? { src } : {}) });
     for (const e of r.errors) console.error(`ui-drift: ${e}`);
     if (!r.written) {
       console.error("ui-drift: manifest not written");
@@ -714,6 +824,7 @@ export function main(argv: string[]): number {
     }
     if (src && src.pin !== manifest.upstream.commit) console.log(`ui-drift: pin ${short(manifest.upstream.commit)} -> ${short(src.pin)}`);
     for (const p of r.rebased) console.log(`ui-drift: upstream changed: ${p}`);
+    if (args.acceptUnmerged) for (const p of r.unmerged) console.log(`ui-drift: warning: accepted without merging deck's change: ${p}`);
     const notesOf = new Map(r.manifest.files.map((f) => [f.local, f.notes]));
     for (const p of r.relocated) {
       const notes = notesOf.get(p) ?? [];

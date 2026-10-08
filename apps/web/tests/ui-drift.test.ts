@@ -5,7 +5,7 @@
 // script over tests/fixtures/ui-drift (see tests/ui-drift-fixture.ts), one case per classification.
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   checkOffline,
@@ -22,7 +22,7 @@ import {
   serializeManifest,
   upstreamFailed,
 } from "../scripts/ui-drift";
-import { FIXTURE_MANIFEST, makeWorkspace } from "./ui-drift-fixture";
+import { FIXTURE_MANIFEST, git, makeWorkspace } from "./ui-drift-fixture";
 
 const REPO = resolve(import.meta.dir, "../../..");
 const SCRIPT = resolve(import.meta.dir, "../scripts/ui-drift.ts");
@@ -116,6 +116,56 @@ describe("offline classification", () => {
     const f = stateOf(root, manifest, "ui/diverged.txt");
     expect(f?.state).toBe("undocumented");
     expect(f?.detail).toContain("no divergence note");
+    expect(f?.detail).toContain("then run `bun run ui:drift --record`");
+  });
+
+  test("the changed-file message names the notes to re-read and the command", () => {
+    const { root, manifest } = workspace();
+    appendFileSync(join(root, "ui/diverged.txt"), "more pulse\n");
+    expect(stateOf(root, manifest, "ui/diverged.txt")?.detail).toMatch(/check that its notes \(pulse-text\) in ui\/VENDORED\.json still describe it, then run `bun run ui:drift --record`$/);
+  });
+
+  test("in a git work tree only tracked files count: editor and merge leftovers are not unlisted", () => {
+    const { root, manifest } = workspace();
+    git(root, "init", "--quiet");
+    git(root, "add", "-A");
+    for (const junk of ["ui/.same.txt.swp", "ui/same.txt.orig", "ui/same.txt.rej", "ui/.DS_Store"]) writeFileSync(join(root, junk), "junk\n");
+    expect(offline(root, manifest).unlisted).toEqual([]);
+    // Outside git the directory walk sees them.
+    rmSync(join(root, ".git"), { recursive: true });
+    expect(offline(root, manifest).unlisted).toEqual(["ui/.DS_Store", "ui/.same.txt.swp", "ui/same.txt.orig", "ui/same.txt.rej"]);
+  });
+
+  test("a tracked stray file is still unlisted", () => {
+    const { root, manifest } = workspace();
+    writeFileSync(join(root, "ui/stray.txt"), "?\n");
+    git(root, "init", "--quiet");
+    git(root, "add", "-A");
+    expect(offline(root, manifest).unlisted).toEqual(["ui/stray.txt"]);
+  });
+
+  test("symlinks are skipped, not followed, and flagged (dangling ones too)", () => {
+    const { tmp: dir, root, manifest } = workspace();
+    mkdirSync(join(dir, "outside"));
+    writeFileSync(join(dir, "outside/secret.txt"), "outside the repo\n");
+    symlinkSync(join(dir, "outside"), join(root, "ui/out"));
+    symlinkSync(".", join(root, "ui/loop"));
+    symlinkSync("nowhere.txt", join(root, "ui/dangling.txt"));
+    const r = offline(root, manifest);
+    expect(r.unlisted).toEqual([]);
+    expect(r.warnings).toEqual([
+      "symlink in the local scope, skipped (not followed): ui/dangling.txt -> nowhere.txt (dangling)",
+      "symlink in the local scope, skipped (not followed): ui/loop -> .",
+      `symlink in the local scope, skipped (not followed): ui/out -> ${join(dir, "outside")}`,
+    ]);
+    expect(offlineFailed(r)).toBe(false);
+    // A vendored file replaced by a symlink is missing, even when the target has the right content.
+    writeFileSync(join(dir, "outside/same.txt"), "same line\n");
+    unlinkSync(join(root, "ui/same.txt"));
+    symlinkSync(join(dir, "outside/same.txt"), join(root, "ui/same.txt"));
+    const f = stateOf(root, manifest, "ui/same.txt");
+    expect(f?.state).toBe("missing");
+    expect(f?.detail).toContain("a symlink");
   });
 
   test("notes on a file identical to upstream are undocumented (stale)", () => {
@@ -254,21 +304,24 @@ describe("--record", () => {
     appendFileSync(join(root, "ui/same.txt"), "pulse edit\n");
     const r = record(root, manifest, { manifestPath: FIXTURE_MANIFEST });
     expect(r.written).toBe(false);
-    expect(r.errors).toEqual(["ui/same.txt: differs from upstream at the pin but lists no divergence note"]);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toStartWith("ui/same.txt: differs from upstream at the pin but lists no divergence note");
     expect(readFileSync(join(root, FIXTURE_MANIFEST), "utf8")).toBe(before);
   });
 
   test("bumps the pin once the sync is applied", () => {
     const { root, manifest, upstream } = workspace();
     const src = () => localSource(upstream.dir, upstream.ref);
-    // Before the sync: the removed file, the new upstream file and the file that was identical
-    // at the old pin (now behind the new one, with no note) block the bump.
+    // Before the sync: the removed file, the new upstream file, the unmerged deck change to the
+    // diverged file and the file that was identical at the old pin (now behind the new one, with
+    // no note) block the bump.
     const blocked = record(root, manifest, { manifestPath: FIXTURE_MANIFEST, src: src() });
     expect(blocked.written).toBe(false);
     expect(blocked.errors).toEqual([
       "lib/removed.txt is not present at " + upstream.ref.slice(0, 7) + ": drop or remap its entry",
       "lib/added.txt is new upstream: vendor it (add a files entry) or add it to excluded",
-      "ui/changed.txt: differs from upstream at the pin but lists no divergence note",
+      expect.stringMatching(/^ui\/diverged\.txt: deck changed it since the old pin but pulse's copy is unchanged/),
+      expect.stringMatching(/^ui\/changed\.txt: differs from upstream at the pin but lists no divergence note/),
     ]);
     // Apply the sync: take changed.txt, merge diverged.txt, drop removed.txt, exclude added.txt.
     writeFileSync(join(root, "ui/changed.txt"), "version 2\n");
@@ -285,6 +338,51 @@ describe("--record", () => {
     const after = compareUpstream(root, saved, localSource(upstream.dir, upstream.ref, "main"));
     expect(after.pinMismatch).toEqual([]);
     expect(after.changes).toEqual([]);
+  });
+});
+
+describe("--record --pin and unmerged upstream changes", () => {
+  // Apply every part of the sync except the merge into diverged.txt, which deck changed.
+  function partialSync(root: string, manifest: Manifest) {
+    writeFileSync(join(root, "ui/changed.txt"), "version 2\n");
+    unlinkSync(join(root, "ui/removed.txt"));
+    manifest.files = manifest.files.filter((f) => f.local !== "ui/removed.txt");
+    manifest.excluded.push({ upstream: "lib/added.txt", reason: "Not needed." });
+  }
+
+  test("refuses a diverged file deck changed between the pins while pulse's copy did not", () => {
+    const { root, manifest, upstream } = workspace();
+    partialSync(root, manifest);
+    const r = record(root, manifest, { manifestPath: FIXTURE_MANIFEST, src: localSource(upstream.dir, upstream.ref) });
+    expect(r.written).toBe(false);
+    expect(r.unmerged).toEqual(["ui/diverged.txt"]);
+    expect(r.errors).toEqual([
+      "ui/diverged.txt: deck changed it since the old pin but pulse's copy is unchanged (notes: pulse-text); merge deck's change, or pass --accept-unmerged if it does not apply",
+    ]);
+  });
+
+  test("--accept-unmerged records it anyway", () => {
+    const { root, manifest, upstream } = workspace();
+    partialSync(root, manifest);
+    const r = record(root, manifest, { manifestPath: FIXTURE_MANIFEST, src: localSource(upstream.dir, upstream.ref), acceptUnmerged: true });
+    expect(r.errors).toEqual([]);
+    expect(r.written).toBe(true);
+    expect(r.unmerged).toEqual(["ui/diverged.txt"]);
+    expect(loadManifest(root, FIXTURE_MANIFEST).upstream.commit).toBe(upstream.ref);
+  });
+
+  test("the CLI refuses without the flag, accepts with it, and rejects the flag without --pin", () => {
+    const { root, manifest, upstream } = workspace();
+    partialSync(root, manifest);
+    saveManifest(root, manifest);
+    const base = [SCRIPT, "--root", root, "--manifest", FIXTURE_MANIFEST, "--record", "--deck", upstream.dir, "--pin", upstream.ref];
+    const refused = spawnSync("bun", base, { encoding: "utf8" });
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("--accept-unmerged");
+    const accepted = spawnSync("bun", [...base, "--accept-unmerged"], { encoding: "utf8" });
+    expect(accepted.status).toBe(0);
+    expect(accepted.stdout).toContain("accepted without merging deck's change: ui/diverged.txt");
+    expect(spawnSync("bun", [SCRIPT, "--root", root, "--manifest", FIXTURE_MANIFEST, "--record", "--accept-unmerged"]).status).toBe(2);
   });
 });
 
@@ -306,6 +404,23 @@ describe("CLI", () => {
     expect(bad.stdout).toContain("UNDOCUMENTED ui/same.txt");
     expect(run(...base, "--bogus").status).toBe(2);
     expect(run(...base, "--pin", "abc").status).toBe(2);
+  });
+
+  test("--record warns that it ignores --ref", () => {
+    const { root } = workspace();
+    const r = run("--root", root, "--manifest", FIXTURE_MANIFEST, "--record", "--ref", "main");
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("--ref is ignored with --record");
+  });
+
+  test("--deck with the default ref points out a local main behind origin/main", () => {
+    const { tmp: dir, root, upstream } = workspace();
+    const clone = join(dir, "clone");
+    git(dir, "clone", "--quiet", upstream.dir, clone);
+    git(clone, "reset", "--quiet", "--hard", upstream.pin); // local main lags the remote
+    const base = ["--root", root, "--manifest", FIXTURE_MANIFEST, "--deck", clone];
+    expect(run(...base).stderr).toContain("main is the local branch (" + upstream.pin.slice(0, 7) + "); origin/main is " + upstream.ref.slice(0, 7) + ". Pass --ref origin/main");
+    expect(run(...base, "--ref", "origin/main").stderr).not.toContain("local branch");
   });
 
   test("the default manifest path is the web app's VENDORED.json", () => {

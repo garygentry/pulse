@@ -8,7 +8,7 @@ the blob id of pulse's copy as last reviewed, and the divergence notes that expl
 difference. `bun run ui:drift` checks the record, and `bun test` runs the same check in CI.
 
 <!-- ui-drift:begin source (generated from VENDORED.json by `bun run ui:drift --record`; do not edit) -->
-Pinned upstream: https://github.com/garygentry/deck at `d6a1595` (deck v0.3.2; the public squash of e2e2661, the commit the port was copied from, with identical library files). Vendored files: 88, 44 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 2.
+Pinned upstream: https://github.com/garygentry/deck at `d6a1595` (deck v0.3.2; the public squash of e2e2661, the commit the port was copied from, with identical library files). Vendored files: 88, 45 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 2.
 <!-- ui-drift:end source -->
 
 The library is imported as `@/ui` (tsconfig `paths` `@/*` → `src/client/*`, Bundler resolution, so
@@ -25,7 +25,7 @@ defined by the client build, as Vite defines it for deck.
 | diverged | Pulse's copy differs from the pin, matches its recorded blob and lists at least one note | No |
 | undocumented | Pulse's copy changed since it was recorded, or differs from the pin without a note, or equals the pin but still lists notes | Yes |
 | missing | The vendored file is gone from pulse (or, upstream, from deck at the pin) | Yes |
-| unlisted | A file under `src/client/ui/` or `src/client/styles/` that is neither vendored nor pulse-only | Yes |
+| unlisted | A tracked file under `src/client/ui/` or `src/client/styles/` that is neither vendored nor pulse-only (editor swap files and merge leftovers don't count; symlinks are skipped with a warning) | Yes |
 | new upstream | A deck file in scope that is neither vendored nor excluded: at the pin it fails, at a newer ref it is reported | At the pin |
 
 The offline check needs neither the network nor a deck checkout. It compares files with the
@@ -36,7 +36,8 @@ when the generated sections of this file fall out of step with `VENDORED.json`. 
 Upstream comparison reads deck's git history, from a local checkout or from GitHub:
 
 ```sh
-bun run ui:drift --deck ../deck            # local checkout; compares the pin with its `main`
+bun run ui:drift --deck ../deck            # local checkout; compares the pin with its local `main`
+bun run ui:drift --deck ../deck --ref origin/main  # ... or with the remote's, if local main lags
 bun run ui:drift --deck ../deck --ref HEAD # ... or with whatever is checked out
 bun run ui:drift --fetch                   # depth-1 fetch of the pin and `main` into node_modules/.cache
 bun run ui:drift --fetch --diff            # plus the upstream diff of every vendored file deck changed
@@ -74,7 +75,10 @@ A new file under `ui/` or `styles/` goes into `localOnly` (pulse-only) or `files
    added (new `files` or `excluded` entries). Drop or remap the files deck removed.
 3. Bump the pin and re-record: `bun run ui:drift --record --deck <deck checkout> --pin <new commit>`
    (or `--fetch --pin <new commit>`). This re-reads every deck blob at the new pin and writes
-   `upstream.commit`. Update `upstream.describe` by hand (deck version).
+   `upstream.commit`. Update `upstream.describe` by hand (deck version). It refuses a diverged
+   file whose deck blob moved while pulse's copy did not, since the next report would compare
+   from the new pin and deck's change would drop out of sight. Merge it, or pass
+   `--accept-unmerged` when deck's change does not apply to pulse.
 4. Re-run the gates: `bunx tsc -b`, `bun test` (the guardrail, contrast and `ui-*` suites cover the
    library) and `bun run ui:drift --deck <deck checkout> --ref none`, which checks the new pin.
 
@@ -145,7 +149,7 @@ the next sync turns them from pulse-only into vendored files.
 | `apps/web/src/client/ui/patterns/section.tsx` | `apps/web/src/ui/patterns/section.tsx` | None |
 | `apps/web/src/client/ui/patterns/segmented-control.tsx` | `apps/web/src/ui/patterns/segmented-control.tsx` | `segmented-key-shortcuts` |
 | `apps/web/src/client/ui/patterns/show-more.tsx` | `apps/web/src/ui/patterns/show-more.tsx` | `exact-optional` |
-| `apps/web/src/client/ui/patterns/stat-tile.tsx` | `apps/web/src/ui/patterns/stat-tile.tsx` | None |
+| `apps/web/src/client/ui/patterns/stat-tile.tsx` | `apps/web/src/ui/patterns/stat-tile.tsx` | `stat-tile-absent` |
 | `apps/web/src/client/ui/patterns/status-badge.tsx` | `apps/web/src/ui/patterns/status-badge.tsx` | `exact-optional`, `status-badge-variant` |
 | `apps/web/src/client/ui/patterns/tree-view.tsx` | `apps/web/src/ui/patterns/tree-view.tsx` | `tree-view-description`, `tree-view-virtualize` |
 | `apps/web/src/client/ui/patterns/visually-hidden.tsx` | `apps/web/src/ui/patterns/visually-hidden.tsx` | None |
@@ -212,6 +216,7 @@ Not vendored:
 - **`tree-view-virtualize`** (`tree-view.tsx`): Pulse `virtualize` prop (`@tanstack/react-virtual`; at a visible-row threshold, default 300, the treeitems render flat in a `tree-view-viewport` scroll region with `aria-hidden` spacers, `aria-level`/`aria-setsize`/`aria-posinset` from the model, rows measured as they render, the focused row and the Tab stop kept rendered, keyboard moves over every visible row through `useListNavigation`'s `virtual` option; hysteresis as in `data-table.tsx`; below the threshold the output is deck's); `*` expands every sibling branch and printable keys move by label (type-ahead), both from the model; the row is `flex-wrap`, so a caller's meta can take a line of its own (`basis-full`) at narrow widths.
 - **`list-navigation-virtual`** (`use-list-navigation.ts`): Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones; optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead.
 - **`tree-row-position`** (`tree.ts`): `VisibleTreeRow` carries `posInSet`/`setSize`.
+- **`stat-tile-absent`** (`stat-tile.tsx`): Optional `valueState: "absent"` (placeholder text such as "not reported" renders small and muted on the neutral tone, whatever `tone` says, so "no data" never reads as a headline number) with an optional screen-reader `absentDescription`; the root and the value carry `data-value-state`.
 <!-- ui-drift:end notes -->
 
 ## Pulse-only additions
@@ -251,6 +256,7 @@ Pulse-only additions that could move to deck:
   `*` and type-ahead, and the `virtual`/`typeaheadActive` options of `hooks/use-list-navigation.ts`.
 - `patterns/disclosure.tsx` separated count in the trigger's accessible name (a deck a11y fix).
 - `patterns/status-badge.tsx` `fromMap` applying the entry's `variant`, with `StatusPresentation.variant`.
+- `patterns/stat-tile.tsx` `valueState="absent"` (placeholder text never reads as a headline number).
 - `patterns/page-error-boundary.tsx` `pageSlot` (the fallback keeps the page's root and `h1`) and focus to the page heading after Retry.
 - `ui/viz/*` (Sparkline, StatusTimeline with its geometry helpers and a `statusMap` for any status
   vocabulary, Gauge, lazy uPlot TimeSeriesChart with `formatYTicks`/`splitYTicks`).
