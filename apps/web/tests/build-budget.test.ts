@@ -64,8 +64,8 @@ import { initialRouteJsFiles, staticClosure } from "./initial-route.js";
  * holds. Final (every view on the library, legacy CSS deleted): measured 157,452 B; 169 KB is
  * measured + ~10%, so it stays the final ceiling. Icons off the initial route (only the shell's 19
  * of the curated set's 76 ship eagerly, −4.3 KB) and barrel imports rewritten per module (more,
- * smaller initial-route chunks, +4.6 KB of per-file gzip overhead): measured 162,467 B (main before
- * it: 161,601 B); the ceiling holds.
+ * smaller initial-route chunks, +4.6 KB of per-file gzip overhead): measured 162,624 B (main before
+ * it: 162,258 B); the ceiling holds.
  */
 export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
 /**
@@ -85,7 +85,7 @@ export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
  * Final (every view on the library, legacy CSS deleted): measured 350,747 B. Measured + ~10% would
  * raise it, so the ceiling stays at 364 KB (+6%). Barrel imports rewritten per module (each view
  * chunk reaches only the library code it imports; icons split into a shell set and a lazy chunk):
- * measured 370,333 B (main before it: 354,521 B). The same code in more, smaller chunks compresses
+ * measured 370,645 B (main before it: 355,395 B). The same code in more, smaller chunks compresses
  * less well file by file (+15 KB gz, raw +12 KB), while each view's first load fell 6–44 KB gz. That
  * left the 364 KB ceiling 1.3% of headroom, so it is re-baselined to measured + ~10%; the per-view
  * first-load ceilings below are the tight guard on what users download.
@@ -101,7 +101,7 @@ export const TOTAL_JS_BUDGET_BYTES = 395 * 1024;
  *  sheet (one stylesheet): measured 21,640 B (was 27,915 B with the legacy layer); ceiling at
  *  measured + ~10%. Source detection rooted at the client source (`source("..")`, not the build's
  *  working directory, which at the repo root also picked up candidates from tests, docs and other
- *  packages): measured 20,357 B; ceiling at measured + ~10%. */
+ *  packages): measured 20,280 B; ceiling at measured + ~10%. */
 export const TOTAL_CSS_BUDGET_BYTES = 22 * 1024;
 
 /** A representative sample of lucide icons NOT in the curated set (ui/lib/icons.ts). Their kebab
@@ -389,17 +389,17 @@ describe("the dev-only /_ui workbench never ships in a production build", () => 
  * measured + ~10%.
  */
 export const VIEW_FIRST_LOAD_BUDGET_BYTES = {
-  overview: 213 * 1024, // measured 199,139 B (239,434 B through the barrel)
-  alerts: 246 * 1024, // measured 230,004 B (235,627 B)
-  estate: 250 * 1024, // measured 233,224 B (237,308 B)
-  engine: 244 * 1024, // measured 227,619 B (247,387 B)
-  timeline: 226 * 1024, // measured 211,405 B (253,770 B)
+  overview: 213 * 1024, // measured 199,293 B (240,117 B through the barrel)
+  alerts: 246 * 1024, // measured 230,160 B (236,328 B)
+  estate: 250 * 1024, // measured 233,523 B (238,114 B)
+  engine: 244 * 1024, // measured 227,811 B (248,102 B)
+  timeline: 226 * 1024, // measured 211,491 B (254,368 B)
 } as const;
 
 /** Everything a session that opens all five views downloads (the union of their first loads). The
  *  finer chunking costs a full session a little (more, smaller files compress less well) while every
  *  single-view session saves; this caps the full-session cost. Ceiling at measured + ~10%. */
-export const ALL_VIEWS_BUDGET_BYTES = 350 * 1024; // measured 326,161 B
+export const ALL_VIEWS_BUDGET_BYTES = 350 * 1024; // measured 326,463 B
 
 /** Sources (repo-relative from `apps/web/`) a JS file bundles, from its sourcemap. */
 function bundledSources(dir: string, file: string): string[] {
