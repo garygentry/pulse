@@ -33,6 +33,39 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return el.closest(CONTENTEDITABLE_SELECTOR) !== null;
 }
 
+/** `<input>` types that take no typed text: a chord pressed on one is not text entry. */
+const NON_TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
+  "button",
+  "checkbox",
+  "color",
+  "file",
+  "image",
+  "radio",
+  "range",
+  "reset",
+  "submit",
+]);
+
+/**
+ * True when a keystroke's target takes typed text (a text-like `<input>`, a
+ * `<textarea>`, a `<select>` with its type-ahead, or contenteditable). Narrower
+ * than {@link isEditableTarget}: buttons, links and composite widgets are not
+ * text entry, so global chords such as Ctrl/Cmd-B still work from them, while a
+ * chord typed into a field (Ctrl/Cmd-B for bold, a bracket in a search box) is
+ * left to the field.
+ */
+export function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (target === null || typeof target !== "object") return false;
+  const el = target as Partial<Element> & { isContentEditable?: boolean; type?: string };
+  const name = (el.localName ?? el.tagName ?? "").toLowerCase();
+  if (name === "textarea" || name === "select") return true;
+  if (name === "input") return !NON_TEXT_INPUT_TYPES.has((el.type ?? "text").toLowerCase());
+  if (el.isContentEditable === true) return true;
+  if (typeof el.closest !== "function") return false;
+  // jsdom/happy-dom may not implement isContentEditable, so check the attribute too.
+  return el.closest(CONTENTEDITABLE_SELECTOR) !== null;
+}
+
 /** `CSS.escape`, with a minimal fallback, for using an id inside a selector. */
 export function cssEscape(value: string): string {
   return typeof CSS !== "undefined" && typeof CSS.escape === "function"

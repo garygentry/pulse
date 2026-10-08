@@ -89,6 +89,46 @@ describeDom("a11y shortcuts", (dom) => {
     registry.stop();
   });
 
+  test("the input guard also covers select, textarea and contenteditable, but not checkboxes or buttons", () => {
+    const doc = dom.win.document;
+    const registry = new ShortcutRegistry();
+    registry.start();
+
+    let fires = 0;
+    registry.register("l", () => {
+      fires += 1;
+    });
+    const press = (): void => {
+      doc.dispatchEvent(new dom.win.KeyboardEvent("keydown", { key: "l" }));
+    };
+
+    const select = doc.createElement("select");
+    const textarea = doc.createElement("textarea");
+    const editable = doc.createElement("div");
+    editable.setAttribute("contenteditable", "true");
+    editable.tabIndex = 0;
+    const checkbox = doc.createElement("input");
+    checkbox.type = "checkbox";
+    const button = doc.createElement("button");
+    doc.body.append(select, textarea, editable, checkbox, button);
+
+    for (const field of [select, textarea, editable]) {
+      field.focus();
+      expect(doc.activeElement).toBe(field);
+      press();
+    }
+    expect(fires).toBe(0); // typed text (and a select's type-ahead) stays in the field
+
+    for (const control of [checkbox, button]) {
+      control.focus();
+      press();
+    }
+    expect(fires).toBe(2); // not text entry: the page shortcut still works
+
+    for (const el of [select, textarea, editable, checkbox, button]) doc.body.removeChild(el);
+    registry.stop();
+  });
+
   test("'mod+k' fires with the platform-appropriate modifier", () => {
     const doc = dom.win.document;
     const registry = new ShortcutRegistry();

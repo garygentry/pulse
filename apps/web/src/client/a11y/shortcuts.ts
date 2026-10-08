@@ -7,6 +7,9 @@
 // pre-mount (05 §1, §6.3) — nothing throws for a missing DOM, and `register` still returns a
 // callable no-op disposer.
 
+// ui-deep-import: entry code; the barrel would pull lazy-only @/ui modules into the entry
+import { isTextEntryTarget } from "@/ui/lib/dom";
+
 /** A normalized key-combo string, case-insensitive on the key. Modifiers in a fixed order:
  *  "mod" (Cmd on macOS, Ctrl elsewhere), "ctrl", "alt", "shift", then the key. */
 export type KeyCombo = string;
@@ -18,8 +21,8 @@ export type ShortcutHandler = (event: KeyboardEvent) => void;
 export interface ShortcutOptions {
   /** When true (default), the registry calls `event.preventDefault()` before invoking the handler. */
   preventDefault?: boolean;
-  /** When false (default), the shortcut does NOT fire while focus is in a text input / textarea /
-   *  contenteditable. */
+  /** When false (default), the shortcut does NOT fire while focus is in a text field (text-like
+   *  input, textarea, select or contenteditable). */
   allowInInput?: boolean;
 }
 
@@ -140,15 +143,12 @@ function joinTokens(
   return tokens.join("+");
 }
 
-/** True when focus is currently in a text input / textarea / contenteditable. */
+/** True when focus is currently in a text field: a text-like input, textarea, select (its type-ahead
+ *  owns printable keys) or contenteditable — the shared `@/ui` text-entry guard. */
 function isInInput(): boolean {
   const doc = getDocument();
   if (!doc) return false;
-  const el = doc.activeElement;
-  if (!el) return false;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA") return true;
-  return (el as HTMLElement).isContentEditable === true;
+  return isTextEntryTarget(doc.activeElement);
 }
 
 /**
