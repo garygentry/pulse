@@ -748,7 +748,9 @@ describe("signals: render-time reads call useSignals()", () => {
 // Class candidates (static, no type checker) are the tokens of string/template literals in a class
 // context: a JSX `className`/`class`/`*ClassName` attribute; an argument (keys and values, nested
 // objects, arrays and conditionals included) of `cn`/`cva`/`clsx`/`twMerge`/`cx`; or a variable or
-// property initializer whose every token is class-shaped (tone → class records, `const CELL = "…"`).
+// property initializer, return value, arrow-function body, parameter/binding default or indexed object
+// literal (`({…})[tone]`) whose every token is class-shaped (tone → class records and helpers,
+// `const CELL = "…"`, `className = "…"`).
 // Literals passed to any other call (`setAttribute("stroke-width")`, `getPropertyValue(…)`) and
 // prose are not candidates. A `${…}` interpolation becomes a wildcard: `text-status-${tone}-fg` must
 // match at least one theme colour and `--status-${tone}-fg` at least one defined property; the values
@@ -786,7 +788,8 @@ const CLASS_FNS = new Set(["cn", "cva", "clsx", "twMerge", "cx"]);
 const CLASS_ATTR = /^(?:className|class|\w+ClassName)$/;
 
 /** Is this literal a class string? `strict`: in a className attribute or a class helper call;
- *  `shaped`: a variable/property initializer, accepted when every token is class-like. */
+ *  `shaped`: a variable/property initializer, a return value or arrow body, a parameter/binding
+ *  default, or a value of an indexed object literal; accepted when every token is class-like. */
 function classContext(node: ts.Node): "strict" | "shaped" | null {
   let n: ts.Node = node;
   for (;;) {
@@ -806,6 +809,15 @@ function classContext(node: ts.Node): "strict" | "shaped" | null {
       n = p;
       continue;
     }
+    // `({ ok: "…", warn: "…" })[tone]`: the map's values are what the lookup yields.
+    if (ts.isElementAccessExpression(p) && p.expression === n) {
+      n = p;
+      continue;
+    }
+    // A helper's result (`return cond ? "…" : TONE[t]`, `(t) => "…"`) and a default (`className = "…"`).
+    if (ts.isReturnStatement(p)) return "shaped";
+    if (ts.isArrowFunction(p) && p.body === n) return "shaped";
+    if ((ts.isParameter(p) || ts.isBindingElement(p)) && p.initializer === n) return "shaped";
     if (ts.isJsxAttribute(p)) return CLASS_ATTR.test(p.name.getText()) ? "strict" : null;
     if (ts.isCallExpression(p)) {
       const name = calleeName(p.expression);
@@ -1118,6 +1130,11 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
       "border-b px-2",
     ]);
     expect(frag('createElement("td", { className: `${CELL} whitespace-nowrap` });')).toEqual(["\u0000 whitespace-nowrap"]);
+    expect(frag('function edge(s) { return outline(s) ? "border-dashed border-input" : EDGE[s]; }')).toEqual(["border-dashed border-input"]);
+    expect(frag('const align = (c) => (c.end ? "text-right" : undefined);')).toEqual(["text-right"]);
+    expect(frag('const cls = { ok: "bg-status-ok-bg", warn: "bg-status-warn-bg" }[tone];')).toEqual(["bg-status-ok-bg", "bg-status-warn-bg"]);
+    expect(frag('function Chip({ className = "rounded-md bg-muted" }) {} function f(c = "text-sm") {}')).toEqual(["rounded-md bg-muted", "text-sm"]);
+    expect(frag('function label() { return "Loading hosts…"; }')).toEqual([]);
     // Not class strings: other calls' arguments, prose, attribute values.
     expect(frag('el.setAttribute("stroke-width", "2"); cs.getPropertyValue("border-top-color");')).toEqual([]);
     expect(frag('const hint = "Use text-red-500 sparingly";')).toEqual([]);

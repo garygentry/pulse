@@ -22,6 +22,7 @@ import {
   overviewEngineOf, scrapeSection, ruleSection, canaryRule, notificationSection, capacityTiles,
   deriveGrafanaBase,
 } from "./model.js";
+import { readRouteKey } from "./route-key.js";
 import { presentVerdict, rollUpVerdict } from "./verdict.js";
 import { engineBoardUrl } from "./labels.js";
 import { VerdictBanner } from "./verdict-banner.js";
@@ -45,9 +46,11 @@ function logViewFault(error: unknown): void {
  * @returns The view tree wrapped in a `PageErrorBoundary`.
  */
 export default function EngineView(props: ViewProps): ReactElement {
+  useSignals();
   return (
     <PageErrorBoundary
       pageSlot="engine-page"
+      resetKey={readRouteKey(props.store)}
       title="The engine view hit a rendering error"
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}

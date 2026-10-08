@@ -15,6 +15,7 @@ import type { CSSProperties, ReactElement } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { ViewProps } from "../../../shared/registry.js";
+import { routeKey } from "../../router.js";
 import { cn, FragmentBoundary, PageErrorBoundary, PageHeader, SegmentedControl, useDisposable } from "@/ui";
 import { announce } from "../../a11y/index.js";
 import { createEstateClock, TZ_FALLBACK_MARKER } from "../../format.js";
@@ -215,8 +216,9 @@ const GRID_REGION_CLASS =
 
 /** The overview composition with explicit test/fixture seams (see {@link OverviewCompositionProps}). */
 export function OverviewComposition(props: OverviewCompositionProps): ReactElement {
+  useSignals();
   return (
-    <PageErrorBoundary pageSlot="overview-page" title={OVERVIEW_PAGE_ERROR_TITLE} message="Reload to try again — other views are unaffected.">
+    <PageErrorBoundary pageSlot="overview-page" resetKey={routeKey(props.store.route.value)} title={OVERVIEW_PAGE_ERROR_TITLE} message="Reload to try again — other views are unaffected.">
       <OverviewPage {...props} />
     </PageErrorBoundary>
   );

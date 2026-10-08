@@ -30,7 +30,7 @@ import { delivery, makeEngineSnapshot, makeEnginePayload, makeObservation } from
 import { makeEstatePayloadFixture } from "./factories/estate-payload.js";
 import { makeOverviewSnapshot } from "./fixtures/overview/factory.js";
 import { StubChart } from "./chart-stub.js";
-import { act, describeUi, render, screen, within } from "./rtl.js";
+import { act, describeUi, render, screen, userEvent, within } from "./rtl.js";
 import { makeHierarchySnapshot, makeTimelineIndex } from "./timeline-fixtures.js";
 
 isolateDomGlobals();
@@ -105,13 +105,27 @@ const ROUTES: Readonly<Record<string, readonly string[]>> = {
  *  way a malformed payload faults a view body. */
 const PAYLOAD_SIGNALS = ["snapshot", "alerts", "engine", "estate", "timeline"] as const;
 
-function faultPayloads(store: AppStore): void {
+function faultPayloads(store: AppStore): () => void {
+  let broken = true;
   const boom = (): never => {
     throw new Error("views-page-structure: simulated render fault");
   };
   for (const key of PAYLOAD_SIGNALS) {
-    Object.defineProperty(store, key, { value: { get value(): never { return boom(); }, peek: boom, subscribe: boom } });
+    const real = store[key] as { value: unknown; peek(): unknown; subscribe(fn: (v: unknown) => void): () => void };
+    Object.defineProperty(store, key, {
+      value: {
+        get value(): unknown {
+          return broken ? boom() : real.value;
+        },
+        peek: () => (broken ? boom() : real.peek()),
+        subscribe: (fn: (v: unknown) => void) => real.subscribe(fn),
+      },
+    });
   }
+  // Heal: reads reach the real (seeded) signals again.
+  return () => {
+    broken = false;
+  };
 }
 
 /** The workbench reads no payload, so it has no render-fault state to drive. */
@@ -135,6 +149,9 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
     globalThis.fetch = originalFetch;
   });
 
+  /** The store, router and heal() of the latest render. */
+  let last!: { store: AppStore; router: PathRouter; heal: () => void };
+
   async function renderRoute(view: ViewDefinition, path: string, state: State): Promise<HTMLElement> {
     const win = (globalThis as unknown as { window: Window }).window;
     win.history.replaceState({}, "", path);
@@ -148,7 +165,7 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
         liveConnection(store);
       }
     });
-    if (state === "render fault") faultPayloads(store);
+    last = { store, router, heal: state === "render fault" ? faultPayloads(store) : () => {} };
     expect(store.route.value.view, `${path} routes to ${view.id}`).toBe(view.id);
     const View = await view.load();
     let container!: HTMLElement;
@@ -205,5 +222,43 @@ describeUi("views: page root data-slot and one PageHeader h1 per route", () => {
         }, 30_000);
       }
     }
+  }
+
+  /** Somewhere else in the same view: its next route, or the base route with an extra query. */
+  const elsewhere = (id: string): string => ROUTES[id]![1] ?? `/${id}?probe=1`;
+
+  for (const view of ALL_VIEWS.filter((v) => !NO_PAYLOAD_VIEWS.has(v.id))) {
+    test(`/${view.id}: a render fault clears on navigation within the view`, async () => {
+      const quiet = spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const container = await renderRoute(view, `/${view.id}`, "render fault");
+        expect(container.firstElementChild?.getAttribute("data-state")).toBe("error");
+        last.heal();
+        await act(async () => {
+          last.router.navigate(elsewhere(view.id));
+          last.store.route.value = last.router.current();
+        });
+        for (let i = 0; i < 4; i++) await act(() => new Promise<void>((r) => setTimeout(r, 10)));
+        expect(container.firstElementChild?.getAttribute("data-state") ?? null, `${view.id}: page renders again`).not.toBe("error");
+        expect(container.querySelector('[data-slot="page-error-boundary"]')).toBeNull();
+        expectPageStructure(container, `${elsewhere(view.id)} after the fault`);
+      } finally {
+        quiet.mockRestore();
+      }
+    }, 30_000);
+
+    test(`/${view.id}: Retry moves focus to the page heading`, async () => {
+      const quiet = spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await renderRoute(view, `/${view.id}`, "render fault");
+        last.heal();
+        await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+        for (let i = 0; i < 4; i++) await act(() => new Promise<void>((r) => setTimeout(r, 10)));
+        const h1 = screen.getByRole("heading", { level: 1, hidden: true });
+        expect(document.activeElement === h1, `${view.id}: focus on "${h1.textContent}", not ${document.activeElement?.tagName}`).toBe(true);
+      } finally {
+        quiet.mockRestore();
+      }
+    }, 30_000);
   }
 });

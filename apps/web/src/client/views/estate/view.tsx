@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import type { EstatePayload } from "@pulse/web-data/wire";
 
 import type { ViewProps } from "../../../shared/registry.js";
+import { routeKey } from "../../router.js";
 import type { AppStore } from "../../store/index.js";
 import { refetchView } from "../../store/live-state.js";
 import type { PathRouter } from "../../router.js";
@@ -148,9 +149,11 @@ function EstateFrame({ children }: { readonly children: ReactNode }): ReactEleme
  *  render fault outside the per-region boundaries (the delivery frame, the landing, an entity page),
  *  keeping the estate-page root and an h1. */
 export default function EstateView(props: ViewProps): ReactElement {
+  useSignals();
   return (
     <PageErrorBoundary
       pageSlot="estate-page"
+      resetKey={routeKey(props.store.route.value)}
       title="The estate view hit a rendering error"
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}

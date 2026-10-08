@@ -63,9 +63,29 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
     this.props.onError?.(error);
   }
 
+  /** Pulse: the fallback's root, and the element that held it when Retry was pressed. */
+  private fallbackEl: HTMLElement | null = null;
+  private readonly setFallbackEl = (el: HTMLElement | null): void => {
+    this.fallbackEl = el;
+  };
+  private retryHost: HTMLElement | null = null;
+
   private readonly retry = (): void => {
+    this.retryHost = this.fallbackEl?.parentElement ?? null;
     this.setState((prior) => ({ failed: false, nonce: prior.nonce + 1 }));
   };
+
+  /** Pulse: after Retry, focus the page heading (the remounted page's, or the fallback's again) so
+   *  focus does not drop to <body> with the Retry button. */
+  componentDidUpdate(): void {
+    const host = this.retryHost;
+    if (host === null) return;
+    this.retryHost = null;
+    const target = host.querySelector<HTMLElement>("h1") ?? host.querySelector<HTMLElement>('[data-slot$="-page"]');
+    if (target === null) return;
+    if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+    target.focus();
+  }
 
   render(): ReactNode {
     if (this.state.failed) {
@@ -76,17 +96,27 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
         level = 1,
       } = this.props;
       const headingId = pageHeadingId(title);
+      const { pageSlot } = this.props;
       const fallback = (
-        <section data-slot="page-error-boundary" aria-labelledby={headingId} className="flex flex-col gap-6">
+        <section
+          ref={pageSlot === undefined ? this.setFallbackEl : undefined}
+          data-slot="page-error-boundary"
+          aria-labelledby={headingId}
+          className="flex flex-col gap-6"
+        >
           <PageHeader id={headingId} title={title} level={level} />
           <ErrorState title={message} onRetry={this.retry} retryLabel={retryLabel} />
         </section>
       );
-      const { pageSlot } = this.props;
       return pageSlot === undefined ? (
         fallback
       ) : (
-        <div data-slot={pageSlot} data-state="error" className="flex min-w-0 flex-col">
+        <div
+          ref={this.setFallbackEl}
+          data-slot={pageSlot}
+          data-state="error"
+          className="flex min-w-0 flex-col"
+        >
           {fallback}
         </div>
       );

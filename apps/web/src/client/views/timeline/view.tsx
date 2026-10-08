@@ -17,6 +17,7 @@ import { isKiosk } from "../../shell/kiosk.js";
 import { createEstateClock } from "../../format.js";
 import type { EstateClock } from "../../format.js";
 import type { ViewProps } from "../../../shared/registry.js";
+import { routeKey } from "../../router.js";
 
 import { createLiveFollow, createTimeAxis } from "../_shared/timeseries/axis.js";
 import type { TimeWindow } from "../_shared/timeseries/axis.js";
@@ -79,9 +80,11 @@ function logViewFault(error: unknown): void {
  * @returns The page.
  */
 export default function TimelineView(props: ViewProps): ReactElement {
+  useSignals();
   return (
     <PageErrorBoundary
       pageSlot="timeline-page"
+      resetKey={routeKey(props.store.route.value)}
       title="The timeline view hit a rendering error"
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}
