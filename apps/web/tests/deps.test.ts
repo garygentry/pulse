@@ -54,6 +54,8 @@ export const PINNED_DEPS: readonly PinnedDep[] = [
   { name: "@radix-ui/react-toggle",           manifest: "apps/web/package.json", field: "dependencies",    version: "1.1.18", license: "MIT" },
   { name: "@radix-ui/react-toggle-group",     manifest: "apps/web/package.json", field: "dependencies",    version: "1.1.19", license: "MIT" },
   { name: "@radix-ui/react-tooltip",          manifest: "apps/web/package.json", field: "dependencies",    version: "1.2.16", license: "MIT" },
+  // The CSP style nonce hook react-remove-scroll's scroll-lock <style> reads (main.tsx; issue #2).
+  { name: "get-nonce",                manifest: "apps/web/package.json", field: "dependencies",    version: "1.0.1",  license: "MIT" },
   { name: "@tanstack/react-virtual",  manifest: "apps/web/package.json", field: "dependencies",    version: "3.14.13", license: "MIT" },
   { name: "culori",                   manifest: "apps/web/package.json", field: "devDependencies", version: "4.0.2",  license: "MIT" },
   { name: "@types/culori",            manifest: "apps/web/package.json", field: "devDependencies", version: "4.0.1",  license: "MIT" },

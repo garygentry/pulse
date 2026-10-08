@@ -143,6 +143,25 @@ those requests fail and the timeline shows "check history not available". Caddy'
 and must be configured to pass them through: Traefik's encoded-character filtering, and nginx
 `proxy_pass` with a URI part (which normalizes the path — use `proxy_pass` without a URI).
 
+### Security headers
+
+The web overview sets its own security headers, so the proxy does not need to add any:
+
+- every app response: `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`;
+- HTML pages: a strict `Content-Security-Policy` (same-origin scripts, styles, fonts, and
+  connections; no framing), `Cross-Origin-Opener-Policy: same-origin`, and a `Permissions-Policy`
+  that turns off camera, microphone, geolocation, and similar features.
+
+Do not add a second `Content-Security-Policy` at the proxy. Browsers enforce every policy they
+receive, so a second one can only tighten the app's policy and may break the UI. Neither Caddy's
+`reverse_proxy` nor Traefik adds these headers by default.
+
+The app does **not** send `Strict-Transport-Security`, because TLS terminates at your proxy. If
+you serve Pulse only over HTTPS, set HSTS on the proxy, for example `header
+Strict-Transport-Security "max-age=31536000"` inside the Caddy site block. Leave HSTS off on
+Recipe B's plain-HTTP loopback access. The policy and how to extend it are described in the
+[web foundation architecture](/architecture/web-foundation/architecture/#security-headers).
+
 ## Recipe B — Minimal loopback publish (bare LAN / SSH tunnel)
 
 When you just need occasional local access and no proxy, publish the UI ports to **loopback
