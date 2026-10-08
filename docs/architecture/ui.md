@@ -225,6 +225,10 @@ from a production build.
 - A new pattern goes in `ui/patterns/<kebab-name>.tsx`, is exported from `ui/index.ts`, has a
   `data-slot="<kebab-name>"` root, and is shown in the workbench in every state. If it is
   Pulse-only, list it in `VENDORED.md`.
+- Advertise a page shortcut with `aria-keyshortcuts` on the focusable control it acts on (each
+  radio of a `SegmentedControl` through `keyShortcuts`), never on a wrapper. Values are
+  KeyboardEvent `key` values, space-separated alternatives: `"[ ]"`, `"Shift+ArrowLeft"`, with
+  `Space` and `Plus` spelled out; `code` names such as `BracketLeft` are wrong.
 - Style only with token classes. `style={…}` is for dynamic geometry, in files on the guardrail
   allowlist.
 
