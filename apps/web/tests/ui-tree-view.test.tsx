@@ -62,6 +62,17 @@ describe("tree logic", () => {
     expect(rows[2]!.parentId).toBe("docs/img");
   });
 
+  it("gives each visible row its position among its siblings, from the model", () => {
+    const rows = visibleTreeRows(filterTreeNodes(TREE, accessors).entries, new Set(["docs"]));
+    expect(rows.map((r) => [r.entry.id, r.posInSet, r.setSize])).toEqual([
+      ["docs", 1, 3],
+      ["docs/guide.md", 1, 2],
+      ["docs/img", 2, 2],
+      ["empty", 2, 3],
+      ["readme.md", 3, 3],
+    ]);
+  });
+
   it("keeps a matching branch's whole subtree", () => {
     const result = filterTreeNodes(TREE, accessors, (n) => n.name === "docs");
     expect(result.entries.map((e) => e.id)).toEqual(["docs"]);

@@ -1,5 +1,20 @@
-// Pulse divergence from deck: `renderMeta` output is the treeitem's accessible description.
-import { useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+// Pulse divergences from deck: `renderMeta` output is the treeitem's accessible description; opt-in
+// row virtualization (`virtualize`, over `@tanstack/react-virtual`); `*` expands every sibling and
+// printable keys jump by label (type-ahead); the row wraps, so a caller's meta can drop to a line of
+// its own at narrow widths.
+import { defaultRangeExtractor, observeElementOffset, useVirtualizer } from "@tanstack/react-virtual";
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FocusEvent,
+  type KeyboardEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { useListNavigation } from "@/ui/hooks/use-list-navigation";
 import { cssEscape } from "@/ui/lib/dom";
 import {
@@ -10,6 +25,7 @@ import {
   type VisibleTreeRow,
 } from "@/ui/lib/tree";
 import { cn } from "@/ui/lib/utils";
+import { observeClientRect } from "@/ui/lib/virtual";
 import { EmptyState } from "@/ui/patterns/empty-state";
 import { Icon } from "@/ui/patterns/icon";
 
@@ -19,6 +35,21 @@ export interface TreeNodeState {
   readonly selected: boolean;
   readonly depth: number;
 }
+
+export interface TreeViewVirtualizeOptions {
+  /** Virtualize when at least this many rows are visible (expanded). Default 300. */
+  threshold?: number;
+  /** Rows rendered beyond each edge of the viewport. Default 10. */
+  overscan?: number;
+  /** Row height in px assumed until a row is rendered and measured. Default 32. */
+  rowHeight?: number;
+}
+
+/** Defaults for `virtualize`. */
+export const TREE_VIEW_VIRTUALIZE_DEFAULTS = { threshold: 300, overscan: 10, rowHeight: 32 } as const;
+
+/** A virtualized tree falls back to the nested one below `floor(threshold * this)` visible rows. */
+const VIRTUALIZE_EXIT_RATIO = 0.8;
 
 export interface TreeViewProps<T> {
   nodes: readonly T[];
@@ -42,7 +73,8 @@ export interface TreeViewProps<T> {
   /** The row glyph; default folder / open folder / file. Must be decorative (`aria-hidden`). */
   renderIcon?: (node: T, state: TreeNodeState) => ReactNode;
   /** Trailing row content (a count, a badge). Plain text or badges only; never interactive. It is
-   *  the treeitem's accessible description, read after the label. */
+   *  the treeitem's accessible description, read after the label. The row wraps: give the meta
+   *  `basis-full` (e.g. under a container query) to put it on a line of its own. */
   renderMeta?: (node: T, state: TreeNodeState) => ReactNode;
   /**
    * Filter: text (case-insensitive substring of the label) or a predicate. A
@@ -52,6 +84,15 @@ export interface TreeViewProps<T> {
   filter?: string | ((node: T) => boolean);
   /** Shown (as a compact EmptyState) when there is nothing to show. */
   empty?: ReactNode;
+  /**
+   * Render only the rows in and near a bounded scroll viewport once at least `threshold` rows are
+   * visible. The treeitems are then flat (no `group` nesting), each with `aria-level`,
+   * `aria-setsize` and `aria-posinset` from the model; rows are measured as they render; the
+   * focused row and the Tab stop stay rendered; keyboard moves reach rows that are not rendered
+   * and scroll them into view. Hysteresis: once virtualized, the tree stays so until fewer than
+   * `floor(threshold * 0.8)` rows are visible. Below the threshold the output is deck's.
+   */
+  virtualize?: boolean | TreeViewVirtualizeOptions;
   "aria-label"?: string;
   "aria-labelledby"?: string;
   /** The tree's description, e.g. the id of visible keyboard help. */
@@ -61,10 +102,30 @@ export interface TreeViewProps<T> {
 
 interface RowInfo<T> {
   readonly row: VisibleTreeRow<T>;
+  readonly index: number;
   readonly labelId: string;
 }
 
+interface VirtualConfig {
+  readonly threshold: number;
+  readonly overscan: number;
+  readonly rowHeight: number;
+}
+
+function virtualConfig(virtualize: TreeViewProps<unknown>["virtualize"]): VirtualConfig | null {
+  if (virtualize === undefined || virtualize === false) return null;
+  const options = virtualize === true ? {} : virtualize;
+  return {
+    threshold: options.threshold ?? TREE_VIEW_VIRTUALIZE_DEFAULTS.threshold,
+    overscan: options.overscan ?? TREE_VIEW_VIRTUALIZE_DEFAULTS.overscan,
+    rowHeight: options.rowHeight ?? TREE_VIEW_VIRTUALIZE_DEFAULTS.rowHeight,
+  };
+}
+
 const EMPTY_SET: ReadonlySet<string> = new Set();
+
+/** Type-ahead: keys typed within this many ms of the last extend the search string. */
+const TYPEAHEAD_MS = 500;
 
 function defaultIcon(state: TreeNodeState): ReactNode {
   const name = state.leaf ? "file" : state.expanded ? "folder-open" : "folder";
@@ -79,8 +140,9 @@ function defaultIcon(state: TreeNodeState): ReactNode {
  * Keyboard (arrows preset of `useListNavigation`): ↑/↓ (and j/k) move, Home/End
  * jump, → expands a branch or steps into it, ← collapses or steps to the parent,
  * Enter activates (select a leaf, toggle a branch), Space toggles a branch or
- * selects a leaf. One item is in the Tab order (the last focused, else the
- * selected, else the first).
+ * selects a leaf, `*` expands every sibling branch, and other printable keys move
+ * to the next row whose label starts with what was typed. One item is in the Tab
+ * order (the last focused, else the selected, else the first).
  */
 export function TreeView<T>({
   nodes,
@@ -98,6 +160,7 @@ export function TreeView<T>({
   renderMeta,
   filter,
   empty,
+  virtualize,
   className,
   ...labelling
 }: TreeViewProps<T>) {
@@ -139,9 +202,20 @@ export function TreeView<T>({
   const rows = useMemo(() => visibleTreeRows(tree.entries, effectiveExpanded), [tree, effectiveExpanded]);
   const byId = useMemo(() => {
     const map = new Map<string, RowInfo<T>>();
-    rows.forEach((row, index) => map.set(row.entry.id, { row, labelId: `${baseId}-label-${index}` }));
+    rows.forEach((row, index) => map.set(row.entry.id, { row, index, labelId: `${baseId}-label-${index}` }));
     return map;
   }, [rows, baseId]);
+
+  // Virtualization, with hysteresis so expanding and collapsing around the threshold does not
+  // switch layouts (and remount every row) on each crossing.
+  const virtual = virtualConfig(virtualize);
+  const [wasVirtualized, setWasVirtualized] = useState(false);
+  const virtualized =
+    virtual !== null &&
+    (rows.length >= virtual.threshold ||
+      (wasVirtualized && rows.length >= Math.max(1, Math.floor(virtual.threshold * VIRTUALIZE_EXIT_RATIO))));
+  // Adjusting state during render (React's documented pattern); converges in one extra pass.
+  if (virtualized !== wasVirtualized) setWasVirtualized(virtualized);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const tabStopId =
@@ -151,25 +225,36 @@ export function TreeView<T>({
         ? selectedId
         : (rows[0]?.entry.id ?? null);
 
-  const setBranch = (id: string, open: boolean): void => {
+  const setBranches = (ids: readonly string[], open: boolean): void => {
     if (open) {
-      if (collapsedWhileFiltering.has(id)) {
-        const ids = new Set(collapsedWhileFiltering);
-        ids.delete(id);
-        setFilterCollapsed({ key: filter, ids });
+      const reopened = ids.filter((id) => collapsedWhileFiltering.has(id));
+      if (reopened.length > 0) {
+        const next = new Set(collapsedWhileFiltering);
+        for (const id of reopened) next.delete(id);
+        setFilterCollapsed({ key: filter, ids: next });
       }
-      if (!effectiveExpanded.has(id)) setExpanded(new Set(expanded).add(id));
+      const closed = ids.filter((id) => !effectiveExpanded.has(id));
+      if (closed.length > 0) {
+        const next = new Set(expanded);
+        for (const id of closed) next.add(id);
+        setExpanded(next);
+      }
       return;
     }
-    if (expanded.has(id)) {
+    const own = ids.filter((id) => expanded.has(id));
+    if (own.length > 0) {
       const next = new Set(expanded);
-      next.delete(id);
+      for (const id of own) next.delete(id);
       setExpanded(next);
     }
-    if (filtering && tree.autoExpanded.has(id)) {
-      setFilterCollapsed({ key: filter, ids: new Set(collapsedWhileFiltering).add(id) });
+    const auto = filtering ? ids.filter((id) => tree.autoExpanded.has(id)) : [];
+    if (auto.length > 0) {
+      const next = new Set(collapsedWhileFiltering);
+      for (const id of auto) next.add(id);
+      setFilterCollapsed({ key: filter, ids: next });
     }
   };
+  const setBranch = (id: string, open: boolean): void => setBranches([id], open);
 
   const activate = (entry: TreeEntry<T>): void => {
     if (entry.leaf || selectBranches) onSelect?.(entry.node);
@@ -180,11 +265,54 @@ export function TreeView<T>({
     rootRef.current?.querySelector<HTMLElement>(`[role="treeitem"][data-tree-id="${cssEscape(id)}"]`) ?? null;
   const entryOfEl = (el: HTMLElement): RowInfo<T> | undefined => byId.get(el.dataset.treeId ?? "");
 
+  // A virtualized tree may not have the row in the DOM: its body renders the row, then focuses it.
+  const virtualFocusRef = useRef<((id: string) => void) | null>(null);
+  // A row to scroll back into view after the next commit (rows inserted above it moved it).
+  const revealIdRef = useRef<string | null>(null);
+  const focusRow = (id: string): void => {
+    if (virtualFocusRef.current !== null) {
+      setActiveId(id); // kept rendered from the next commit
+      virtualFocusRef.current(id);
+    } else {
+      itemEl(id)?.focus();
+    }
+  };
+
+  /** The focused row, from the DOM's focus (not `activeId`, which outlives a blur). */
+  const focusedInfo = (): RowInfo<T> | undefined => {
+    const root = rootRef.current;
+    const active = root?.ownerDocument.activeElement;
+    if (root === null || root === undefined || !(active instanceof HTMLElement)) return undefined;
+    if (active.getAttribute("role") !== "treeitem" || !root.contains(active)) return undefined;
+    return entryOfEl(active);
+  };
+
+  // The type-ahead search buffer (see `typeAhead` below).
+  const typeahead = useRef({ text: "", at: Number.NEGATIVE_INFINITY });
+
   useListNavigation({
     scope: "element",
     containerRef: rootRef,
     keys: "arrows",
     getItems: () => rootRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [],
+    // Virtualized, moves are worked out over every visible row, rendered or not.
+    ...(virtualized
+      ? {
+          virtual: {
+            count: () => rows.length,
+            activeIndex: () => focusedInfo()?.index ?? -1,
+            focus: (index: number) => {
+              const row = rows[index];
+              if (row !== undefined) focusRow(row.entry.id);
+            },
+          },
+        }
+      : {}),
+    // While a type-ahead search is live, j/k extend it ("rack-4", "kafka") instead of moving.
+    typeaheadActive: () => {
+      const state = typeahead.current;
+      return state.text !== "" && performance.now() - state.at <= TYPEAHEAD_MS;
+    },
     onActivate: (el) => {
       const info = entryOfEl(el);
       if (info !== undefined) activate(info.row.entry);
@@ -201,94 +329,412 @@ export function TreeView<T>({
       if (info === undefined || info.row.entry.leaf) return;
       const { entry } = info.row;
       if (!effectiveExpanded.has(entry.id)) setBranch(entry.id, true);
-      else if (entry.children[0] !== undefined) itemEl(entry.children[0].id)?.focus();
+      else if (entry.children[0] !== undefined) focusRow(entry.children[0].id);
     },
     onCollapse: (el) => {
       const info = entryOfEl(el);
       if (info === undefined) return;
       const { entry, parentId } = info.row;
       if (!entry.leaf && effectiveExpanded.has(entry.id)) setBranch(entry.id, false);
-      else if (parentId !== null) itemEl(parentId)?.focus();
+      else if (parentId !== null) focusRow(parentId);
     },
   });
 
-  const renderLevel = (entries: readonly TreeEntry<T>[], depth: number): ReactNode =>
-    entries.map((entry, index) => {
-      const open = !entry.leaf && effectiveExpanded.has(entry.id);
-      const selected = entry.id === selectedId;
-      const selectable = entry.leaf || selectBranches;
-      const state: TreeNodeState = { leaf: entry.leaf, expanded: open, selected, depth };
-      const labelId = byId.get(entry.id)?.labelId;
-      const meta = renderMeta?.(entry.node, state);
-      const hasMeta = meta !== undefined && meta !== null && meta !== false && meta !== "";
-      const metaId = hasMeta && labelId !== undefined ? `${labelId}-meta` : undefined;
-      return (
-        <li
-          key={entry.id}
-          role="treeitem"
-          data-tree-id={entry.id}
-          aria-labelledby={labelId}
-          aria-describedby={metaId}
-          aria-level={depth + 1}
-          aria-setsize={entries.length}
-          aria-posinset={index + 1}
-          aria-expanded={entry.leaf ? undefined : open}
-          aria-selected={selectable ? selected : undefined}
-          aria-current={selected ? "true" : undefined}
-          tabIndex={entry.id === tabStopId ? 0 : -1}
-          onFocus={(event) => {
-            if (event.target === event.currentTarget) setActiveId(entry.id);
-          }}
-          className="outline-none [&:focus-visible>[data-tree-row]]:ring-[3px] [&:focus-visible>[data-tree-row]]:ring-ring/50"
+  // The tree keys outside `useListNavigation`'s list grammar: `*` and type-ahead (WAI-ARIA tree
+  // pattern). React's root listener runs after the hook's element listener, so these see only keys
+  // it left alone (`defaultPrevented` is set on the rest; j/k too, except during a live search, see
+  // `typeaheadActive`). They work from the model, so they reach rows a virtualized tree has not
+  // rendered.
+  /** Extend the type-ahead buffer with `key` and focus the next row it matches. True on a match. */
+  const typeAhead = (key: string, info: RowInfo<T>): boolean => {
+    const now = performance.now();
+    const state = typeahead.current;
+    state.text = now - state.at <= TYPEAHEAD_MS ? state.text + key : key;
+    state.at = now;
+    // A repeated key cycles through the rows starting with it; a longer string first checks the
+    // focused row, which may still match as more is typed.
+    const repeated = [...state.text].every((char) => char === key);
+    const needle = repeated ? key : state.text;
+    const start = repeated ? info.index + 1 : info.index;
+    for (let step = 0; step < rows.length; step += 1) {
+      const row = rows[(start + step) % rows.length]!;
+      if (getLabel(row.entry.node).toLowerCase().startsWith(needle)) {
+        if (row.entry.id !== info.row.entry.id) focusRow(row.entry.id);
+        return true;
+      }
+    }
+    return false;
+  };
+  const plainKey = (event: KeyboardEvent<HTMLElement>): string | null =>
+    event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1 || event.key === " "
+      ? null
+      : event.key.toLowerCase();
+  const onTreeKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    if (event.defaultPrevented) return;
+    const key = plainKey(event);
+    if (key === null) return;
+    const info = focusedInfo();
+    if (info === undefined) return;
+    if (key === "*") {
+      const { parentId } = info.row;
+      const siblings = parentId === null ? tree.entries : (byId.get(parentId)?.row.entry.children ?? []);
+      const branches = siblings.filter((sibling) => !sibling.leaf).map((sibling) => sibling.id);
+      // Siblings above the focused row grow and push it down: bring it back into view after the commit.
+      if (branches.some((id) => !effectiveExpanded.has(id))) revealIdRef.current = info.row.entry.id;
+      setBranches(branches, true);
+      event.preventDefault();
+      return;
+    }
+    if (typeAhead(key, info)) event.preventDefault();
+  };
+
+  // Switching layouts remounts every row: give focus back to the row that had it.
+  const focusWithinRef = useRef(false);
+  const onFocusWithin = (): void => {
+    focusWithinRef.current = true;
+  };
+  const onBlurWithin = (event: FocusEvent<HTMLElement>): void => {
+    // Focus moving elsewhere, or to nowhere (a click on the page, the window losing focus) while the
+    // row is still in the document, leaves the tree. A row removed by a layout switch also blurs with
+    // no `relatedTarget`, but it is disconnected by then: that one is not leaving.
+    const next = event.relatedTarget;
+    if (next instanceof Node) {
+      if (!event.currentTarget.contains(next)) focusWithinRef.current = false;
+    } else if ((event.target as Node).isConnected) {
+      focusWithinRef.current = false;
+    }
+  };
+  const layoutRef = useRef(virtualized);
+  useLayoutEffect(() => {
+    // The virtualized body (whose effects run first) has taken any reveal; the nested tree needs none.
+    revealIdRef.current = null;
+    if (layoutRef.current === virtualized) return;
+    layoutRef.current = virtualized;
+    const doc = rootRef.current?.ownerDocument;
+    const lost = doc !== undefined && (doc.activeElement === null || doc.activeElement === doc.body);
+    if (focusWithinRef.current && lost && tabStopId !== null) focusRow(tabStopId);
+  });
+
+  const renderItem = (row: VisibleTreeRow<T>, children: ReactNode, measure?: VirtualItemProps): ReactElement => {
+    const { entry, depth } = row;
+    const open = !entry.leaf && effectiveExpanded.has(entry.id);
+    const selected = entry.id === selectedId;
+    const selectable = entry.leaf || selectBranches;
+    const state: TreeNodeState = { leaf: entry.leaf, expanded: open, selected, depth };
+    const labelId = byId.get(entry.id)?.labelId;
+    const meta = renderMeta?.(entry.node, state);
+    const hasMeta = meta !== undefined && meta !== null && meta !== false && meta !== "";
+    const metaId = hasMeta && labelId !== undefined ? `${labelId}-meta` : undefined;
+    return (
+      <li
+        key={entry.id}
+        role="treeitem"
+        data-tree-id={entry.id}
+        {...(measure !== undefined ? { "data-index": measure.index, ref: measure.measure } : {})}
+        aria-labelledby={labelId}
+        aria-describedby={metaId}
+        aria-level={depth + 1}
+        aria-setsize={row.setSize}
+        aria-posinset={row.posInSet}
+        aria-expanded={entry.leaf ? undefined : open}
+        aria-selected={selectable ? selected : undefined}
+        aria-current={selected ? "true" : undefined}
+        tabIndex={entry.id === tabStopId ? 0 : -1}
+        onFocus={(event) => {
+          if (event.target === event.currentTarget) setActiveId(entry.id);
+        }}
+        className="outline-none [&:focus-visible>[data-tree-row]]:ring-[3px] [&:focus-visible>[data-tree-row]]:ring-ring/50"
+      >
+        {/* The row: click target and indentation. Keyboard lives on the treeitem. */}
+        <div
+          data-tree-row=""
+          data-selected={selected ? "" : undefined}
+          onClick={() => activate(entry)}
+          style={{ "--tree-depth": depth } as CSSProperties}
+          className={cn(
+            "flex cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-1 rounded-md py-1 pe-2 ps-[calc(var(--tree-depth)*1rem+0.25rem)] text-sm select-none",
+            "hover:bg-accent hover:text-accent-foreground",
+            selected && "bg-accent font-medium text-accent-foreground",
+          )}
         >
-          {/* The row: click target and indentation. Keyboard lives on the treeitem. */}
-          <div
-            data-tree-row=""
-            data-selected={selected ? "" : undefined}
-            onClick={() => activate(entry)}
-            style={{ "--tree-depth": depth } as CSSProperties}
-            className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pe-2 ps-[calc(var(--tree-depth)*1rem+0.25rem)] text-sm select-none",
-              "hover:bg-accent hover:text-accent-foreground",
-              selected && "bg-accent font-medium text-accent-foreground",
-            )}
-          >
-            {entry.leaf ? (
-              <span className="size-4 shrink-0" />
-            ) : (
-              <Icon
-                name="chevron-right"
-                className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
-              />
-            )}
-            {renderIcon !== undefined ? renderIcon(entry.node, state) : defaultIcon(state)}
-            <span id={labelId} className="min-w-0 flex-1 truncate">
-              {getLabel(entry.node)}
+          {entry.leaf ? (
+            <span className="size-4 shrink-0" />
+          ) : (
+            <Icon
+              name="chevron-right"
+              className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+            />
+          )}
+          {renderIcon !== undefined ? renderIcon(entry.node, state) : defaultIcon(state)}
+          <span id={labelId} className="min-w-0 flex-1 truncate">
+            {getLabel(entry.node)}
+          </span>
+          {hasMeta ? (
+            <span id={metaId} className="contents">
+              {meta}
             </span>
-            {hasMeta ? (
-              <span id={metaId} className="contents">
-                {meta}
-              </span>
-            ) : null}
-          </div>
-          {open && entry.children.length > 0 ? (
-            <ul role="group" className="m-0 list-none p-0">
-              {renderLevel(entry.children, depth + 1)}
-            </ul>
           ) : null}
-        </li>
+        </div>
+        {children}
+      </li>
+    );
+  };
+
+  const renderLevel = (entries: readonly TreeEntry<T>[]): ReactNode =>
+    entries.map((entry) => {
+      const info = byId.get(entry.id);
+      if (info === undefined) return null;
+      const open = !entry.leaf && effectiveExpanded.has(entry.id);
+      return renderItem(
+        info.row,
+        open && entry.children.length > 0 ? (
+          <ul role="group" className="m-0 list-none p-0">
+            {renderLevel(entry.children)}
+          </ul>
+        ) : null,
       );
     });
 
   return (
-    <div data-slot="tree-view" ref={rootRef} className={cn("min-w-0", className)}>
+    <div
+      data-slot="tree-view"
+      data-virtualized={virtualized ? "" : undefined}
+      ref={rootRef}
+      onKeyDown={onTreeKeyDown}
+      onFocus={onFocusWithin}
+      onBlur={onBlurWithin}
+      className={cn("min-w-0", className)}
+    >
       {tree.entries.length === 0 ? (
         <EmptyState compact icon={filtering ? "search-x" : "inbox"} title={empty ?? (filtering ? "No matches" : "Nothing to show")} />
+      ) : virtualized && virtual !== null ? (
+        <VirtualTreeBody
+          rows={rows}
+          config={virtual}
+          keepIds={[tabStopId, activeId]}
+          focusRef={virtualFocusRef}
+          revealRef={revealIdRef}
+          itemEl={itemEl}
+          renderItem={(row, measure) => renderItem(row, null, measure)}
+          labelling={labelling}
+        />
       ) : (
         <ul role="tree" className="m-0 list-none p-0" {...labelling}>
-          {renderLevel(tree.entries, 0)}
+          {renderLevel(tree.entries)}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** How a virtualized row reports its index and rendered height. */
+interface VirtualItemProps {
+  readonly index: number;
+  readonly measure: (node: HTMLElement | null) => void;
+}
+
+/**
+ * After a scroll to a row: how many commits may re-aim at it once the virtualizer has caught up with
+ * the scroll (rows rendered and measured), and how many commits may pass waiting for it to catch up.
+ * Budgeted in commits, not time, so a slow machine does not give up early.
+ */
+const SCROLL_CORRECTION = { passes: 3, waits: 10 } as const;
+
+interface VirtualTreeBodyProps<T> {
+  rows: readonly VisibleTreeRow<T>[];
+  config: VirtualConfig;
+  /** Rows that stay rendered wherever the window is: the Tab stop and the focused row. */
+  keepIds: readonly (string | null)[];
+  /** Set to "render this row if it is not, then focus it". */
+  focusRef: { current: ((id: string) => void) | null };
+  /** A row to scroll into view after this commit (then cleared). */
+  revealRef: { current: string | null };
+  itemEl: (id: string) => HTMLElement | null;
+  renderItem: (row: VisibleTreeRow<T>, measure: VirtualItemProps) => ReactElement;
+  labelling: Pick<TreeViewProps<T>, "aria-label" | "aria-labelledby" | "aria-describedby">;
+}
+
+/** An `aria-hidden` spacer standing in for `height` px of rows that are not rendered. */
+function Spacer({ height }: { height: number }) {
+  return <li aria-hidden="true" role="none" data-slot="tree-view-spacer" style={{ height }} />;
+}
+
+/**
+ * The virtualized tree: a bounded scroll viewport over `useVirtualizer`, the visible rows as flat
+ * treeitems with spacers above and below the rendered window. Modelled on `DataTable`'s.
+ */
+function VirtualTreeBody<T>({
+  rows,
+  config,
+  keepIds,
+  focusRef,
+  revealRef,
+  itemEl,
+  renderItem,
+  labelling,
+}: VirtualTreeBodyProps<T>) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const indexOf = (id: string | null): number => (id === null ? -1 : rows.findIndex((row) => row.entry.id === id));
+  // Reports the scroll offset to the virtualizer and re-renders the window now, not on the next
+  // `scroll` event: keys pressed faster than frames would otherwise walk off a stale window.
+  const syncOffsetRef = useRef<(() => void) | null>(null);
+  // A row asked for focus before it was rendered.
+  const pendingFocusRef = useRef<string | null>(null);
+  // Set while a layout effect focuses a row: React cannot flush a synchronous re-render then.
+  const inEffectRef = useRef(false);
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => viewportRef.current,
+    // The client box, not the border box: the area rows actually show in (see `DataTable`).
+    observeElementRect: observeClientRect,
+    estimateSize: () => config.rowHeight,
+    overscan: config.overscan,
+    getItemKey: (index) => rows[index]?.entry.id ?? index,
+    // Unrounded, as in `DataTable`; a hidden tree (an inactive tab) measures 0, so keep what is known.
+    measureElement: (element, entry, instance) => {
+      const box = entry?.borderBoxSize?.[0];
+      const size = box !== undefined ? box.blockSize : element.getBoundingClientRect().height;
+      if (size > 0) return size;
+      const key = instance.options.getItemKey(instance.indexFromElement(element));
+      return instance.itemSizeCache.get(key) ?? config.rowHeight;
+    },
+    observeElementOffset: (instance, notify) => {
+      syncOffsetRef.current = () => {
+        if (instance.scrollElement !== null) notify(instance.scrollElement.scrollTop, true);
+      };
+      const unsubscribe = observeElementOffset(instance, notify);
+      return () => {
+        syncOffsetRef.current = null;
+        unsubscribe?.();
+      };
+    },
+    rangeExtractor: (range) => {
+      const indexes = defaultRangeExtractor(range);
+      const extra = [...keepIds, pendingFocusRef.current]
+        .map(indexOf)
+        .filter((index) => index !== -1 && index < range.count && !indexes.includes(index));
+      return extra.length === 0 ? indexes : [...new Set([...indexes, ...extra])].sort((a, b) => a - b);
+    },
+  });
+
+  // Scroll by offset with a few bounded re-aims once the rendered rows are measured (see
+  // `DataTable`'s `scrollToRow`); any user scroll gesture cancels them. Held by row id.
+  const pendingScrollRef = useRef<{ id: string; passes: number; waits: number } | null>(null);
+  const scrollToRow = (index: number): void => {
+    pendingScrollRef.current = null;
+    const target = virtualizer.getOffsetForIndex(index, "auto");
+    const id = rows[index]?.entry.id;
+    if (target === undefined || id === undefined || target[0] === virtualizer.scrollOffset) return;
+    pendingScrollRef.current = { id, passes: SCROLL_CORRECTION.passes, waits: SCROLL_CORRECTION.waits };
+    virtualizer.scrollToOffset(target[0], { align: "start" });
+  };
+  const cancelPendingScroll = (): void => {
+    pendingScrollRef.current = null;
+  };
+
+  useLayoutEffect(() => {
+    const pendingFocus = pendingFocusRef.current;
+    if (pendingFocus !== null) {
+      const el = itemEl(pendingFocus);
+      if (el !== null) {
+        pendingFocusRef.current = null;
+        inEffectRef.current = true;
+        try {
+          el.focus();
+        } finally {
+          inEffectRef.current = false;
+        }
+      } else if (indexOf(pendingFocus) === -1) {
+        pendingFocusRef.current = null;
+      }
+    }
+    const reveal = revealRef.current;
+    if (reveal !== null) {
+      revealRef.current = null;
+      const index = indexOf(reveal);
+      if (index !== -1) scrollToRow(index);
+    }
+    const pending = pendingScrollRef.current;
+    const viewport = viewportRef.current;
+    if (pending === null || viewport === null) return;
+    const index = indexOf(pending.id);
+    const rendered = index !== -1 && virtualizer.getVirtualItems().some((item) => item.index === index);
+    const target = index === -1 ? undefined : virtualizer.getOffsetForIndex(index, "auto");
+    const reachable =
+      target === undefined ? undefined : Math.min(target[0], viewport.scrollHeight - viewport.clientHeight);
+    const expired = pending.passes <= 0 || pending.waits <= 0;
+    if (reachable === undefined || expired) {
+      pendingScrollRef.current = null;
+      return;
+    }
+    // Until the virtualizer has seen the scroll (its `scroll` event), the rows around the target are
+    // not rendered or measured yet, so "in place" means nothing: wait for that commit.
+    if (Math.abs((virtualizer.scrollOffset ?? 0) - viewport.scrollTop) > 1) {
+      pending.waits -= 1;
+      return;
+    }
+    if (rendered && Math.abs(viewport.scrollTop - reachable) <= 1) {
+      pendingScrollRef.current = null;
+      return;
+    }
+    pending.passes -= 1;
+    if (Math.abs(viewport.scrollTop - reachable) > 1) virtualizer.scrollToOffset(reachable, { align: "start" });
+  });
+
+  useLayoutEffect(() => {
+    focusRef.current = (id) => {
+      const el = itemEl(id);
+      if (el !== null) {
+        el.focus();
+        return;
+      }
+      const index = indexOf(id);
+      if (index === -1) return;
+      // Rendered on the next commit (`rangeExtractor` keeps it), focused by the effect above.
+      pendingFocusRef.current = id;
+      scrollToRow(index);
+    };
+    return () => {
+      focusRef.current = null;
+    };
+  });
+
+  // Keyboard focus moving to a row scrolls it fully into view.
+  const onFocus = (event: FocusEvent<HTMLDivElement>): void => {
+    const item = (event.target as Element).closest('[role="treeitem"]');
+    if (item === null) return;
+    const index = indexOf(item.getAttribute("data-tree-id"));
+    if (index === -1) return;
+    scrollToRow(index);
+    if (!inEffectRef.current) syncOffsetRef.current?.();
+  };
+
+  const body: ReactNode[] = [];
+  let cursor = 0;
+  for (const item of virtualizer.getVirtualItems()) {
+    const row = rows[item.index];
+    if (row === undefined) continue;
+    if (item.start > cursor) body.push(<Spacer key={`gap-${item.index}`} height={item.start - cursor} />);
+    body.push(renderItem(row, { index: item.index, measure: virtualizer.measureElement }));
+    cursor = item.start + item.size;
+  }
+  const trailing = virtualizer.getTotalSize() - cursor;
+  if (trailing > 0) body.push(<Spacer key="gap-end" height={trailing} />);
+
+  return (
+    <div
+      ref={viewportRef}
+      data-slot="tree-view-viewport"
+      onFocus={onFocus}
+      onWheel={cancelPendingScroll}
+      onTouchStart={cancelPendingScroll}
+      onPointerDown={cancelPendingScroll}
+      className="relative max-h-[70vh] overflow-auto overscroll-contain"
+    >
+      <ul role="tree" className="m-0 list-none p-0" {...labelling}>
+        {body}
+      </ul>
     </div>
   );
 }

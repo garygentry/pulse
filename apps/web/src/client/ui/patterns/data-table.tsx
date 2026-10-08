@@ -30,6 +30,7 @@ import {
   type Ref,
 } from "react";
 import { cn } from "@/ui/lib/utils";
+import { observeClientRect } from "@/ui/lib/virtual";
 import { EmptyState, type EmptyStateProps } from "@/ui/patterns/empty-state";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/primitives/table";
 
@@ -481,26 +482,6 @@ function SpacerRow({ height, columnCount }: { height: number; columnCount: numbe
       <td colSpan={columnCount} className="border-0 p-0" style={{ height }} />
     </tr>
   );
-}
-
-/**
- * `observeElementRect` over the scroll element's client box (inside its borders and scrollbars)
- * instead of the library's border box. A content-box ResizeObserver also fires when a scrollbar
- * appears or goes, which changes the client box without changing the border box.
- */
-function observeClientRect(
-  instance: { scrollElement: HTMLDivElement | null },
-  cb: (rect: { width: number; height: number }) => void,
-): (() => void) | undefined {
-  const element = instance.scrollElement;
-  if (element === null) return undefined;
-  const report = () => cb({ width: element.clientWidth, height: element.clientHeight });
-  report();
-  const Observer = element.ownerDocument.defaultView?.ResizeObserver;
-  if (Observer === undefined) return () => {};
-  const observer = new Observer(report);
-  observer.observe(element);
-  return () => observer.disconnect();
 }
 
 /**

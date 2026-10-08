@@ -368,6 +368,51 @@ describeUi("estate: inventory tree", () => {
     expect(items[0]).toHaveFocus();
   });
 
+  test("a large estate: * expands every host and the tree virtualizes, with ARIA from the model", async () => {
+    const base = makeEstatePayloadFixture();
+    const [baseHost, baseService] = [base.estate.hosts[0]!, base.estate.services[0]!];
+    const hosts = Array.from({ length: 30 }, (_, h) => ({
+      ...baseHost,
+      name: `rack-${h}`,
+      drilldownId: `host:rack-${h}` as WebEstateHostV2["drilldownId"],
+    }));
+    const services = hosts.flatMap((host) =>
+      Array.from({ length: 12 }, (_, s) => cloneService(baseService, host.name, `svc-${s}`)),
+    );
+    // happy-dom has no layout: give the virtualized tree's viewport a height (the virtualizer reads it).
+    const proto = (globalThis as unknown as { HTMLElement: { prototype: HTMLElement } }).HTMLElement.prototype;
+    const restore = (["offsetHeight", "clientHeight"] as const).map((name) => {
+      const original = Object.getOwnPropertyDescriptor(proto, name)!;
+      Object.defineProperty(proto, name, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.getAttribute("data-slot") === "tree-view-viewport" ? 400 : original.get!.call(this);
+        },
+      });
+      return () => Object.defineProperty(proto, name, original);
+    });
+    try {
+      const user = userEvent.setup();
+      render(<Inventory {...propsFrom(base, { estate: { ...base.estate, hosts, services } })} />);
+      const treeView = () => tree().closest("[data-slot=tree-view]");
+      // 1 group + 30 collapsed hosts: under the threshold, nested.
+      expect(treeView()).not.toHaveAttribute("data-virtualized");
+      act(() => item("rack-0").focus());
+      await user.keyboard("*");
+      // 1 + 30 × 13 = 391 visible rows: windowed, flat.
+      expect(treeView()).toHaveAttribute("data-virtualized");
+      expect(within(tree()).getAllByRole("treeitem").length).toBeLessThan(100);
+      expect(within(tree()).queryByRole("group")).toBeNull();
+      expect(item("rack-0")).toHaveAttribute("aria-expanded", "true");
+      expect(item("rack-0")).toHaveAttribute("aria-level", "2");
+      expect(item("rack-0")).toHaveAttribute("aria-setsize", "30");
+      // Services sort by name (svc-0, svc-1, svc-10, svc-11, svc-2, …).
+      expect(within(tree()).getAllByRole("treeitem", { name: "svc-3" })[0]).toHaveAttribute("aria-posinset", "6");
+    } finally {
+      for (const undo of restore) undo();
+    }
+  }, 30_000);
+
   test("matchedIds keeps matches and force-expands a matched service's ancestors", () => {
     const matchedIds = new Set(["svc:hostA-managed/loki"]);
     render(<Inventory {...propsFrom(makeEstatePayloadFixture(), { matchedIds })} />);

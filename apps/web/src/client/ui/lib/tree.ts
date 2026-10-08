@@ -87,11 +87,17 @@ export function textPredicate<T>(query: string, getText: (node: T) => string): (
   return (node) => getText(node).toLowerCase().includes(needle);
 }
 
-/** A visible row: an entry with its depth (0 = top level) and its parent's id. */
+/**
+ * A visible row: an entry with its depth (0 = top level), its parent's id, and its place among its
+ * siblings (`posInSet` is 1-based; `setSize` counts them). The position comes from the model, so it
+ * is right for `aria-posinset`/`aria-setsize` even when the siblings are not rendered.
+ */
 export interface VisibleTreeRow<T> {
   readonly entry: TreeEntry<T>;
   readonly depth: number;
   readonly parentId: string | null;
+  readonly posInSet: number;
+  readonly setSize: number;
 }
 
 /** The rows a screen shows, in order: descends only into expanded branches. */
@@ -101,10 +107,10 @@ export function visibleTreeRows<T>(
 ): VisibleTreeRow<T>[] {
   const out: VisibleTreeRow<T>[] = [];
   const walk = (list: readonly TreeEntry<T>[], depth: number, parentId: string | null): void => {
-    for (const entry of list) {
-      out.push({ entry, depth, parentId });
+    list.forEach((entry, index) => {
+      out.push({ entry, depth, parentId, posInSet: index + 1, setSize: list.length });
       if (!entry.leaf && expanded.has(entry.id)) walk(entry.children, depth + 1, entry.id);
-    }
+    });
   };
   walk(entries, 0, null);
   return out;
