@@ -1,0 +1,837 @@
+{
+  "$comment": "Vendored @/ui manifest, checked by apps/web/scripts/ui-drift.ts (bun run ui:drift). Edit notes, files, excluded and localOnly by hand; let `bun run ui:drift --record` write the blob ids and the generated sections of VENDORED.md. See VENDORED.md for the sync procedure.",
+  "upstream": {
+    "repo": "https://github.com/garygentry/deck.git",
+    "commit": "d6a1595b056edc57a8225d938059125a2861fbf9",
+    "describe": "deck v0.3.2; the public squash of e2e2661, the commit the port was copied from, with identical library files",
+    "defaultRef": "main"
+  },
+  "docs": "apps/web/src/client/ui/VENDORED.md",
+  "scope": {
+    "upstream": [
+      "apps/web/src/ui/",
+      "apps/web/src/styles/",
+      "apps/web/components.json"
+    ],
+    "local": [
+      "apps/web/src/client/ui/",
+      "apps/web/src/client/styles/"
+    ]
+  },
+  "notes": {
+    "radix-scoped": "Radix comes from the scoped packages, not deck's `radix-ui` umbrella: `import { Dialog as DialogPrimitive } from \"radix-ui\"` becomes `import * as DialogPrimitive from \"@radix-ui/react-dialog\"` (`Slot` becomes `import * as Slot from \"@radix-ui/react-slot\"`), bodies unchanged. Through the umbrella, Bun.build puts every Radix package used anywhere on the initial route; the deps are pinned to the versions `radix-ui` 1.6.7 resolves, and `tests/ui-guardrails.test.ts` forbids the umbrella. Re-apply on every sync and after `shadcn add`.",
+    "dropdown-checked": "`checked` is spread only when defined (`exactOptionalPropertyTypes`).",
+    "button-loading": "Pulse `loading` prop: spinner, `aria-busy`/`aria-disabled`/`data-loading`, clicks swallowed, never `disabled` so focus stays put.",
+    "sidebar-text-entry": "The Ctrl/Cmd-B toggle returns early when `isTextEntryTarget(event.target)`, so the chord stays with a focused text field.",
+    "style-nonce": "The Radix `Viewport` gets `{...styleNonceProps()}` (its `nonce`; `lib/style-nonce.ts`), because it renders its own `<style>` element that the strict CSP `style-src` blocks without the response's nonce (issue #2). Re-apply on every sync, and wire any newly vendored primitive whose Radix part takes a `nonce` prop.",
+    "app-css": "Pulse's Tailwind entry, kept in deck's file order with deck's base rules: `source(\"..\")` on the Tailwind import and an `@source not` for the workbench, `theme-pulse.css` instead of `hljs.css`, no `@fontsource` imports (the faces register from `styles/fonts.ts`), and pulse base rules (heading wrap, focus ring, inline monospace size, app-wide reduced motion).",
+    "icons-additions": "Pulse additions: a second `lucide-react` import block and a \"pulse additions\" section at the end of `ICONS` (the shell and views' icons deck lacks). The shell's icons moved to the pulse-only `icons-shell.ts` (spread into `ICONS`, which keeps its type and contents) and `FALLBACK_ICON` with them; evaluating `icons.ts` registers the set with `icon-registry.ts` (pulse-only), so it can load as a lazy chunk.",
+    "components-json": "`tailwind.css` points at `src/client/styles/app.css`.",
+    "barrel-exports": "No `ConfigGate` exports. Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, the `kbd`/`radio-group`/`textarea` primitives, `CommandPalette` + `commandGroupsFromIndex`, the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"` and `\"./viz\"`, and the DataTable virtualization exports (`DATA_TABLE_VIRTUALIZE_DEFAULTS`, `DataTableHandle`, `DataTableScrollAlign`, `DataTableVirtualizeOptions`).",
+    "data-table-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`; `data-table-viewport` scroll region, spacer rows, rows measured as they render with `rowHeight` as the estimate and minimum height, `aria-rowcount`/`aria-rowindex`, focused row kept rendered by row id; hysteresis: once virtualized it stays so until rows < `floor(threshold * 0.8)`) and a `ref` handle with `scrollToIndex`; a `focusable` prop (default `true`) drops the scroll region's tab stop on a wallboard. Below the threshold and with the defaults the output is deck's.",
+    "freshness-types": "Imports `FreshnessStamp`/`FreshnessState` from `lib/freshness.ts` (deck imports them from its server contract).",
+    "console-prefix": "Console prefix `[deck]` becomes `[pulse]`.",
+    "icon-registry": "Resolves names through `lib/icon-registry.ts`: shell icons eager, the rest once the lazy icon chunk loads; an empty same-size svg until then, the fallback glyph if the load fails.",
+    "page-error-page-slot": "Optional `pageSlot` prop: when set, the fallback renders inside a `data-slot={pageSlot} data-state=\"error\"` root so a failed view keeps its `…-page` root and one `h1`; after Retry, focus moves to the page `h1` (or the `…-page` root) instead of dropping to `<body>`.",
+    "facet-default-open": "`defaultOpen ?? false`.",
+    "segmented-key-shortcuts": "Optional `keyShortcuts`, set as `aria-keyshortcuts` on every option (the focusable radios).",
+    "disclosure-count-label": "The count pill is `aria-hidden` and the label carries a visually hidden `, N items` (optional `countLabel`), so the trigger is named \"Proposals, 3 items\" rather than \"Proposals3\".",
+    "filter-bar-wrap": "The result count's wrapper is `min-w-0`, not `shrink-0`, so a long count wraps at 320px.",
+    "tree-view-description": "`renderMeta` output is the treeitem's accessible description (`aria-describedby`); an optional `aria-describedby` prop describes the tree (keyboard help).",
+    "exact-optional": "Type-only `| undefined` widenings on optional props for `exactOptionalPropertyTypes` (`headingLevel`, `noun`, `role`, the `useShowMore` options, `TreeAccessors`).",
+    "status-badge-variant": "`fromMap` applies the entry's `variant` (caller props win); `StatusBadgeVariant` is derived from `StatusPresentation[\"variant\"]`.",
+    "text-entry-guard": "The `/` shortcut's guard is the shared `isTextEntryTarget` (adds contenteditable ancestors; a checkbox no longer blocks it) instead of a local `isEditable`.",
+    "pulse-name": "The app name is Pulse (`APP_TITLE = \"Pulse\"`; the hook's doc comment).",
+    "dom-text-entry": "Pulse `isTextEntryTarget` (text-like input, textarea, select, contenteditable; narrower than `isEditableTarget`, which also covers buttons and composite widgets).",
+    "status-variant": "Optional `StatusPresentation.variant` (badge shape per state, e.g. outline for suppressed)."
+  },
+  "files": [
+    {
+      "local": "apps/web/components.json",
+      "upstream": "apps/web/components.json",
+      "upstreamBlob": "d126f95dcf4295b49f5f85a960922b806a46f7c2",
+      "localBlob": "aef598ff110affc3acb47cc21a5f0fe2b7f4c0df",
+      "notes": [
+        "components-json"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/styles/app.css",
+      "upstream": "apps/web/src/styles/app.css",
+      "upstreamBlob": "037777b6a765d67016786e7e7c669bd659311f21",
+      "localBlob": "f61056985d7b6dbbcc57cef29bd5a702ee2a2bf7",
+      "notes": [
+        "app-css"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/styles/theme.css",
+      "upstream": "apps/web/src/styles/theme.css",
+      "upstreamBlob": "474321cc4a51b1410d6faeb46fcbddc8ba575ea9",
+      "localBlob": "474321cc4a51b1410d6faeb46fcbddc8ba575ea9",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-copy-to-clipboard.ts",
+      "upstream": "apps/web/src/ui/hooks/use-copy-to-clipboard.ts",
+      "upstreamBlob": "242c5913ef0e49b87d910f0a70ce994ef743a667",
+      "localBlob": "242c5913ef0e49b87d910f0a70ce994ef743a667",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-document-title.ts",
+      "upstream": "apps/web/src/ui/hooks/use-document-title.ts",
+      "upstreamBlob": "3ab4cf38575c936bcc6ae665ccf804748a5b8968",
+      "localBlob": "65194f015eec56622cc2d690db53673509731e8c",
+      "notes": [
+        "pulse-name"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-facet-filters.ts",
+      "upstream": "apps/web/src/ui/hooks/use-facet-filters.ts",
+      "upstreamBlob": "6fd2886c267bc2bac4228c407c166e425f7fea4d",
+      "localBlob": "6fd2886c267bc2bac4228c407c166e425f7fea4d",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-list-navigation.ts",
+      "upstream": "apps/web/src/ui/hooks/use-list-navigation.ts",
+      "upstreamBlob": "f2d02eb0b3377ca796ed0f235c8a0187564d1501",
+      "localBlob": "f2d02eb0b3377ca796ed0f235c8a0187564d1501",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-mobile.ts",
+      "upstream": "apps/web/src/ui/hooks/use-mobile.ts",
+      "upstreamBlob": "2b0fe1dfef3b17850bbac040665f514a8ffd0f15",
+      "localBlob": "2b0fe1dfef3b17850bbac040665f514a8ffd0f15",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-now.ts",
+      "upstream": "apps/web/src/ui/hooks/use-now.ts",
+      "upstreamBlob": "75ac07d6c891660ec5f67c594360384498e66efe",
+      "localBlob": "75ac07d6c891660ec5f67c594360384498e66efe",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-page-heading-id.ts",
+      "upstream": "apps/web/src/ui/hooks/use-page-heading-id.ts",
+      "upstreamBlob": "36ee27149bcd552e6757e96d4f30e25c0308eebb",
+      "localBlob": "36ee27149bcd552e6757e96d4f30e25c0308eebb",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-scroll-to-hash.ts",
+      "upstream": "apps/web/src/ui/hooks/use-scroll-to-hash.ts",
+      "upstreamBlob": "2bfd76be2a8fcbf4d7b282c8a830e70002cf4f71",
+      "localBlob": "2bfd76be2a8fcbf4d7b282c8a830e70002cf4f71",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-show-more.ts",
+      "upstream": "apps/web/src/ui/hooks/use-show-more.ts",
+      "upstreamBlob": "265c6fefe93761c8f5d0d2a05da9bca3b4e1eb6b",
+      "localBlob": "0f9949116649231946df8641a385f512c96e2685",
+      "notes": [
+        "exact-optional"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-stick-to-bottom.ts",
+      "upstream": "apps/web/src/ui/hooks/use-stick-to-bottom.ts",
+      "upstreamBlob": "60f06b03079beff1ee68a3fbb178760fc4dd23ce",
+      "localBlob": "60f06b03079beff1ee68a3fbb178760fc4dd23ce",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/index.ts",
+      "upstream": "apps/web/src/ui/index.ts",
+      "upstreamBlob": "ec4d73df984d87e7f1ff169dcd51eabce2037e36",
+      "localBlob": "993806273d85ffb92cd74de07d7e93defd7dbb7e",
+      "notes": [
+        "barrel-exports"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/document-title.ts",
+      "upstream": "apps/web/src/ui/lib/document-title.ts",
+      "upstreamBlob": "c2bfaa68e544a0cdd91c0f06cd1abcdc8a3cc980",
+      "localBlob": "ea312545608c43cb7146fd6b172573167b42bc33",
+      "notes": [
+        "pulse-name"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/dom-id.ts",
+      "upstream": "apps/web/src/ui/lib/dom-id.ts",
+      "upstreamBlob": "6381c0911b9c828a04bd1c546c710c27c62bf714",
+      "localBlob": "6381c0911b9c828a04bd1c546c710c27c62bf714",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/dom.ts",
+      "upstream": "apps/web/src/ui/lib/dom.ts",
+      "upstreamBlob": "d26a4a67d3c0d91bc71bda397d1d7e69579bf74a",
+      "localBlob": "881319baed1f448cffd5aa550a48421fabeec5a8",
+      "notes": [
+        "dom-text-entry"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/filters.ts",
+      "upstream": "apps/web/src/ui/lib/filters.ts",
+      "upstreamBlob": "7765a428607c09588f6b997f54124235f6f29bf4",
+      "localBlob": "7765a428607c09588f6b997f54124235f6f29bf4",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/format.ts",
+      "upstream": "apps/web/src/ui/lib/format.ts",
+      "upstreamBlob": "e0f7920a0c4bb985cd2ab7001edcfcc73c0b08f0",
+      "localBlob": "e0f7920a0c4bb985cd2ab7001edcfcc73c0b08f0",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/grid.ts",
+      "upstream": "apps/web/src/ui/lib/grid.ts",
+      "upstreamBlob": "28711d9ab329eb78e11ce936cde5ffc1fccb69f1",
+      "localBlob": "28711d9ab329eb78e11ce936cde5ffc1fccb69f1",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/icons.ts",
+      "upstream": "apps/web/src/ui/lib/icons.ts",
+      "upstreamBlob": "5dfe4101ebb8cc5777ca0c2863371c19658766b2",
+      "localBlob": "77fd99de0197bd44f7840524c338ba482d097658",
+      "notes": [
+        "icons-additions"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/link.ts",
+      "upstream": "apps/web/src/ui/lib/link.ts",
+      "upstreamBlob": "897316913ef233e06cbced013ea483a57435be4e",
+      "localBlob": "897316913ef233e06cbced013ea483a57435be4e",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/list-navigation.ts",
+      "upstream": "apps/web/src/ui/lib/list-navigation.ts",
+      "upstreamBlob": "6eff329c402226edf267ecdff1507d9f225075bc",
+      "localBlob": "6eff329c402226edf267ecdff1507d9f225075bc",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/status.ts",
+      "upstream": "apps/web/src/ui/lib/status.ts",
+      "upstreamBlob": "a3add791cae434bbc009edc0b4991eac720d4161",
+      "localBlob": "91d84135f183fe0fa2000213050bce57055e903c",
+      "notes": [
+        "status-variant"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/tone.ts",
+      "upstream": "apps/web/src/ui/lib/tone.ts",
+      "upstreamBlob": "6c9dc5efb26f18d1328d41fd1be8a976bfd3360d",
+      "localBlob": "6c9dc5efb26f18d1328d41fd1be8a976bfd3360d",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/tree.ts",
+      "upstream": "apps/web/src/ui/lib/tree.ts",
+      "upstreamBlob": "fbac18390986baffd5995f474a1dd12bcee8479d",
+      "localBlob": "a075891f41f44a1d662e92c66a096f8002cb1798",
+      "notes": [
+        "exact-optional"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/utils.ts",
+      "upstream": "apps/web/src/ui/lib/utils.ts",
+      "upstreamBlob": "cc115016de262ff14f790c2c6d3a8fd4a312bb87",
+      "localBlob": "cc115016de262ff14f790c2c6d3a8fd4a312bb87",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/active-filters.tsx",
+      "upstream": "apps/web/src/ui/patterns/active-filters.tsx",
+      "upstreamBlob": "c2e2a99a61380a75f23cc26380bcca82baf02111",
+      "localBlob": "c2e2a99a61380a75f23cc26380bcca82baf02111",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/callout.tsx",
+      "upstream": "apps/web/src/ui/patterns/callout.tsx",
+      "upstreamBlob": "65607dc9d2ee204d9f5ea23a01ce54db432affaf",
+      "localBlob": "65607dc9d2ee204d9f5ea23a01ce54db432affaf",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/card-grid.tsx",
+      "upstream": "apps/web/src/ui/patterns/card-grid.tsx",
+      "upstreamBlob": "0d24daec494d95285a6770102e6099fea4c72d27",
+      "localBlob": "0d24daec494d95285a6770102e6099fea4c72d27",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/code-block.tsx",
+      "upstream": "apps/web/src/ui/patterns/code-block.tsx",
+      "upstreamBlob": "972f4b0f0f573cf15f94dc372a4e05ddb3818e33",
+      "localBlob": "972f4b0f0f573cf15f94dc372a4e05ddb3818e33",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/comparison-grid.tsx",
+      "upstream": "apps/web/src/ui/patterns/comparison-grid.tsx",
+      "upstreamBlob": "f4d5fa474037addfa9ea7fb96736a69dc4d9cddc",
+      "localBlob": "318b2c42d20886e6e44564d6db4332f0f8e48426",
+      "notes": [
+        "exact-optional"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/data-table.tsx",
+      "upstream": "apps/web/src/ui/patterns/data-table.tsx",
+      "upstreamBlob": "6b3bc40d7036dca3bc2108825e3a5827b55e0b6f",
+      "localBlob": "b465f350c61afedf586c6fa5d4d24555c2880649",
+      "notes": [
+        "data-table-virtualize"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/disclosure.tsx",
+      "upstream": "apps/web/src/ui/patterns/disclosure.tsx",
+      "upstreamBlob": "1fe0d044725f5dbb6c9899e9bf695d0048c07b8c",
+      "localBlob": "8fa3e355aed05c10a9a9e06a21e9fed89241c969",
+      "notes": [
+        "disclosure-count-label"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/empty-state.tsx",
+      "upstream": "apps/web/src/ui/patterns/empty-state.tsx",
+      "upstreamBlob": "5a8f94ceda17f22771848ae6b0fa1c8578765fdb",
+      "localBlob": "5a8f94ceda17f22771848ae6b0fa1c8578765fdb",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/error-state.tsx",
+      "upstream": "apps/web/src/ui/patterns/error-state.tsx",
+      "upstreamBlob": "7bfa2e8c4791492149c7cfa3d8f9751d081b5ba4",
+      "localBlob": "7bfa2e8c4791492149c7cfa3d8f9751d081b5ba4",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/external-link.tsx",
+      "upstream": "apps/web/src/ui/patterns/external-link.tsx",
+      "upstreamBlob": "ad6217afb68d18cde3243c2f74f7e13931d4506c",
+      "localBlob": "ad6217afb68d18cde3243c2f74f7e13931d4506c",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/facet-filter.tsx",
+      "upstream": "apps/web/src/ui/patterns/facet-filter.tsx",
+      "upstreamBlob": "4546af9b42e94dca58c686551a105f14fb61a90e",
+      "localBlob": "817841752de1285ddee1aea0ed4b2237c288226c",
+      "notes": [
+        "facet-default-open"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/filter-bar.tsx",
+      "upstream": "apps/web/src/ui/patterns/filter-bar.tsx",
+      "upstreamBlob": "f2b51031da4353c96803c3e56f265a9882910fc9",
+      "localBlob": "12a180b57309d909a044af799995b4ce3e1aa3ba",
+      "notes": [
+        "filter-bar-wrap"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/fragment-boundary.tsx",
+      "upstream": "apps/web/src/ui/patterns/fragment-boundary.tsx",
+      "upstreamBlob": "6dea6ad36c0b4a4e17bfc784293cd993ca84fa50",
+      "localBlob": "3f7b0e2109b4be5130f10f1cafd4f2a5ca2a23d2",
+      "notes": [
+        "console-prefix"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/freshness-badge.tsx",
+      "upstream": "apps/web/src/ui/patterns/freshness-badge.tsx",
+      "upstreamBlob": "2a51bbf3c1673d609544d22be3b3756db3e1708c",
+      "localBlob": "6266602718c37a1b8f85b5df01684b987679e251",
+      "notes": [
+        "freshness-types"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/health-pill.tsx",
+      "upstream": "apps/web/src/ui/patterns/health-pill.tsx",
+      "upstreamBlob": "a0f5b57f159b1c5290a8ce2dcfbfa9cb4799eb34",
+      "localBlob": "a0f5b57f159b1c5290a8ce2dcfbfa9cb4799eb34",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/icon.tsx",
+      "upstream": "apps/web/src/ui/patterns/icon.tsx",
+      "upstreamBlob": "7cf34023f3bdacc9d121db83b7bdea114bbf9788",
+      "localBlob": "f2019e995b4b63ddc6d2acfa2043cc01d44cb8ee",
+      "notes": [
+        "console-prefix",
+        "icon-registry"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/key-value-list.tsx",
+      "upstream": "apps/web/src/ui/patterns/key-value-list.tsx",
+      "upstreamBlob": "092d0ed7581f75790cdf8c4f229782ef06444c53",
+      "localBlob": "092d0ed7581f75790cdf8c4f229782ef06444c53",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/link-tile.tsx",
+      "upstream": "apps/web/src/ui/patterns/link-tile.tsx",
+      "upstreamBlob": "17ab3601d3cd0f1a6b7d9bd3522795adddbdae18",
+      "localBlob": "17ab3601d3cd0f1a6b7d9bd3522795adddbdae18",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/list.tsx",
+      "upstream": "apps/web/src/ui/patterns/list.tsx",
+      "upstreamBlob": "0325cdcc5f0533243eb098913dd63ce9f90fa90a",
+      "localBlob": "0325cdcc5f0533243eb098913dd63ce9f90fa90a",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/loading-state.tsx",
+      "upstream": "apps/web/src/ui/patterns/loading-state.tsx",
+      "upstreamBlob": "e2c47fc12cbf917c193cc21f771a303d151e5196",
+      "localBlob": "e2c47fc12cbf917c193cc21f771a303d151e5196",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/log-output.tsx",
+      "upstream": "apps/web/src/ui/patterns/log-output.tsx",
+      "upstreamBlob": "3468b56870224ccbcbc61f947a1a2deae97f7059",
+      "localBlob": "3468b56870224ccbcbc61f947a1a2deae97f7059",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/meter.tsx",
+      "upstream": "apps/web/src/ui/patterns/meter.tsx",
+      "upstreamBlob": "b3a0697c577ac640baaa30dd947ec4f68eb12287",
+      "localBlob": "b3a0697c577ac640baaa30dd947ec4f68eb12287",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/page-error-boundary.tsx",
+      "upstream": "apps/web/src/ui/patterns/page-error-boundary.tsx",
+      "upstreamBlob": "0cc2be6c7cbb8046736cfd464fdfc25dbc403649",
+      "localBlob": "8b095bb40e198246d4a0b8c6e42697d83147e9b1",
+      "notes": [
+        "console-prefix",
+        "page-error-page-slot"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/page-header.tsx",
+      "upstream": "apps/web/src/ui/patterns/page-header.tsx",
+      "upstreamBlob": "ad541f5071dc5a3870a64c6e6512ba522933e1ba",
+      "localBlob": "ad541f5071dc5a3870a64c6e6512ba522933e1ba",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/prose.tsx",
+      "upstream": "apps/web/src/ui/patterns/prose.tsx",
+      "upstreamBlob": "cae224610483bc48c9c8ccf67658f3ae86c5af41",
+      "localBlob": "cae224610483bc48c9c8ccf67658f3ae86c5af41",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/relative-time.tsx",
+      "upstream": "apps/web/src/ui/patterns/relative-time.tsx",
+      "upstreamBlob": "6e9a7089d4fdfde87e248c8f67647c84fb68635d",
+      "localBlob": "6e9a7089d4fdfde87e248c8f67647c84fb68635d",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/result-count.tsx",
+      "upstream": "apps/web/src/ui/patterns/result-count.tsx",
+      "upstreamBlob": "7c0e2f449b445cbe3d6ba999a097929a9d08d2ae",
+      "localBlob": "7c0e2f449b445cbe3d6ba999a097929a9d08d2ae",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/safe-route-link.tsx",
+      "upstream": "apps/web/src/ui/patterns/safe-route-link.tsx",
+      "upstreamBlob": "2f9ce412c711ed63507d34e51a67bc3d7a477c3f",
+      "localBlob": "2f9ce412c711ed63507d34e51a67bc3d7a477c3f",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/search-input.tsx",
+      "upstream": "apps/web/src/ui/patterns/search-input.tsx",
+      "upstreamBlob": "0448a342f756a6263f949dde61829db2d536a3fe",
+      "localBlob": "df926cf982a4c87c8500d740e20caa3d54ce0a2a",
+      "notes": [
+        "text-entry-guard"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/section.tsx",
+      "upstream": "apps/web/src/ui/patterns/section.tsx",
+      "upstreamBlob": "e5aec4c6255d2c40c6fb468b2e12b16fdd39b1df",
+      "localBlob": "e5aec4c6255d2c40c6fb468b2e12b16fdd39b1df",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/segmented-control.tsx",
+      "upstream": "apps/web/src/ui/patterns/segmented-control.tsx",
+      "upstreamBlob": "83c31b9e9b687a02eea00a32c8fd7bccb73cebd9",
+      "localBlob": "93a7d873e2e2de3723df1b1ae384e2d5584707cf",
+      "notes": [
+        "segmented-key-shortcuts"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/show-more.tsx",
+      "upstream": "apps/web/src/ui/patterns/show-more.tsx",
+      "upstreamBlob": "84008ee4525157aa8e314fe24a183301ca93f1bd",
+      "localBlob": "17b3071850137df00e1eb0f2bf277dbcf6bcb591",
+      "notes": [
+        "exact-optional"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/stat-tile.tsx",
+      "upstream": "apps/web/src/ui/patterns/stat-tile.tsx",
+      "upstreamBlob": "18c69a61154c990757005aa014500e6f1a4b651d",
+      "localBlob": "18c69a61154c990757005aa014500e6f1a4b651d",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/status-badge.tsx",
+      "upstream": "apps/web/src/ui/patterns/status-badge.tsx",
+      "upstreamBlob": "3164b74566319ef44d0375509f9e65cada6049a2",
+      "localBlob": "5f85bd7b4bdf0860647d53126f1edca01aaa23cb",
+      "notes": [
+        "exact-optional",
+        "status-badge-variant"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/tree-view.tsx",
+      "upstream": "apps/web/src/ui/patterns/tree-view.tsx",
+      "upstreamBlob": "f48e6f83f263fc8ab07a5e2f962e89145b6d0666",
+      "localBlob": "12930ad93282938c67f71f515155a5e442695117",
+      "notes": [
+        "tree-view-description"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/visually-hidden.tsx",
+      "upstream": "apps/web/src/ui/patterns/visually-hidden.tsx",
+      "upstreamBlob": "27dcc2466cd7a5588511fb6712b36fab4cf6495b",
+      "localBlob": "27dcc2466cd7a5588511fb6712b36fab4cf6495b",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/alert-dialog.tsx",
+      "upstream": "apps/web/src/ui/primitives/alert-dialog.tsx",
+      "upstreamBlob": "675b771504f069615032e307f0d6840f1c293ed3",
+      "localBlob": "90c04fc80074cddcda03932ad721699a59256221",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/alert.tsx",
+      "upstream": "apps/web/src/ui/primitives/alert.tsx",
+      "upstreamBlob": "c568461e806fdea8241980478e15f0ee9ead503f",
+      "localBlob": "c568461e806fdea8241980478e15f0ee9ead503f",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/badge.tsx",
+      "upstream": "apps/web/src/ui/primitives/badge.tsx",
+      "upstreamBlob": "254848e33e466a327046c00d4e11e44b12fdacdb",
+      "localBlob": "7b24f527bef70967c6b89331f7b734a347433e38",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/breadcrumb.tsx",
+      "upstream": "apps/web/src/ui/primitives/breadcrumb.tsx",
+      "upstreamBlob": "be8611b083923cfda1d313498ef2890211f2e3cb",
+      "localBlob": "6cc7446f088e648bd36d7580c700863ee66906e9",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/button.tsx",
+      "upstream": "apps/web/src/ui/primitives/button.tsx",
+      "upstreamBlob": "4e402bd659df330858793d83c1a4cc1ab66a752f",
+      "localBlob": "36270d00993cfc1b25adf788af0730b1c6ed30b5",
+      "notes": [
+        "radix-scoped",
+        "button-loading"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/card.tsx",
+      "upstream": "apps/web/src/ui/primitives/card.tsx",
+      "upstreamBlob": "142360cf24ece6f7064bd2dc0d76c9e5a4477699",
+      "localBlob": "142360cf24ece6f7064bd2dc0d76c9e5a4477699",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/checkbox.tsx",
+      "upstream": "apps/web/src/ui/primitives/checkbox.tsx",
+      "upstreamBlob": "0bbc140c787f361c98ce6a3c251928f7c3a3e2bc",
+      "localBlob": "3a3ee1de9eed20a2eca5eb5040b167f92e3ef57a",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/collapsible.tsx",
+      "upstream": "apps/web/src/ui/primitives/collapsible.tsx",
+      "upstreamBlob": "63fc8eff3f9af9dbb4193c944d72c16f86e0e81c",
+      "localBlob": "77f86bedad365cfe9d8fe4877628478e4e55d746",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/command.tsx",
+      "upstream": "apps/web/src/ui/primitives/command.tsx",
+      "upstreamBlob": "c8e94f8d4782a1c7fecc0752b1eccd4034612d28",
+      "localBlob": "c8e94f8d4782a1c7fecc0752b1eccd4034612d28",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/dialog.tsx",
+      "upstream": "apps/web/src/ui/primitives/dialog.tsx",
+      "upstreamBlob": "4cbde93d1ebb8e7e3ad6452dfef29417752986f2",
+      "localBlob": "0bfe2fc6d3a6189b3b32cc2a366dac9b2a07d120",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/dropdown-menu.tsx",
+      "upstream": "apps/web/src/ui/primitives/dropdown-menu.tsx",
+      "upstreamBlob": "df14f3b9217fa98a130f35d28ca88bd936f2c56c",
+      "localBlob": "a697d320634babe2a746acd377571891e450210d",
+      "notes": [
+        "radix-scoped",
+        "dropdown-checked"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/input.tsx",
+      "upstream": "apps/web/src/ui/primitives/input.tsx",
+      "upstreamBlob": "a37f54be769816e97890469d1cddd6983e02b02c",
+      "localBlob": "a37f54be769816e97890469d1cddd6983e02b02c",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/label.tsx",
+      "upstream": "apps/web/src/ui/primitives/label.tsx",
+      "upstreamBlob": "656d1505775dcc605b072421eff3b6faeeabcc08",
+      "localBlob": "e706435876f71a56b5367ed01291e9386ffb1eba",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/popover.tsx",
+      "upstream": "apps/web/src/ui/primitives/popover.tsx",
+      "upstreamBlob": "aab4a2cbf1a4e72339a1bf565cf91d4600b67c73",
+      "localBlob": "3c2515d2534ab065f8c71b0d4c41ee3944191a1e",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/scroll-area.tsx",
+      "upstream": "apps/web/src/ui/primitives/scroll-area.tsx",
+      "upstreamBlob": "022a663cb54cc2cf5aa3cb784780b0ff329c6789",
+      "localBlob": "d2b06c0b5485b45ba623631ad05ba06ca68c13df",
+      "notes": [
+        "radix-scoped",
+        "style-nonce"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/select.tsx",
+      "upstream": "apps/web/src/ui/primitives/select.tsx",
+      "upstreamBlob": "595fae3939a73f9587f3f4127a60f6963bfd3d38",
+      "localBlob": "a304e8154a6edd3c4316799513a82a6fd251f442",
+      "notes": [
+        "radix-scoped",
+        "style-nonce"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/separator.tsx",
+      "upstream": "apps/web/src/ui/primitives/separator.tsx",
+      "upstreamBlob": "6fa10feab67f1394a41735cdf0fa480d58184854",
+      "localBlob": "76dc24ecefb1e717c6a40335004f8c1abedba48a",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/sheet.tsx",
+      "upstream": "apps/web/src/ui/primitives/sheet.tsx",
+      "upstreamBlob": "0d8e095c4b82f8692ba65bdfd6e579463ea0d173",
+      "localBlob": "f60b57dc2b5cd5b79073971372265ce6c6d4888b",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/sidebar.tsx",
+      "upstream": "apps/web/src/ui/primitives/sidebar.tsx",
+      "upstreamBlob": "0e49a1b3649ca2fbd94c99266710e95e02fb8c88",
+      "localBlob": "b7e689ece73cc0771631cd21b44c1467bdce79e7",
+      "notes": [
+        "radix-scoped",
+        "sidebar-text-entry"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/skeleton.tsx",
+      "upstream": "apps/web/src/ui/primitives/skeleton.tsx",
+      "upstreamBlob": "28909a3d99bac7bb97d7be6da276a2dbb8241ac0",
+      "localBlob": "28909a3d99bac7bb97d7be6da276a2dbb8241ac0",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/table.tsx",
+      "upstream": "apps/web/src/ui/primitives/table.tsx",
+      "upstreamBlob": "34dcfe9cbeb4105f770182222525962ce0b410be",
+      "localBlob": "34dcfe9cbeb4105f770182222525962ce0b410be",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/tabs.tsx",
+      "upstream": "apps/web/src/ui/primitives/tabs.tsx",
+      "upstreamBlob": "2a52e081f133258751660f6279a61a9306683322",
+      "localBlob": "73e62f1b56d5b8b9b70fece22c3d9184b2c0985a",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/toggle-group.tsx",
+      "upstream": "apps/web/src/ui/primitives/toggle-group.tsx",
+      "upstreamBlob": "f70ebabc275e1db3bc9e3f5d50b06f306fe0e0c6",
+      "localBlob": "ff6d8e9cd89eef3476ea19f2efc17a78eb54a07d",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/toggle.tsx",
+      "upstream": "apps/web/src/ui/primitives/toggle.tsx",
+      "upstreamBlob": "51ba1695d75d659d86ad76fe94728857a771acfa",
+      "localBlob": "0782e38b62ad713a001ab1262c0f156cd428d00c",
+      "notes": [
+        "radix-scoped"
+      ]
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/tooltip.tsx",
+      "upstream": "apps/web/src/ui/primitives/tooltip.tsx",
+      "upstreamBlob": "5bcafd0a2c472a30c972db4131b40073b5571293",
+      "localBlob": "bbd47e4b473a912b088ba989a637179f3f1d5d7e",
+      "notes": [
+        "radix-scoped"
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "upstream": "apps/web/src/ui/patterns/config-gate.tsx",
+      "reason": "deck's config shell; pulse has no config gate, and the barrel drops its exports."
+    },
+    {
+      "upstream": "apps/web/src/styles/hljs.css",
+      "reason": "deck's highlight.js token theme; pulse ships no syntax highlighting."
+    }
+  ],
+  "localOnly": [
+    {
+      "local": "apps/web/src/client/styles/fonts.ts",
+      "source": "pulse",
+      "note": "Registers the self-hosted Geist faces (`@fontsource-variable`), which deck imports from `app.css`; importing them from CSS would make Bun inline the font files into the sheet"
+    },
+    {
+      "local": "apps/web/src/client/styles/theme-pulse.css",
+      "source": "pulse",
+      "note": "Pulse's token extensions on top of deck's `theme.css`"
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/freshness.ts",
+      "source": "pulse",
+      "note": "`FreshnessStamp`/`FreshnessState`, which deck imports from its server contract"
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/icon-registry.ts",
+      "source": "pulse",
+      "note": "Name → icon registry behind `Icon`: the shell set eagerly, the rest when the lazy `icons.ts` chunk registers"
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/icons-shell.ts",
+      "source": "pulse",
+      "note": "The shell's icons and `FALLBACK_ICON`, split out of `icons.ts` so they stay on the initial route"
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/style-nonce.ts",
+      "source": "pulse",
+      "note": "`styleNonce()` / `styleNonceProps()` return the CSP style nonce (`get-nonce`, set by `main.tsx` from the shell) for primitives that render their own `<style>`; internal, not exported from the barrel"
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/radio-group.tsx",
+      "source": "shadcn/ui new-york v4 `radio-group`",
+      "note": "Built on `@radix-ui/react-radio-group`"
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/textarea.tsx",
+      "source": "shadcn/ui new-york v4 `textarea`",
+      "note": "None"
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/kbd.tsx",
+      "source": "shadcn/ui new-york v4 `kbd`",
+      "note": "`Kbd` and `KbdGroup`"
+    },
+    {
+      "local": "apps/web/src/client/ui/hooks/use-disposable.ts",
+      "source": "pulse",
+      "note": "`useDisposable(create, dispose)`: a per-mount resource that survives StrictMode's development unmount-and-remount (recreated if it was disposed)"
+    },
+    {
+      "local": "apps/web/src/client/ui/status/",
+      "source": "pulse",
+      "note": "`TARGET_STATUS`, `ALERT_SEVERITY` (+ `alertSeverityOf`), `ALERT_STATE` (+ `alertStateOf`), `MUTATION_STATE` on `defineStatusMap`; the domain → `TargetStatus` maps in `src/client/status/target-status.ts` are unchanged"
+    },
+    {
+      "local": "apps/web/src/client/ui/viz/",
+      "source": "pulse (port of `src/client/viz/`)",
+      "note": "`Sparkline`, `StatusTimeline`, `Gauge`, lazy `TimeSeriesChart` (uPlot in `uplot-chart.tsx`, reached only by dynamic import). Colours from tone/chart tokens; suppressed is hatched/dashed on the neutral tone"
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/command-palette.tsx",
+      "source": "pulse (on the vendored `Command*` + `Dialog` primitives)",
+      "note": "Data-driven `CommandPalette` (`groups` of items with their own `onSelect`; selecting closes) and `commandGroupsFromIndex`, which maps command-index entries (structural `CommandIndexEntry`, no shell import) to groups. Optional controlled `search`/`onSearchChange` and `shouldFilter={false}` let a caller rank and cap its own results (the shell's command index); `commandGroupsFromIndex(…, { groupOrder: \"entries\" })` keeps a ranked list's best match first; `returnFocusTo` names the element focus returns to on close when a caller showed another dialog first. Opening puts the caret after any text already in the search field (a caller's buffered keys)"
+    }
+  ]
+}

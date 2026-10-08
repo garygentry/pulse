@@ -1,0 +1,34 @@
+# .github/workflows/ui-drift.yml — report how deck's @/ui library moved since the pin in
+# apps/web/src/client/ui/VENDORED.json (issue #5). Report only: it writes the job summary and opens
+# nothing. The offline half of the check (pulse's copies against their recorded hashes) runs in
+# `bun test`, inside the required `ci` job; this workflow is the network half, kept out of `ci`.
+name: ui-drift
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "deck ref to compare with the pin (branch, tag or sha)"
+        required: false
+        default: main
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"   # mirrors ci.yml
+      # No `bun install`: the script uses only Bun, node builtins and git. It fetches the pin and
+      # the ref (depth 1) from the manifest's upstream repo into a cache under node_modules/.cache.
+      - name: Compare with deck
+        env:
+          REF: ${{ inputs.ref || 'main' }}
+        run: |
+          set -o pipefail
+          bun run apps/web/scripts/ui-drift.ts --fetch --ref "$REF" --format markdown --diff \
+            | tee -a "$GITHUB_STEP_SUMMARY"
