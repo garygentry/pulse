@@ -253,6 +253,25 @@ describeUi("@/ui content & data display", () => {
       render(<StatTile label="Hosts" value="42" href="/hosts" linkAs={RouterLink} />);
       expect(screen.getByRole("link")).toHaveAttribute("data-router", "yes");
     });
+
+    it("renders an absent value small and muted on the neutral tone, keeping its text and a spoken description", () => {
+      render(
+        <StatGrid>
+          <StatTile label="Free disk" value="12 GiB" tone="warn" />
+          <StatTile label="Data size" value="unavailable" tone="danger" valueState="absent" absentDescription="no value: the source is unavailable" />
+        </StatGrid>,
+      );
+      const [real, absent] = screen.getAllByRole("definition");
+      expect(real).toHaveAttribute("data-value-state", "value");
+      expect(real!.closest("[data-slot=stat-tile]")).toHaveAttribute("data-tone", "warn");
+      expect(absent).toHaveAttribute("data-value-state", "absent");
+      expect(absent).toHaveTextContent("unavailable (no value: the source is unavailable)");
+      expect(screen.getByText("unavailable")).toBeVisible();
+      // No status colour for a missing value, whatever tone the caller passed.
+      const tile = absent!.closest("[data-slot=stat-tile]");
+      expect(tile).toHaveAttribute("data-tone", "neutral");
+      expect(tile).toHaveAttribute("data-value-state", "absent");
+    });
   });
 
   describe("CodeBlock", () => {

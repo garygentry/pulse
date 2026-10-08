@@ -29,6 +29,17 @@ export interface StatTileProps {
   value: ReactNode;
   /** Tints the value and the tile's leading edge. The label carries the meaning. */
   tone?: Tone;
+  /**
+   * `"absent"` when the tile has no real value and `value` is placeholder text such as "not
+   * reported" or "unavailable". The text renders small and muted on the neutral tone (whatever
+   * `tone` says), so "no data" never reads as a headline number. Default `"value"`.
+   */
+  valueState?: "value" | "absent";
+  /**
+   * Screen-reader text appended to an absent value, saying what the state means (e.g. "no value:
+   * the source is unavailable"). Ignored for a real value.
+   */
+  absentDescription?: string;
   icon?: IconName;
   subLabel?: ReactNode;
   /** Makes the whole tile a link. */
@@ -42,20 +53,34 @@ export interface StatTileProps {
 export function StatTile({
   label,
   value,
-  tone = "neutral",
+  tone: toneProp = "neutral",
+  valueState = "value",
+  absentDescription,
   icon,
   subLabel,
   href,
   linkAs: LinkAs = "a",
   className,
 }: StatTileProps) {
+  const absent = valueState === "absent";
+  // A missing value has no status: it never wears the caller's tone.
+  const tone: Tone = absent ? "neutral" : toneProp;
   const body = (
     <dl className="m-0 flex flex-col gap-1">
       <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         {icon !== undefined ? <Icon name={icon} size={14} className={TONE_VALUE[tone]} /> : null}
         {label}
       </dt>
-      <dd className={cn("m-0 text-2xl leading-tight font-semibold tabular-nums", TONE_VALUE[tone])}>{value}</dd>
+      {absent ? (
+        <dd data-value-state="absent" className="m-0 text-sm leading-tight font-normal text-muted-foreground">
+          {value}
+          {absentDescription !== undefined ? <span className="sr-only">{` (${absentDescription})`}</span> : null}
+        </dd>
+      ) : (
+        <dd data-value-state="value" className={cn("m-0 text-2xl leading-tight font-semibold tabular-nums", TONE_VALUE[tone])}>
+          {value}
+        </dd>
+      )}
       {subLabel !== undefined ? (
         <dd className="m-0 text-xs text-muted-foreground tabular-nums">{subLabel}</dd>
       ) : null}
@@ -71,13 +96,13 @@ export function StatTile({
 
   if (href !== undefined) {
     return (
-      <LinkAs href={href} className={tileClass} data-slot="stat-tile" data-tone={tone}>
+      <LinkAs href={href} className={tileClass} data-slot="stat-tile" data-tone={tone} data-value-state={valueState}>
         {body}
       </LinkAs>
     );
   }
   return (
-    <div data-slot="stat-tile" data-tone={tone} className={tileClass}>
+    <div data-slot="stat-tile" data-tone={tone} data-value-state={valueState} className={tileClass}>
       {body}
     </div>
   );
