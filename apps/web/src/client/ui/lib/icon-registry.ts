@@ -118,8 +118,20 @@ export const iconRegistry = createIconRegistry(SHELL_ICONS);
  * same chunk again rejects without a request. Chromium and Firefox name the chunk's URL in the
  * error; a retry imports that URL with a fresh query, which is a new module. Where the error has no
  * URL (Safari), the retry repeats the import and icons keep the fallback glyph until a reload.
+ * Only the chunk's own static dependencies are not retried: if one of those failed, icons also keep
+ * the fallback until a reload.
  */
-const CHUNK_URL_IN_ERROR = /\bhttps?:\/\/[^\s'"]+?\.js\b/;
+const ASSET_PATH_IN_ERROR = /\/assets\/[\w.-]+\.js(?=[\s'"?#)]|$)/;
+
+/**
+ * The same-origin `/assets/*.js` URL named in a failed-import error, or `null`. Only the path is taken
+ * from the error text and it is re-rooted on `origin`, so a retry can never import another origin.
+ */
+export function chunkUrlFromError(error: unknown, origin: string): string | null {
+  const path = ASSET_PATH_IN_ERROR.exec(String(error))?.[0];
+  return path === undefined ? null : new URL(path, origin).href;
+}
+
 let chunkUrl: string | null = null;
 let attempt = 0;
 async function importIconSet(): Promise<{ ICONS: Readonly<Record<string, LucideIcon>> }> {
@@ -128,7 +140,7 @@ async function importIconSet(): Promise<{ ICONS: Readonly<Record<string, LucideI
     if (chunkUrl === null) return await import("@/ui/lib/icons");
     return (await import(/* @vite-ignore */ `${chunkUrl}?retry=${attempt}`)) as typeof import("@/ui/lib/icons");
   } catch (error) {
-    chunkUrl ??= CHUNK_URL_IN_ERROR.exec(String(error))?.[0] ?? null;
+    chunkUrl ??= chunkUrlFromError(error, globalThis.location?.origin ?? "http://localhost");
     throw error;
   }
 }

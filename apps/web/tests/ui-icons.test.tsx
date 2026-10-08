@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import { FALLBACK_ICON, Icon, ICONS, isIconName } from "@/ui";
-import { createIconRegistry, createIconSetLoader, iconRegistry, ICON_LOAD_RETRY_DELAYS_MS } from "@/ui/lib/icon-registry";
+import { chunkUrlFromError, createIconRegistry, createIconSetLoader, iconRegistry, ICON_LOAD_RETRY_DELAYS_MS } from "@/ui/lib/icon-registry";
 import { createIcon } from "@/ui/patterns/icon";
 import { SHELL_ICONS } from "@/ui/lib/icons-shell";
 
@@ -242,5 +242,21 @@ describeUi("<Icon>", () => {
       if (previousDev === undefined) delete process.env["DEV"];
       else process.env["DEV"] = previousDev;
     }
+  });
+});
+
+describe("chunkUrlFromError", () => {
+  const origin = "https://pulse.example.org";
+  it("re-roots the /assets/*.js path named in a Chromium/Firefox error on the page origin", () => {
+    const err = new TypeError("Failed to fetch dynamically imported module: https://pulse.example.org/assets/chunk-icons-ab12cd34.js");
+    expect(chunkUrlFromError(err, origin)).toBe("https://pulse.example.org/assets/chunk-icons-ab12cd34.js");
+  });
+  it("never yields another origin, even for a host with a .js label or a foreign URL", () => {
+    const err = new TypeError("error loading dynamically imported module: http://pulse.js.example.com/assets/chunk-icons-x.js");
+    expect(chunkUrlFromError(err, origin)).toBe("https://pulse.example.org/assets/chunk-icons-x.js");
+    expect(chunkUrlFromError(new Error("https://evil.example/x.js"), origin)).toBeNull();
+  });
+  it("returns null when the error names no asset (Safari)", () => {
+    expect(chunkUrlFromError(new TypeError("Importing a module script failed."), origin)).toBeNull();
   });
 });
