@@ -20,6 +20,8 @@ import { createEstateClock, TZ_FALLBACK_MARKER } from "../src/client/format.js";
 import { groupNavViews, orderedNavViews } from "../src/client/shell/nav.js";
 import { CHUNK_RELOAD_SESSION_KEY, Shell, ViewHost } from "../src/client/shell/index.js";
 import { LiveStatusPill } from "../src/client/shell/HealthRegion.js";
+import { CommandPalette } from "../src/client/shell/CommandPalette.js";
+import { PaletteDialog } from "../src/client/shell/PaletteDialog.js";
 import { VIEWS } from "../src/client/views/registry.js";
 import { NOW } from "./factories.js";
 
@@ -451,6 +453,73 @@ describeUi("Shell command palette", () => {
 
     pressModK();
     await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue(""));
+  });
+});
+
+// ─── Command palette: keys typed while the lazy chunk loads (issue #12) ────────────────────────────
+
+describeUi("Shell command palette before its chunk loads", () => {
+  /** A dialog loader that resolves only when the test says so (a slow network). */
+  function deferredLoader() {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const loader = mock(async () => {
+      await gate;
+      return { PaletteDialog };
+    });
+    return { loader, release };
+  }
+  const pressModK = (): void => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+  };
+
+  it("buffers keys typed before the dialog arrives and replays them into the search field", async () => {
+    const ctx = setup("overview");
+    const { loader, release } = deferredLoader();
+    render(
+      <>
+        <input aria-label="Page field" />
+        <CommandPalette store={ctx.store} router={ctx.router} loadDialog={loader} />
+      </>,
+    );
+    const pageField = screen.getByRole("textbox", { name: "Page field" });
+    pageField.focus();
+
+    pressModK();
+    expect(loader).toHaveBeenCalled();
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+    // Typed while loading: none of it reaches the focused page field.
+    await userEvent.keyboard("enx{Backspace}g");
+    expect(pageField).toHaveValue("");
+
+    release();
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    const input = within(dialog).getByRole("combobox");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("eng");
+    await waitFor(() => expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Engine"]));
+    // Typing carries on after the buffered text.
+    await userEvent.keyboard("i");
+    expect(input).toHaveValue("engi");
+  });
+
+  it("Escape while loading cancels the open; the next Ctrl+K starts empty", async () => {
+    const ctx = setup("overview");
+    const { loader, release } = deferredLoader();
+    render(<CommandPalette store={ctx.store} router={ctx.router} loadDialog={loader} />);
+
+    pressModK();
+    await userEvent.keyboard("al{Escape}");
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+
+    pressModK();
+    const input = await screen.findByRole("combobox");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("");
   });
 });
 

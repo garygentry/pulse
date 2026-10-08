@@ -179,8 +179,11 @@ move between them through `useListNavigation`, on the icon rail and in the mobil
 Ctrl/Cmd-B toggles the sidebar, except while focus is in a text field (`isTextEntryTarget`). The top bar's health region shows the
 estate name, the live and staleness pill, the theme menu and the density control. A stale-data
 `Callout` with `role="alert"` sits under it. `CommandPalette` is a Pulse pattern on shadcn
-`Command` inside `Dialog`. The shell loads it as a lazy chunk, registers `mod+k` through
-`a11y/shortcuts.ts`, and ranks results with the pure `shell/command-index.ts`. In kiosk mode
+`Command` inside `Dialog`. The shell loads it as a lazy chunk (prefetched when idle), registers
+`mod+k` through `a11y/shortcuts.ts`, and ranks results with the pure `shell/command-index.ts`. If
+Ctrl/Cmd-K lands before the chunk, the palette is open already: keys typed meanwhile are captured
+into the query (Backspace edits it, Escape cancels) and show in the search field, caret at the end,
+when the dialog mounts, so nothing typed reaches the page. In kiosk mode
 (`?kiosk=1`) the shell renders no sidebar, top-bar controls or palette, and uses wallboard density.
 Rotation lives in `shell/kiosk.ts`.
 
