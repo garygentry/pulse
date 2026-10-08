@@ -8,6 +8,8 @@
 // class name. rAF runs on microtasks for this file and flushes run inside act().
 
 import { afterAll, afterEach, beforeAll, beforeEach, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
+import { ALERT_SEVERITY } from "@/ui";
+import { within } from "./rtl.js";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { signal } from "@preact/signals-core";
@@ -1494,6 +1496,25 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
 
   const ready = (data: IntervalHistoryPayload): HistoryRegionState<IntervalHistoryPayload> => ({ phase: "ready", data });
   const PINNED = 'ul[aria-label="Alert intervals at the pinned time"]';
+
+  test("#15: swimlane bars carry their row's severity, drawn from ALERT_SEVERITY (info bars use the info tone, not neutral)", async () => {
+    const c = await mountSwim({ state: ready(TIMELINE_INCIDENT.alerts) });
+    const view = within(c);
+    for (const severity of ["critical", "warning", "info", "unknown"] as const) {
+      const name = `${severity === "unknown" ? "Unknown severity" : ALERT_SEVERITY[severity].label} alert intervals`;
+      const plot = view.getByRole("img", { name });
+      const bars = [...plot.querySelectorAll("rect[data-status]")];
+      expect(bars.length).toBeGreaterThan(0);
+      for (const bar of bars) {
+        expect(bar.getAttribute("data-status")).toBe(severity);
+        expect(bar.getAttribute("data-tone")).toBe(ALERT_SEVERITY[severity].tone);
+      }
+    }
+    // The info track (a group named by its head) holds the info plot, and no neutral bar.
+    const infoTrack = view.getAllByRole("group").find((g) => g.getAttribute("aria-labelledby") === "swim-head-info")!;
+    expect(within(infoTrack).getByRole("img", { name: "Info alert intervals" }).querySelector('rect[data-tone="info"]')).not.toBeNull();
+    expect(c.querySelector('[data-swim-track][data-severity="info"] rect[data-tone="neutral"]')).toBeNull();
+  });
 
   test("REQ-SWIM-01/02/03, REQ-LANE-07: severity rows, packed sub-lanes with the +k badge, and unmatched outlines", async () => {
     const c = await mountSwim({ state: ready(TIMELINE_INCIDENT.alerts) });

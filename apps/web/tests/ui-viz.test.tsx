@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { TargetStatus } from "@pulse/web-data/wire";
 
-import { Gauge, Sparkline, StatusTimeline, TimeSeriesChart } from "@/ui";
+import { ALERT_SEVERITY, ALERT_STATE, Gauge, Sparkline, StatusTimeline, TimeSeriesChart } from "@/ui";
 import { TimeSeriesChartFallback } from "@/ui/viz/time-series-chart";
 import { GAUGE_START_ANGLE, GAUGE_SWEEP, arcPath, gaugeValueAngle, polarToCartesian } from "@/ui/viz/gauge";
 import { sparklineGeometry, sparklineSampleGeometry } from "@/ui/viz/sparkline";
@@ -247,12 +247,40 @@ describeUi("ui/viz render", () => {
       expect(suppressed.getAttribute("fill")).toBe(`url(#${pattern.id})`);
     });
 
-    it("a segment's tone overrides its status tone, keeping the status and pattern", () => {
-      render(<StatusTimeline lanes={lane([{ status: "unknown", tone: "info", start: 0, end: 100 }])} domainStart={0} domainEnd={100} />);
-      const rect = screen.getByRole("img", { name: "status timeline" }).querySelector("rect[data-status]")!;
-      expect(rect).toHaveAttribute("data-status", "unknown");
-      expect(rect).toHaveAttribute("data-tone", "info");
-      expect(rect).toHaveAttribute("data-mark", "solid");
+    it("draws another status vocabulary from its status map (alert severity: info gets the info tone)", () => {
+      render(
+        <StatusTimeline
+          lanes={[{ id: "sev", label: "severity", segments: [
+            { status: "info", start: 0, end: 30 },
+            { status: "warning", start: 30, end: 60 },
+            { status: "unknown", start: 60, end: 100 },
+          ] }]}
+          statusMap={ALERT_SEVERITY}
+          domainStart={0}
+          domainEnd={100}
+        />,
+      );
+      const group = screen.getByRole("group", { name: "severity" });
+      const rects = [...group.querySelectorAll("rect[data-status]")];
+      expect(rects.map((r) => [r.getAttribute("data-status"), r.getAttribute("data-tone"), r.getAttribute("data-mark")])).toEqual([
+        ["info", "info", "solid"],
+        ["warning", "warn", "solid"],
+        ["unknown", "neutral", "solid"],
+      ]);
+    });
+
+    it("hatches an outline map entry (ALERT_STATE suppressed) like target suppressed", () => {
+      render(
+        <StatusTimeline
+          lanes={[{ id: "st", label: "state", segments: [{ status: "suppressed", start: 0, end: 100 }] }]}
+          statusMap={ALERT_STATE}
+          domainStart={0}
+          domainEnd={100}
+        />,
+      );
+      const rect = screen.getByRole("group", { name: "state" }).querySelector("rect[data-status]")!;
+      expect(rect).toHaveAttribute("data-tone", "neutral");
+      expect(rect).toHaveAttribute("data-mark", "hatched");
     });
 
     it("renders an empty img for no lanes", () => {
@@ -413,6 +441,36 @@ describeUi("ui/viz render", () => {
       expect(size(null, ["10,000,000,000"], 1, 0)).toBe(yAxisSize(["10,000,000,000"]));
       expect(yAxisSize(["10,000,000,000"])).toBeGreaterThan(50);
       expect(yAxisSize(["1,000,000"])).toBeLessThan(yAxisSize(["100,000,000,000"]));
+    });
+
+    it("uses formatYTicks for the y tick labels when given, uPlot's default otherwise", async () => {
+      const { buildOptions } = await loadImpl();
+      const colors = { axis: "a", grid: "g", text: "t", strokes: ["s"] };
+      const base = { timestamps: [1], series: [{ label: "x", data: [1] }] };
+      expect(buildOptions(base, 500, colors).axes![1]!.values).toBeUndefined();
+      const formatYTicks = (splits: readonly number[]) => splits.map((v) => `${v} u`);
+      const values = buildOptions({ ...base, formatYTicks }, 500, colors).axes![1]!.values as (
+        self: unknown,
+        splits: number[],
+      ) => string[];
+      expect(values(null, [0, 5])).toEqual(["0 u", "5 u"]);
+    });
+
+    it("uses splitYTicks for the y tick positions, with a tick budget from the chart height", async () => {
+      const { buildOptions } = await loadImpl();
+      const colors = { axis: "a", grid: "g", text: "t", strokes: ["s"] };
+      const base = { timestamps: [1], series: [{ label: "x", data: [1] }] };
+      expect(buildOptions(base, 500, colors).axes![1]!.splits).toBeUndefined();
+      const calls: [number, number, number][] = [];
+      const splitYTicks = (min: number, max: number, maxTicks: number) => {
+        calls.push([min, max, maxTicks]);
+        return [min, max];
+      };
+      const splits = buildOptions({ ...base, height: 240, splitYTicks }, 500, colors).axes![1]!.splits as (
+        self: unknown, axisIdx: number, min: number, max: number,
+      ) => number[];
+      expect(splits(null, 1, 0, 10)).toEqual([0, 10]);
+      expect(calls).toEqual([[0, 10, 6]]); // floor(240 * 0.8 / 30)
     });
   });
 });

@@ -11,7 +11,7 @@ import type { EstateClock } from "../../../format.js";
 import type { TimeAxis } from "./axis.js";
 import { formatStepLabel } from "./axis.js";
 import type { ClientQueryMeta } from "./query-meta.js";
-import { chartFractionMap, sameChartData, toChartData } from "./chart-data.js";
+import { axisSplits, chartFractionMap, formatAxisTicks, sameChartData, toChartData } from "./chart-data.js";
 import type { ChartData } from "./chart-data.js";
 import { PlotOverlay } from "./overlay.js";
 import type { OverlayPlacement, OverlayRect } from "./overlay-gesture.js";
@@ -49,6 +49,20 @@ export interface SyncedChartProps {
   interactive: boolean;
   /** Readout presentation. */
   readout: ChartReadoutMode;
+  /**
+   * Unit wording for the caption and the plot's accessible name, when the caller words the unit
+   * more precisely than the display unit kind (e.g. "rows per second" for a `count` rate). Default
+   * UNIT_LABEL[unit].
+   */
+  unitLabel?: string;
+  /**
+   * Where the figure's name and description come from. `"visible"` (default) renders the
+   * figcaption with title, range, unit and zone. `{ labelledBy, describedBy }` is for a caller that
+   * already shows those as a heading and meta line: the figure is labelled by those elements
+   * (aria-labelledby/aria-describedby) and only the facts they lack (resolution, zone fallback) are
+   * shown, so nothing is printed twice.
+   */
+  caption?: "visible" | { readonly labelledBy: string; readonly describedBy?: string };
 }
 
 /** How long .u-over may be absent after the chart container exists before the loud failure fires, ms. */
@@ -112,6 +126,11 @@ export function SyncedChart(props: SyncedChartProps): ReactElement {
   useSignals();
   const { chartId, title, unit, range, payload, axis, clock, interactive, readout } = props;
   const height = props.height ?? 200;
+  const unitLabel = props.unitLabel ?? UNIT_LABEL[unit];
+  const caption = props.caption ?? "visible";
+  const formatYTicks = useMemo(() => (splits: readonly number[]) => formatAxisTicks(splits, unit), [unit]);
+  const splitYTicks = useMemo(() => (min: number, max: number, maxTicks: number) => axisSplits(min, max, unit, maxTicks), [unit]);
+  const detailId = useId();
 
   const view = axis.view.value; // the only signal read in render
   const fresh = payload === null ? null : toChartData(payload, view, clock.timezone);
@@ -251,20 +270,53 @@ export function SyncedChart(props: SyncedChartProps): ReactElement {
 
   const placement = useMemo<OverlayPlacement>(() => (rect === null ? INERT : { kind: "rect", rect }), [rect]);
   const tzFallback = clock.tzFallback || data?.tzFallback === true;
+  // The detail line (caller-labelled mode): only facts the caller's meta line lacks. Rendered, and
+  // referenced from aria-describedby, only when it has something to say.
+  const detailParts = [
+    ...(data !== null ? [`resolution: ${formatStepLabel(data.stepSeconds)}`] : []),
+    ...(tzFallback ? [TZ_FALLBACK_MARKER] : []),
+  ];
+  const detailText = detailParts.length > 0 ? detailParts.join(" · ") : null;
 
   return (
-    <figure data-slot="synced-chart" data-chart-id={chartId} className="m-0 flex min-w-0 flex-col gap-1">
-      <figcaption className="flex flex-wrap gap-x-3 gap-y-1 text-sm break-words text-muted-foreground">
-        <span className="font-medium text-foreground">{title}</span>
-        <span>{`${range} · ${UNIT_LABEL[unit]}`}</span>
-        {data !== null ? <span>{`resolution: ${formatStepLabel(data.stepSeconds)}`}</span> : null}
-        <span>
-          {`Times in ${clock.timezone}`}
-          {tzFallback ? ` — ${TZ_FALLBACK_MARKER}` : null}
-        </span>
-      </figcaption>
+    <figure
+      data-slot="synced-chart"
+      data-chart-id={chartId}
+      className="m-0 flex min-w-0 flex-col gap-1"
+      {...(caption === "visible"
+        ? {}
+        : {
+            "aria-labelledby": caption.labelledBy,
+            "aria-describedby":
+              [caption.describedBy, detailText !== null ? detailId : undefined].filter((id) => id !== undefined).join(" ") || undefined,
+          })}
+    >
+      {caption === "visible" ? (
+        <figcaption className="flex flex-wrap gap-x-3 gap-y-1 text-sm break-words text-muted-foreground">
+          <span className="font-medium text-foreground">{title}</span>
+          <span>{`${range} · ${unitLabel}`}</span>
+          {data !== null ? <span>{`resolution: ${formatStepLabel(data.stepSeconds)}`}</span> : null}
+          <span>
+            {`Times in ${clock.timezone}`}
+            {tzFallback ? ` — ${TZ_FALLBACK_MARKER}` : null}
+          </span>
+        </figcaption>
+      ) : (
+        detailText !== null ? (
+          <p id={detailId} data-slot="synced-chart-detail" className="m-0 text-xs break-words text-muted-foreground">
+            {detailText}
+          </p>
+        ) : null
+      )}
       <div ref={plotRef} data-slot="timeseries-plot" data-overlay-state={overlayState} className="relative">
-        <TimeSeriesChart timestamps={ts} series={series} height={height} ariaLabel={`${title}, ${range}, ${UNIT_LABEL[unit]}`} />
+        <TimeSeriesChart
+          timestamps={ts}
+          series={series}
+          height={height}
+          ariaLabel={`${title}, ${range}, ${unitLabel}`}
+          formatYTicks={formatYTicks}
+          splitYTicks={splitYTicks}
+        />
         {payload === null ? (
           <div data-slot="timeseries-plot-loading" className="absolute inset-0" aria-hidden="true">
             <Skeleton className="size-full" />

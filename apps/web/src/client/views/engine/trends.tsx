@@ -22,7 +22,9 @@ import { useSignals } from "@preact/signals-react/runtime";
 export type EngineTrendQueryId = (typeof ENGINE_TREND_QUERIES)[number];
 
 /** Title, region label and unit text per trend (REQ-CAP-02 "labelled with that range and unit").
- *  The unit text follows the curated query semantics (packages/web-data/src/queries/binding.ts:326-331). */
+ *  The unit text follows the curated query semantics (packages/web-data/src/queries/binding.ts:326-331).
+ *  It is the one unit wording for the card: the meta line, the chart's accessible name and its
+ *  description all use it (the chart shows no second caption). */
 export const TREND_LABEL: Readonly<
   Record<EngineTrendQueryId, { readonly title: string; readonly region: string; readonly unit: string }>
 > = {
@@ -107,6 +109,7 @@ export interface EngineTrendChartProps {
 export function EngineTrendChart({ queryId, meta, queue, generation, clock, kiosk }: EngineTrendChartProps): ReactElement {
   useSignals();
   const headingId = `${useId()}-trend`;
+  const metaId = `${headingId}-meta`;
   const range = meta.defaultRange;
   const label = TREND_LABEL[queryId];
 
@@ -138,7 +141,7 @@ export function EngineTrendChart({ queryId, meta, queue, generation, clock, kios
   return (
     <section className="flex min-w-0 flex-col gap-1" aria-labelledby={headingId}>
       <h3 id={headingId} className="m-0 text-sm font-semibold wrap-anywhere">{label.title}</h3>
-      <p className="m-0 text-sm text-muted-foreground">
+      <p id={metaId} className="m-0 text-sm text-muted-foreground">
         {RANGE_LABEL[range]} · {label.unit} · Times in {clock.timezone}
       </p>
       <HistoryRegion state={state} label={label.region} onRetry={retry} onShorterRange={null}>
@@ -150,6 +153,8 @@ export function EngineTrendChart({ queryId, meta, queue, generation, clock, kios
               chartId={queryId}
               title={label.title}
               unit={meta.unit}
+              unitLabel={label.unit}
+              caption={{ labelledBy: headingId, describedBy: metaId }}
               range={range}
               payload={data}
               axis={axis}

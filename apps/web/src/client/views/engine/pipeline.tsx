@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import type { DataAvailability, DeadmanState, RuleState } from "@pulse/web-data/wire";
 import { EmptyState, KeyValueList, Section, StatGrid, StatTile, TARGET_STATUS } from "@/ui";
 import type { EstateClock } from "../../format.js";
-import { CAPACITY_TILE_LABEL, PRESENTATION_ICON, UNAVAILABLE, deadmanPresentation, toStatus } from "./labels.js";
+import { ABSENT_TILE_DESCRIPTION, CAPACITY_TILE_LABEL, PRESENTATION_ICON, UNAVAILABLE, deadmanPresentation, toStatus } from "./labels.js";
 import type { CapacityTile, NotificationSection, TileValue } from "./model.js";
 import { EngineStatusBadge, NotReported, SourceDegradedBadge } from "./components.js";
 import { CAPACITY_FORMAT, NOTIFICATION_FORMAT } from "./pipeline-format.js";
@@ -86,6 +86,16 @@ export function TileValueView({ value, format }: TileValueViewProps): ReactEleme
   return <span className="text-muted-foreground italic" data-unavailable="">{UNAVAILABLE}</span>;
 }
 
+/**
+ * StatTile props for a TileValue's headline: a real value is a headline number; "not reported" and
+ * "unavailable" render as the tile's absent state (small, muted, neutral) with a spoken description.
+ */
+export function tileValueState(value: TileValue): { valueState: "value" | "absent"; absentDescription?: string } {
+  return value.kind === "value"
+    ? { valueState: "value" }
+    : { valueState: "absent", absentDescription: ABSENT_TILE_DESCRIPTION[value.kind] };
+}
+
 // ---------------------------------------------------------------------------
 // NotificationTiles
 // ---------------------------------------------------------------------------
@@ -117,6 +127,7 @@ export function NotificationTiles({ section, clock }: NotificationTilesProps): R
                 <StatTile
                   className="h-full"
                   tone={failing ? TARGET_STATUS.critical.tone : "neutral"}
+                  {...tileValueState(r.failuresPerSecond)}
                   label={
                     <>
                       <span className="min-w-0 break-all">{r.integration}</span>
@@ -170,6 +181,7 @@ export function CapacityTiles({ tiles, availability, clock }: CapacityTilesProps
             <StatTile
               className="h-full"
               label={CAPACITY_TILE_LABEL[t.id]}
+              {...tileValueState(t.value)}
               value={<TileValueView value={t.value} format={CAPACITY_FORMAT[t.id]} />}
             />
           </div>
