@@ -252,6 +252,6 @@ Pulse-only additions that could move to deck:
 - `patterns/disclosure.tsx` separated count in the trigger's accessible name (a deck a11y fix).
 - `patterns/status-badge.tsx` `fromMap` applying the entry's `variant`, with `StatusPresentation.variant`.
 - `patterns/page-error-boundary.tsx` `pageSlot` (the fallback keeps the page's root and `h1`) and focus to the page heading after Retry.
-- `ui/viz/*` (Sparkline, StatusTimeline with its geometry helpers and per-segment tone, Gauge, lazy
-  uPlot TimeSeriesChart).
+- `ui/viz/*` (Sparkline, StatusTimeline with its geometry helpers and a `statusMap` for any status
+  vocabulary, Gauge, lazy uPlot TimeSeriesChart with `formatYTicks`/`splitYTicks`).
 - `ui/lib/icons.ts` pulse additions (bell, clock, keyboard, menu, network, wifi and others).

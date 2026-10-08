@@ -28,7 +28,7 @@ import {
 } from "../src/client/views/engine/pipeline.js";
 import { CAPACITY_FORMAT, NOTIFICATION_FORMAT } from "../src/client/views/engine/pipeline-format.js";
 import {
-  CAPACITY_TILE_LABEL, HEALTH_TEXT, NOT_REPORTED, NO_LAST_GOOD, PRESENTATION_ICON, UNAVAILABLE, componentPresentation, degradedText,
+  ABSENT_TILE_DESCRIPTION, CAPACITY_TILE_LABEL, HEALTH_TEXT, NOT_REPORTED, NO_LAST_GOOD, PRESENTATION_ICON, UNAVAILABLE, componentPresentation, degradedText,
 } from "../src/client/views/engine/labels.js";
 import { canaryRule, capacityTiles, notificationSection, ruleSection, scrapeSection } from "../src/client/views/engine/model.js";
 import type { ScrapeTarget } from "../src/client/views/engine/model.js";
@@ -52,7 +52,7 @@ import {
   ENGINE_NOW_ISO, ENGINE_SCENARIOS, degradedEngine, delivery, makeComponent, makeEngineSnapshot, makeEnginePayload, makeObservation, okEngine,
 } from "./engine-fixtures.js";
 import { StubChart, resetChartStub } from "./chart-stub.js";
-import { installUiStubs } from "./rtl.js";
+import { installUiStubs, within } from "./rtl.js";
 import { installHistoryStub, makeSeriesHistory } from "./timeline-fixtures.js";
 import type { StubRoute } from "./timeline-fixtures.js";
 
@@ -515,7 +515,8 @@ describeDom("engine components", () => {
     expect(cells(slack)[1]?.querySelector("[data-not-reported]")).not.toBeNull();
 
     expect(cells(webhook)[0]?.querySelector("[data-not-reported]")).not.toBeNull();
-    expect(text(cells(webhook)[0])).toBe("Failures: " + "not reported");
+    // The absent headline keeps its visible text plus a screen-reader description (#15).
+    expect(text(cells(webhook)[0])).toBe(`Failures: not reported (${ABSENT_TILE_DESCRIPTION["not-reported"]})`);
     expect(text(cells(webhook)[1])).toBe(`Failures · p95 latency ${NOTIFICATION_FORMAT.latency(0.05)}`);
     expect(webhook.querySelector(BADGE)).toBeNull();
     expect(all(c, BADGE).filter((x) => text(x).includes("Failing"))).toHaveLength(1);
@@ -534,7 +535,7 @@ describeDom("engine components", () => {
     expect(tiles.length).toBeGreaterThan(0);
     for (const t of tiles) {
       const [failures, latency] = all(t, "dd") as [Element, Element];
-      expect(text(failures)).toBe(`Failures: ${UNAVAILABLE}`);
+      expect(text(failures)).toBe(`Failures: ${UNAVAILABLE} (${ABSENT_TILE_DESCRIPTION.unavailable})`);
       expect(failures.querySelector("[data-unavailable]")).not.toBeNull();
       expect(text(latency)).toBe(`Failures · p95 latency ${UNAVAILABLE}`);
       expect(latency.querySelector("[data-unavailable]")).not.toBeNull();
@@ -581,6 +582,44 @@ describeDom("engine components", () => {
     expect(all(c2, "[data-unavailable]")).toHaveLength(4);
     expect(c2.querySelector(DEGRADED)).not.toBeNull();
     expect(c2.querySelector(`[data-capacity] [data-status]`)).toBeNull();
+  });
+
+  test("#15: 'not reported' and 'unavailable' tiles render as the absent state, distinct from real values, with a spoken description", async () => {
+    const payload = makeEnginePayload({ capacity: { dataBytes: null, freeDiskBytes: null } });
+    const c = await render(el(CapacityTiles, { tiles: capacityTiles(payload.capacity), availability: payload.capacity.availability, clock }));
+    const tile = (label: string) =>
+      within(c).getAllByRole("term").find((t) => t.textContent === label)!.closest<HTMLElement>("[data-slot=stat-tile]")!;
+    const value = (label: string) => within(tile(label)).getByRole("definition");
+
+    // A real value is the headline; an absent one is the muted absent state, still on the neutral tone.
+    const real = value(CAPACITY_TILE_LABEL["ingestion-rate"]);
+    expect(real).toHaveAttribute("data-value-state", "value");
+    expect(tile(CAPACITY_TILE_LABEL["ingestion-rate"])).toHaveAttribute("data-value-state", "value");
+    const missing = value(CAPACITY_TILE_LABEL["data-size"]);
+    expect(missing).toHaveAttribute("data-value-state", "absent");
+    expect(tile(CAPACITY_TILE_LABEL["data-size"])).toHaveAttribute("data-tone", "neutral");
+    // The visible text stays, and the state is described for screen readers.
+    expect(within(missing).getByText(NOT_REPORTED)).toBeVisible();
+    expect(missing).toHaveTextContent(`${NOT_REPORTED} (${ABSENT_TILE_DESCRIPTION["not-reported"]})`);
+
+    const outage = ENGINE_SCENARIOS.sourceOutage();
+    const c2 = await render(el(CapacityTiles, { tiles: capacityTiles(outage.capacity), availability: outage.capacity.availability, clock }));
+    const grid2 = within(c2.querySelector<HTMLElement>("[data-slot=stat-grid]")!);
+    const defs = grid2.getAllByRole("definition");
+    expect(defs).toHaveLength(4);
+    for (const d of defs) {
+      expect(d).toHaveAttribute("data-value-state", "absent");
+      expect(d).toHaveTextContent(`${UNAVAILABLE} (${ABSENT_TILE_DESCRIPTION.unavailable})`);
+    }
+
+    // Notification tiles: an unavailable failure rate is absent too and never shows "Failing".
+    const notif = makeEnginePayload({
+      notifications: { failuresPerSecond: { email: 3 }, availability: { state: "unavailable", lastGoodAt: LAST_GOOD_ISO } },
+    });
+    const c3 = await render(el(NotificationTiles, { section: notificationSection(notif.notifications), clock }));
+    const [headline] = within(c3.querySelector<HTMLElement>("[data-integration]")!).getAllByRole("definition");
+    expect(headline).toHaveAttribute("data-value-state", "absent");
+    expect(headline!.closest("[data-slot=stat-tile]")).toHaveAttribute("data-tone", "neutral");
   });
 
   test("REQ-CAP-01: TileValueView renders zero as a value and never as not reported", async () => {

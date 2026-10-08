@@ -280,12 +280,13 @@ function SwimRows(p: SwimRowsProps): ReactElement {
                 const lane = subLaneOf(row, cur.interval);
                 if (lane >= 0) marks.push({ kind: "active-interval", lane, start: cur.interval.start, end: cur.interval.end });
               }
-              const lanes: TimelineLane[] = row.subLanes.map((sub) => ({
+              // Bars carry the row's own severity, drawn from ALERT_SEVERITY (info → info tone), not a
+              // target status with a tone override.
+              const lanes: TimelineLane<SwimSeverity>[] = row.subLanes.map((sub) => ({
                 id: `${row.severity}-${sub.index}`,
                 label: `${SWIM_ROW_TEXT[row.severity]} sub-lane ${sub.index + 1}`,
                 segments: sub.intervals.map((i) => ({
-                  status: SWIM_ROW_STATUS[row.severity],
-                  tone: ALERT_SEVERITY[row.severity].tone,
+                  status: row.severity,
                   start: i.start,
                   end: i.end,
                 })),
@@ -310,6 +311,7 @@ function SwimRows(p: SwimRowsProps): ReactElement {
                   <StatusTimeline
                     className="block max-w-none"
                     lanes={lanes}
+                    statusMap={ALERT_SEVERITY}
                     domainStart={view.start}
                     domainEnd={view.end}
                     width={plotWidth}
