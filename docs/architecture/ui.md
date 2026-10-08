@@ -72,9 +72,6 @@ and dark (`.dark` on `<html>`):
 - **Wallboard density.** `:root[data-density="wallboard"]` scales Tailwind's spacing and type
   scale for reading at a distance. `?kiosk=1` forces it, and the density control sets it
   otherwise. Desk density is `theme.css` as is.
-- **Canvas tokens** (`--canvas-axis`, `--canvas-series`, `--canvas-status-*`, …). uPlot draws to a
-  `<canvas>`, which cannot resolve `var()`, so the chart reads these names through
-  `getComputedStyle`. They are references to `theme.css` tokens, never literal colours.
 - **Motion tokens** (`--motion-base`, `--motion-slow`, `--motion-ease`) for the few animated state
   changes, such as the overview change marker. The reduced-motion rule in `app.css` overrides them.
 
@@ -157,8 +154,11 @@ exact-version pin table in `tests/deps.test.ts`. Re-apply this edit after every 
 
 **Bespoke viz.** `ui/viz/` holds `Sparkline`, `StatusTimeline`, `Gauge` and `TimeSeriesChart`.
 `TimeSeriesChart` loads uPlot through `React.lazy`, so uPlot never ships on the initial route.
-Colours come only from the tone and chart tokens. Suppressed marks are hatched or dashed on the
-neutral tone. The timeline view's lanes, overlay and swimlane stay in that view; they are not
+Colours come only from the tone and chart tokens. uPlot draws to a `<canvas>`, which cannot
+resolve `var()`, so `ui/viz/uplot-chart.tsx` reads the theme tokens from the chart root's computed
+style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--chart-1` to
+`--chart-5` for series by index, and `--status-<tone>-fg` for a series that carries a status.
+Suppressed marks are hatched or dashed on the neutral tone. The timeline view's lanes, overlay and swimlane stay in that view; they are not
 library patterns.
 
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable`, backed by
@@ -235,7 +235,8 @@ from a production build.
 - Build screens from `@/ui`: `PageHeader` for the one `h1`, `Section` for each `h2` region, the
   pattern that fits the content (`DataTable`, `List`, `CardGrid`, `KeyValueList`, `TreeView`, …),
   and `LoadingState`, `EmptyState`, `ErrorState` and `PageErrorBoundary` for the other paths.
-  Give a view's root `data-slot="<view>-page"`.
+  Give a view's root `data-slot="<view>-page"`, and wrap the view in `PageErrorBoundary` with the
+  same `pageSlot`, so a render fault keeps the root and its `h1`.
 - A new pattern goes in `ui/patterns/<kebab-name>.tsx`, is exported from `ui/index.ts`, has a
   `data-slot="<kebab-name>"` root, and is shown in the workbench in every state. If it is
   Pulse-only, list it in `VENDORED.md`.
@@ -279,7 +280,29 @@ from a production build.
 - `style={…}` only in allowlisted files, with no stale allowlist entries;
 - a `data-slot` root on every pattern, and no `data-icon`;
 - no legacy design tokens;
-- `useSignals()` in every component that reads a signal during render.
+- `useSignals()` in every component that reads a signal during render;
+- token resolution: every utility with a theme-backed root (the colour roots `bg-`, `text-`,
+  `border-*`, `ring-`, `fill-`, `stroke-`, … plus `font-`, `rounded-*`, `tracking-`, `leading-`,
+  `animate-`, `ease-`, `drop-shadow-`, `blur-`, `max-w-`) in a class context (a `className`
+  attribute, a `cn`/`cva`/`clsx`/`twMerge` argument, or a class-shaped initializer) compiles under
+  the installed Tailwind over `app.css`, variants included; colour utilities name an app theme colour
+  (not Tailwind's palette; black, white and the keywords excepted); every `var(--…)` reference in
+  sources and stylesheets is declared by the compiled sheet, set at runtime by the same module, or set
+  by Radix; every dark token overrides a light one and every light colour has a dark value; and every
+  wallboard token overrides a real theme variable. A `${…}` interpolation is matched as a wildcard;
+  classes built by concatenation or returned from a helper are not seen;
+- list keyboards through `useListNavigation`: no new hand-rolled `ArrowUp`/`ArrowDown` or `j`/`k`
+  handler (`.key`/`.code` comparisons, inline key lists, case-folded keys), vertical or 2-D
+  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The alerts triage
+  keyboard, the timeline lane tree and the overview grid are listed exemptions, each with its reason, as is
+  the command palette's pre-load key buffer, which swallows keys but moves nothing.
+
+`tests/views-page-structure.test.tsx` renders every registered view on every route it owns (tabs and
+deep routes included), loaded, before data and after a render fault, and checks the
+`data-slot="…-page"` root and the one `PageHeader` `h1`. A view's `PageErrorBoundary` takes the page
+slot (`pageSlot`), so its fallback keeps that root and heading. `tests/ui-tabs-keyboard.test.tsx` holds the Radix tabs keyboard contract (arrows,
+Home/End, wrap, roving tabindex, automatic and manual activation) for the primitive and for the
+alerts and estate tabs.
 
 Related suites: `tests/no-preact.test.ts` keeps `preact` out of `apps/web`,
 `tests/mutations-client-imports.test.ts` keeps mutation dialogs behind `import()`, and
