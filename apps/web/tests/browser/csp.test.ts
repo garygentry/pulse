@@ -9,7 +9,7 @@
 //     data island is present and parseable;
 //   • opens the surfaces that create DOM at runtime: the command palette, the theme menu, the alert
 //     detail pane and its Silence / Acknowledge dialogs, the Expire confirm, the Propose edit dialog,
-//     the Findings Severity / Code Selects, the coverage artifacts Popover, the density menu, a tooltip, the uPlot charts (Engine, Timeline detail), and the mobile sheet;
+//     the Findings Severity / Code Selects, the coverage artifacts Popover, an error fallback and its Retry, the density menu, a tooltip, the uPlot charts (Engine, Timeline detail), and the mobile sheet;
 // and asserts ZERO `securitypolicyviolation` events and zero CSP console messages throughout.
 // Also checks every runtime <style> (react-remove-scroll's scroll lock, the Radix Select viewport,
 // and — in the dev run's /_ui workbench — the Radix ScrollArea viewport) carries the style nonce.
@@ -304,8 +304,21 @@ browserDescribe()("browser: the Content-Security-Policy produces zero violations
         await page.locator(".uplot").first().waitFor({ timeout: 15_000 });
       });
 
+      await step("error fallback and Retry (a malformed /api/estate body)", async () => {
+        await page.route("**/api/estate*", (route) =>
+          route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ malformed: true }) }),
+        );
+        await visit(page, base, "/estate");
+        const retry = page.locator('main [data-slot="error-state"]').getByRole("button", { name: /retry/i });
+        await retry.waitFor({ timeout: 15_000 });
+        await page.unrouteAll({ behavior: "wait" });
+        await retry.click();
+        await page.locator('main [data-slot="error-state"]').waitFor({ state: "detached", timeout: 15_000 });
+        await page.locator('main [data-slot="tabs"]').first().waitFor({ timeout: 15_000 });
+      });
+
       await page.waitForLoadState("networkidle");
-      expect(steps.length).toBe(11);
+      expect(steps.length).toBe(12);
       expect(violations, violations.join("\n")).toEqual([]);
     }, 300_000);
 
