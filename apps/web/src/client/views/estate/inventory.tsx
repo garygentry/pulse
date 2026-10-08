@@ -42,16 +42,24 @@ import { safeCell, safeNavigate } from "./error-boundary.js";
 import { ProvenanceChip } from "./provenance-chip.js";
 import { provenanceRef } from "./provenance.js";
 import { toTargetStatus } from "./status.js";
+import { effectiveStatus } from "./coverage-model.js";
 import {
   CLASS_GROUPS,
   CLASS_LABEL,
-  COVERAGE_LABEL,
   buildCoverageIndex,
   buildTreeRows,
   classifyIn,
+  coverageLabel,
+  coverageStaleness,
   findOrphanedServices,
 } from "./inventory-model.js";
-import type { CollectionClass, CoverageIndex, HostCoverage, TreeRow } from "./inventory-model.js";
+import type {
+  CollectionClass,
+  CoverageIndex,
+  CoverageStaleness,
+  HostCoverage,
+  TreeRow,
+} from "./inventory-model.js";
 
 /** Props for the inventory landing surface. */
 export interface InventoryProps {
@@ -59,7 +67,8 @@ export interface InventoryProps {
   readonly estate: Readonly<WebEstateModelV2>;
   /** Live-state rows, matched to model entities by drilldownId (status only). */
   readonly liveTargets: readonly EstateTargetState[];
-  /** Coverage buckets, or the absent envelope (`value === null`) ⇒ every entity "unknown". */
+  /** Coverage buckets, or the absent envelope (`value === null`) ⇒ every entity "unknown". A present
+   *  but non-current section never badges ok: covered reads "Coverage stale" (etc.) as unknown. */
   readonly coverage: AvailabilitySection<WebCoverageArtifact>;
   /** drilldownIds matching the active search, or `null` when no query is active. */
   readonly matchedIds: ReadonlySet<string> | null;
@@ -161,15 +170,17 @@ function LiveBadge(props: {
   );
 }
 
-function CoverageBadge(props: { coverage: HostCoverage }): ReactElement {
-  const status = COVERAGE_STATUS[props.coverage];
+/** Coverage badge for an entity. Non-current coverage downgrades ok → unknown (as the coverage tab
+ *  does) and says so in the label, so a covered entity is never badged green on stale data (I3). */
+function CoverageBadge(props: { coverage: HostCoverage; staleness: CoverageStaleness }): ReactElement {
+  const status = effectiveStatus(COVERAGE_STATUS[props.coverage], props.staleness !== null);
   const { tone, icon, variant } = TARGET_STATUS[status];
   return (
     <StatusBadge
       tone={tone}
       icon={icon}
       {...(variant !== undefined ? { variant } : {})}
-      label={COVERAGE_LABEL[props.coverage]}
+      label={coverageLabel(props.coverage, props.staleness)}
       data-indicator="coverage"
       data-status={status}
     />
@@ -187,6 +198,8 @@ function ProvenanceText(props: { provenance: WebEstateHostV2["provenance"] }): R
 /** Everything a row's trailing content needs beyond its node. */
 interface RowContext {
   readonly coverageIndex: CoverageIndex | null;
+  /** Non-current availability of the coverage section, or `null` when current/absent. */
+  readonly coverageStaleness: CoverageStaleness;
   readonly liveById: ReadonlyMap<string, EstateTargetState>;
 }
 
@@ -210,7 +223,7 @@ function renderRowMeta(node: InventoryNode, ctx: RowContext): ReactNode {
     return (
       <span data-testid="estate-host-row" data-host={host.name} className={META}>
         <span className="text-xs text-muted-foreground">{CLASS_LABEL.get(host.collectionClass) ?? host.collectionClass}</span>
-        <CoverageBadge coverage={classifyIn(ctx.coverageIndex, "host", host.name)} />
+        <CoverageBadge coverage={classifyIn(ctx.coverageIndex, "host", host.name)} staleness={ctx.coverageStaleness} />
         <LiveBadge entity={host} liveById={ctx.liveById} />
         <Badge variant="secondary">{plural(node.serviceCount, "service")}</Badge>
         <ProvenanceText provenance={host.provenance} />
@@ -221,7 +234,10 @@ function renderRowMeta(node: InventoryNode, ctx: RowContext): ReactNode {
   return (
     <span data-testid="estate-service-row" data-host={service.host} data-service={service.name} className={META}>
       <Badge variant="outline">{service.kind}</Badge>
-      <CoverageBadge coverage={classifyIn(ctx.coverageIndex, "service", `${service.host}/${service.name}`)} />
+      <CoverageBadge
+        coverage={classifyIn(ctx.coverageIndex, "service", `${service.host}/${service.name}`)}
+        staleness={ctx.coverageStaleness}
+      />
       <LiveBadge entity={service} liveById={ctx.liveById} />
       <ProvenanceText provenance={service.provenance} />
     </span>
@@ -421,7 +437,7 @@ export function Inventory(props: InventoryProps): ReactElement {
     () => (coverage.value === null ? null : buildCoverageIndex(coverage.value)),
     [coverage],
   );
-  const ctx: RowContext = { coverageIndex, liveById: liveIndex.byId };
+  const ctx: RowContext = { coverageIndex, coverageStaleness: coverageStaleness(coverage), liveById: liveIndex.byId };
   const renderMeta = safeCell((node: InventoryNode) => renderRowMeta(node, ctx));
 
   // A pointer click on a branch's chevron (the row's first child) only toggles it; anywhere else on

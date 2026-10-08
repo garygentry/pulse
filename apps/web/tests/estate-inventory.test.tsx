@@ -9,7 +9,7 @@ import type {
   WebEstateHostV2,
   WebEstateServiceV2,
 } from "@pulse/renderer";
-import type { AvailabilitySection, EstatePayload } from "@pulse/web-data/wire";
+import type { AvailabilitySection, DataAvailability, EstatePayload } from "@pulse/web-data/wire";
 
 import {
   buildTreeRows,
@@ -21,7 +21,12 @@ import { Inventory } from "../src/client/views/estate/inventory.js";
 import type { InventoryProps } from "../src/client/views/estate/inventory.js";
 import type { PathRouter } from "../src/client/router.js";
 import { act, describeUi, fireEvent, render, screen, userEvent, within } from "./rtl.js";
-import { absentSection, makeEstatePayloadFixture, presentSection } from "./factories/estate-payload.js";
+import {
+  absentSection,
+  currentAvailability,
+  makeEstatePayloadFixture,
+  presentSection,
+} from "./factories/estate-payload.js";
 
 /** A recording router stub — Inventory only ever calls navigate. */
 function makeRouter(): { router: PathRouter; calls: string[] } {
@@ -168,6 +173,65 @@ describeUi("estate: inventory tree", () => {
     expect(badge("hostB-hyper").textContent).toContain("Coverage gap");
     expect(badge("hostE-excluded")).toHaveAttribute("data-status", "suppressed");
     expect(badge("hostD-probe")).toHaveAttribute("data-status", "unknown");
+  });
+
+  /** Coverage with hostA-managed + its grafana service covered and hostB-hyper a gap, at `state`. */
+  function coverageAt(state: DataAvailability["state"]): AvailabilitySection<WebCoverageArtifact> {
+    const base = coverageArtifact({ covered: ["hostA-managed"], gaps: ["hostB-hyper"] });
+    const art = base.value as WebCoverageArtifact;
+    const service: CoverageEntry = { ...art.covered[0]!, kind: "service", name: "hostA-managed/grafana" };
+    return presentSection<WebCoverageArtifact>(
+      { ...art, covered: [...art.covered, service] },
+      currentAvailability({ state, message: state === "current" ? null : "coverage source down" }),
+    );
+  }
+
+  /** Render with coverage at `state` and expand hostA-managed so its service rows render. */
+  async function renderCoverageAt(state: DataAvailability["state"]): Promise<void> {
+    const user = userEvent.setup();
+    render(<Inventory {...propsFrom(makeEstatePayloadFixture({ coverage: coverageAt(state) }))} />);
+    act(() => item("hostA-managed").focus());
+    await user.keyboard("{ArrowRight}");
+    expect(item("hostA-managed")).toHaveAttribute("aria-expanded", "true");
+  }
+
+  for (const [state, note] of [
+    ["stale", "Coverage stale"],
+    ["unavailable", "Coverage unavailable"],
+  ] as const) {
+    test(`${state} coverage ⇒ no host or service reads 'Covered' or badges ok; text says coverage is not current (I3)`, async () => {
+      await renderCoverageAt(state);
+      const host = item("hostA-managed");
+      const service = within(host).getByRole("treeitem", { name: "grafana" });
+      // The row's badges are the treeitem's accessible description — what a screen reader hears.
+      for (const el of [host, service]) {
+        expect(el).toHaveAccessibleDescription(expect.stringContaining(note));
+        expect(el).not.toHaveAccessibleDescription(expect.stringContaining("Covered"));
+      }
+      for (const row of [rowOf(host), rowOf(service)]) {
+        expect(within(row).queryAllByText("Covered").length).toBe(0);
+        expect(within(row).getByText(note)).not.toBeNull();
+        expect(indicator(row, "coverage").getAttribute("data-status")).toBe("unknown");
+      }
+      // A gap is not ok, so it keeps its warning and text (only ok is downgraded, as on the coverage tab).
+      expect(within(rowOf(item("hostB-hyper"))).getByText("Coverage gap")).not.toBeNull();
+      expect(indicator(rowOf(item("hostB-hyper")), "coverage")).toHaveAttribute("data-status", "warning");
+      // No coverage badge anywhere in the tree is ok.
+      const statuses = [...tree().querySelectorAll('[data-indicator="coverage"]')].map((el) => el.getAttribute("data-status"));
+      expect(statuses).not.toContain("ok");
+    });
+  }
+
+  test("current coverage ⇒ covered host and service read 'Covered' with an ok badge", async () => {
+    await renderCoverageAt("current");
+    const host = item("hostA-managed");
+    const service = within(host).getByRole("treeitem", { name: "grafana" });
+    for (const el of [host, service]) expect(el).toHaveAccessibleDescription(expect.stringContaining("Covered"));
+    for (const row of [rowOf(host), rowOf(service)]) {
+      expect(within(row).getByText("Covered")).not.toBeNull();
+      expect(indicator(row, "coverage")).toHaveAttribute("data-status", "ok");
+    }
+    expect(within(rowOf(item("hostB-hyper"))).getByText("Coverage gap")).not.toBeNull();
   });
 
   test("zero hosts renders the explicit 'No hosts declared' EmptyState", () => {
