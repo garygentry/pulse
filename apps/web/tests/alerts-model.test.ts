@@ -72,9 +72,16 @@ describe("alerts model", () => {
     expect(v.ruleFamily).toContain(UNGROUPED_FAMILY);
   });
 
-  test("hostServiceValue is kind:id or null", () => {
+  test("hostServiceValue is the canonical target id, prefixed once (GitHub #10), or null", () => {
     expect(hostServiceValue(byFp(FIXTURE_FINGERPRINTS.hostDown))).toBe("host:web-01");
+    expect(hostServiceValue(byFp(FIXTURE_FINGERPRINTS.backupAge))).toBe("svc:web-01/backup");
     expect(hostServiceValue(byFp(FIXTURE_FINGERPRINTS.unattributed))).toBeNull();
+  });
+
+  test("facetValues.hostService lists each wire target id once, never double-prefixed (GitHub #10)", () => {
+    const values = facetValues(makeAlertsPayload()).hostService;
+    expect(values).toEqual(["host:web-01", "svc:web-01/backup"]);
+    expect(values.some((v) => /^(host:host:|service:svc:)/.test(v))).toBe(false);
   });
 
   test("targetEquals is exact and treats two nulls as unequal", () => {
@@ -86,9 +93,9 @@ describe("alerts model", () => {
 
   test("relatedByTarget returns exact-target rows in payload order; [] for null", () => {
     const p = makeAlertsPayload();
-    const target = { kind: "host", id: "web-01" } as const;
+    const target = { kind: "host", id: "host:web-01" } as const;
     const related = relatedByTarget(p, target);
-    expect(related).toEqual(p.alerts.filter((a) => a.target?.kind === "host" && a.target.id === "web-01"));
+    expect(related).toEqual(p.alerts.filter((a) => a.target?.kind === "host" && a.target.id === "host:web-01"));
     expect(related.length).toBeGreaterThan(1);
     expect(relatedByTarget(p, null)).toEqual([]);
   });

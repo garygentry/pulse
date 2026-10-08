@@ -76,7 +76,7 @@ encodeTriageState({
 
 ### `decodeTriageState(query): TriageUrlState`
 
-Decodes the router’s flat query record. Unknown values are retained; empty values become empty arrays or null selection.
+Decodes the router’s flat query record. Unknown values are retained; empty values become empty arrays or null selection. `hs` values written before the target-reference fix (`host:host:web01`, `service:svc:web01/nginx`) are mapped to the canonical reference (`host:web01`, `svc:web01/nginx`) by `normalizeTargetRef`, so older shared links keep filtering.
 
 ```typescript
 const state = decodeTriageState({ sev: "critical,warning", sel: "fp-123" });
@@ -87,14 +87,14 @@ const state = decodeTriageState({ sev: "critical,warning", sel: "fp-123" });
 Decodes a full `RouteMatch`. It builds on `decodeTriageState(match.query)` and adds the inbound deep-link forms:
 
 - `match.params.fingerprint`, from the `/alerts/:fingerprint` route, becomes the selection when `sel` is absent or empty;
-- a non-empty `target` query value `T` adds its host/service facet value(s), merged with `hs` and de-duplicated. With `available` (`facetValues(payload).hostService`), only the matching kind(s) are kept. With no payload, or no match, all of `host:T`, `service:T` and `endpoint:T` are added.
+- a non-empty `target` query value `T` (a `TargetIdentity.id`, such as `host:web01` or `svc:web01/nginx`) adds its host/service facet value(s), merged with `hs` and de-duplicated. The candidates are `targetAliasValues(T)`: `T` itself (host and service ids already carry their kind) and `endpoint:T`. With `available` (`facetValues(payload).hostService`), only the matching candidate is kept. With no payload, or no match, only `T` is added (one clearable chip). Pre-#10 `hs` values (`host:host:…`) are normalised unless the payload carries them verbatim.
 
 ```typescript
-const state = decodeTriageRoute({ path: "/alerts/fp-1", view: "alerts", params: { fingerprint: "fp-1" }, query: { target: "web01" } });
-// state.selected === "fp-1"; state.facets.hostService includes "host:web01"
+const state = decodeTriageRoute({ path: "/alerts/fp-1", view: "alerts", params: { fingerprint: "fp-1" }, query: { target: "host:web01" } });
+// state.selected === "fp-1"; state.facets.hostService is ["host:web01"] (no payload loaded: the id itself)
 ```
 
-`TARGET_ALIAS_KEY` (`"target"`) and `TARGET_ALIAS_KINDS` (`["host", "service", "endpoint"]`) are exported alongside it.
+`TARGET_ALIAS_KEY` (`"target"`), `TARGET_ALIAS_KINDS` (`["host", "service", "endpoint"]`) and `targetAliasValues(id)` are exported alongside it.
 
 ### `resolveSelected(payload, selected): ActiveAlert | null`
 
@@ -144,6 +144,8 @@ function buildRuleFamilyIndex(payload: AlertsPayload): ReadonlyMap<string, strin
 function facetValues(payload: AlertsPayload): FacetValues;
 function hostServiceValue(alert: ActiveAlert): string | null;
 ```
+
+`hostServiceValue` is `targetRef(alert.target)` from `src/client/target-ref.ts`: the canonical wire id, whose kind prefix appears once (`host:web01`, `svc:web01/nginx`; endpoint names become `endpoint:<name>`). Never compose `${kind}:${id}` for display or for `hs`: host and service ids already start with `host:` / `svc:`.
 
 The first matching rule name wins. Unmatched alerts use `UNGROUPED_FAMILY`.
 
@@ -240,7 +242,7 @@ function summaryText(alert: ActiveAlert): string;
 
 ```typescript
 formatAge("2026-09-23T02:00:00Z", Date.parse("2026-09-23T03:00:00Z")); // "1h"
-formatTarget({ kind: "service", id: "api" }); // "service:api"
+formatTarget({ kind: "service", id: "svc:web01/api" }); // "svc:web01/api"
 ```
 
 ## Keyboard Controller

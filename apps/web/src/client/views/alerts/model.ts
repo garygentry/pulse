@@ -2,8 +2,8 @@
 //
 // The single place the view reads the store's alerts payload as the frozen wire `AlertsPayload`,
 // plus the pure, order-preserving selectors every surface reads (REQ-TRIAGE-03). No re-validation —
-// the data tier owns upstream validation (CON-04). This module imports no local module: it is the
-// root of the alerts view's module graph.
+// the data tier owns upstream validation (CON-04). Its only local import is the shared `targetRef`
+// formatter: it is the root of the alerts view's module graph.
 
 import type { AppStore } from "../../store/index.js";
 import type {
@@ -13,6 +13,7 @@ import type {
   RuleState,
   TargetIdentity,
 } from "@pulse/web-data/wire";
+import { targetRef } from "../../target-ref.js";
 
 /** Sentinel rule family for an alert with no matching catalog rule (00 §6, tech-spec §3.2). */
 export const UNGROUPED_FAMILY = "ungrouped";
@@ -137,11 +138,13 @@ export function facetValues(payload: AlertsPayload): FacetValues {
 }
 
 /**
- * The host/service facet value: `"<kind>:<id>"` (e.g. "host:web01"), or `null` when the alert is
- * unattributable (`target === null`). Matches the tech-spec §3.3 URL example (`hs=host:web01`).
+ * The host/service facet value: the target's canonical reference (`targetRef`), e.g. "host:web01" or
+ * "svc:web01/nginx" — the wire id already carries the kind, so it is not prefixed again (GitHub #10).
+ * `null` when the alert is unattributable (`target === null`). Matches the tech-spec §3.3 URL example
+ * (`hs=host:web01`).
  */
 export function hostServiceValue(alert: ActiveAlert): string | null {
-  return alert.target === null ? null : `${alert.target.kind}:${alert.target.id}`;
+  return alert.target === null ? null : targetRef(alert.target);
 }
 
 /**

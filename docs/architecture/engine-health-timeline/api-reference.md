@@ -471,7 +471,7 @@ function worstInView(
 
 ```typescript
 // views/timeline/swimlane.tsx
-function swimIntervalHref(interval: SwimInterval): string;   // /alerts?hs=<kind:id> or /alerts?sev=<severity>
+function swimIntervalHref(interval: SwimInterval): string;   // /alerts?hs=<targetRef(target)> or /alerts?sev=<severity>
 // views/timeline/detail.tsx
 function estateHref(node: LaneNode): string;                 // /estate/host/<name> or /estate/service/<host>/<name>
 function safeGrafanaHref(url: string | null): string | null; // http(s) only

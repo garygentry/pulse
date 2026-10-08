@@ -15,6 +15,8 @@ import { createAppStore } from "../src/client/store/index.js";
 import { VIEWS } from "../src/client/views/registry.js";
 import { alertTriagePath, targetTriagePath } from "../src/client/views/overview/selectors.js";
 import { TARGET_ALIAS_KEY, decodeTriageRoute } from "../src/client/views/alerts/url-state.js";
+import { facetValues, hostServiceValue } from "../src/client/views/alerts/model.js";
+import { matchesFacets } from "../src/client/views/alerts/facets.js";
 import { describeDom } from "./dom.js";
 import { installUiStubs } from "./rtl.js";
 import { alertsTab, detailDialog, dialogTitle, selectTab, facetPopoverTrigger, facetToggles, openFacetOptions } from "./alerts-dom-helpers.js";
@@ -58,35 +60,58 @@ describe("decodeTriageRoute", () => {
     expect(decodeTriageRoute(routeMatch({}, {})).selected).toBeNull();
   });
 
-  test("target=<id> adds host:/service:/endpoint:<id> to the hostService facet", () => {
-    const s = decodeTriageRoute(routeMatch({}, { [TARGET_ALIAS_KEY]: "web01" }));
+  test("target=<id> adds the id itself to the hostService facet", () => {
+    const s = decodeTriageRoute(routeMatch({}, { [TARGET_ALIAS_KEY]: "host:web01" }));
     expect(TARGET_ALIAS_KEY).toBe("target");
-    expect(s.facets.hostService).toEqual(["host:web01", "service:web01", "endpoint:web01"]);
+    // The wire id already carries its kind: never host:host:… / service:host:… (GitHub #10).
+    expect(s.facets.hostService).toEqual(["host:web01"]);
     expect(s.selected).toBeNull();
     expect(decodeTriageRoute(routeMatch({}, { target: "" })).facets.hostService).toEqual([]);
   });
 
   test("target merges with hs, de-duplicated; other facets are untouched", () => {
-    const s = decodeTriageRoute(routeMatch({}, { hs: "host:web01,host:db01", target: "web01", sev: "critical" }));
-    expect(s.facets.hostService).toEqual(["host:web01", "host:db01", "service:web01", "endpoint:web01"]);
+    const s = decodeTriageRoute(routeMatch({}, { hs: "host:web01,host:db01", target: "svc:web01/nginx", sev: "critical" }));
+    expect(s.facets.hostService).toEqual(["host:web01", "host:db01", "svc:web01/nginx"]);
+    // An alias equal to an hs value adds nothing.
+    expect(decodeTriageRoute(routeMatch({}, { hs: "host:web01", target: "host:web01" })).facets.hostService).toEqual([
+      "host:web01",
+    ]);
     expect(s.facets.severity).toEqual(["critical"]);
   });
 
   test("with the payload's host/service values, the target alias keeps only the matching kind", () => {
-    const available = ["service:backup", "host:web01"];
-    expect(decodeTriageRoute(routeMatch({}, { target: "backup" }), available).facets.hostService).toEqual([
-      "service:backup",
+    const available = ["svc:web01/backup", "host:web01"];
+    expect(decodeTriageRoute(routeMatch({}, { target: "svc:web01/backup" }), available).facets.hostService).toEqual([
+      "svc:web01/backup",
     ]);
     // Explicit hs values are never pruned, only alias-derived ones.
     expect(
-      decodeTriageRoute(routeMatch({}, { hs: "endpoint:zzz", target: "backup" }), available).facets.hostService,
-    ).toEqual(["endpoint:zzz", "service:backup"]);
+      decodeTriageRoute(routeMatch({}, { hs: "endpoint:zzz", target: "svc:web01/backup" }), available).facets.hostService,
+    ).toEqual(["endpoint:zzz", "svc:web01/backup"]);
   });
 
-  test("no payload, or no matching kind, keeps the full expansion", () => {
-    const full = ["host:gone", "service:gone", "endpoint:gone"];
-    expect(decodeTriageRoute(routeMatch({}, { target: "gone" }), null).facets.hostService).toEqual(full);
-    expect(decodeTriageRoute(routeMatch({}, { target: "gone" }), ["host:web01"]).facets.hostService).toEqual(full);
+  test("the endpoint reading is kept only when the payload carries it", () => {
+    expect(decodeTriageRoute(routeMatch({}, { target: "web01/grafana" }), ["endpoint:web01/grafana"]).facets.hostService).toEqual([
+      "endpoint:web01/grafana",
+    ]);
+  });
+
+  test("no payload, or no matching kind, keeps only the id itself (one clearable chip)", () => {
+    const full = ["host:gone"];
+    expect(decodeTriageRoute(routeMatch({}, { target: "host:gone" }), null).facets.hostService).toEqual(full);
+    expect(decodeTriageRoute(routeMatch({}, { target: "host:gone" }), ["host:web01"]).facets.hostService).toEqual(full);
+  });
+
+  test("pre-#10 double-prefixed hs values decode to the canonical id, once", () => {
+    const s = decodeTriageRoute(
+      routeMatch({}, { hs: "host:host:web01,service:svc:web01/nginx,host:web01,endpoint:web01/grafana" }),
+    );
+    expect(s.facets.hostService).toEqual(["host:web01", "svc:web01/nginx", "endpoint:web01/grafana"]);
+  });
+
+  test("an hs value the payload carries verbatim is never normalised (a host named host:x)", () => {
+    const available = ["host:host:x", "host:x"];
+    expect(decodeTriageRoute(routeMatch({}, { hs: "host:host:x" }), available).facets.hostService).toEqual(["host:host:x"]);
   });
 });
 
@@ -114,7 +139,7 @@ describe("overview → alerts round trip", () => {
       name: "HostDown",
       severity: "critical",
       startsAt: "2026-09-24T00:00:00Z",
-      target: { kind: "host", id: "web01" },
+      target: { kind: "host", id: "host:web01" },
     };
     const m = resolve(alertTriagePath(alert));
     expect(m.view).toBe("alerts");
@@ -122,11 +147,25 @@ describe("overview → alerts round trip", () => {
   });
 
   test("targetTriagePath filters the hostService facet to that target", () => {
-    const m = resolve(targetTriagePath({ kind: "host", id: "web01" }));
+    const m = resolve(targetTriagePath({ kind: "host", id: "host:web01" }));
     expect(m.view).toBe("alerts");
     expect(decodeTriageRoute(m).facets.hostService).toContain("host:web01");
-    const reserved = resolve(targetTriagePath({ kind: "service", id: "a/b c&d" }));
-    expect(decodeTriageRoute(reserved).facets.hostService).toContain("service:a/b c&d");
+    const reserved = resolve(targetTriagePath({ kind: "service", id: "svc:a/b c&d" }));
+    expect(decodeTriageRoute(reserved).facets.hostService).toContain("svc:a/b c&d");
+  });
+
+  test("round trip: every alert's targetTriagePath selects exactly its own facet value (GitHub #10)", () => {
+    const payload = makeAlertsPayload({ scenario: "mixed" });
+    const available = facetValues(payload).hostService;
+    const attributed = payload.alerts.filter((a) => a.target !== null);
+    expect(attributed.length).toBeGreaterThan(0);
+    for (const alert of attributed) {
+      const facets = decodeTriageRoute(resolve(targetTriagePath(alert.target!)), available).facets;
+      expect(facets.hostService).toEqual([hostServiceValue(alert)!]);
+      const rows = payload.alerts.filter((a) => matchesFacets(payload, a, facets));
+      expect(rows.map((a) => a.fingerprint)).toContain(alert.fingerprint);
+      expect(rows.every((a) => a.target?.id === alert.target!.id)).toBe(true);
+    }
   });
 });
 
@@ -179,6 +218,8 @@ describe("palette alert entries", () => {
 // ── DOM: the mounted view honours the deep links ────────────────────────────────────────────────
 
 const RESERVED_FP = "ab/c d";
+/** The fixture backup service's canonical wire id (as the overview ribbon links it). */
+const BACKUP_ID = "svc:web-01/backup";
 const originalFetch = globalThis.fetch;
 
 describeDom("AlertsView deep links", (dom) => {
@@ -299,12 +340,12 @@ describeDom("AlertsView deep links", (dom) => {
   test("/alerts?target=<id> filters rows; clearing its chip restores every row and leaves no hidden filter", async () => {
     const payload = makeAlertsPayload({ scenario: "mixed" });
     const allRows = firingRowIds((await setup("/alerts", payload)).container);
-    const m = await setup("/alerts?target=backup", payload);
+    const m = await setup(`/alerts?target=${encodeURIComponent(BACKUP_ID)}`, payload);
     expect(firingRowIds(m.container)).toEqual([FIXTURE_FINGERPRINTS.backupAge]);
 
     // Only the matching kind is selected, so exactly one chip is pressed.
     const pressed = (await hostServiceChips(m.container)).filter((b) => b.selected);
-    expect(pressed.map((b) => b.text)).toEqual(["service:backup"]);
+    expect(pressed.map((b) => b.text)).toEqual([BACKUP_ID]);
 
     // Deselect it: the alias must not re-apply and no unmatchable value may linger (V-001 impl verify).
     pressed[0]!.el.click();
@@ -315,20 +356,21 @@ describeDom("AlertsView deep links", (dom) => {
     expect(firingRowIds(m.container)).toEqual(allRows);
   });
 
-  test("a target with no current alerts shows its values as pressed, clearable chips", async () => {
+  test("a target with no current alerts shows one pressed, clearable chip", async () => {
     const payload = makeAlertsPayload({ scenario: "mixed" });
-    const m = await setup("/alerts?target=nowhere", payload);
+    const m = await setup("/alerts?target=host:nowhere", payload);
     expect(firingRowIds(m.container)).toEqual([]);
     // Alerts are firing but filtered out: say so, never the estate-wide all-clear.
     expect(m.container.textContent).toContain("No alerts match these filters");
     expect(m.container.textContent).not.toContain("All monitored targets are healthy");
     const orphan = (await hostServiceChips(m.container)).filter((b) => b.text.endsWith(":nowhere"));
-    expect(orphan.map((b) => b.selected)).toEqual([true, true, true]);
-    // Each is also listed as a removable active-filter chip.
-    for (const text of ["host:nowhere", "service:nowhere", "endpoint:nowhere"]) {
+    expect(orphan.map((b) => b.selected)).toEqual([true]);
+    // It is also listed as a removable active-filter chip; no unmatchable endpoint: twin is added.
+    expect(orphan.map((b) => b.text)).toEqual(["host:nowhere"]);
+    for (const text of ["host:nowhere"]) {
       expect(m.container.querySelector(`[aria-label="Remove Host / Service filter ${text}"]`)).not.toBeNull();
     }
-    for (const text of ["host:nowhere", "service:nowhere", "endpoint:nowhere"]) {
+    for (const text of ["host:nowhere"]) {
       (await hostServiceChips(m.container)).find((b) => b.text === text)!.el.click();
       await flush();
     }
@@ -337,20 +379,20 @@ describeDom("AlertsView deep links", (dom) => {
   });
 
   test("a target link opened before the payload arrives is pruned once it lands", async () => {
-    const m = await setup("/alerts?target=backup", null);
+    const m = await setup(`/alerts?target=${encodeURIComponent(BACKUP_ID)}`, null);
     // An interaction before the payload must not freeze the unpruned expansion into hs.
     const catalog = alertsTab(m.container, "Catalog");
     expect(catalog).not.toBeNull();
     selectTab(catalog!);
     await flush();
     expect(m.router.current().query["tab"]).toBe("catalog");
-    expect(m.router.current().query["target"]).toBe("backup");
-    m.router.navigate("/alerts?target=backup");
+    expect(m.router.current().query["target"]).toBe(BACKUP_ID);
+    m.router.navigate(`/alerts?target=${encodeURIComponent(BACKUP_ID)}`);
     await flush();
     m.store.alerts.value = makeAlertsPayload({ scenario: "mixed" });
     await flush();
     const pressed = (await hostServiceChips(m.container)).filter((b) => b.selected);
-    expect(pressed.map((b) => b.text)).toEqual(["service:backup"]);
+    expect(pressed.map((b) => b.text)).toEqual([BACKUP_ID]);
     expect(firingRowIds(m.container)).toEqual([FIXTURE_FINGERPRINTS.backupAge]);
   });
 

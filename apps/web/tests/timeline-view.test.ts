@@ -1412,13 +1412,16 @@ describe("timeline swimlane — pure helpers (item 020)", () => {
   };
 
   test("REQ-SWIM-04/REQ-SEC-04: swimIntervalHref links hs= for a target and sev= for a null target, percent-encoded", () => {
-    expect(swimIntervalHref(base)).toBe(`/alerts?hs=${encodeURIComponent("host:host:web01")}`);
+    expect(swimIntervalHref(base)).toBe(`/alerts?hs=${encodeURIComponent("host:web01")}`);
     expect(swimIntervalHref({ ...base, target: null, severity: "warning" })).toBe("/alerts?sev=warning");
     const hostile = swimIntervalHref({ ...base, target: { kind: "service", id: "svc:a&x=1/b#c" } });
-    expect(hostile).toBe("/alerts?hs=service%3Asvc%3Aa%26x%3D1%2Fb%23c");
+    expect(hostile).toBe("/alerts?hs=svc%3Aa%26x%3D1%2Fb%23c");
     const params = new URLSearchParams(hostile.slice(hostile.indexOf("?")));
     expect([...params.keys()]).toEqual(["hs"]);
-    expect(params.get("hs")).toBe("service:svc:a&x=1/b#c");
+    expect(params.get("hs")).toBe("svc:a&x=1/b#c"); // the canonical id, prefixed once (GitHub #10)
+    expect(swimIntervalHref({ ...base, target: { kind: "endpoint", id: "web01/grafana" } })).toBe(
+      `/alerts?hs=${encodeURIComponent("endpoint:web01/grafana")}`,
+    );
   });
 
   test("REQ-SWIM-04/REQ-SWIM-03: swimIntervalText names the alert, the lane label or unmatched target, and estate-time bounds", () => {
@@ -1430,7 +1433,7 @@ describe("timeline swimlane — pure helpers (item 020)", () => {
     expect(swimIntervalText(iv, tree, CLOCK)).toBe(`HostDown — ${host.label} — ${times}`);
     expect(swimIntervalText({ ...iv, target: null, unmatched: true }, tree, CLOCK)).toBe(`HostDown — unmatched target — ${times}`);
     expect(swimIntervalText({ ...iv, target: { kind: "host", id: "host:gone" }, unmatched: true }, tree, CLOCK)).toBe(
-      `HostDown — unmatched target (host:host:gone) — ${times}`,
+      `HostDown — unmatched target (host:gone) — ${times}`,
     );
     expect(times).toContain("C"); // America/Chicago abbreviation (CST/CDT): estate time, not UTC
     expect(SWIM_ROW_STATUS.info).toBe("unknown");
@@ -1615,7 +1618,7 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
     expect(list.getAttribute("aria-label")).toBe("Alert intervals at the pinned time");
     const links = Array.from(list.querySelectorAll<HTMLAnchorElement>("a[href]"));
     expect(links.length).toBe(6);
-    expect(links.every((a) => a.textContent === "Open in Alerts" && a.getAttribute("href")!.startsWith("/alerts?hs=host%3Ahost%3A"))).toBe(true);
+    expect(links.every((a) => a.textContent === "Open in Alerts" && a.getAttribute("href")!.startsWith("/alerts?hs=host%3A") && !a.getAttribute("href")!.startsWith("/alerts?hs=host%3Ahost%3A"))).toBe(true);
   });
 
   test("REQ-KIOSK-03/REQ-SEC-02: interactive=false has no tab stops, overlay, tooltip or pinned list; markup renders literally", async () => {

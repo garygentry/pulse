@@ -1071,13 +1071,13 @@ describeDom("timeline keyboard — alert swimlane tracks (item 020)", (dom) => {
     expect(axis.cursor.value).toBe(TIMELINE_NOW_S - 8_000);
   });
 
-  test("REQ-SWIM-04/REQ-SEC-04: Enter navigates to /alerts?hs=<encoded kind:id>, or /alerts?sev=<severity> for a null target", async () => {
+  test("REQ-SWIM-04/REQ-SEC-04: Enter navigates to /alerts?hs=<encoded target id>, or /alerts?sev=<severity> for a null target", async () => {
     const { c, hrefs } = await mountSwim(TIMELINE_INCIDENT.alerts);
     const crit = track(c, "critical");
     crit.focus();
     const e = keydown(crit, "Enter");
     expect(e.defaultPrevented).toBe(true);
-    expect(hrefs).toEqual([`/alerts?hs=${encodeURIComponent(`host:${tree.hosts[0]!.target.id}`)}`]);
+    expect(hrefs).toEqual([`/alerts?hs=${encodeURIComponent(tree.hosts[0]!.target.id)}`]);
 
     // Warning row: the first interval by start is DomainExpiring (target null).
     const warn = track(c, "warning");
@@ -1095,12 +1095,12 @@ describeDom("timeline keyboard — alert swimlane tracks (item 020)", (dom) => {
     t.focus();
     keydown(t, "Enter");
     const href = other.hrefs[0]!;
-    expect(href).toBe("/alerts?hs=host%3Ahost%3Aa%26x%3D1%2Fb%23c");
+    expect(href).toBe("/alerts?hs=host%3Aa%26x%3D1%2Fb%23c");
     expect(href).not.toContain("&");
     expect(href).not.toContain("#");
     const params = new URLSearchParams(href.slice(href.indexOf("?")));
     expect([...params.keys()]).toEqual(["hs"]);
-    expect(params.get("hs")).toBe(`host:${hostileId}`);
+    expect(params.get("hs")).toBe(hostileId);
   });
 
   test("REQ-SWIM-04: a row with no intervals in view ignores the keys and its tooltip says so", async () => {
@@ -1718,7 +1718,7 @@ describeDom("timeline keyboard — mounted TimelineView (item 023)", (dom) => {
     expect(query().get("end")).toBeNull();
 
     expect(key(track("critical"), "Enter").defaultPrevented).toBe(true);
-    expect(m.navs.at(-1)).toEqual([`/alerts?hs=${encodeURIComponent(HOST0_SEL)}`, false]);
+    expect(m.navs.at(-1)).toEqual([`/alerts?hs=${encodeURIComponent(HOST0.drilldownId)}`, false]);
     await settle();
 
     // Warning row: the earliest interval (DomainExpiring) has no target → ?sev=.
@@ -1740,9 +1740,9 @@ describeDom("timeline keyboard — mounted TimelineView (item 023)", (dom) => {
     await flush();
     key(crit, "Enter");
     const href = m.navs.at(-1)![0];
-    expect(href).toBe("/alerts?hs=host%3Ahost%3Aa%26x%3D1%2Fb%23c");
+    expect(href).toBe("/alerts?hs=host%3Aa%26x%3D1%2Fb%23c");
     const params = new URLSearchParams(href.slice(href.indexOf("?")));
     expect([...params.keys()]).toEqual(["hs"]);
-    expect(params.get("hs")).toBe(`host:${hostileId}`);
+    expect(params.get("hs")).toBe(hostileId);
   });
 });

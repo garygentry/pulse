@@ -1,5 +1,6 @@
 // src/client/views/alerts/table/columns-model.ts — pure text helpers for the firing triage table cells.
 import type { ActiveAlert, TargetIdentity } from "@pulse/web-data/wire";
+import { targetRef } from "../../../target-ref.js";
 
 /** Human age from an ISO-8601 `startsAt`. Coarse buckets (s/m/h/d) — no live ticking (re-derived on
  *  render). Unparseable → "—". `now` is injectable for deterministic tests. */
@@ -15,9 +16,10 @@ export function formatAge(startsAt: string, now: number = Date.now()): string {
   return `${Math.floor(hrs / 24)}d`;
 }
 
-/** "host:web01" / "service:api" / …; null (unattributed) → "—" (never a fuzzy guess). */
+/** The canonical reference ("host:web01" / "svc:web01/api" / "endpoint:web01/api", see `targetRef`);
+ *  null (unattributed) → "—" (never a fuzzy guess). */
 export function formatTarget(target: TargetIdentity | null): string {
-  return target === null ? "—" : `${target.kind}:${target.id}`;
+  return target === null ? "—" : targetRef(target);
 }
 
 /** Summary text: the `summary` annotation, falling back to `description`; else "—".
