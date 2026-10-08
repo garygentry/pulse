@@ -88,6 +88,8 @@ const NUMERIC = { align: "end", className: "tabular-nums", headerClassName: "tex
 /**
  * An entry's artifact count. With artifacts it is a button opening a Popover that lists them (Tab
  * reaches it, Enter/Space opens, Escape closes back to it); with none it is a plain count.
+ * Known edge: a virtualized table (a very large bucket) may scroll the row away and unmount the trigger,
+ * which closes the popover and drops focus.
  */
 function ArtifactCount(props: { readonly entry: CoverageEntry }): ReactElement {
   const { name, artifacts } = props.entry;

@@ -54,7 +54,9 @@ describeUi("Sidebar Ctrl/Cmd-B", () => {
     ]) {
       field.focus();
       expect(field).toHaveFocus();
+      // Each chord on its own: two toggles in a row would cancel out and hide a regression.
       await userEvent.keyboard("{Control>}b{/Control}");
+      expect(state()).toBe("expanded");
       await userEvent.keyboard("{Meta>}b{/Meta}");
       expect(state()).toBe("expanded");
     }
