@@ -321,17 +321,20 @@ Decoding rules:
 
 - `kiosk=1` keeps `range` and drops `end`, `zoom`, and `sel` without notices;
 - a `zoom` without `end` pins `end` to now;
-- `sel` is shape-checked here and tree-checked later by `validateSel`.
+- `sel` is shape-checked here and tree-checked later by `validateSel`. Its value is the target's
+  canonical reference (`targetRef`: `host:web01`, `svc:web01/nginx`), whose prefix names the lane
+  kind; links written before #17 in the internal `targetKey` form (`host:host:web01`,
+  `service:svc:web01/nginx`) still decode to the same lane.
 
 Encoding keeps unrelated keys in their original order, omits defaults, and percent-encodes every key and value.
 
 ```typescript
 import { decodeTimelineUrl, encodeTimelineUrl, withRange } from "../timeline/url-state.js";
 
-const { state, notices } = decodeTimelineUrl({ range: "2d", sel: "host:host:web01" }, 1790200000);
+const { state, notices } = decodeTimelineUrl({ range: "2d", sel: "host:web01" }, 1790200000);
 // state.range === "24h"; notices[0].message === "Unknown range '2d' — showing 24h"
 encodeTimelineUrl(withRange(state, "6h"), { kiosk: "1" });
-// "?kiosk=1&range=6h&sel=host%3Ahost%3Aweb01"
+// "?kiosk=1&range=6h&sel=host%3Aweb01"
 ```
 
 ## Time Axis
@@ -418,7 +421,7 @@ import { buildLaneTree, findLane, targetKey } from "../timeline/model.js";
 
 const tree = buildLaneTree(snapshot, index);
 const node = findLane(tree, { kind: "host", id: "host:web01" });
-if (node !== null) console.log(targetKey(node.target)); // "host:host:web01"
+if (node !== null) console.log(targetKey(node.target)); // "host:host:web01" (internal key, never in the URL)
 ```
 
 Key exports from `evidence.ts`:

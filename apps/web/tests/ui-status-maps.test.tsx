@@ -3,11 +3,13 @@ import { describe, expect, it } from "bun:test";
 
 import {
   ALERT_SEVERITY,
+  ALERT_STATE,
   ICONS,
   MUTATION_STATE,
   StatusBadge,
   TARGET_STATUS,
   alertSeverityOf,
+  alertStateOf,
   type StatusMap,
 } from "@/ui";
 
@@ -28,6 +30,7 @@ const MODES: readonly Mode[] = ["light", "dark"];
 const MAPS: readonly (readonly [string, StatusMap<string>, readonly string[]])[] = [
   ["TARGET_STATUS", TARGET_STATUS, Object.keys(STATUS_LABEL)],
   ["ALERT_SEVERITY", ALERT_SEVERITY, Object.keys(SWIM_ROW_STATUS)],
+  ["ALERT_STATE", ALERT_STATE, [...Object.keys(SWIM_ROW_STATUS), "suppressed"]],
   [
     "MUTATION_STATE",
     MUTATION_STATE,
@@ -92,6 +95,22 @@ describe("pulse status maps", () => {
     }
     expect(alertSeverityOf("page-me-now")).toBe("unknown");
     expect(alertSeverityOf("")).toBe("unknown");
+  });
+
+  it("ALERT_STATE: a firing alert takes its severity (info → info, not unknown); suppression is suppressed", () => {
+    expect(alertStateOf("firing", "info")).toBe("info");
+    expect(alertStateOf("firing", "critical")).toBe("critical");
+    expect(alertStateOf("firing", "warning")).toBe("warning");
+    expect(alertStateOf("firing", "page-me-now")).toBe("unknown");
+    expect(alertStateOf("silenced", "info")).toBe("suppressed");
+    expect(alertStateOf("inhibited", "critical")).toBe("suppressed");
+    for (const severity of ["critical", "warning", "info", "unknown"] as const) {
+      expect(ALERT_STATE[severity]).toEqual(ALERT_SEVERITY[severity]);
+    }
+    expect(ALERT_STATE.suppressed).toMatchObject({ tone: "neutral", icon: "bell", variant: "outline" });
+    // Distinct without colour: five distinct (icon, variant) pairs.
+    const pairs = Object.values(ALERT_STATE).map((e) => `${e.icon}|${e.variant ?? "soft"}`);
+    expect(new Set(pairs).size).toBe(5);
   });
 
   it("MUTATION_STATE maps acked → neutral, pending → pending, failed → danger with StateBadge labels", () => {

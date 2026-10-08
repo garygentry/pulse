@@ -1,5 +1,6 @@
 import {
   ALERT_SEVERITY,
+  ALERT_STATE,
   FRESHNESS_STATUS,
   FreshnessBadge,
   MUTATION_STATE,
@@ -117,6 +118,11 @@ function Status() {
       <Specimen label="ALERT_SEVERITY — every severity (info uses the info tone)">
         {(Object.keys(ALERT_SEVERITY) as (keyof typeof ALERT_SEVERITY)[]).map((severity) => (
           <span key={severity}>{StatusBadge.fromMap(ALERT_SEVERITY, severity)}</span>
+        ))}
+      </Specimen>
+      <Specimen label="ALERT_STATE — a delivered alert's state (firing takes its severity; suppressed is outline + bell)">
+        {(Object.keys(ALERT_STATE) as (keyof typeof ALERT_STATE)[]).map((state) => (
+          <span key={state}>{StatusBadge.fromMap(ALERT_STATE, state)}</span>
         ))}
       </Specimen>
       <Specimen label="MUTATION_STATE — every action and proposal state">

@@ -258,6 +258,27 @@ describeUi("estate: findings tab", () => {
     expect(within(filterBar()).queryByRole("status") === null).toBe(true);
   });
 
+  test("a URL value can never collide with the 'All' item: crafted sentinels and unknown values are named verbatim", async () => {
+    // Both the old (`__all__`) and the current (`all`) internal sentinel spellings, plus "v:" (the
+    // item prefix) as a raw value, filter as literal values and never read as "All".
+    for (const raw of ["__all__", "all", "v:", "v:all"]) {
+      const { unmount } = mountTab(presentSection(artifact(SCRAMBLED)), { ...Q, sev: raw, code: raw });
+      expect(severitySelect().textContent).toBe(raw);
+      expect(codeSelect().textContent).toBe(raw);
+      expect(screen.getByText("No findings match the current filter")).toBeDefined();
+      expect(filterBar().querySelector("[data-result-count]")?.textContent).toBe(
+        "Showing 0 of 6 findings; 6 hidden by filters.",
+      );
+      unmount();
+    }
+
+    // Choosing "All severities" from a crafted value still clears the param.
+    const { router, calls } = recordingRouter();
+    mountTab(presentSection(artifact(SCRAMBLED)), { ...Q, sev: "all" }, router);
+    await choose(severitySelect(), "All severities");
+    expect(calls).toEqual(["/estate?tab=findings"]);
+  });
+
   test("choosing a filter navigates with the FULL query rebuilt and announces", async () => {
     mountAnnouncer();
     const { router, calls } = recordingRouter();

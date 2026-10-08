@@ -6,6 +6,7 @@
  * - Canvas tokens: uPlot draws to <canvas>, which cannot resolve var(); the chart reads these
  *   names through getComputedStyle. Status strokes use the tone each TargetStatus maps to.
  * - Motion tokens for the few animated state changes.
+ * - Inline monospace size (`--code-font-size`) for code/kbd/samp/pre in running text.
  *
  * Keep colours here as references to theme.css tokens: no literal colour values.
  */
@@ -18,6 +19,8 @@
   --text-lg: 1.375rem;
   --text-xl: 1.75rem;
   --text-2xl: 2.25rem;
+  /* 16px code in 18px body, as the pre-port wallboard scale had it. */
+  --code-font-size: calc(16em / 18);
 }
 
 :root {
@@ -36,6 +39,11 @@
   --motion-base: 160ms;
   --motion-slow: 280ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Inline monospace (code, kbd, samp, pre) relative to the surrounding text: the pre-port UI set
+     it to 13px in 14px desk body text. Relative, so it tracks the 13px phone body and any parent
+     size; app.css applies it. The wallboard ratio is set with the wallboard scale above. */
+  --code-font-size: calc(13em / 14);
 }
 
 @layer base {

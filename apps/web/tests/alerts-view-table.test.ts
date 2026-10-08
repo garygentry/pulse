@@ -158,12 +158,23 @@ describeDom("TriageTable", (dom) => {
     expect(sev.textContent).toBe("info");
   });
 
-  test("a firing info alert's State badge takes the info tone; data-status keeps the TargetStatus hook", async () => {
+  test("a firing info alert's State badge is the info state (tone, glyph and data-status), never unknown", async () => {
     const info = { ...rows.find((a) => a.severity === "info")!, state: "firing" as const };
     const container = await mountTable([info]);
     const state = badge(bodyRows(container)[0]!.querySelectorAll("td")[6]!);
     expect(state.getAttribute("data-tone")).toBe("info");
+    expect(state.getAttribute("data-status")).toBe("info");
+    expect(iconOf(state)).toContain("lucide-info");
+    expect(state.hasAttribute("data-suppressed")).toBe(false);
+    expect(state.textContent).toBe("firing");
+  });
+
+  test("a firing alert with a free-form severity reads unknown (neutral), distinct from info", async () => {
+    const odd = { ...rows.find((a) => a.severity === "info")!, state: "firing" as const, severity: "page-me" };
+    const container = await mountTable([odd]);
+    const state = badge(bodyRows(container)[0]!.querySelectorAll("td")[6]!);
     expect(state.getAttribute("data-status")).toBe("unknown");
+    expect(state.getAttribute("data-tone")).toBe("neutral");
     expect(state.textContent).toBe("firing");
   });
 
