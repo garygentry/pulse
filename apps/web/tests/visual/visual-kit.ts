@@ -126,6 +126,7 @@ export async function snap(
   opts: { fullPage?: boolean; target?: Locator } = {},
 ): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
+  await stableHeight(page.locator("main").first());
   const options = { animations: "disabled", caret: "hide", mask: volatile(page) } as const;
   if (opts.target !== undefined) {
     await expect(opts.target).toHaveScreenshot(name, options);

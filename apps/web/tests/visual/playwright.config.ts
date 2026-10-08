@@ -22,7 +22,7 @@ const CI = Boolean(process.env["CI"]);
 export default defineConfig({
   testDir: here,
   testMatch: /visual-.*\.pw\.ts$/,
-  outputDir: resolve(webDir, ".visual-results"),
+  outputDir: resolve(webDir, "visual-results"),
   fullyParallel: true,
   workers: CI ? 3 : 2,
   forbidOnly: CI,

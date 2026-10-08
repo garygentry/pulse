@@ -130,6 +130,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: visual-results
-          path: apps/web/.visual-results/
+          path: apps/web/visual-results/
           if-no-files-found: ignore
           retention-days: 7

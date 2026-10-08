@@ -36,7 +36,7 @@ docker-compose.override.yml
 screenshots/
 # Visual-suite run output (actual/diff images, traces). The committed baselines live in
 # apps/web/tests/visual/*-snapshots/ and are generated on CI only.
-apps/web/.visual-results/
+apps/web/visual-results/
 
 # Private planning and agent-loop state live outside this public repo.
 specs/
