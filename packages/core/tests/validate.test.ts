@@ -249,6 +249,12 @@ describe("names rendered into Gatus (GATUS_UNSAFE_NAME, issue #1)", () => {
     expect(out.map((f) => f.path)).toEqual(["hosts[0].name"]);
   });
 
+  test("an unsafe estate domain (rendered as dns:<domain>) is flagged", () => {
+    const out = run(checkGatusNames, { estate: { domains: ["ok.example", 'bad".example', "x\\y", "a\nb"] } });
+    expect(out.map((f) => f.path)).toEqual(["estate.domains[1]", "estate.domains[2]", "estate.domains[3]"]);
+    expect(out.every((f) => f.code === FINDING_CODES.GATUS_UNSAFE_NAME && f.severity === "error")).toBe(true);
+  });
+
   test("a service that renders no check (no ingress_url, or suppressed) is not flagged", () => {
     expect(run(checkGatusNames, { services: [{ name: 'a"b', host: "h" }] })).toHaveLength(0);
     expect(

@@ -46,9 +46,9 @@ export const backupFreshnessSchema = z
  *  (blackbox) Gatus ingress check page: stack/alerting renders a `GatusCheckFailed` vmalert rule
  *  over the check's `gatus_results_total` series (issue #1 retired the Gatus→Alertmanager push
  *  provider, which could not resolve alerts correctly). `failure_threshold` F (default 3) fires the
- *  rule after ≥F failed checks in 4·F minutes with no pass in the last F minutes;
- *  `success_threshold` S (default 2) resolves it after ≥S passes and no failure in the last S+1
- *  minutes (each 1–60; see EndpointAlert). `enabled: false` renders no rule; `description` becomes the alert
+ *  rule once ≥F failed checks and no pass fall in one window (F min + 30s, or 4·F min for slowed
+ *  checks); `success_threshold` S (default 2) resolves it once ≥S passes and no failure fall in
+ *  ceil(1.5·S) + 1 minutes (each 1–60; see EndpointAlert). `enabled: false` renders no rule; `description` becomes the alert
  *  annotation. `type` and `send_on_resolved` are retained for compatibility and select/affect
  *  nothing (resolve notifications follow each Alertmanager receiver's `send_resolved`).
  *  Additive/optional → schema_version stays 1. A binding only takes effect on a service that

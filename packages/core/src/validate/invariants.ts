@@ -447,26 +447,32 @@ export function checkEndpointAlertBinding(
 const GATUS_UNSAFE_CHARS = /["\\\r\n]/;
 
 /**
- * Every host or service name that the renderer writes into `gatus/config.yaml` — the `name`
- * (`<host>/<service>`, `host:<host>`) and `group` (`<host>`) of a service ingress check (a service
- * with `ingress_url`, not suppressed) or a probe-only host check — must not contain `"`, `\` or a
- * line break. Error: one such name would crash Gatus for the whole estate.
+ * Every host or service name and estate domain that the renderer writes into `gatus/config.yaml`
+ * — the `name` (`<host>/<service>`, `host:<host>`, `dns:<domain>`) and `group` (`<host>`) of a
+ * service ingress check (a service with `ingress_url`, not suppressed), a probe-only host check, or
+ * a per-domain DNS check — must not contain `"`, `\` or a line break. Error: one such name would crash Gatus for the whole estate.
  */
 export function checkGatusNames(
   merged: MergedInventory,
   prov: ProvenanceIndex,
   collector: FindingCollector,
 ): void {
-  const flag = (path: string, kind: "host" | "service", name: string, why: string): void =>
+  const LABEL = { host: "Host name", service: "Service name", domain: "Estate domain" } as const;
+  const flag = (path: string, kind: keyof typeof LABEL, name: string, why: string): void =>
     pushFinding(
       collector,
       prov,
       path,
       "error",
       FINDING_CODES.GATUS_UNSAFE_NAME,
-      `${kind === "host" ? "Host" : "Service"} name ${JSON.stringify(name)} contains a double quote, backslash or line break, but it is rendered into a Gatus check (${why}); Gatus fails to start on such a name, stopping every synthetic check.`,
-      `Rename the ${kind} to drop the double quote, backslash and line breaks.`,
+      `${LABEL[kind]} ${JSON.stringify(name)} contains a double quote, backslash or line break, but it is rendered into a Gatus check (${why}); Gatus fails to start on such a name, stopping every synthetic check.`,
+      `${kind === "domain" ? "Fix the domain" : `Rename the ${kind}`} to drop the double quote, backslash and line breaks.`,
     );
+  (merged.estate?.domains ?? []).forEach((domain, i) => {
+    if (typeof domain === "string" && GATUS_UNSAFE_CHARS.test(domain)) {
+      flag(`estate.domains[${i}]`, "domain", domain, `its dns:${domain} check`);
+    }
+  });
   (merged.services ?? []).forEach((s, i) => {
     if (s?.ingress_url === undefined || s?.suppressed !== undefined) return; // renders no check
     if (typeof s.name === "string" && GATUS_UNSAFE_CHARS.test(s.name)) {
