@@ -67,7 +67,7 @@ afterAll(() => {
 function build(clean: boolean): ClientManifest {
   const proc = Bun.spawnSync({
     cmd: [
-      "bun",
+      process.execPath,
       BUILD_CLIENT,
       "--outdir",
       outdir,
