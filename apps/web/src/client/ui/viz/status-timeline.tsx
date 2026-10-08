@@ -1,14 +1,17 @@
 import { useId } from "react";
 import type { TargetStatus } from "@pulse/web-data/wire";
-import type { Tone } from "@/ui/lib/status";
+import type { StatusMap } from "@/ui/lib/status";
 import { cn } from "@/ui/lib/utils";
-import { TONE_FILL, TONE_STROKE, vizStatusMark } from "@/ui/viz/status-marks";
+import { TARGET_STATUS } from "@/ui/status/target-status";
+import { TONE_FILL, TONE_STROKE, presentationMark } from "@/ui/viz/status-marks";
 
-/** One status interval within a lane, in the timeline's domain units (e.g. unix seconds). */
-export interface TimelineSegment {
-  status: TargetStatus;
-  /** Tone override for a segment whose domain has a tone `TARGET_STATUS` lacks (an info alert). */
-  tone?: Tone;
+/**
+ * One status interval within a lane, in the timeline's domain units (e.g. unix seconds). `S` is the
+ * status vocabulary: `TargetStatus` by default, or any domain with a status map (an alert severity).
+ */
+export interface TimelineSegment<S extends string = TargetStatus> {
+  /** The segment's status, drawn with its `statusMap` entry's tone and pattern. */
+  status: S;
   /** Interval start (inclusive). */
   start: number;
   /** Interval end (exclusive); must be ≥ `start`. Segments are clamped to the domain. */
@@ -16,19 +19,19 @@ export interface TimelineSegment {
 }
 
 /** One row: a labelled subject and its ordered status intervals. */
-export interface TimelineLane {
+export interface TimelineLane<S extends string = TargetStatus> {
   /** Stable identity (row key and `data-lane`). */
   id: string;
   /** The lane's accessible name. */
   label: string;
   /** Ordered, non-overlapping intervals. */
-  segments: readonly TimelineSegment[];
+  segments: readonly TimelineSegment<S>[];
 }
 
 /** Lanes of status intervals over a shared time domain. */
-export interface StatusTimelineProps {
+interface StatusTimelineBaseProps<S extends string> {
   /** Rows, top → bottom. Empty renders an empty chart. */
-  lanes: readonly TimelineLane[];
+  lanes: readonly TimelineLane<S>[];
   /** Start of the shared time domain (x = 0). */
   domainStart: number;
   /** End of the shared time domain (x = width); must be ≥ `domainStart`. */
@@ -43,6 +46,15 @@ export interface StatusTimelineProps {
   ariaLabel?: string;
   className?: string;
 }
+
+/**
+ * StatusTimeline props. Segments are drawn from `statusMap` (tone, and hatching for an outline
+ * entry). It defaults to `TARGET_STATUS` and is required for any other status vocabulary, so a
+ * domain such as alert severity passes its own statuses and map (`ALERT_SEVERITY`) instead of
+ * squeezing into a target status with a tone override.
+ */
+export type StatusTimelineProps<S extends string = TargetStatus> = StatusTimelineBaseProps<S> &
+  ([S] extends [TargetStatus] ? { statusMap?: StatusMap<S> } : { statusMap: StatusMap<S> });
 
 /** A resolved segment rectangle in SVG coordinate space. */
 export interface TimelineRect {
@@ -69,7 +81,7 @@ function round2(n: number): number {
  * clamped width is ≤ 0 (outside the domain or zero-length).
  */
 export function timelineSegmentRect(
-  seg: TimelineSegment,
+  seg: TimelineSegment<string>,
   laneIndex: number,
   opts: TimelineLayoutOpts,
 ): TimelineRect | null {
@@ -92,7 +104,7 @@ export function timelineHeight(laneCount: number, laneHeight: number, laneGap: n
   return laneCount * (laneHeight + laneGap);
 }
 
-export function StatusTimeline({
+export function StatusTimeline<S extends string = TargetStatus>({
   lanes,
   domainStart,
   domainEnd,
@@ -101,12 +113,15 @@ export function StatusTimeline({
   laneGap = 2,
   ariaLabel = "status timeline",
   className,
-}: StatusTimelineProps) {
+  statusMap,
+}: StatusTimelineProps<S>) {
+  // Without a map S is TargetStatus (the props type requires a map otherwise).
+  const map = statusMap ?? (TARGET_STATUS as unknown as StatusMap<S>);
   const hatchId = `status-timeline-hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const height = timelineHeight(lanes.length, laneHeight, laneGap);
   const opts: TimelineLayoutOpts = { domainStart, domainEnd, width, laneHeight, laneGap };
   const hasHatched = lanes.some((lane) =>
-    lane.segments.some((seg) => vizStatusMark(seg.status).pattern === "hatched"),
+    lane.segments.some((seg) => presentationMark(map[seg.status]).pattern === "hatched"),
   );
 
   return (
@@ -138,8 +153,7 @@ export function StatusTimeline({
           {lane.segments.map((seg, i) => {
             const rect = timelineSegmentRect(seg, laneIndex, opts);
             if (rect === null) return null;
-            const base = vizStatusMark(seg.status);
-            const mark = seg.tone === undefined ? base : { ...base, tone: seg.tone };
+            const mark = presentationMark(map[seg.status]);
             const hatched = mark.pattern === "hatched";
             return (
               <rect

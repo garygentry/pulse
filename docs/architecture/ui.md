@@ -158,7 +158,12 @@ Colours come only from the tone and chart tokens. uPlot draws to a `<canvas>`, w
 resolve `var()`, so `ui/viz/uplot-chart.tsx` reads the theme tokens from the chart root's computed
 style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--chart-1` to
 `--chart-5` for series by index, and `--status-<tone>-fg` for a series that carries a status.
-Suppressed marks are hatched or dashed on the neutral tone. The timeline view's lanes, overlay and swimlane stay in that view; they are not
+Suppressed marks are hatched or dashed on the neutral tone. `StatusTimeline` draws each segment
+from a status map: `TARGET_STATUS` by default, or the caller's own `statusMap` for another
+vocabulary (the alert swimlane passes each bar's severity with `ALERT_SEVERITY`, so info bars take
+the info tone). An outline entry is hatched. `TimeSeriesChart` takes an optional `formatYTicks`;
+`SyncedChart` uses it for unit-aware y-axis labels (`5.59 GiB`, `1.5M`, `250 ms`) in the same units
+as the cursor readout. The timeline view's lanes, overlay and swimlane stay in that view; they are not
 library patterns.
 
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable`, backed by
