@@ -153,10 +153,10 @@ export interface EndpointAlert {
   enabled?: boolean;
   /** Human-readable description carried as the alert's `description` annotation. */
   description?: string;
-  /** Failed checks needed to fire (F, 1–60); omitted → 3. The rule fires when, within ONE window,
-   *  there were ≥ F failed checks and no passing check — tested over F minutes + 30s (about the F-th
-   *  consecutive failure at Gatus's nominal 60s cadence) and over 4·F minutes (so slowed-down checks
-   *  still fire, later). */
+  /** Failed checks needed to fire (F, 1–60); omitted → 3. The rule (evaluated every 30s) fires
+   *  when, within ONE window, there were ≥ F failed checks and no passing check — tested over F
+   *  minutes and F minutes + 30s (the F-th consecutive failure at Gatus's nominal 60s cadence) and
+   *  over 4·F minutes (so slowed-down checks still fire, later). */
   failureThreshold?: number;
   /** Passing checks needed to resolve (S, 1–60); omitted → 2. A firing alert resolves when, within
    *  the clear window of ceil(1.5·S) + 1 minutes, there were ≥ S passing checks and no failed check

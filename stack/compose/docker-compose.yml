@@ -61,6 +61,12 @@ services:
                                                         #   (vmalert restores only `for:` rules; the `for:`-less
                                                         #   GatusCheckFailed rule reads its own ALERTS series instead.)
       - "-notifier.url=http://alertmanager:9093"        # engine-apis (00 §2)
+      - "-datasource.queryStep=5m"                      # pinned (= the v1.102.1 default): how far back a raw selector finds
+                                                        #   a sample. The GatusCheckFailed hold reads its own ALERTS this way,
+                                                        #   so it tolerates ~5m of failed evaluations (stack/alerting, issue #1)
+      - "-rule.resendDelay=1m"                          # re-send firing alerts at most once a minute, so a 30s rule group's
+                                                        #   Alertmanager expiry stays 4m (4 × max(interval, resendDelay));
+                                                        #   1m groups are unchanged (synthetic-checks runs at 30s, issue #1)
       - "-external.label=estate=${PULSE_ESTATE_NAME}"   # web-app 07-* §3.6 defect fix: stamp estate on every
                                                         #   vmalert alert/series (estate-external-label + alerting webhook labels.estate)
       - "-httpListenAddr=:8880"

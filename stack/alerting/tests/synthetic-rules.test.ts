@@ -62,7 +62,7 @@ function build(services: Service[]): { yaml: string; findings: AlertingFinding[]
 
 /** The rendered expression for web-01/portal with default thresholds (F=3, S=2). */
 const DEFAULT_EXPR =
-  '(((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[210s])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[210s])) > 0)) or on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[12m])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[12m])) > 0))) or on (name, group) (max by (name, group) (time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 330) unless on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[4m])) >= 2) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[4m])) > 0)))';
+  '(((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[3m])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[3m])) > 0)) or on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[210s])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[210s])) > 0)) or on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[12m])) >= 3) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[12m])) > 0))) or on (name, group) (max by (name, group) (ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) unless on (name, group) ((sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="true"}[4m])) >= 2) unless on (name, group) (sum by (name, group) (increase(gatus_results_total{name="web-01/portal",group="web-01",success="false"}[4m])) > 0)))';
 
 const PORTAL = svc({
   name: "portal",
@@ -78,7 +78,7 @@ describe("buildSyntheticRules — the rendered rule", () => {
     expect(yaml).toBe(
       [
         "groups:",
-        "  - interval: 1m",
+        "  - interval: 30s",
         "    name: synthetic-checks",
         "    rules:",
         "      - alert: GatusCheckFailed",
@@ -180,23 +180,25 @@ describe("buildSyntheticRules — selection", () => {
 describe("buildSyntheticRules — thresholds", () => {
   const withBinding = (b: Partial<NonNullable<Service["alerts"]>[number]>): Rule =>
     rulesOf(build([svc({ ...PORTAL, alerts: [{ type: "custom", ...b }] })]).yaml)[0]!;
-  /** Every `[window]` in the expression, in order: nominal fire (fail, pass), slow fire (fail,
-   *  pass), clear (pass, fail). */
+  /** Every `[window]` in the expression, in order: the three fire windows (fail, pass each), then
+   *  the clear window (pass, fail). */
   const windows = (r: Rule): string[] => r.expr.match(/\[(\w+)\]/g) ?? [];
 
-  test("defaults F=3/S=2: fire windows 210s and 12m (fail AND pass each); clear window 4m", () => {
+  test("defaults F=3/S=2: fire windows 3m, 210s and 12m (fail AND pass each); clear window 4m", () => {
     const rule = withBinding({});
-    expect(windows(rule)).toEqual(["[210s]", "[210s]", "[12m]", "[12m]", "[4m]", "[4m]"]);
-    expect(rule.expr.split(")) >= 3)").length - 1).toBe(2); // both fire windows count ≥ F failures
+    expect(windows(rule)).toEqual(["[3m]", "[3m]", "[210s]", "[210s]", "[12m]", "[12m]", "[4m]", "[4m]"]);
+    expect(rule.expr.split(")) >= 3)").length - 1).toBe(3); // every fire window counts ≥ F failures
     expect(rule.expr).toContain(")) >= 2)");
     expect(rule.for).toBeUndefined();
   });
 
-  test("failureThreshold F → windows F min + 30s and 4·F min", () => {
+  test("failureThreshold F → fire windows F min, F min + 30s and 4·F min", () => {
     const rule = withBinding({ failureThreshold: 5 });
-    expect(windows(rule).slice(0, 4)).toEqual(["[330s]", "[330s]", "[20m]", "[20m]"]);
+    expect(windows(rule).slice(0, 6)).toEqual(["[5m]", "[5m]", "[330s]", "[330s]", "[20m]", "[20m]"]);
     expect(rule.expr).toContain(")) >= 5)");
-    expect(windows(withBinding({ failureThreshold: 1 })).slice(0, 4)).toEqual([
+    expect(windows(withBinding({ failureThreshold: 1 })).slice(0, 6)).toEqual([
+      "[1m]",
+      "[1m]",
       "[90s]",
       "[90s]",
       "[4m]",
@@ -205,17 +207,20 @@ describe("buildSyntheticRules — thresholds", () => {
   });
 
   test("successThreshold S → clear window ceil(1.5·S) + 1 minutes", () => {
-    expect(windows(withBinding({ successThreshold: 1 })).slice(4)).toEqual(["[3m]", "[3m]"]);
-    expect(windows(withBinding({ successThreshold: 4 })).slice(4)).toEqual(["[7m]", "[7m]"]);
+    expect(windows(withBinding({ successThreshold: 1 })).slice(6)).toEqual(["[3m]", "[3m]"]);
+    expect(windows(withBinding({ successThreshold: 4 })).slice(6)).toEqual(["[7m]", "[7m]"]);
     const s10 = withBinding({ successThreshold: 10 });
-    expect(windows(s10).slice(4)).toEqual(["[16m]", "[16m]"]);
+    expect(windows(s10).slice(6)).toEqual(["[16m]", "[16m]"]);
     expect(s10.expr).toContain(")) >= 10)");
   });
 
-  test("the HOLD term reads this exact alert's firing state, up to 330s old", () => {
-    expect(withBinding({}).expr).toContain(
-      'time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"}) < 330',
+  test("the HOLD term is the RAW ALERTS selector for this exact alert (honours staleness markers)", () => {
+    const expr = withBinding({}).expr;
+    expect(expr).toContain(
+      'max by (name, group) (ALERTS{alertname="GatusCheckFailed",alertstate="firing",name="web-01/portal",group="web-01"})',
     );
+    expect(expr).not.toContain("timestamp(");
+    expect(expr).not.toContain("_over_time(");
   });
 });
 

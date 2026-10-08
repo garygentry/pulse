@@ -54,23 +54,26 @@ export interface SyntheticTiming {
  * The `GatusCheckFailed` expression for one Gatus endpoint (`name` + `group`), built from named
  * parts. For the defaults (F=3, S=2) it renders, with <id> = `name="<n>",group="<g>"`:
  *
- *   FIRE  = ALL_FAILED[210s] or on (name, group) ALL_FAILED[12m]
  *   ALL_FAILED[w] = (sum by (name, group) (increase(gatus_results_total{<id>,success="false"}[w])) >= 3)
  *         unless on (name, group) (sum by (name, group) (increase(gatus_results_total{<id>,success="true"}[w])) > 0)
- *   FIRING = max by (name, group) (time() - timestamp(ALERTS{alertname="GatusCheckFailed",alertstate="firing",<id>}) < 330)
+ *   FIRE  = ALL_FAILED[3m] or on (name, group) ALL_FAILED[210s] or on (name, group) ALL_FAILED[12m]
+ *   FIRING = max by (name, group) (ALERTS{alertname="GatusCheckFailed",alertstate="firing",<id>})
  *   CLEAR = (sum by (name, group) (increase(gatus_results_total{<id>,success="true"}[4m])) >= 2)
  *         unless on (name, group) (sum by (name, group) (increase(gatus_results_total{<id>,success="false"}[4m])) > 0)
  *   expr  = (FIRE) or on (name, group) (FIRING unless on (name, group) (CLEAR))
  *
  * Semantics:
- *  - FIRE: within ONE window, ≥ F failed checks and no passing check. The nominal window
- *    (F·I + slack) fires at about the F-th consecutive failure; the slow window (4·F·I) still finds
- *    F failures when a broad outage slows Gatus, so slow checks fire later instead of never.
+ *  - FIRE: within ONE window, ≥ F failed checks and no passing check. The nominal windows (F·I and
+ *    F·I + 30s) fire at about the F-th consecutive failure; the slow window (4·F·I) still finds F
+ *    failures when a broad outage slows Gatus, so slow checks fire later instead of never.
  *    Counting failures (`>= F`, not `> 0`) keeps the threshold after a Gatus restart: VictoriaMetrics'
  *    increase() counts a new series' first sample. Requiring zero passes in the same window means
- *    old failures separated from new ones by a pass never add up.
- *  - FIRING: the alert is already firing — read back from the ALERTS series vmalert remote-writes
- *    (a sample up to 330s old counts, so a few failed evaluations don't drop the hold).
+ *    failures separated by a pass never add up.
+ *  - FIRING: the alert is already firing — the RAW ALERTS series vmalert remote-writes. Only a raw
+ *    selector honours the staleness marker vmalert writes on resolve (timestamp()/…_over_time()
+ *    see through it in VictoriaMetrics v1.102.1), so a resolved alert is gone at once; while
+ *    firing, a sample up to the query step (vmalert `-datasource.queryStep`, 5m) old still counts,
+ *    so a few failed evaluations don't drop the hold.
  *  - CLEAR: within the clear window, ≥ S passing checks and no failed check. While FIRING it keeps
  *    firing until CLEAR; with no fresh results (Gatus down) nothing is clear, so it never
  *    false-resolves, and a pass between failures doesn't resolve it.
@@ -78,15 +81,18 @@ export interface SyntheticTiming {
  * Every part is aggregated `by (name, group)`, so the alert's label set is the same whichever part
  * holds it (a stable alert identity), and equal names in different groups stay independent.
  *
- * Residual: failures on both sides of a Gatus outage, with no pass recorded within the slow
- * window, can add up to F and fire.
+ * Residuals: failures on both sides of a Gatus outage, with no pass recorded within the slow
+ * window, can add up to F and fire; and if vmalert is down when CLEAR first holds, no staleness
+ * marker is written, so a single failure within the next 5m re-fires the alert.
  */
 export function syntheticExpr(endpoint: string, group: string, timing: SyntheticTiming): string {
   const C = GATUS_CHECKS;
   const I = C.checkIntervalSeconds;
   const { failures: F, successes: S } = timing;
-  const nominalWindow = formatDuration(F * I + C.nominalWindowSlackSeconds);
-  const slowWindow = formatDuration(C.slowWindowFactor * F * I);
+  const fireWindows = [
+    ...C.nominalWindowOffsetsSeconds.map((offset) => formatDuration(F * I + offset)),
+    formatDuration(C.slowWindowFactor * F * I),
+  ];
   const clearWindow = formatDuration(Math.ceil(C.clearWindowFactor * S) * I + I);
   const ids = `name=${promqlString(endpoint)},group=${promqlString(group)}`;
   const count = (success: "true" | "false", window: string): string =>
@@ -96,10 +102,8 @@ export function syntheticExpr(endpoint: string, group: string, timing: Synthetic
 
   const allFailed = (w: string): string =>
     `(${failed(w)} >= ${F}) unless on (name, group) (${passed(w)} > 0)`;
-  const fire = `(${allFailed(nominalWindow)}) or on (name, group) (${allFailed(slowWindow)})`;
-  const firing =
-    `max by (name, group) (time() - timestamp(ALERTS{alertname="${ALERT}",alertstate="firing",${ids}})` +
-    ` < ${C.firingStateMaxAgeSeconds})`;
+  const fire = fireWindows.map((w) => `(${allFailed(w)})`).join(" or on (name, group) ");
+  const firing = `max by (name, group) (ALERTS{alertname="${ALERT}",alertstate="firing",${ids}})`;
   const clear = `(${passed(clearWindow)} >= ${S}) unless on (name, group) (${failed(clearWindow)} > 0)`;
   return `(${fire}) or on (name, group) (${firing} unless on (name, group) (${clear}))`;
 }
@@ -193,7 +197,7 @@ export function buildSyntheticRules(estate: EstateModel, findings: AlertingFindi
       },
     });
   }
-  // Pin the evaluation interval: the HOLD term's freshness bound assumes one evaluation per minute.
+  // Pin the evaluation interval: the nominal fire windows rely on two evaluations per check.
   const interval = formatDuration(GATUS_CHECKS.evaluationIntervalSeconds);
   return serializeRuleGroups([{ name: GROUP, interval, rules }]);
 }
