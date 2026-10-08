@@ -202,12 +202,12 @@ export function coverageStaleness(coverage: AvailabilitySection<WebCoverageArtif
   return coverage.value === null || state === "current" ? null : state;
 }
 
-/** What a covered entity reads while coverage is not current — the staleness leads, so it survives
- *  badge truncation at narrow widths. */
+/** What a covered entity reads while coverage is not current. Kept to ≤14 characters so the word that
+ *  tells the states apart survives badge truncation at 375px. */
 const NON_CURRENT_COVERED_LABEL: Readonly<Record<Exclude<CoverageStaleness, null>, string>> = {
-  stale: "Coverage stale",
-  unavailable: "Coverage unavailable",
-  "not-configured": "Coverage not configured",
+  stale: "Stale coverage",
+  unavailable: "No coverage",
+  "not-configured": "Coverage off",
 };
 
 /**

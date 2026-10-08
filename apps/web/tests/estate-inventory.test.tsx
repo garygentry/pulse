@@ -196,8 +196,9 @@ describeUi("estate: inventory tree", () => {
   }
 
   for (const [state, note] of [
-    ["stale", "Coverage stale"],
-    ["unavailable", "Coverage unavailable"],
+    ["stale", "Stale coverage"],
+    ["unavailable", "No coverage"],
+    ["not-configured", "Coverage off"],
   ] as const) {
     test(`${state} coverage ⇒ no host or service reads 'Covered' or badges ok; text says coverage is not current (I3)`, async () => {
       await renderCoverageAt(state);
@@ -218,6 +219,7 @@ describeUi("estate: inventory tree", () => {
       expect(indicator(rowOf(item("hostB-hyper")), "coverage")).toHaveAttribute("data-status", "warning");
       // No coverage badge anywhere in the tree is ok.
       const statuses = [...tree().querySelectorAll('[data-indicator="coverage"]')].map((el) => el.getAttribute("data-status"));
+      expect(statuses.length).toBeGreaterThan(0);
       expect(statuses).not.toContain("ok");
     });
   }

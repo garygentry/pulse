@@ -68,7 +68,7 @@ export interface InventoryProps {
   /** Live-state rows, matched to model entities by drilldownId (status only). */
   readonly liveTargets: readonly EstateTargetState[];
   /** Coverage buckets, or the absent envelope (`value === null`) ⇒ every entity "unknown". A present
-   *  but non-current section never badges ok: covered reads "Coverage stale" (etc.) as unknown. */
+   *  but non-current section never badges ok: covered reads "Stale coverage" (etc.) as unknown. */
   readonly coverage: AvailabilitySection<WebCoverageArtifact>;
   /** drilldownIds matching the active search, or `null` when no query is active. */
   readonly matchedIds: ReadonlySet<string> | null;
