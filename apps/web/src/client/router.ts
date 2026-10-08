@@ -23,6 +23,8 @@ export interface RouteMatch {
 /** The router handle (REQ-ROUTE-01). */
 export interface PathRouter {
   current(): RouteMatch;
+  /** Navigate in-app. A `#fragment` on `path` reaches `location.hash`; a target on the current
+   *  path that names no fragment keeps the current one (pass a bare trailing `#` to clear it). */
   navigate(path: string, opts?: { replace?: boolean }): void;
   subscribe(listener: (match: RouteMatch) => void): () => void;
   stop(): void;
@@ -146,6 +148,28 @@ function href(path: string, query: Readonly<Record<string, string>>): string {
   return search === "" ? path : `${path}?${search}`;
 }
 
+/** Scroll the element a URL fragment names into view. `false` when there is no fragment or no such
+ *  element (the caller then falls back to its own scroll). Mirrors `@/ui`'s `hashTargetId` decode
+ *  without importing it (07 §1). Never throws. */
+function scrollToHashTarget(win: Window, hash: string): boolean {
+  const raw = hash.replace(/^#/, "");
+  if (raw === "") return false;
+  let id = raw;
+  try {
+    id = decodeURIComponent(raw);
+  } catch {
+    /* malformed escape: use the raw fragment */
+  }
+  try {
+    const target = win.document.getElementById(id);
+    if (target === null) return false;
+    target.scrollIntoView?.({ block: "start" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Copy every CARRIED_QUERY_KEYS key present in `from` and absent from `to`. */
 function carryQuery(
   from: Readonly<Record<string, string>>,
@@ -254,18 +278,69 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     }
   };
 
+  // A fragment whose target the new page has not rendered yet: retry each frame for up to
+  // HASH_WAIT_MS (lazy views load and React renders after notify), then give up and leave the page
+  // at the top. Any later navigation, popstate or stop() supersedes a pending wait, and so does the
+  // user scrolling (wheel / touch / key) while it is pending: their scroll wins over a late target.
+  let scrollWait = 0;
+  const HASH_WAIT_MS = 1000;
+  const USER_SCROLL_EVENTS = ["wheel", "touchstart", "keydown"] as const;
+  const scrollToHashAfterRender = (hash: string): void => {
+    const token = ++scrollWait;
+    const deadline = Date.now() + HASH_WAIT_MS;
+    const cancelOnUserScroll = (): void => {
+      if (token === scrollWait) scrollWait++;
+    };
+    const done = (): void => {
+      for (const type of USER_SCROLL_EVENTS) win.removeEventListener(type, cancelOnUserScroll);
+    };
+    for (const type of USER_SCROLL_EVENTS) win.addEventListener(type, cancelOnUserScroll, { passive: true });
+    const frame = (cb: () => void): void => {
+      if (typeof win.requestAnimationFrame === "function") win.requestAnimationFrame(cb);
+      else win.setTimeout(cb, 16);
+    };
+    const attempt = (): void => {
+      if (token !== scrollWait || win.location.hash !== hash) return done();
+      if (scrollToHashTarget(win, hash)) return done();
+      if (Date.now() < deadline) frame(attempt);
+      else done();
+    };
+    frame(attempt);
+  };
+  const scrollTop = (): void => {
+    try {
+      win.scrollTo(0, 0);
+    } catch {
+      /* older engines / test envs without scrollTo */
+    }
+  };
+
+  /** Save the outgoing entry's scroll offset so Back restores it (REQ-ROUTE-08). */
+  const saveScroll = (): void => {
+    win.history.replaceState({ ...readState(win), scrollY: win.scrollY }, "");
+  };
+
   const onPopState = (): void => {
+    scrollWait++;
     const path = normalizePath(win.location.pathname);
     const query = parseQuery(win.location.search);
     const found = matchRoute(routes, path);
     const previous = currentMatch;
     const next = found === null ? fallbackReplace(query) : buildMatch(found, query);
     currentMatch = next;
-    if (matchKey(next) !== matchKey(previous)) notify(next);
+    const samePage = matchKey(next) === matchKey(previous);
+    if (!samePage) notify(next);
     try {
       const state = readState(win);
-      const y = typeof state.scrollY === "number" ? state.scrollY : 0;
-      win.scrollTo(0, y);
+      const hash = win.location.hash;
+      if (typeof state.scrollY === "number") {
+        win.scrollTo(0, state.scrollY);
+      } else if (!(samePage && scrollToHashTarget(win, hash))) {
+        // An entry with no saved offset goes to its `#fragment` target instead of the top: at once
+        // on the page already rendered (the browser's own fragment entries), else once rendered.
+        win.scrollTo(0, 0);
+        if (hash !== "") scrollToHashAfterRender(hash);
+      }
     } catch {
       /* older engines / test envs without scrollTo */
     }
@@ -285,12 +360,29 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     if (anchor === null) return;
     if (anchor.hasAttribute("target")) return;
     if (anchor.hasAttribute("download")) return;
-    if ((anchor.getAttribute("href") ?? "").startsWith("#")) return;
+    // Fragment links stay browser-owned (the browser scrolls, sets `:target` and fires
+    // `hashchange` without a reload), but save the outgoing offset first so Back restores it.
+    if ((anchor.getAttribute("href") ?? "").startsWith("#")) {
+      saveScroll();
+      return;
+    }
     if (anchor.origin !== win.location.origin) return;
     if (isReserved(normalizePath(anchor.pathname))) return;
+    // Same document = the exact current path and query plus a fragment (`/alerts#firing` on
+    // `/alerts`). Raw strings on purpose: that is the browser's own test; a normalised match that
+    // differs in raw form (trailing slash, query order) would make the browser reload the page.
+    if (
+      anchor.hash !== "" &&
+      anchor.pathname === win.location.pathname &&
+      anchor.search === win.location.search
+    ) {
+      saveScroll();
+      return;
+    }
 
     event.preventDefault();
-    navigate(anchor.pathname + anchor.search);
+    // A link names its whole URL: no fragment means none (a bare `#` stops navigate keeping one).
+    navigate(anchor.pathname + anchor.search + (anchor.hash || "#"));
   };
   win.document.addEventListener("click", onClick as EventListener);
 
@@ -312,29 +404,37 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
       return;
     }
     const query = carryQuery(currentMatch.query, parseQuery(url.search));
-    const target = href(targetPath, query);
-    const here = href(
-      normalizePath(win!.location.pathname),
-      parseQuery(win!.location.search),
-    );
+    const herePath = normalizePath(win!.location.pathname);
+    const hereHash = win!.location.hash;
+    // Fragment: the target's own wins; a same-path target that names none (a view rewriting its
+    // query state) keeps the current one; a bare trailing `#` clears it; a new path drops it.
+    const explicitHash = url.hash !== "" || path.includes("#");
+    const hash = explicitHash ? url.hash : targetPath === herePath ? hereHash : "";
+    const target = href(targetPath, query) + hash;
+    const here = href(herePath, parseQuery(win!.location.search)) + hereHash;
     if (target === here) return;
 
-    if (navOpts?.replace === true) {
-      win!.history.replaceState(readState(win!), "", target);
-    } else {
-      win!.history.replaceState({ ...readState(win!), scrollY: win!.scrollY }, "");
+    const push = navOpts?.replace !== true;
+    if (push) {
+      scrollWait++;
+      saveScroll();
       win!.history.pushState({}, "", target);
-      try {
-        win!.scrollTo(0, 0);
-      } catch {
-        /* test envs without scrollTo */
-      }
+    } else {
+      win!.history.replaceState(readState(win!), "", target);
     }
     const found = matchRoute(routes, targetPath);
     const previous = currentMatch;
     const next = found === null ? fallbackReplace(query) : buildMatch(found, query);
     currentMatch = next;
-    if (matchKey(next) !== matchKey(previous)) notify(next);
+    const samePage = matchKey(next) === matchKey(previous);
+    if (!samePage) notify(next);
+    if (!push) return;
+    // A push lands on its `#fragment` target: at once when this page already renders it, else
+    // at the top until the new page renders it. With no fragment (or no such element) it stays at
+    // the top.
+    if (samePage && hash !== "" && scrollToHashTarget(win!, hash)) return;
+    scrollTop();
+    if (hash !== "") scrollToHashAfterRender(hash);
   }
 
   return {
@@ -347,6 +447,7 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
       };
     },
     stop(): void {
+      scrollWait++;
       win.removeEventListener("popstate", onPopState);
       win.document.removeEventListener("click", onClick as EventListener);
       listeners.clear();
