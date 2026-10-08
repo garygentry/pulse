@@ -91,6 +91,7 @@ carries an icon and a label, so status is never shown by colour alone. Pulse's m
 |---|---|
 | `TARGET_STATUS` | ok → `ok`, warning → `warn`, critical → `danger`, unknown → `neutral`, suppressed → `neutral` with an outline variant and its own icon |
 | `ALERT_SEVERITY` | critical, warning, info (its own `info` tone), unknown; free-form severities go through `alertSeverityOf` |
+| `ALERT_STATE` | a delivered alert's state badge: firing takes its severity's entry (so firing info is `info`, never `unknown`), silenced and inhibited are `suppressed` (outline, bell); keyed by `alertStateOf(state, severity)` |
 | `MUTATION_STATE` | acked, pending, failed, applied, rejected |
 
 Render a state with `<StatusBadge {...TARGET_STATUS[status]} />` or

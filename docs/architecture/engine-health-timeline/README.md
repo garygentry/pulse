@@ -33,7 +33,7 @@ Useful URL examples:
 /timeline?range=6h
 /timeline?range=24h&end=1790200000                # paused at an epoch-seconds anchor
 /timeline?range=24h&end=1790200000&zoom=1790190000-1790196000
-/timeline?sel=host%3Ahost%3Aweb01                 # detail region for host drilldown id "host:web01"
+/timeline?sel=host%3Aweb01                        # detail region for host drilldown id "host:web01"
 /timeline?kiosk=1&range=6h                        # kiosk: range honoured, end/zoom/sel ignored
 ```
 
