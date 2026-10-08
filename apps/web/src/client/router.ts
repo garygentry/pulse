@@ -278,7 +278,40 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     }
   };
 
+  // A fragment whose target the new page has not rendered yet: retry each frame for up to
+  // HASH_WAIT_MS (lazy views load and React renders after notify), then give up and leave the page
+  // at the top. Any later navigation, popstate or stop() supersedes a pending wait.
+  let scrollWait = 0;
+  const HASH_WAIT_MS = 1000;
+  const scrollToHashAfterRender = (hash: string): void => {
+    const token = ++scrollWait;
+    const deadline = Date.now() + HASH_WAIT_MS;
+    const frame = (cb: () => void): void => {
+      if (typeof win.requestAnimationFrame === "function") win.requestAnimationFrame(cb);
+      else win.setTimeout(cb, 16);
+    };
+    const attempt = (): void => {
+      if (token !== scrollWait || win.location.hash !== hash) return;
+      if (scrollToHashTarget(win, hash)) return;
+      if (Date.now() < deadline) frame(attempt);
+    };
+    frame(attempt);
+  };
+  const scrollTop = (): void => {
+    try {
+      win.scrollTo(0, 0);
+    } catch {
+      /* older engines / test envs without scrollTo */
+    }
+  };
+
+  /** Save the outgoing entry's scroll offset so Back restores it (REQ-ROUTE-08). */
+  const saveScroll = (): void => {
+    win.history.replaceState({ ...readState(win), scrollY: win.scrollY }, "");
+  };
+
   const onPopState = (): void => {
+    scrollWait++;
     const path = normalizePath(win.location.pathname);
     const query = parseQuery(win.location.search);
     const found = matchRoute(routes, path);
@@ -289,12 +322,14 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     if (!samePage) notify(next);
     try {
       const state = readState(win);
+      const hash = win.location.hash;
       if (typeof state.scrollY === "number") {
         win.scrollTo(0, state.scrollY);
-      } else if (!(samePage && scrollToHashTarget(win, win.location.hash))) {
-        // An entry with no saved offset: a same-page `#fragment` entry (the browser's own fragment
-        // navigation, or a navigate() hash change) goes back to its target instead of the top.
+      } else if (!(samePage && scrollToHashTarget(win, hash))) {
+        // An entry with no saved offset goes to its `#fragment` target instead of the top: at once
+        // on the page already rendered (the browser's own fragment entries), else once rendered.
         win.scrollTo(0, 0);
+        if (hash !== "") scrollToHashAfterRender(hash);
       }
     } catch {
       /* older engines / test envs without scrollTo */
@@ -315,21 +350,29 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     if (anchor === null) return;
     if (anchor.hasAttribute("target")) return;
     if (anchor.hasAttribute("download")) return;
-    if ((anchor.getAttribute("href") ?? "").startsWith("#")) return;
+    // Fragment links stay browser-owned (the browser scrolls, sets `:target` and fires
+    // `hashchange` without a reload), but save the outgoing offset first so Back restores it.
+    if ((anchor.getAttribute("href") ?? "").startsWith("#")) {
+      saveScroll();
+      return;
+    }
     if (anchor.origin !== win.location.origin) return;
     if (isReserved(normalizePath(anchor.pathname))) return;
-    // A same-document fragment link (`/alerts#firing` while on `/alerts`) stays browser-owned like
-    // `#firing`: the browser scrolls, sets `:target` and fires `hashchange` without a reload.
+    // Same document = the exact current path and query plus a fragment (`/alerts#firing` on
+    // `/alerts`). Raw strings on purpose: that is the browser's own test; a normalised match that
+    // differs in raw form (trailing slash, query order) would make the browser reload the page.
     if (
       anchor.hash !== "" &&
       anchor.pathname === win.location.pathname &&
       anchor.search === win.location.search
     ) {
+      saveScroll();
       return;
     }
 
     event.preventDefault();
-    navigate(anchor.pathname + anchor.search + anchor.hash);
+    // A link names its whole URL: no fragment means none (a bare `#` stops navigate keeping one).
+    navigate(anchor.pathname + anchor.search + (anchor.hash || "#"));
   };
   win.document.addEventListener("click", onClick as EventListener);
 
@@ -363,7 +406,8 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
 
     const push = navOpts?.replace !== true;
     if (push) {
-      win!.history.replaceState({ ...readState(win!), scrollY: win!.scrollY }, "");
+      scrollWait++;
+      saveScroll();
       win!.history.pushState({}, "", target);
     } else {
       win!.history.replaceState(readState(win!), "", target);
@@ -375,14 +419,12 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     const samePage = matchKey(next) === matchKey(previous);
     if (!samePage) notify(next);
     if (!push) return;
-    // A push lands at the top, except a fragment change on the page already rendered, which jumps
-    // to its target. A new page's fragment is the view's job on mount (`@/ui` `useScrollToHash`).
-    if (samePage && hash !== "" && hash !== hereHash && scrollToHashTarget(win!, hash)) return;
-    try {
-      win!.scrollTo(0, 0);
-    } catch {
-      /* test envs without scrollTo */
-    }
+    // A push lands on its `#fragment` target: at once when this page already renders it, else
+    // at the top until the new page renders it. With no fragment (or no such element) it stays at
+    // the top.
+    if (samePage && hash !== "" && scrollToHashTarget(win!, hash)) return;
+    scrollTop();
+    if (hash !== "") scrollToHashAfterRender(hash);
   }
 
   return {
@@ -395,6 +437,7 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
       };
     },
     stop(): void {
+      scrollWait++;
       win.removeEventListener("popstate", onPopState);
       win.document.removeEventListener("click", onClick as EventListener);
       listeners.clear();
