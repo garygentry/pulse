@@ -17,31 +17,25 @@ const ENTRY = resolve(import.meta.dir, "fixtures", "ui-data-table.tsx");
 const THEMES: readonly FixtureTheme[] = ["dark", "light"];
 const ROW_COUNT = 5000;
 
-/**
- * Known slack at the viewport's bottom edge: the virtualizer sizes the viewport by its border box
- * (offsetHeight, 1px border each side), so a row scrolled in from below can sit up to ~2px under the
- * bottom border. Tracked separately; checks allow exactly this much and no more.
- */
-const BORDER_SLACK_PX = 2;
-
 /** Where focus is, and whether its row sits fully inside the viewport below the sticky header. */
 async function focusState(page: Page): Promise<{ link: string | null; visible: boolean; scrollTop: number; rendered: number }> {
-  return page.evaluate((slack) => {
+  return page.evaluate(() => {
     const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
     const active = document.activeElement;
     const row = active?.closest("tr") ?? null;
     // The header cells are sticky (the thead element itself scrolls away).
     const head = viewport.querySelector("thead th")!.getBoundingClientRect();
-    // The inner (padding) edge, less BORDER_SLACK_PX: the outer border box hid more clipping.
+    // The inner (padding) edge: the virtualizer sizes the viewport by its client box, so a row
+    // scrolled in from below sits flush with it, not under the 1px bottom border.
     const bottom = viewport.getBoundingClientRect().bottom - viewport.clientTop;
     const rect = row?.getBoundingClientRect();
     return {
       link: active?.getAttribute("data-row-link") ?? null,
-      visible: rect !== undefined && rect.top >= head.bottom - 1 && rect.bottom <= bottom + 0.5 + slack,
+      visible: rect !== undefined && rect.top >= head.bottom - 1 && rect.bottom <= bottom + 0.5,
       scrollTop: viewport.scrollTop,
       rendered: viewport.querySelectorAll("tbody tr[aria-rowindex]").length,
     };
-  }, BORDER_SLACK_PX);
+  });
 }
 
 browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
@@ -169,9 +163,10 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
           bottom: viewport.getBoundingClientRect().bottom - viewport.clientTop - row.bottom,
         };
       }, index);
-      // Before rows were measured, 3001 was ~38px off for "start" and ~67px for "end".
+      // Before rows were measured, 3001 was ~38px off for "start" and ~67px for "end"; before the
+      // viewport was sized by its client box, "end" stopped 2px short (under the bottom border).
       if (edge === "top") expect(Math.abs(edges.top)).toBeLessThanOrEqual(1);
-      else expect(Math.abs(edges.bottom)).toBeLessThanOrEqual(BORDER_SLACK_PX + 0.5);
+      else expect(Math.abs(edges.bottom)).toBeLessThanOrEqual(0.5);
     }, 60_000);
   }
 
@@ -239,11 +234,11 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
       }
     }, steps);
     expect((await focusState(p)).link).toBe(`host-${steps}`);
-    await p.waitForFunction((slack) => {
+    await p.waitForFunction(() => {
       const row = document.activeElement?.closest("tr")?.getBoundingClientRect();
       const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
-      return row !== undefined && row.bottom <= viewport.getBoundingClientRect().bottom - viewport.clientTop + 0.5 + slack;
-    }, BORDER_SLACK_PX);
+      return row !== undefined && row.bottom <= viewport.getBoundingClientRect().bottom - viewport.clientTop + 0.5;
+    });
     expect((await focusState(p)).visible).toBe(true);
   }, 120_000);
 });

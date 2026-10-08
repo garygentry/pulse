@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_HISTORY_RANGE, SEVERITY_TAXONOMY } from "../src/client/views/alerts/taxonomy.js";
-import { INTERVAL_STATUS, severityToStatus, stateToStatus } from "../src/client/status/target-status.js";
+import { INTERVAL_STATUS, severityToStatus } from "../src/client/status/target-status.js";
 import { ACTION_SLOTS } from "../src/client/views/alerts/constants.js";
 
 const SOURCE_PATH = fileURLToPath(
@@ -37,13 +37,6 @@ describe("alerts severity taxonomy", () => {
     expect(severityToStatus("page-me")).toBe("unknown");
     expect(severityToStatus("")).toBe("unknown");
     expect(severityToStatus("toString")).toBe("unknown");
-  });
-
-  test("stateToStatus maps firing via severity and suppression to suppressed", () => {
-    expect(stateToStatus("firing", "critical")).toBe("critical");
-    expect(stateToStatus("firing", "bogus")).toBe("unknown");
-    expect(stateToStatus("silenced", "critical")).toBe("suppressed");
-    expect(stateToStatus("inhibited", "warning")).toBe("suppressed");
   });
 
   test("INTERVAL_STATUS covers both interval states; history default is 24h", () => {

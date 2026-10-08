@@ -8,7 +8,8 @@ import type { RouteMatch } from "../../router.js";
 import { isKiosk } from "../../shell/kiosk.js";
 import { MIN_ZOOM_STEPS } from "../_shared/timeseries/axis.js";
 import type { TimeWindow } from "../_shared/timeseries/axis.js";
-import { findLane, targetKey } from "./model.js";
+import { normalizeTargetRef, targetRef } from "../../target-ref.js";
+import { findLane } from "./model.js";
 import type { LaneNode, LaneTree } from "./model.js";
 import { DEFAULT_RANGE, RANGE_SECONDS, TIMELINE_RANGES, timelineStepSeconds } from "../_shared/timeseries/query-meta.js";
 
@@ -66,6 +67,27 @@ function parseEpochSeconds(raw: string): number | null {
   return Number.isSafeInteger(n) && n >= 1 ? n : null;
 }
 
+/** Canonical id prefix → lane kind. Lane ids are the wire's canonical drilldown ids, so the prefix
+ *  alone names the kind. */
+const SEL_KINDS = [
+  ["host:", "host"],
+  ["svc:", "service"],
+] as const;
+
+/**
+ * A `sel` value → its lane identity, or null when malformed. The value is a canonical reference
+ * (`host:web01`, `svc:web01/nginx`); a pre-#17 double-prefixed one (`host:host:web01`,
+ * `service:svc:web01/nginx`) is normalized to it first, so old links keep selecting their lane.
+ */
+function decodeSel(raw: string): TimelineUrlState["sel"] {
+  const ref = normalizeTargetRef(raw);
+  if (ref.length > SEL_ID_MAX) return null;
+  for (const [prefix, kind] of SEL_KINDS) {
+    if (ref.startsWith(prefix) && ref.length > prefix.length) return { kind, id: ref };
+  }
+  return null;
+}
+
 /**
  * Decode and validate the router's query map into timeline state. Each invalid key falls back to its
  * default and produces one notice (REQ-URL-02). Pure and total: never throws.
@@ -74,7 +96,9 @@ function parseEpochSeconds(raw: string): number | null {
  * the state is always live (REQ-KIOSK-03, TS §3.11).
  *
  * `sel` is checked for shape only. Tree membership is checked later by `validateSel`, once the lane
- * tree exists (TS §5.2).
+ * tree exists (TS §5.2). Its value is the canonical target reference (`targetRef`): `host:web01` or
+ * `svc:web01/nginx`, the kind shown once. Pre-#17 links wrote the internal `targetKey` form
+ * (`host:host:web01`, `service:svc:web01/nginx`) and still decode to the same lane.
  *
  * If `zoom` is valid and `end` is absent (a hand-written URL; this module never encodes that
  * combination), `end` is set to `floor(nowSec)`. The zoom was validated against that window, and
@@ -131,11 +155,8 @@ export function decodeTimelineUrl(query: RouteMatch["query"], nowSec: number): D
   let sel: TimelineUrlState["sel"] = null;
   const rawSel = present(query[TIMELINE_QUERY_KEYS.sel]);
   if (rawSel !== null) {
-    const i = rawSel.indexOf(":");
-    const kind = i < 0 ? "" : rawSel.slice(0, i);
-    const id = i < 0 ? "" : rawSel.slice(i + 1);
-    if ((kind === "host" || kind === "service") && id !== "" && id.length <= SEL_ID_MAX) sel = { kind, id };
-    else notices.push({ key: "sel", message: `Invalid selection '${displayRaw(rawSel)}' — showing no selection` });
+    sel = decodeSel(rawSel);
+    if (sel === null) notices.push({ key: "sel", message: `Invalid selection '${displayRaw(rawSel)}' — showing no selection` });
   }
 
   if (zoom !== null && end === null) end = now; // zoomed ⇒ paused, anchored at the validated window
@@ -190,7 +211,7 @@ export function validateSel(
   if (state.sel === null || findLane(tree, state.sel) !== null) return { state, notice: null };
   return {
     state: { ...state, sel: null },
-    notice: { key: "sel", message: `Unknown target '${displayRaw(targetKey(state.sel))}' — showing no selection` },
+    notice: { key: "sel", message: `Unknown target '${displayRaw(targetRef(state.sel))}' — showing no selection` },
   };
 }
 
@@ -206,7 +227,7 @@ function ownedPairs(state: TimelineUrlState): [string, string][] {
   if (state.zoom !== null) {
     out.push([TIMELINE_QUERY_KEYS.zoom, `${Math.floor(state.zoom.start)}-${Math.ceil(state.zoom.end)}`]);
   }
-  if (state.sel !== null) out.push([TIMELINE_QUERY_KEYS.sel, targetKey(state.sel)]);
+  if (state.sel !== null) out.push([TIMELINE_QUERY_KEYS.sel, targetRef(state.sel)]);
   return out;
 }
 

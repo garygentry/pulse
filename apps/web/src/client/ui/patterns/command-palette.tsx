@@ -56,6 +56,12 @@ export interface CommandPaletteProps {
    * order given (for a caller that ranks and caps its own results). Default `true` (cmdk filters).
    */
   shouldFilter?: boolean;
+  /**
+   * Where focus returns on close. Default: whatever had focus when the dialog opened. A caller that
+   * shows something else first (a loading dialog while this one's code loads) passes the original
+   * opener, which that first dialog has since taken focus from.
+   */
+  returnFocusTo?: HTMLElement | null;
 }
 
 /**
@@ -86,13 +92,14 @@ export function CommandPalette({
   search,
   onSearchChange,
   shouldFilter = true,
+  returnFocusTo,
 }: CommandPaletteProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
   const onOpenAutoFocus = (event: Event) => {
     const active = (event.currentTarget as HTMLElement | null)?.ownerDocument.activeElement;
-    returnFocusRef.current = active instanceof HTMLElement ? active : null;
+    returnFocusRef.current = returnFocusTo !== undefined ? returnFocusTo : active instanceof HTMLElement ? active : null;
     event.preventDefault();
     inputRef.current?.focus();
   };

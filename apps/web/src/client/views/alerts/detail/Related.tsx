@@ -4,19 +4,17 @@
 // target renders an explicit "No target" state — never a fuzzy label-based guess. Unbounded.
 import type { ReactElement } from "react";
 
-import { ALERT_SEVERITY, Button, EmptyState, List, Section, StatusBadge, TARGET_STATUS, alertSeverityOf } from "@/ui";
+import { ALERT_STATE, Button, EmptyState, List, Section, StatusBadge, alertStateOf } from "@/ui";
 import type { ActiveAlert, AlertsPayload } from "@pulse/web-data/wire";
 import { relatedByTarget } from "../model.js";
-import { stateToStatus } from "../../../status/target-status.js";
 
-/** One related alert: a full-width row button with its status badge and name. A firing alert's badge
- *  takes its severity's presentation (info → info tone); a silenced/inhibited one stays suppressed. */
+/** One related alert: a full-width row button with its status badge and name. The badge comes from
+ *  ALERT_STATE, as in the firing table: a firing alert takes its severity's presentation (info → info
+ *  tone); a silenced/inhibited one is suppressed, with the bell marker. */
 function RelatedRow(props: { alert: ActiveAlert; onSelect?: (fingerprint: string) => void }): ReactElement {
   const a = props.alert;
-  const severity = alertSeverityOf(a.severity);
-  const firing = a.state === "firing";
-  const status = firing ? severity : stateToStatus(a.state, a.severity);
-  const presentation = firing ? ALERT_SEVERITY[severity] : TARGET_STATUS[stateToStatus(a.state, a.severity)];
+  const status = alertStateOf(a.state, a.severity);
+  const presentation = ALERT_STATE[status];
   return (
     <li>
       <Button

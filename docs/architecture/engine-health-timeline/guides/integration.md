@@ -54,7 +54,7 @@ const href = "/timeline" + encodeTimelineUrl(
   { range: "6h", end: 1790200000, zoom: null, sel: { kind: "host", id: "host:web01" } },
   {},
 );
-// "/timeline?range=6h&end=1790200000&sel=host%3Ahost%3Aweb01"
+// "/timeline?range=6h&end=1790200000&sel=host%3Aweb01"
 ```
 
 Rules for inbound links:

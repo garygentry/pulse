@@ -381,13 +381,11 @@ const SEVERITY_STATUS: Readonly<Record<string, TargetStatus>>;
 const INTERVAL_STATUS: Readonly<Record<StatusInterval["state"], TargetStatus>>;
 const DEFAULT_HISTORY_RANGE: RangeId;
 function severityToStatus(severity: string): TargetStatus;
-function stateToStatus(state: ActiveAlert["state"], severity: string): TargetStatus;
 ```
 
 ```typescript
 severityToStatus("critical"); // "critical"
 severityToStatus("custom"); // "unknown"
-stateToStatus("silenced", "critical"); // "suppressed"
 ```
 
 Routing explanation is total over free-form severity strings:

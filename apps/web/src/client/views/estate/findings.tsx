@@ -125,10 +125,14 @@ export function navigateFilter(
   announce(`Findings ${parts.join(", ")}`);
 }
 
-/** Radix Select items cannot carry "": this sentinel stands for "no filter" and matches no finding code. */
-const ALL = "__all__";
-const toSelect = (value: string): string => (value === "" ? ALL : value);
-const fromSelect = (value: string): string => (value === ALL ? "" : value);
+/** Radix Select items cannot carry "", so the select speaks its own value space: every real filter
+ *  value is prefixed (`v:<value>`) and the "All" item is the bare {@link ALL}. A URL value can only
+ *  ever map to a prefixed item, so a crafted `?sev=all` or `?code=all` (or any other string) can never
+ *  collide with the "All" sentinel. */
+const ALL = "all";
+const VALUE_PREFIX = "v:";
+const toSelect = (value: string): string => (value === "" ? ALL : `${VALUE_PREFIX}${value}`);
+const fromSelect = (value: string): string => (value.startsWith(VALUE_PREFIX) ? value.slice(VALUE_PREFIX.length) : "");
 
 function FilterSelect(props: {
   readonly label: string;
@@ -139,6 +143,10 @@ function FilterSelect(props: {
   readonly onChange: (value: string) => void;
 }): ReactElement {
   const id = useId();
+  // A URL value outside the known options (a stale link, a hand-edited query) still filters (to
+  // nothing), so the trigger names it verbatim rather than going blank or claiming "All".
+  const unknown = props.value !== "" && !props.options.some((o) => o.value === props.value);
+  const options = unknown ? [...props.options, { value: props.value, label: props.value }] : props.options;
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id} className="text-muted-foreground">
@@ -150,8 +158,8 @@ function FilterSelect(props: {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>{props.allLabel}</SelectItem>
-          {props.options.map((o) => (
-            <SelectItem value={o.value} key={o.value}>
+          {options.map((o) => (
+            <SelectItem value={toSelect(o.value)} key={o.value}>
               {o.label}
             </SelectItem>
           ))}
