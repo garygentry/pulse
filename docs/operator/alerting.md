@@ -94,34 +94,45 @@ scrapes it every 30s). Gatus checks nominally run every 60s. With F = `failure_t
 S = `success_threshold`:
 
 - **Fires** when, **within one window, there were at least F failed checks and no passing check**.
-  Two windows are tested: F minutes + 30s, which fires at about the F-th consecutive failure (with
-  the defaults, 3–4 minutes after the last good check), and 4·F minutes, which still fires when a
-  broad outage slows Gatus down. After a Gatus restart the rule needs F fresh failures, and
-  failures separated by a passing check never add up.
+  The rule runs every 30s and tests three windows: F minutes and F minutes + 30s, which fire at the
+  F-th consecutive failure (with the defaults, about 3 minutes after the last good check), and
+  4·F minutes, which still fires when a broad outage slows Gatus down. A phase sweep over check
+  cadences of 60–75s, every scrape and check phase, and ±150ms of jitter catches every outage of
+  exactly F failures and never fires on two-failures-then-a-pass. After a Gatus restart the rule
+  needs F fresh failures, and failures separated by a passing check never add up.
 - **Resolves** when, **within the clear window of ceil(1.5·S) + 1 minutes, there were at least S
   passing checks and no failed check**: 4 minutes for the default S = 2, so about 4 minutes after
   the last failure. With S = 1 it still needs a 3-minute window free of failures. A pass between
   failures does not resolve it.
 - **Gatus down never resolves it.** While the alert fires, the rule reads its own state back from
-  the `ALERTS` series vmalert writes to VictoriaMetrics, and with no fresh check results nothing
-  can clear it. (A Gatus outage raises `AncillaryDown`; see the [engine runbook](/engine/).) The
-  read-back accepts a sample up to 330s old, so a few failed evaluations in a row (a
-  VictoriaMetrics restart, a query timeout) don't drop it.
+  the raw `ALERTS` series vmalert writes to VictoriaMetrics, and with no fresh check results nothing
+  can clear it. (A Gatus outage raises `AncillaryDown`; see the [engine runbook](/engine/).) A raw
+  selector finds a sample up to vmalert's query step old (`-datasource.queryStep=5m`, pinned in the
+  stack), so up to about 5 minutes of failed evaluations (a VictoriaMetrics restart, query
+  timeouts) don't drop the hold. When the alert resolves, vmalert writes a staleness marker that
+  ends the series at once, so a later single failure can't revive it.
 - **Slow checks delay firing, they don't flap.** Gatus runs checks one at a time and waits 60s
   after each finishes, so a broad outage (many endpoints timing out) stretches the real cadence.
-  Moderately slow checks (up to about 90s apart) are still caught by the short window, an
-  evaluation or two later. Slower than that, the 4·F-minute window fires once it holds F failures
-  and no pass, which is at least 4·F minutes after the last good check. Once it fires, it holds until the resolve condition is met.
+  Moderately slow checks (up to about 90s apart) are still caught by the short windows. Slower than
+  that, the 4·F-minute window fires once it holds F failures and no pass, which is at least 4·F
+  minutes after the last good check. Once it fires, it holds until the resolve condition is met.
 
 Known limits:
 
 - Failures on both sides of a Gatus outage can add up to F and fire, if no passing check was
   recorded within the 4·F-minute window.
-- If vmalert itself is down for more than about 5 minutes while the alert is held only by its own
-  state (the check no longer meets the fire condition, e.g. Gatus is also down), the hold expires:
-  Alertmanager resolves the alert, and it fires again only when the fire condition holds again.
-  vmalert's `-remoteRead.url` (set in the stack) restores only rules with a `for:` window, so it
-  does not change this.
+- If vmalert is down at the moment the resolve condition first holds, no staleness marker is
+  written. For the next 5 minutes, a single failure re-fires the alert (it is held until the
+  resolve condition holds again).
+- If vmalert is down for more than about 4 minutes while the alert is held only by its own state
+  (the check no longer meets the fire condition, e.g. Gatus is also down), Alertmanager expires
+  the alert (vmalert sends a 4-minute expiry, kept by `-rule.resendDelay=1m`). If vmalert is back
+  within 5 minutes the alert fires again (a new notification); after that, only once the fire
+  condition holds again. vmalert's `-remoteRead.url` restores only rules with a `for:` window, so
+  it does not change this.
+- After a vmalert restart, vmalert reports a new `activeAt` for a still-firing alert. Its labels
+  and fingerprint are unchanged, so Alertmanager treats it as the same alert and does not resolve
+  it.
 
 vmalert re-sends the alert on every evaluation while it fires, so a long outage stays firing in
 Alertmanager and the "resolved" notification arrives only when the check recovers. The alert carries
