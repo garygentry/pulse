@@ -768,6 +768,23 @@ describe("URL fragment (#hash)", () => {
     }
   });
 
+  test("user scrolling during a fragment wait wins over a late target", async () => {
+    const router = buildRouter("/overview");
+    const hits: string[] = [];
+    try {
+      await withScrollSpy(async () => {
+        router.navigate("/alerts#later");
+        win.dispatchEvent(new win.Event("wheel"));
+        const el = section("later", hits);
+        await frames();
+        el.remove();
+        expect(hits).toEqual([]);
+      });
+    } finally {
+      router.stop();
+    }
+  });
+
   test("Forward onto another page's fragment entry re-matches and scrolls to the target once rendered", async () => {
     const router = buildRouter("/overview");
     const hits: string[] = [];

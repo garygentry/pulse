@@ -280,20 +280,30 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
 
   // A fragment whose target the new page has not rendered yet: retry each frame for up to
   // HASH_WAIT_MS (lazy views load and React renders after notify), then give up and leave the page
-  // at the top. Any later navigation, popstate or stop() supersedes a pending wait.
+  // at the top. Any later navigation, popstate or stop() supersedes a pending wait, and so does the
+  // user scrolling (wheel / touch / key) while it is pending: their scroll wins over a late target.
   let scrollWait = 0;
   const HASH_WAIT_MS = 1000;
+  const USER_SCROLL_EVENTS = ["wheel", "touchstart", "keydown"] as const;
   const scrollToHashAfterRender = (hash: string): void => {
     const token = ++scrollWait;
     const deadline = Date.now() + HASH_WAIT_MS;
+    const cancelOnUserScroll = (): void => {
+      if (token === scrollWait) scrollWait++;
+    };
+    const done = (): void => {
+      for (const type of USER_SCROLL_EVENTS) win.removeEventListener(type, cancelOnUserScroll);
+    };
+    for (const type of USER_SCROLL_EVENTS) win.addEventListener(type, cancelOnUserScroll, { passive: true });
     const frame = (cb: () => void): void => {
       if (typeof win.requestAnimationFrame === "function") win.requestAnimationFrame(cb);
       else win.setTimeout(cb, 16);
     };
     const attempt = (): void => {
-      if (token !== scrollWait || win.location.hash !== hash) return;
-      if (scrollToHashTarget(win, hash)) return;
+      if (token !== scrollWait || win.location.hash !== hash) return done();
+      if (scrollToHashTarget(win, hash)) return done();
       if (Date.now() < deadline) frame(attempt);
+      else done();
     };
     frame(attempt);
   };
