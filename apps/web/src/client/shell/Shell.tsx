@@ -11,6 +11,8 @@ import { useSignals } from "@preact/signals-react/runtime";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { useDocumentTitle } from "@/ui/hooks/use-document-title";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
+import { loadIconSet } from "@/ui/lib/icon-registry";
+// ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { ErrorState } from "@/ui/patterns/error-state";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { LoadingState } from "@/ui/patterns/loading-state";
@@ -166,9 +168,12 @@ export function ViewHost(props: ViewHostProps): ReactElement {
 
     void (async () => {
       const stylesReady = attach(`views/${def.id}/view`).catch(() => {}); // chunkCss key views/<id>/view
+      // The curated icons beyond the shell's are a lazy chunk; load it with the view so the view's
+      // first render has them. A failure is not fatal: <Icon> retries and fills in when it lands.
+      const iconsReady = loadIconSet().catch(() => {});
       for (let attempt = 0; attempt <= VIEW_LOAD_RETRIES; attempt += 1) {
         try {
-          const [component] = await Promise.all([load(def), stylesReady]);
+          const [component] = await Promise.all([load(def), stylesReady, iconsReady]);
           if (token !== generation.current) return;
           setState({ kind: "ready", component });
           return;
