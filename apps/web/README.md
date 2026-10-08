@@ -64,6 +64,15 @@ authentication** (the same auth tier that fronts Grafana / the other estate UIs)
 Because there is no authentication layer inside the container, the reverse-proxy / network boundary
 in front of it **is** the access-control boundary. Treat it accordingly.
 
+The server sets its own security headers. Every response the production handler serves carries `X-Content-Type-Options: nosniff`
+and `Referrer-Policy: same-origin`. HTML pages also carry a strict `Content-Security-Policy`, with no
+`'unsafe-inline'`: the one inline script is allowed by a hash computed at build time, and runtime
+`<style>` elements by a per-response nonce. They also carry `Cross-Origin-Opener-Policy: same-origin`
+and a restrictive `Permissions-Policy`. HSTS is left to the TLS-terminating proxy. See
+[Security Headers](../../docs/architecture/web-foundation/architecture.md#security-headers) for the
+policy and how to extend it, and
+[the exposure recipe](../../docs/operator/exposure.md#security-headers) for proxy guidance.
+
 ### Optional trusted-proxy identity
 
 When the app runs behind a reverse proxy that performs authentication, it can resolve the

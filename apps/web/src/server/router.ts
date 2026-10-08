@@ -17,9 +17,15 @@ import { matchRoutes, validateQuery } from "./routes/compile.js";
 import { errorFor } from "./routes/respond.js";
 import { recordHttpRequest } from "./routes/metrics.js";
 import { overviewErrorBody } from "./routes/overview.js";
-import { renderErrorPage } from "./estate/error-page.js"; // error-page HTML (§4.4)
+import { ERROR_PAGE_CSP, renderErrorPage } from "./estate/error-page.js"; // error-page HTML (§4.4)
 import { loadStaticAssets, type StaticAssets } from "./assets.js"; // dist/client loader (01 build)
 import { log } from "./log.js";
+import {
+  newCspNonce,
+  shellContentSecurityPolicy,
+  withCspNonceMeta,
+  withSecurityHeaders,
+} from "./security-headers.js";
 
 const HTML_HEADERS = { "content-type": "text/html; charset=utf-8" } as const;
 
@@ -123,17 +129,22 @@ export function createFetchHandler(
     const { pathname } = new URL(request.url);
     const routeLabel = labelFor(pathname); // stable low-cardinality label for the metric (§10)
     let status = 200;
+    // Every response leaves with the security headers for its type (security-headers.ts): the base
+    // set everywhere, plus CSP/COOP/Permissions-Policy on HTML documents.
+    // A document without its own policy gets the shell policy minus the style nonce (computed only
+    // if such a response occurs; the shell and the error page both carry their own).
+    const shellCsp = (): string => shellContentSecurityPolicy(assets.inlineScriptHashes?.() ?? []);
     try {
       const res = await dispatch(request, pathname, runtime, assets, services, mutationDispatcher);
       status = res.status;
-      return res;
+      return withSecurityHeaders(res, shellCsp);
     } catch (err) {
       // Top-level catch — an unexpected handler exception is a safe INTERNAL_ERROR + a structured
       // log; a route error NEVER kills the process. Model/source failure modes are handled below the
       // throw as normal, non-exceptional paths.
       status = 500;
       log({ event: "request_error", ok: false, route: routeLabel, error: (err as Error).message });
-      return errorFor("INTERNAL_ERROR", 500);
+      return withSecurityHeaders(errorFor("INTERNAL_ERROR", 500), shellCsp);
     } finally {
       recordHttpRequest(routeLabel, status); // pulse_web_http_requests_total{route,status} (§10)
     }
@@ -185,7 +196,10 @@ export async function dispatch(
       }
       // session/events fall through to the normal match below (they respond without a cycle).
     } else if (!pathname.startsWith("/assets/")) {
-      return new Response(renderErrorPage(modelError), { status: 200, headers: HTML_HEADERS });
+      return new Response(renderErrorPage(modelError), {
+        status: 200,
+        headers: { ...HTML_HEADERS, "content-security-policy": ERROR_PAGE_CSP },
+      });
     }
     // `/assets/*` (and session/events) fall through.
   }
@@ -220,6 +234,17 @@ export async function dispatch(
   // (5) Unknown `/api/*` → shared JSON 404 (never an accidental SPA shell; §5/§6).
   if (pathname.startsWith("/api/")) return errorFor("API_NOT_FOUND", 404);
 
-  // (6) SPA shell fallback — any other GET path returns index.html (hash-routed client; 06).
-  return new Response(assets.shell(), { headers: HTML_HEADERS });
+  // (6) SPA shell fallback — any other GET path returns index.html (hash-routed client; 06). Each
+  //     response carries a fresh CSP style nonce, in its policy and in the shell's nonce meta, so
+  //     the shell is never stored (`no-store`) and a nonce is never replayed from a cache.
+  //     The shell and its hashes come from one loader snapshot (never a pair split by a rebuild).
+  const doc = assets.shellDocument?.() ?? { html: assets.shell(), scriptHashes: assets.inlineScriptHashes?.() ?? [] };
+  const nonce = newCspNonce();
+  return new Response(withCspNonceMeta(doc.html, nonce), {
+    headers: {
+      ...HTML_HEADERS,
+      "cache-control": "no-store",
+      "content-security-policy": shellContentSecurityPolicy(doc.scriptHashes, nonce),
+    },
+  });
 }

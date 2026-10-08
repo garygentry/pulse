@@ -6,6 +6,21 @@
 // I/O, no `Response`. The HTTP mapping (status codes, which routes short-circuit) is the router (§4.2).
 
 import type { EstateBundleError } from "../../shared/errors.js";
+import { cspHash, staticPageContentSecurityPolicy } from "../security-headers.js";
+
+/** The page's one inline stylesheet — the exact text of its `<style>` element. */
+const ERROR_PAGE_STYLE = `
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; background: #1a1a1a; color: #eee; }
+      main { max-width: 46rem; margin: 0 auto; }
+      h1 { color: #ff6b6b; font-size: 1.4rem; }
+      code { background: #000; padding: 0.1rem 0.35rem; border-radius: 3px; }
+      .detail { background: #000; padding: 1rem; border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
+      .kind { color: #ffd166; }
+    `;
+
+/** The page's Content-Security-Policy: no script, nothing fetched, and only `ERROR_PAGE_STYLE`
+ *  applies (its hash is computed here from the same constant, so it cannot drift). */
+export const ERROR_PAGE_CSP = staticPageContentSecurityPolicy([cspHash(ERROR_PAGE_STYLE)]);
 
 /** Minimal HTML-escape for interpolated error text (the model path/message are operator-controlled,
  *  but escaping keeps the page well-formed regardless of their content). */
@@ -35,14 +50,7 @@ export function renderErrorPage(error: EstateBundleError): string {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pulse — Estate model unavailable</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; background: #1a1a1a; color: #eee; }
-      main { max-width: 46rem; margin: 0 auto; }
-      h1 { color: #ff6b6b; font-size: 1.4rem; }
-      code { background: #000; padding: 0.1rem 0.35rem; border-radius: 3px; }
-      .detail { background: #000; padding: 1rem; border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
-      .kind { color: #ffd166; }
-    </style>
+    <style>${ERROR_PAGE_STYLE}</style>
   </head>
   <body>
     <main>

@@ -5,6 +5,7 @@
 // `startLiveState` is called BEFORE `render` so the first `/api/overview` fetch is already in flight
 // when React paints the first frame (REQ-PERF-02).
 
+import { setNonce } from "get-nonce";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -23,6 +24,14 @@ if (!root) throw new Error("[main] #app mount node missing from shell HTML");
 // Shell markers (00 §1.4). `buildId` is null in manifest-fallback mode (REQ-BUILD-04, REQ-OBS-02).
 const buildId = readShellMeta(SHELL_MARKERS.buildIdMeta);
 const devMode = readShellMeta(SHELL_MARKERS.devMeta) === "1";
+
+// The per-response CSP style nonce (security-headers.ts). Every runtime <style> element needs it, or
+// the strict `style-src` blocks it: react-remove-scroll's scroll lock (modal dialogs, sheets,
+// selects, menus) reads it through get-nonce, and the Radix Select / ScrollArea viewports get it as a
+// prop from `ui/lib/style-nonce.ts`, which reads the same store. The value is in the meta's
+// `nonce` property: browsers hide the attribute once the CSP header applies.
+const styleNonce = document.querySelector<HTMLMetaElement>(`meta[name="${SHELL_MARKERS.cspNonceMeta}"]`)?.nonce;
+if (styleNonce) setNonce(styleNonce);
 
 // Development-only views (the `/_ui` workbench). The client build inlines NODE_ENV, so a production
 // bundle folds this to `[]` and drops the workbench and its chunk.
