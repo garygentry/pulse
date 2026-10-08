@@ -122,7 +122,7 @@ describeUi("@/ui TreeView virtualize", () => {
 
   it("opts in: without `virtualize`, or below the threshold, every visible row renders nested", () => {
     const five = ALL_HOSTS.slice(0, 5); // 50 hosts + 5 × 20 services = 150 visible rows
-    const { unmount } = render(<Tree initial={five} virtualize={undefined} />);
+    const { unmount } = render(<Tree initial={five} virtualize={false} />);
     expect(rendered()).toHaveLength(150);
     expect(screen.getAllByRole("group")).toHaveLength(5);
     expect(tree().closest("[data-slot=tree-view]")).not.toHaveAttribute("data-virtualized");
