@@ -185,4 +185,21 @@ describeUi("router hooks", (dom) => {
     // The router's carried query keys survive in-app link navigation.
     expect(JSON.parse(text("query") ?? "")).toEqual({ kiosk: "1" });
   });
+
+  it("keeps a link's #fragment in location.hash on in-app navigation (#7)", async () => {
+    const r = start("/overview?kiosk=1");
+    render(
+      <RouterProvider router={r}>
+        <a href="/alerts/disk-full#history">Disk full history</a>
+        <LocationProbe />
+      </RouterProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: "Disk full history" }));
+
+    expect(text("path")).toBe("/alerts/disk-full");
+    expect(JSON.parse(text("query") ?? "")).toEqual({ kiosk: "1" });
+    expect(dom.win.location.hash).toBe("#history");
+    expect(dom.win.location.search).toBe("?kiosk=1");
+  });
 });

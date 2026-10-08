@@ -109,7 +109,9 @@ The path router owns browser location and writes resolved matches to the store. 
 
 Legacy `#/path` locations are replaced with path URLs. `kiosk` and `rotate` query values carry into targets that do not set them. Unknown paths replace to the configured fallback, avoiding Back-button loops. `/api/`, `/assets/`, `/healthz`, and `/metrics` are never claimed as SPA navigation.
 
-The router intercepts only ordinary same-origin left-clicks. External, modified, hash, download, target, and reserved-path links remain browser-owned.
+The router intercepts only ordinary same-origin left-clicks. External, modified, hash, download, target, and reserved-path links remain browser-owned. A same-document fragment link (`#section`, or the current path and query plus a fragment) is also left to the browser, which scrolls, sets `:target`, and fires `hashchange`.
+
+A `#fragment` survives in-app navigation: an intercepted link or `navigate()` target keeps its own fragment in `location.hash`. A same-path target that names no fragment (a view rewriting its query state) keeps the current one, a bare trailing `#` clears it, and a different path drops it. Fragments are not part of the route match, so a fragment-only change does not re-render. It pushes an entry and scrolls the target into view. A new page's fragment is scrolled to on mount by `@/ui` `useScrollToHash`, which reads `location.hash`. On Back/Forward, an entry with a saved offset restores it, and a same-page fragment entry without one scrolls to its target.
 
 ### Lazy views and styles
 
