@@ -1253,9 +1253,12 @@ const BESPOKE_LIST_KEYBOARDS: Readonly<Record<string, string>> = {
     "the overview host grid: a 2-D spatial role=grid with change markers, documented as bespoke in docs/architecture/ui.md (Overview grid).",
 };
 
-/** Vertical widgets that are not lists (a slider, a spin button, a vertical splitter) may handle
- *  ArrowUp/ArrowDown themselves: list them here, one reason each (rel → why). None today. */
-const VERTICAL_WIDGET_EXEMPTIONS: Readonly<Record<string, string>> = {};
+/** Key handlers that are not list keyboards: vertical widgets (a slider, a spin button, a vertical
+ *  splitter) or handlers that only intercept keys. One reason each (rel → why); only shrinks. */
+const VERTICAL_WIDGET_EXEMPTIONS: Readonly<Record<string, string>> = {
+  "src/client/shell/CommandPalette.tsx":
+    "the pre-load key buffer (#35): while the lazy palette chunk loads, a capture listener swallows navigation keys (ArrowUp/ArrowDown among Enter, Tab, Home, End, …) so they do not act on the page; it moves nothing.",
+};
 
 const VERTICAL_KEYS = new Set(["ArrowUp", "ArrowDown"]);
 const VIM_KEYS = new Set(["j", "k", "J", "K", "KeyJ", "KeyK"]);

@@ -283,7 +283,8 @@ from a production build.
 - list keyboards through `useListNavigation`: no new hand-rolled `ArrowUp`/`ArrowDown` or `j`/`k`
   handler (`.key`/`.code` comparisons, inline key lists, case-folded keys), vertical or 2-D
   `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The alerts triage
-  keyboard, the timeline lane tree and the overview grid are listed exemptions, each with its reason.
+  keyboard, the timeline lane tree and the overview grid are listed exemptions, each with its reason, as is
+  the command palette's pre-load key buffer, which swallows keys but moves nothing.
 
 `tests/views-page-structure.test.tsx` renders every registered view on every route it owns (tabs and
 deep routes included), loaded, before data and after a render fault, and checks the
