@@ -1,8 +1,9 @@
 /**
- * Pulse edit: opt-in row virtualization (`virtualize`, over `@tanstack/react-virtual`),
- * a `ref` handle with `scrollToIndex`, and `focusable` (drop the scroll region's tab
- * stop on a wallboard). Below the threshold, with the defaults, the table renders as
- * deck's does; the virtualized path is a separate component.
+ * Pulse edit: opt-in row virtualization (`virtualize`, over `@tanstack/react-virtual`;
+ * rows are measured, so variable-height rows are placed exactly), a `ref` handle with
+ * `scrollToIndex`, and `focusable` (drop the scroll region's tab stop on a wallboard).
+ * Below the threshold, with the defaults, the table renders as deck's does; the
+ * virtualized path is a separate component.
  */
 import {
   flexRender,
@@ -23,6 +24,7 @@ import {
   useState,
   type ElementType,
   type FocusEvent,
+  type KeyboardEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -66,7 +68,11 @@ export interface DataTableVirtualizeOptions {
   threshold?: number;
   /** Rows rendered beyond each edge of the viewport. Default 8. */
   overscan?: number;
-  /** Fixed row height in px. Default 36 (`compact`) or 48 (`comfortable`). */
+  /**
+   * Row height in px: the size assumed for a row until it is rendered and measured, and
+   * each row's minimum height. Default 36 (`compact`) or 48 (`comfortable`). Rows taller
+   * than this (a second line of text) are measured, so offsets stay exact.
+   */
   rowHeight?: number;
 }
 
@@ -122,10 +128,12 @@ export interface DataTableProps<T> {
    * Render only the rows in view (plus `overscan`) once there are `threshold` rows
    * or more. The scroll region is then the `data-table-viewport` element, bounded
    * by a default max height (override it with `className`, e.g. `max-h-96`); rows
-   * have a fixed height; the table carries `aria-rowcount` and each row
-   * `aria-rowindex`. A focused row stays rendered (tracked by row id, so it
-   * survives rows inserted or re-sorted above it) and is scrolled into view, so
-   * Tab and arrow keys move across the rendered window. `true` uses the defaults.
+   * are at least `rowHeight` tall and each rendered row is measured, so rows of
+   * varying height keep the spacers, scrollbar and `scrollToIndex` exact; the
+   * table carries `aria-rowcount` and each row `aria-rowindex`. A focused row
+   * stays rendered (tracked by row id, so it survives rows inserted or re-sorted
+   * above it) and is scrolled into view, so Tab and arrow keys move across the
+   * rendered window. `true` uses the defaults.
    *
    * Hysteresis: once a mounted table virtualizes, it stays virtualized until it
    * has fewer than `floor(threshold * 0.8)` rows (at least 1), so live data
@@ -281,7 +289,7 @@ export function DataTable<T>({
     );
   };
 
-  const renderRow = (row: Row<T>, position?: { index: number; ariaRowIndex: number; height: number }): ReactElement => {
+  const renderRow = (row: Row<T>, position?: VirtualRowPosition): ReactElement => {
     const href = rowLink?.(row.original);
     return (
       <TableRow
@@ -290,7 +298,14 @@ export function DataTable<T>({
         tabIndex={rowDomId !== undefined ? -1 : undefined}
         data-row-id={row.id}
         {...(position !== undefined
-          ? { [ROW_INDEX_ATTRIBUTE]: position.index, "aria-rowindex": position.ariaRowIndex, style: { height: position.height } }
+          ? {
+              [ROW_INDEX_ATTRIBUTE]: position.index,
+              "aria-rowindex": position.ariaRowIndex,
+              // A row's minimum height (a table row grows to its content); its real
+              // height is measured through `ref`.
+              style: { height: position.minHeight },
+              ref: position.measure,
+            }
           : {})}
         className="outline-none focus-visible:bg-muted/50"
       >
@@ -412,12 +427,37 @@ export function DataTable<T>({
   );
 }
 
+/** Where a virtualized row sits, and how it reports its rendered height. */
+interface VirtualRowPosition {
+  index: number;
+  ariaRowIndex: number;
+  minHeight: number;
+  measure: (node: HTMLTableRowElement | null) => void;
+}
+
+/**
+ * After `scrollToIndex`, how many commits may re-aim at the row once the rows the
+ * scroll rendered are measured, and for how long (ms) (see `scrollToRow`).
+ */
+const SCROLL_CORRECTION = { passes: 3, ms: 500 } as const;
+
+/** Keys that scroll a focused scroll region (and so cancel a pending re-aim). */
+const SCROLL_KEYS: ReadonlySet<string> = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
+
 interface VirtualizedTableProps<T> {
   rootRef: Ref<HTMLDivElement>;
   scrollRef: { current: DataTableHandle["scrollToIndex"] | null };
   config: VirtualConfig;
   rows: Row<T>[];
-  renderRow: (row: Row<T>, position: { index: number; ariaRowIndex: number; height: number }) => ReactElement;
+  renderRow: (row: Row<T>, position: VirtualRowPosition) => ReactElement;
   headerRows: ReactElement[];
   colgroups: ReactNode;
   columnCount: number;
@@ -429,10 +469,15 @@ interface VirtualizedTableProps<T> {
   focusable: boolean;
 }
 
-/** An `aria-hidden` row standing in for `height` px of rows that are not rendered. */
+/**
+ * An `aria-hidden` row standing in for `height` px of rows that are not rendered. It carries
+ * the rows' bottom border, as the row it replaces would: in the collapsed-border table the
+ * next row then gets the same top half-border as anywhere else, so a row measures the same
+ * height whether or not it follows a spacer (no re-measure as the window moves).
+ */
 function SpacerRow({ height, columnCount }: { height: number; columnCount: number }) {
   return (
-    <tr aria-hidden="true" data-slot="data-table-spacer">
+    <tr aria-hidden="true" data-slot="data-table-spacer" className="border-b">
       <td colSpan={columnCount} className="border-0 p-0" style={{ height }} />
     </tr>
   );
@@ -499,6 +544,20 @@ function VirtualizedTable<T>({
     scrollMargin: offsets.scrollMargin,
     scrollPaddingStart: offsets.header,
     getItemKey: (index) => rows[index]?.id ?? index,
+    // Rows are measured (once on mount, then on resize), keyed by row id: a row taller
+    // than the estimate (a wrapped second line) moves the rows below it and the spacers.
+    indexAttribute: ROW_INDEX_ATTRIBUTE,
+    // Unrounded (the library default rounds): table rows are often fractional (e.g. 52.5px),
+    // and a rounded size per row would drift by up to half a pixel a row.
+    measureElement: (element, entry, instance) => {
+      const box = entry?.borderBoxSize?.[0];
+      const size = box !== undefined ? box.blockSize : element.getBoundingClientRect().height;
+      if (size > 0) return size;
+      // A hidden table (an inactive tab) measures 0: keep what is known instead of
+      // collapsing every row, which would render them all.
+      const key = instance.options.getItemKey(instance.indexFromElement(element));
+      return instance.itemSizeCache.get(key) ?? config.rowHeight;
+    },
     observeElementOffset: (instance, notify) => {
       syncOffsetRef.current = () => {
         if (instance.scrollElement !== null) notify(instance.scrollElement.scrollTop, true);
@@ -517,13 +576,61 @@ function VirtualizedTable<T>({
     },
   });
 
-  // Scroll by offset rather than `virtualizer.scrollToIndex`: with fixed row heights
-  // the offset is exact, and `scrollToIndex` keeps re-aiming at the row for a few
-  // frames, which would undo a scroll the user starts right after.
+  // Scroll by offset rather than `virtualizer.scrollToIndex`, which re-aims at the row
+  // whenever a measurement changes for up to seconds, and so would undo a scroll the
+  // user starts right after. Rows the scroll renders are measured in the next commit
+  // and can move the target: the library compensates rows above the viewport, but not
+  // the list growing below it, so a scroll to the last rows would stop short of the end
+  // once they measure taller. A few bounded passes after those commits re-aim, and any
+  // user scroll gesture (wheel, touch, pointer, scrolling key) cancels them. The target
+  // is held by row id, like the focused row, so live re-sorts do not retarget it.
+  const pendingScrollRef = useRef<{
+    id: string;
+    align: DataTableScrollAlign;
+    passes: number;
+    until: number;
+  } | null>(null);
   const scrollToRow = (index: number, align: DataTableScrollAlign): void => {
+    pendingScrollRef.current = null;
     const target = virtualizer.getOffsetForIndex(index, align);
-    if (target === undefined || target[0] === virtualizer.scrollOffset) return;
+    const id = rows[index]?.id;
+    if (target === undefined || id === undefined || target[0] === virtualizer.scrollOffset) return;
+    pendingScrollRef.current = {
+      id,
+      align,
+      passes: SCROLL_CORRECTION.passes,
+      until: performance.now() + SCROLL_CORRECTION.ms,
+    };
     virtualizer.scrollToOffset(target[0], { align: "start" });
+  };
+
+  // Rows measured in this commit (row refs run before this effect) may have moved the
+  // pending target: re-aim while it is off. Once the row is rendered and in place, done.
+  useLayoutEffect(() => {
+    const pending = pendingScrollRef.current;
+    const viewport = viewportRef.current;
+    if (pending === null || viewport === null) return;
+    const index = rows.findIndex((row) => row.id === pending.id);
+    const rendered = index !== -1 && virtualizer.getVirtualItems().some((item) => item.index === index);
+    const target = index === -1 ? undefined : virtualizer.getOffsetForIndex(index, pending.align);
+    const reachable =
+      target === undefined ? undefined : Math.min(target[0], viewport.scrollHeight - viewport.clientHeight);
+    const expired = pending.passes <= 0 || performance.now() > pending.until;
+    if (reachable === undefined || expired || (rendered && Math.abs(viewport.scrollTop - reachable) <= 1)) {
+      pendingScrollRef.current = null;
+      return;
+    }
+    pending.passes -= 1;
+    if (Math.abs(viewport.scrollTop - reachable) > 1) virtualizer.scrollToOffset(reachable, { align: "start" });
+  });
+
+  const cancelPendingScroll = () => {
+    pendingScrollRef.current = null;
+  };
+  // A key the browser turns into a scroll of the viewport. Keys a handler already took
+  // (list navigation prevents the default and moves focus, which re-aims) do not cancel.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!event.defaultPrevented && SCROLL_KEYS.has(event.key)) cancelPendingScroll();
   };
 
   useLayoutEffect(() => {
@@ -554,7 +661,14 @@ function VirtualizedTable<T>({
     if (row === undefined) continue;
     const start = item.start - offsets.scrollMargin;
     if (start > cursor) body.push(<SpacerRow key={`gap-${item.index}`} height={start - cursor} columnCount={columnCount} />);
-    body.push(renderRow(row, { index: item.index, ariaRowIndex: headerCount + item.index + 1, height: item.size }));
+    body.push(
+      renderRow(row, {
+        index: item.index,
+        ariaRowIndex: headerCount + item.index + 1,
+        minHeight: config.rowHeight,
+        measure: virtualizer.measureElement,
+      }),
+    );
     cursor = start + item.size;
   }
   const trailing = virtualizer.getTotalSize() - cursor;
@@ -571,6 +685,10 @@ function VirtualizedTable<T>({
         tabIndex={focusable ? 0 : undefined}
         onFocus={onFocus}
         onBlur={onBlur}
+        onWheel={cancelPendingScroll}
+        onTouchStart={cancelPendingScroll}
+        onPointerDown={cancelPendingScroll}
+        onKeyDown={onKeyDown}
         className={cn(
           "relative max-h-[70vh] w-full overflow-auto rounded-md border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
           className,

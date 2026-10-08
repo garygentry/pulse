@@ -1,7 +1,8 @@
 // apps/web/tests/browser/ui-data-table.test.ts — the `@/ui` DataTable virtualized over 5,000 rows in
 // a real Chromium: only a window of rows is in the DOM, axe finds no wcag2a/wcag2aa violation in
 // either theme, and Tab / arrow keys move focus across the rendered window's boundary, scrolling the
-// focused row into view below the sticky header.
+// focused row into view below the sticky header. Every 4th row is taller (a second line): rows are
+// measured, so the spacers follow real heights and `scrollToIndex` lands on the row.
 //
 // SELF-SKIPS when Chromium is not provisioned (_harness.browserDescribe); THROWS at collection under
 // PULSE_REQUIRE_BROWSER=1.
@@ -16,22 +17,31 @@ const ENTRY = resolve(import.meta.dir, "fixtures", "ui-data-table.tsx");
 const THEMES: readonly FixtureTheme[] = ["dark", "light"];
 const ROW_COUNT = 5000;
 
+/**
+ * Known slack at the viewport's bottom edge: the virtualizer sizes the viewport by its border box
+ * (offsetHeight, 1px border each side), so a row scrolled in from below can sit up to ~2px under the
+ * bottom border. Tracked separately; checks allow exactly this much and no more.
+ */
+const BORDER_SLACK_PX = 2;
+
 /** Where focus is, and whether its row sits fully inside the viewport below the sticky header. */
 async function focusState(page: Page): Promise<{ link: string | null; visible: boolean; scrollTop: number; rendered: number }> {
-  return page.evaluate(() => {
+  return page.evaluate((slack) => {
     const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
     const active = document.activeElement;
     const row = active?.closest("tr") ?? null;
-    const head = viewport.querySelector("thead")!.getBoundingClientRect();
-    const box = viewport.getBoundingClientRect();
+    // The header cells are sticky (the thead element itself scrolls away).
+    const head = viewport.querySelector("thead th")!.getBoundingClientRect();
+    // The inner (padding) edge, less BORDER_SLACK_PX: the outer border box hid more clipping.
+    const bottom = viewport.getBoundingClientRect().bottom - viewport.clientTop;
     const rect = row?.getBoundingClientRect();
     return {
       link: active?.getAttribute("data-row-link") ?? null,
-      visible: rect !== undefined && rect.top >= head.bottom - 1 && rect.bottom <= box.bottom + 1,
+      visible: rect !== undefined && rect.top >= head.bottom - 1 && rect.bottom <= bottom + 0.5 + slack,
       scrollTop: viewport.scrollTop,
       rendered: viewport.querySelectorAll("tbody tr[aria-rowindex]").length,
     };
-  });
+  }, BORDER_SLACK_PX);
 }
 
 browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
@@ -89,6 +99,81 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
     // The spacers give the scrollbar the height of every row.
     expect(info.scrollHeight).toBeGreaterThan(ROW_COUNT * 30);
   }, 60_000);
+
+  test("measures taller rows: each rendered row starts where the real rows above it end", async () => {
+    const p = page();
+    const result = await p.evaluate(async () => {
+      const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+      const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const heights = new Map<string, number>();
+      // Walk the first 400 rows in steps shorter than the viewport, recording each row's height.
+      for (let top = 0; top < 400 * 40; top += viewport.clientHeight / 2) {
+        viewport.scrollTop = top;
+        await frame();
+        for (const row of viewport.querySelectorAll<HTMLElement>("tbody tr[aria-rowindex]")) {
+          heights.set(row.dataset["rowId"]!, row.getBoundingClientRect().height);
+        }
+      }
+      // Each rendered row starts where the rows above it end: the spacer above the window equals
+      // the real height of the rows it replaces.
+      const rows = Array.from(viewport.querySelectorAll<HTMLElement>("tbody tr[aria-rowindex]"));
+      const first = rows[0]!;
+      const firstIndex = Number(first.getAttribute("aria-rowindex")) - 2;
+      let above = 0;
+      for (let i = 0; i < firstIndex; i += 1) above += heights.get(`host-${i}`) ?? Number.NaN;
+      const bodyTop = viewport.querySelector("tbody")!.getBoundingClientRect().top;
+      return {
+        tall: [...heights.values()].filter((h) => h > 40).length,
+        expected: above,
+        actual: first.getBoundingClientRect().top - bodyTop,
+      };
+    });
+    expect(result.tall).toBeGreaterThan(50);
+    expect(Math.abs(result.actual - result.expected)).toBeLessThanOrEqual(1);
+  }, 60_000);
+
+  // [row, align, the edge it must land on]. The last row cannot reach the top: it lands flush with
+  // the bottom, and only does so because the table re-aims once the rows near the end are
+  // measured taller (the list grows below the viewport, which the library does not compensate):
+  // without the re-aim it stopped ~25px short, the row clipped below the viewport.
+  const SCROLL_CASES = [
+    [3001, "start", "top"],
+    [3001, "end", "bottom"],
+    [ROW_COUNT - 1, "start", "bottom"],
+  ] as const;
+  for (const [index, align, edge] of SCROLL_CASES) {
+    test(`scrollToIndex(${index}, align: "${align}") lands the row on the ${edge} edge past taller rows`, async () => {
+      const p = page();
+      await p.evaluate(() => {
+        document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!.scrollTop = 0;
+      });
+      await p.waitForSelector('[data-row-link="host-0"]');
+      await p.evaluate(
+        ([i, a]) => {
+          (window as unknown as { __dataTable: { scrollToIndex: (i: number, o: { align: string }) => void } }).__dataTable.scrollToIndex(
+            i,
+            { align: a },
+          );
+        },
+        [index, align] as const,
+      );
+      await p.waitForSelector(`[data-row-link="host-${index}"]`);
+      // Let the rows the scroll rendered be measured and the table re-aim.
+      await p.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
+      const edges = await p.evaluate((i) => {
+        const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+        const row = document.querySelector(`[data-row-link="host-${i}"]`)!.closest("tr")!.getBoundingClientRect();
+        return {
+          // The header cells are sticky (the thead element itself scrolls away).
+          top: row.top - viewport.querySelector("thead th")!.getBoundingClientRect().bottom,
+          bottom: viewport.getBoundingClientRect().bottom - viewport.clientTop - row.bottom,
+        };
+      }, index);
+      // Before rows were measured, 3001 was ~38px off for "start" and ~67px for "end".
+      if (edge === "top") expect(Math.abs(edges.top)).toBeLessThanOrEqual(1);
+      else expect(Math.abs(edges.bottom)).toBeLessThanOrEqual(BORDER_SLACK_PX + 0.5);
+    }, 60_000);
+  }
 
   for (const theme of THEMES) {
     test(`zero wcag2a/wcag2aa violations in ${theme} theme`, async () => {
@@ -154,11 +239,11 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
       }
     }, steps);
     expect((await focusState(p)).link).toBe(`host-${steps}`);
-    await p.waitForFunction(() => {
+    await p.waitForFunction((slack) => {
       const row = document.activeElement?.closest("tr")?.getBoundingClientRect();
-      const box = document.querySelector('[data-slot="data-table-viewport"]')!.getBoundingClientRect();
-      return row !== undefined && row.bottom <= box.bottom + 1;
-    });
+      const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+      return row !== undefined && row.bottom <= viewport.getBoundingClientRect().bottom - viewport.clientTop + 0.5 + slack;
+    }, BORDER_SLACK_PX);
     expect((await focusState(p)).visible).toBe(true);
   }, 120_000);
 });
