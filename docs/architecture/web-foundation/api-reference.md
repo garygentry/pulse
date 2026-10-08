@@ -359,6 +359,16 @@ import { freshenGatus } from "./src/server/dev/timeline.js";
 const currentChecks = freshenGatus(scenario.base.gatus, Date.now());
 ```
 
+### `rebaseAlertmanager(body, scenarioStartMs)`, `rebaseVmalert(body, scenarioStartMs)`, `rebaseVm(body, scenarioStartMs)`
+
+Return copies with every authored timestamp shifted by `scenarioStartMs - FIXTURE_ANCHOR_MS`. Each timestamp keeps its offset from the fixture anchor, now measured from the scenario start. The shifted fields are Alertmanager `startsAt`/`endsAt`/`updatedAt`, vmalert group and rule `lastEvaluation` plus rule `alerts[].activeAt`, and VictoriaMetrics instant `value[0]`. Zero-time, pre-epoch, and unparseable values pass through unchanged. The output depends only on the scenario start, so a pinned `--clock` stays byte-identical.
+
+```typescript
+import { rebaseAlertmanager } from "./src/server/dev/timeline.js";
+
+const alerts = rebaseAlertmanager(state.alertmanager, Date.parse("2026-10-08T12:00:00Z"));
+```
+
 ### `createMockEngine(opts): Promise<MockEngine>`
 
 ```typescript
