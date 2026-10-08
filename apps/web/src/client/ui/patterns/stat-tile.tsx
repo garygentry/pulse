@@ -36,8 +36,8 @@ export interface StatTileProps {
    */
   valueState?: "value" | "absent";
   /**
-   * Screen-reader text appended to an absent value, saying what the state means (e.g. "no value:
-   * the source is unavailable"). Ignored for a real value.
+   * Screen-reader text appended to an absent value, adding what the visible word does not say (e.g.
+   * "source not current, so no value is shown"). Ignored for a real value.
    */
   absentDescription?: string;
   icon?: IconName;

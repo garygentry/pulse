@@ -205,9 +205,10 @@ style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--
 Suppressed marks are hatched or dashed on the neutral tone. `StatusTimeline` draws each segment
 from a status map: `TARGET_STATUS` by default, or the caller's own `statusMap` for another
 vocabulary (the alert swimlane passes each bar's severity with `ALERT_SEVERITY`, so info bars take
-the info tone). An outline entry is hatched. `TimeSeriesChart` takes an optional `formatYTicks`;
-`SyncedChart` uses it for unit-aware y-axis labels (`5.59 GiB`, `1.5M`, `250 ms`) in the same units
-as the cursor readout. The timeline view's lanes, overlay and swimlane stay in that view; they are not
+the info tone). An outline entry is hatched. `TimeSeriesChart` takes optional `splitYTicks` and
+`formatYTicks`; `SyncedChart` passes `axisSplits` and `formatAxisTicks` (`chart-data.ts`), so y
+ticks fall on steps that are round in the display unit (`5.2 GiB`, `30 min`, `99.5 %`) and use the
+same unit rule (`displayScale`) as the cursor readout. The timeline view's lanes, overlay and swimlane stay in that view; they are not
 library patterns.
 
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable`, backed by

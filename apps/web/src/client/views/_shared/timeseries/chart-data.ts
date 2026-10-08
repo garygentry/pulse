@@ -333,103 +333,150 @@ export function nearestSample(samples: SeriesSamples, t: number, maxDistance: nu
 }
 
 const NO_VALUE = "no value";
-const FIXED_1 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const MAX_2 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-const INT_0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
-const BYTE_UNITS = ["B", "KiB", "MiB", "GiB", "TiB"] as const;
+const BYTE_UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] as const;
 
-function formatSeconds(v: number): string {
-  const a = Math.abs(v);
-  if (a < 1) return `${INT_0.format(v * 1000)} ms`;
-  if (a < 120) return `${FIXED_1.format(v)} s`;
-  if (a < 7200) return `${FIXED_1.format(v / 60)} min`;
-  return `${FIXED_1.format(v / 3600)} h`;
+// ---------------------------------------------------------------------------
+// Display scales: one unit-selection rule shared by the y axis and the readout
+// ---------------------------------------------------------------------------
+
+/** One display scale: values are divided by `div` and printed with `suffix`. */
+export interface DisplayScale {
+  /** Divisor from the query's base unit to the display unit. */ readonly div: number;
+  /** Text after the number, e.g. " GiB", "K", " ms". */ readonly suffix: string;
+  /** The display unit's own "round" step multipliers (time units step by 1/2/5/10/15/30). */ readonly kind: "decimal" | "sexagesimal" | "hours";
 }
 
-function formatBytes(v: number): string {
-  let x = v;
-  let u = 0;
-  while (Math.abs(x) >= 1024 && u < BYTE_UNITS.length - 1) {
-    x /= 1024;
-    u++;
-  }
-  return `${FIXED_1.format(x)} ${BYTE_UNITS[u]}`;
+/** Decimal magnitude suffixes for counts and plain values, largest first. These are the letters
+ *  Intl's en-US compact notation uses (B = billion); a count axis never shares a chart with bytes,
+ *  whose units are always spelled B/KiB/MiB/… with a space. */
+const COUNT_SCALES: readonly DisplayScale[] = [
+  { div: 1e12, suffix: "T", kind: "decimal" },
+  { div: 1e9, suffix: "B", kind: "decimal" },
+  { div: 1e6, suffix: "M", kind: "decimal" },
+  { div: 1e3, suffix: "K", kind: "decimal" },
+];
+
+/** The time unit for a magnitude in seconds: µs below 1 ms, ms below 1 s, s below 120 s, min below
+ *  2 h, then h. */
+function secondsScale(mag: number): DisplayScale {
+  if (mag > 0 && mag < 1e-3) return { div: 1e-6, suffix: " µs", kind: "decimal" };
+  if (mag > 0 && mag < 1) return { div: 1e-3, suffix: " ms", kind: "decimal" };
+  if (mag < 120) return { div: 1, suffix: " s", kind: "sexagesimal" };
+  if (mag < 7200) return { div: 60, suffix: " min", kind: "sexagesimal" };
+  return { div: 3600, suffix: " h", kind: "hours" };
 }
 
 /**
- * Format a chart value with its unit for readouts and captions (en-US for deterministic output).
- *   percent      → "42.1 %"          (1 decimal)
- *   bytes        → "1.5 GiB"         (binary units B/KiB/MiB/GiB/TiB, 1 decimal)
- *   seconds      → < 1 → "{ms} ms"; < 120 → "{s:1} s"; < 7200 → "{min:1} min"; else "{h:1} h"
- *   milliseconds → < 1000 → "{ms:0} ms"; else seconds as above
- *   count        → compact notation, 1 decimal ("1.2M", "950")
- *   scalar       → up to 2 decimals
- *   state        → up to 2 decimals
- * Non-finite v → "no value".
+ * The display scale for a magnitude (a value's absolute size, or an axis's largest tick). The
+ * readout ({@link formatChartValue}) and the axis ({@link formatAxisTicks}, {@link axisSplits}) both
+ * pick their unit here, so they never disagree on thresholds.
+ *   bytes        → B/KiB/MiB/GiB/TiB/PiB (binary, switching at 1024)
+ *   seconds      → µs/ms/s/min/h (see secondsScale)
+ *   milliseconds → as seconds
+ *   percent      → " %"
+ *   count/scalar/state → K/M/B/T (B = billion) from 1000
+ */
+export function displayScale(mag: number, unit: ClientQueryMeta["unit"]): DisplayScale {
+  const m = Number.isFinite(mag) ? Math.abs(mag) : 0;
+  switch (unit) {
+    case "percent":
+      return { div: 1, suffix: " %", kind: "decimal" };
+    case "bytes": {
+      let u = 0;
+      while (u < BYTE_UNITS.length - 1 && m >= 1024 ** (u + 1)) u++;
+      return { div: 1024 ** u, suffix: ` ${BYTE_UNITS[u]}`, kind: "decimal" };
+    }
+    case "seconds":
+      return secondsScale(m);
+    case "milliseconds": {
+      const s = secondsScale(m / 1000);
+      return { ...s, div: s.div * 1000 };
+    }
+    default:
+      return COUNT_SCALES.find((s) => m >= s.div) ?? { div: 1, suffix: "", kind: "decimal" };
+  }
+}
+
+/** Readout precision: three significant digits, trailing zeros trimmed. */
+const SIG_3 = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 3 });
+
+/** Print "0" (never "-0") for anything that formats as zero. */
+function noNegativeZero(text: string): string {
+  return /^-0(\.0*)?(E0)?$/.test(text) ? text.slice(1) : text;
+}
+
+/**
+ * Format a chart value with its unit for readouts (en-US, deterministic). The unit comes from
+ * {@link displayScale}, the same rule the y axis uses, and the number has three significant digits:
+ *   percent      → "42.1 %", "0.25 %"
+ *   bytes        → "1.5 GiB", "1,010 B" (binary units)
+ *   seconds      → "200 µs", "250 ms", "42 s", "10 min", "3 h"
+ *   milliseconds → as seconds ("250 ms", "1.5 s")
+ *   count/scalar/state → "950", "1.23", "1.23M"
+ * Zero is "0" with no unit. Non-finite v → "no value".
  */
 export function formatChartValue(v: number, unit: ClientQueryMeta["unit"]): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return NO_VALUE;
-  switch (unit) {
-    case "percent": return `${FIXED_1.format(v)} %`;
-    case "bytes": return formatBytes(v);
-    case "seconds": return formatSeconds(v);
-    case "milliseconds": return Math.abs(v) < 1000 ? `${INT_0.format(v)} ms` : formatSeconds(v / 1000);
-    case "count": return COMPACT.format(v);
-    default: return MAX_2.format(v);
-  }
+  if (v === 0) return "0";
+  const scale = displayScale(v, unit);
+  return `${noNegativeZero(SIG_3.format(v / scale.div))}${scale.suffix}`;
 }
 
 // ---------------------------------------------------------------------------
-// Y-axis tick labels
+// Y-axis ticks
 // ---------------------------------------------------------------------------
 
-/** One axis scale: tick values are divided by `div` and printed with `suffix`. */
-interface AxisScale {
-  readonly div: number;
-  readonly suffix: string;
-}
+/** Round step multipliers per decade, by display-unit kind. */
+const DECIMAL_STEPS = [1, 2, 2.5, 5] as const;
+/** Seconds and minutes step on clock-friendly values; below 1 and from 60 up they go decimal. */
+const SEXAGESIMAL_STEPS = [1, 2, 5, 10, 15, 30] as const;
+/** Hours step by 1/2/3/6/12/24, then decimal days-in-hours. */
+const HOUR_STEPS = [1, 2, 3, 6, 12, 24, 48, 72, 120, 168] as const;
 
-/** Decimal magnitude suffixes for counts and plain values, largest first (same letters as COMPACT). */
-const COUNT_SCALES: readonly AxisScale[] = [
-  { div: 1e12, suffix: "T" },
-  { div: 1e9, suffix: "B" },
-  { div: 1e6, suffix: "M" },
-  { div: 1e3, suffix: "K" },
-];
-
-/** Most decimals an axis label gets before it switches to scientific notation. */
-const AXIS_MAX_DECIMALS = 6;
-
-/** The time unit for a span in seconds; same thresholds as formatSeconds, plus µs below 1 ms. */
-function secondsScale(maxAbs: number): AxisScale {
-  if (maxAbs === 0) return { div: 1, suffix: " s" };
-  if (maxAbs < 1e-3) return { div: 1e-6, suffix: " µs" };
-  if (maxAbs < 1) return { div: 1e-3, suffix: " ms" };
-  if (maxAbs < 120) return { div: 1, suffix: " s" };
-  if (maxAbs < 7200) return { div: 60, suffix: " min" };
-  return { div: 3600, suffix: " h" };
-}
-
-/** The scale every tick of one axis shares, chosen from the largest magnitude on the axis. */
-function axisScale(maxAbs: number, unit: ClientQueryMeta["unit"]): AxisScale {
-  switch (unit) {
-    case "percent":
-      return { div: 1, suffix: " %" };
-    case "bytes": {
-      let u = 0;
-      while (u < BYTE_UNITS.length - 1 && maxAbs >= 1024 ** (u + 1)) u++;
-      return { div: 1024 ** u, suffix: ` ${BYTE_UNITS[u]}` };
-    }
-    case "seconds":
-      return secondsScale(maxAbs);
-    case "milliseconds": {
-      const s = secondsScale(maxAbs / 1000);
-      return { div: s.div * 1000, suffix: s.suffix };
-    }
-    default:
-      return COUNT_SCALES.find((s) => maxAbs >= s.div) ?? { div: 1, suffix: "" };
+/** Candidate steps in display units, ascending, covering fractions to very large spans. */
+function candidateSteps(kind: DisplayScale["kind"], span: number): number[] {
+  const out: number[] = [];
+  const lo = Math.floor(Math.log10(span > 0 ? span : 1)) - 3;
+  const hi = lo + 7;
+  for (let e = lo; e <= hi; e++) for (const m of DECIMAL_STEPS) out.push(m * 10 ** e);
+  if (kind !== "decimal") {
+    // Below 1 unit stay decimal; from 1 unit up use the clock-friendly steps, then decimal beyond.
+    const clock = kind === "hours" ? HOUR_STEPS : SEXAGESIMAL_STEPS;
+    const top = clock[clock.length - 1]!;
+    return [...out.filter((s) => s < 1), ...clock, ...out.filter((s) => s > top * 2)].sort((a, b) => a - b);
   }
+  return out;
+}
+
+/**
+ * Y-axis tick positions that are round in the axis's display unit (so labels never need rounding
+ * away from their gridline): GiB ticks step by 0.1/0.2/0.25/0.5/1… GiB, minute ticks by
+ * 1/2/5/10/15/30 min, hour ticks by 1/2/3/6/12 h, percent and counts by 1/2/2.5/5 × 10ⁿ.
+ * The display unit is {@link displayScale} of the larger end of the range. The step is the
+ * smallest candidate giving at most `maxTicks` ticks. Pure; degenerate input returns [] or [min].
+ *
+ * @param min - Scale minimum (base unit).
+ * @param max - Scale maximum (base unit).
+ * @param unit - The query's display unit.
+ * @param maxTicks - Most ticks that fit (≥ 2).
+ * @returns Ascending tick values in the base unit, within [min, max].
+ */
+export function axisSplits(min: number, max: number, unit: ClientQueryMeta["unit"], maxTicks: number): number[] {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) return [];
+  if (max === min) return [min];
+  const scale = displayScale(Math.max(Math.abs(min), Math.abs(max)), unit);
+  const lo = min / scale.div;
+  const hi = max / scale.div;
+  const span = hi - lo;
+  const limit = Math.max(2, Math.floor(maxTicks));
+  const steps = candidateSteps(scale.kind, span);
+  const step = steps.find((s) => Math.floor(hi / s + 1e-9) - Math.ceil(lo / s - 1e-9) + 1 <= limit) ?? steps[steps.length - 1]!;
+  const out: number[] = [];
+  for (let k = Math.ceil(lo / step - 1e-9); k * step <= hi + step * 1e-9; k++) {
+    // Rebuild from the integer multiple so float drift never reaches the label formatter.
+    out.push(Number((k * step).toPrecision(12)) * scale.div);
+  }
+  return out;
 }
 
 /** True when `x` is an integer up to floating-point noise. */
@@ -437,20 +484,19 @@ function nearInteger(x: number): boolean {
   return Math.abs(x - Math.round(x)) <= 1e-6 * Math.max(1, Math.abs(x));
 }
 
+/** Most fraction digits a plain axis label may use. */
+const AXIS_MAX_DECIMALS = 15;
+
 /**
- * Y-axis tick labels for one axis, by unit, so large values never widen the axis
- * (`6000000000` bytes → `5.6 GiB`). Units match {@link formatChartValue}, so the axis and the cursor
- * readout agree: binary bytes (B/KiB/MiB/GiB/TiB), compact counts (K/M/B/T), ms/s/min/h durations
- * (µs below 1 ms), `%` for percentages.
+ * Y-axis tick labels for one axis, in the same units as the readout ({@link displayScale}):
+ * `6 GiB`, `1.5M`, `30 min`, `250 ms`, `99.5 %`. Every tick shares the scale of the largest tick, and
+ * labels print exactly as many decimals as the tick step needs (ticks from {@link axisSplits} are
+ * round, so nothing is rounded away from its gridline). Zero prints "0" with no unit; a non-finite
+ * tick prints an empty label. Labels are always distinct for distinct ticks: magnitudes below 0.001
+ * of a unit use scientific notation with enough digits, never a unit suffix glued to an exponent.
+ * Pure; never throws.
  *
- * Every tick of an axis shares one scale (chosen from the largest magnitude). Decimals are the
- * fewest that print the tick step exactly, capped at three significant digits of the largest tick,
- * trailing zeros trimmed (`0.5 GiB`, `1 GiB`, `1.5 GiB`; `1.86 GiB` for a decimal step on a binary
- * scale), and raised when needed to keep distinct ticks distinct. Ticks too close together for six
- * decimals use scientific notation. Zero and
- * negative zero print as `0`; a non-finite tick prints as an empty label. Pure; never throws.
- *
- * @param splits - uPlot's tick values for the axis.
+ * @param splits - Tick values for the axis.
  * @param unit - The query's display unit.
  * @returns One label per split, index for index.
  */
@@ -458,28 +504,33 @@ export function formatAxisTicks(splits: readonly number[], unit: ClientQueryMeta
   const finite = splits.filter((v) => typeof v === "number" && Number.isFinite(v));
   if (finite.length === 0) return splits.map(() => "");
   const maxAbs = finite.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-  const scale = axisScale(maxAbs, unit);
+  const scale = displayScale(maxAbs, unit);
   const scaled = [...new Set(finite.map((v) => v / scale.div))].sort((a, b) => a - b);
   let step = Number.POSITIVE_INFINITY;
   for (let i = 1; i < scaled.length; i++) step = Math.min(step, scaled[i]! - scaled[i - 1]!);
-  // Decimals: the fewest that print the step exactly, but no more than three significant digits of
-  // the largest tick (uPlot picks decimal steps, so a binary-scaled byte axis would otherwise print
-  // 1.862645 GiB), and always enough to keep distinct ticks distinct.
   const top = maxAbs / scale.div;
-  const cap = Math.min(AXIS_MAX_DECIMALS, Math.max(0, 2 - Math.floor(Math.log10(top || 1))));
-  // A single tick has no step: it gets the cap (zeros are trimmed anyway).
-  let decimals = Number.isFinite(step) ? 0 : cap;
-  while (decimals < cap && !nearInteger(step * 10 ** decimals)) decimals++;
-  const plain = (d: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: d });
-  const distinct = (f: Intl.NumberFormat) => new Set(scaled.map((v) => f.format(v))).size === scaled.length;
-  let fmt = plain(decimals);
-  while (!distinct(fmt) && decimals < AXIS_MAX_DECIMALS) fmt = plain(++decimals);
-  if (!distinct(fmt)) fmt = new Intl.NumberFormat("en-US", { notation: "scientific", maximumFractionDigits: 2 });
-  // A value that rounds to zero prints "0", never "-0".
-  const label = (v: number): string => {
-    if (v === 0) return "0";
-    const text = fmt.format(v / scale.div);
-    return /^-0(\.0*)?(E0)?$/.test(text) ? text.slice(1) : text;
-  };
-  return splits.map((v) => (typeof v === "number" && Number.isFinite(v) ? `${label(v)}${scale.suffix}` : ""));
+  const distinct = (f: Intl.NumberFormat): boolean =>
+    new Set(scaled.map((v) => (v === 0 ? "0" : noNegativeZero(f.format(v))))).size === scaled.length;
+
+  let fmt: Intl.NumberFormat;
+  let suffix = scale.suffix;
+  if (top > 0 && top < 1e-3) {
+    // Scientific, with enough significant digits to separate the closest ticks; no unit letter
+    // after an exponent (a count axis would otherwise print "1E-9B").
+    let digits = Number.isFinite(step) && step > 0 ? Math.max(0, Math.ceil(Math.log10(top / step))) : 2;
+    fmt = new Intl.NumberFormat("en-US", { notation: "scientific", maximumFractionDigits: Math.min(20, digits) });
+    while (!distinct(fmt) && digits < 20) fmt = new Intl.NumberFormat("en-US", { notation: "scientific", maximumFractionDigits: ++digits });
+    if (unit !== "bytes" && unit !== "percent" && unit !== "seconds" && unit !== "milliseconds") suffix = "";
+  } else {
+    // A single tick has no step: three significant digits of it.
+    let decimals = Number.isFinite(step) ? 0 : Math.max(0, 2 - Math.floor(Math.log10(top || 1)));
+    while (Number.isFinite(step) && decimals < AXIS_MAX_DECIMALS && !nearInteger(step * 10 ** decimals)) decimals++;
+    fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: decimals });
+    while (!distinct(fmt) && decimals < AXIS_MAX_DECIMALS) fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: ++decimals });
+  }
+  return splits.map((v) => {
+    if (typeof v !== "number" || !Number.isFinite(v)) return "";
+    const text = noNegativeZero(fmt.format(v / scale.div));
+    return v === 0 || text === "0" ? "0" : `${text}${suffix}`;
+  });
 }

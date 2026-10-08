@@ -255,6 +255,10 @@ describeDom("engine view — EngineTrends (item 016)", (dom) => {
       const meta = `${RANGE_LABEL[rangeOf(id)]} · ${label.unit} · Times in America/Chicago`;
       expect(figure).toHaveAccessibleDescription(expect.stringContaining(meta));
       expect(figure).toHaveAccessibleDescription(expect.stringContaining("resolution: "));
+      // Every description id resolves to an element with text (no empty detail node).
+      for (const ref of figure.getAttribute("aria-describedby")!.split(" ")) {
+        expect(c.ownerDocument.getElementById(ref)?.textContent?.trim()).toBeTruthy();
+      }
       // The title, range and zone are printed once: no figcaption repeats them.
       expect(figure.querySelector("figcaption")).toBeNull();
       expect(card.getAllByText(label.title)).toHaveLength(1);

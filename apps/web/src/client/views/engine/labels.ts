@@ -65,8 +65,8 @@ export const UNAVAILABLE = "unavailable" as const;
 
 /** Screen-reader description of an absent stat-tile value, per TileValue kind (#15). */
 export const ABSENT_TILE_DESCRIPTION: Readonly<Record<"not-reported" | "unavailable", string>> = {
-  "not-reported": "no value: the source did not report it",
-  unavailable: "no value: the source is unavailable",
+  "not-reported": "the source did not include this metric",
+  unavailable: "source not current, so no value is shown",
 };
 
 /** Copy used when a source has never had a successful read (no last-good time). */

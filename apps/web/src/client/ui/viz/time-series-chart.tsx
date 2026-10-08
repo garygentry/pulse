@@ -28,6 +28,11 @@ export interface TimeSeriesChartProps {
    * number formatting. Pass a stable function: the chart reads it when it builds.
    */
   formatYTicks?: (splits: readonly number[]) => string[];
+  /**
+   * Y-axis tick positions for a scale range, at most `maxTicks` of them (e.g. steps that are round
+   * in the display unit: 0.5 GiB, 15 min). Default: uPlot's decimal increments. Pass a stable function.
+   */
+  splitYTicks?: (min: number, max: number, maxTicks: number) => number[];
   className?: string;
 }
 

@@ -206,8 +206,8 @@ function Content() {
       <Specimen label="StatTile — absent value (not reported, unavailable)">
         <Wide>
           <StatGrid>
-            <StatTile label="Ingestion rate" value="not reported" valueState="absent" absentDescription="no value: the source did not report it" />
-            <StatTile tone="danger" label="Free disk" value="unavailable" valueState="absent" absentDescription="no value: the source is unavailable" />
+            <StatTile label="Ingestion rate" value="not reported" valueState="absent" absentDescription="the source did not include this metric" />
+            <StatTile tone="danger" label="Free disk" value="unavailable" valueState="absent" absentDescription="source not current, so no value is shown" />
           </StatGrid>
         </Wide>
       </Specimen>

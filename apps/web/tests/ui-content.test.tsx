@@ -258,14 +258,14 @@ describeUi("@/ui content & data display", () => {
       render(
         <StatGrid>
           <StatTile label="Free disk" value="12 GiB" tone="warn" />
-          <StatTile label="Data size" value="unavailable" tone="danger" valueState="absent" absentDescription="no value: the source is unavailable" />
+          <StatTile label="Data size" value="unavailable" tone="danger" valueState="absent" absentDescription="source not current, so no value is shown" />
         </StatGrid>,
       );
       const [real, absent] = screen.getAllByRole("definition");
       expect(real).toHaveAttribute("data-value-state", "value");
       expect(real!.closest("[data-slot=stat-tile]")).toHaveAttribute("data-tone", "warn");
       expect(absent).toHaveAttribute("data-value-state", "absent");
-      expect(absent).toHaveTextContent("unavailable (no value: the source is unavailable)");
+      expect(absent).toHaveTextContent("unavailable (source not current, so no value is shown)");
       expect(screen.getByText("unavailable")).toBeVisible();
       // No status colour for a missing value, whatever tone the caller passed.
       const tile = absent!.closest("[data-slot=stat-tile]");

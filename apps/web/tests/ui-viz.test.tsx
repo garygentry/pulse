@@ -455,5 +455,22 @@ describeUi("ui/viz render", () => {
       ) => string[];
       expect(values(null, [0, 5])).toEqual(["0 u", "5 u"]);
     });
+
+    it("uses splitYTicks for the y tick positions, with a tick budget from the chart height", async () => {
+      const { buildOptions } = await loadImpl();
+      const colors = { axis: "a", grid: "g", text: "t", strokes: ["s"] };
+      const base = { timestamps: [1], series: [{ label: "x", data: [1] }] };
+      expect(buildOptions(base, 500, colors).axes![1]!.splits).toBeUndefined();
+      const calls: [number, number, number][] = [];
+      const splitYTicks = (min: number, max: number, maxTicks: number) => {
+        calls.push([min, max, maxTicks]);
+        return [min, max];
+      };
+      const splits = buildOptions({ ...base, height: 240, splitYTicks }, 500, colors).axes![1]!.splits as (
+        self: unknown, axisIdx: number, min: number, max: number,
+      ) => number[];
+      expect(splits(null, 1, 0, 10)).toEqual([0, 10]);
+      expect(calls).toEqual([[0, 10, 6]]); // floor(240 * 0.8 / 30)
+    });
   });
 });
