@@ -1,10 +1,21 @@
-# .github/workflows/ci.yml — thin wrapper; ALL gate logic lives in `bun run ci` (D4).
+# .github/workflows/ci.yml — thin wrapper; ALL gate logic lives in `bun run ci` (D4), plus the
+# CI-Linux-only visual suite (`bun run visual`, GitHub #4), whose baselines only this image can make.
 name: ci
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      update_visuals:
+        # Visual baselines are generated on CI Linux only (font rasterisation differs across hosts).
+        # Dispatch with this set on a branch, download the `visual-baselines` artifact into
+        # apps/web/tests/visual and commit it (docs/architecture/ui.md, "Visual baselines").
+        description: Regenerate the visual baselines and upload them as the visual-baselines artifact
+        type: boolean
+        default: false
 # A newer push to the same PR (or ref) cancels the in-flight run; main always runs to completion.
+# The event name is in the group, so a push never cancels an update_visuals dispatch.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -53,7 +64,7 @@ jobs:
     # still runs, so a broken detector can never turn into a skipped (= passing) check.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     runs-on: ubuntu-latest   # Docker available → bootstrap smoke runs for real (REQ-VER-04)
-    timeout-minutes: 25      # ~2× a normal run (8–12 min); without it a hang bills up to 6 h
+    timeout-minutes: 35      # ~2× a normal run (12–17 min); without it a hang bills up to 6 h
     env:
       # A missing Chromium is FATAL in CI — the browser suite must never silently skip
       # (REQ-CI-01, REQ-TEST-04). Job-level so `bun run ci`, and every child process it
@@ -87,4 +98,38 @@ jobs:
       # UNCONDITIONALLY, warm runs included; it is idempotent and fast when the packages
       # are already present.
       - run: bunx playwright-core install-deps chromium
-      - run: bun run ci      # typecheck → bun test (now incl. the browser suite) → docs:build
+      - if: ${{ !inputs.update_visuals }}
+        run: bun run ci      # typecheck → bun test (now incl. the browser suite) → docs:build
+      # Visual regression (apps/web/tests/visual, GitHub #4): `@playwright/test` under Node against
+      # the committed baselines. It reuses the Chromium cached above (same playwright-core pin).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Visual baselines (verify)
+        if: ${{ !inputs.update_visuals }}
+        run: bun run visual
+      # The update_visuals dispatch skips the gate and regenerates every baseline on this Linux image
+      # instead. Fetch: gh run download <run-id> -n visual-baselines -D apps/web/tests/visual
+      - name: Build workspace packages
+        if: ${{ inputs.update_visuals }}
+        run: bun run typecheck
+      - name: Regenerate visual baselines
+        if: ${{ inputs.update_visuals }}
+        env:
+          UPDATE_VISUALS: "1"
+        run: bun run visual --update-snapshots=all
+      - name: Upload visual baselines
+        if: ${{ inputs.update_visuals }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: apps/web/tests/visual/*-snapshots/
+          if-no-files-found: error
+      - name: Upload visual diffs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-results
+          path: apps/web/.visual-results/
+          if-no-files-found: ignore
+          retention-days: 7

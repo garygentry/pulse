@@ -292,13 +292,52 @@ from a production build.
   grayscale and reflow suites per view and the performance suites (the overview one is opt-in
   through `bun run perf`); `tests/contrast.test.ts` checks status contrast on rendered pages. They
   skip when Chromium is absent unless `PULSE_REQUIRE_BROWSER=1` is set.
-- **Visual review:** there are no committed visual baselines. Screenshots of a changed view at
-  375, 768 and 1280 px in light and dark (and wallboard for overview and kiosk) are captured to the
-  git-ignored `screenshots/` directory and reviewed locally.
+- **Visual regression:** committed `toHaveScreenshot` baselines, generated and verified on CI
+  Linux only (see [Visual baselines](#visual-baselines)). A change that moves pixels updates them in
+  the same PR, regenerated on CI. Screenshots of a changed view at 375, 768 and 1280 px in light and
+  dark are still worth reviewing locally under the git-ignored `screenshots/` while you work.
 - **Budgets:** `tests/build-budget.test.ts` holds the initial-route JS, total JS, total CSS and
   per-view first-load ceilings, uPlot's absence from the initial route, the curated-icon and
   shell-icon checks, barrel tree-shaking and the workbench's absence. `tests/client-build.test.ts` holds the initial-route JS + entry
   CSS ceiling. Raising a ceiling is a deliberate, reviewed change.
+
+## Visual baselines
+
+`apps/web/tests/visual/` holds the visual-regression suite, run by `@playwright/test` (pinned to
+the playwright-core release; `tests/deps.test.ts` checks both). It sits beside the playwright-core
+browser suites, which still run under `bun test`. Its files are `visual-<view>.pw.ts`: the `.pw.ts`
+suffix keeps them out of `bun test`, which collects `*.spec.*`.
+
+- **Coverage:** one spec per view: overview, the alerts tabs and detail pane, the estate tabs and
+  entity pages, timeline and engine, plus the `/_ui` workbench, one capture per section. Each is
+  taken at 375, 768 and 1280 px in light and dark. Overview, alerts and timeline also get a
+  1920×1080 kiosk wallboard capture. View captures hide the side nav and top bar.
+- **Determinism:** `tests/visual/serve.ts` serves the `degraded-mix` mock scenario through the dev
+  composition root with its wall clock frozen (`freeze-clock.ts`, a test-only Bun preload). It pins
+  `--clock` 15 minutes earlier, so the scenario timeline has fully played out. The mock engine serves
+  no range queries, so `visual-kit.ts` answers `/api/history/**` with series generated from the
+  query, target and range alone. The browser clock is frozen at the same instant
+  (`page.clock.setFixedTime`). Timers 4 s or more out are held, so poll refreshes and kiosk paging
+  never fire mid-capture. Animations are disabled, fonts are awaited, the timezone and locale are
+  pinned, and the build-id-bearing app version on the engine page is masked.
+- **CI only:** font rasterisation differs between hosts, so baselines are made and checked only on
+  the CI Linux image. Locally the specs skip unless `UPDATE_VISUALS=1` is set. With it set, they
+  run against the committed Linux baselines and will usually fail on a laptop. That is still useful
+  for debugging a spec. Don't commit locally generated PNGs.
+- **CI:** the `ci` job runs `bun run visual` (`playwright test -c apps/web/tests/visual`) after
+  `bun run ci`, on every push and PR that `ci` runs for. On failure, the actual, expected and diff
+  images are uploaded as the `visual-results` artifact.
+- **Updating baselines:** run the workflow with `update_visuals` on the PR branch. It regenerates
+  every baseline on CI and uploads them as the `visual-baselines` artifact. Then download the
+  artifact over the tree, review the PNG diffs and commit them:
+
+  ```
+  gh workflow run ci.yml --ref <branch> -f update_visuals=true
+  gh run list --workflow ci.yml --branch <branch> --limit 1     # note the run id
+  gh run download <run-id> -n visual-baselines -D apps/web/tests/visual
+  ```
+
+  A new view or state gets a spec here, and its baselines arrive the same way.
 
 ## Guardrails
 
