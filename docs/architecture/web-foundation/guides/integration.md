@@ -20,11 +20,17 @@ bun run dev:web --mock degraded-mix
 bun run dev:web --mock source-outage
 ```
 
-Use a deterministic timeline clock for screenshots or repeatable debugging:
+For screenshots, run a scenario without `--clock`. The scenario then starts when the process starts, so alerts show their authored ages (for example 19m, 40m, 1h) and keep aging from there.
+
+`--clock <iso-8601>` pins the scenario start instead. Use it when you need the same response bodies on every run, for example to compare runs while debugging:
 
 ```bash
-bun run dev:web --mock degraded-mix --clock 2026-01-01T00:00:00Z
+bun run dev:web --mock degraded-mix --clock 2026-10-01T12:00:00Z
 ```
+
+Alertmanager, vmalert, and VictoriaMetrics fixture timestamps are shifted onto the scenario start. Each keeps its offset from the fixture anchor (`2026-01-01T00:00:00Z`), so an alert authored 19 minutes before the anchor started 19 minutes before the scenario start. With `--clock`, those bodies are byte-identical on every run. A clock equal to the anchor leaves the timestamps exactly as authored.
+
+`--clock` does not pin the app's idea of now. The server and browser still compute ages and staleness from the real clock, and the timeline offset is real time minus the pinned start. A clock in the past therefore shows large ages and applies every timeline step at once; the anchor itself shows alerts hundreds of days old. A clock in the future shows ages of 0s. Pick a recent clock if rendered ages matter. vmalert `lastEvaluation` stays at the scenario start rather than following the live clock, which is what keeps pinned bodies identical. Gatus results are the one exception: they follow the real clock so checks never go stale, so Gatus bodies are not pinned.
 
 ### Connect to real engines
 
@@ -140,6 +146,8 @@ my-scenario/
 
 The three required files must use the real upstream wire shapes because `loadScenario()` validates them with production source parsers.
 
+Author every timestamp relative to the fixture anchor `2026-01-01T00:00:00Z` (`FIXTURE_ANCHOR` in `src/server/dev/timeline.ts`), treating it as the scenario start. An alert-fire step's `startsAt` is the anchor plus its `atMs`. The mock engine keeps each timestamp's offset from the anchor and moves it onto the real scenario start. Go's zero time `0001-01-01T00:00:00Z` is left as-is.
+
 A timeline has ascending non-negative millisecond offsets:
 
 ```json
@@ -164,7 +172,7 @@ Supported operations are:
 Validate the scenario by starting it:
 
 ```bash
-bun run dev:web --mock my-scenario --clock 2026-01-01T00:00:00Z
+bun run dev:web --mock my-scenario
 ```
 
 An unknown name fails at startup and lists available scenarios. Invalid fixture or timeline content fails once at scenario construction rather than degrading silently at request time.

@@ -2,7 +2,8 @@
 //
 // Determinism of the pure `applyTimeline` fold, the fixed-clock re-run guarantee, the
 // degraded-mix drift transitions at t=0/30_000/60_000, and the `freshenGatus` re-basing that
-// keeps a frozen Gatus fixture under the 300s staleness rule.
+// keeps a frozen Gatus fixture under the 300s staleness rule, and the scenario-clock re-base of
+// the Alertmanager/vmalert/VM fixture timestamps (GitHub #3).
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -14,9 +15,14 @@ import type {
   VmQueryResponse,
 } from "../src/server/sources/index.js";
 import {
+  FIXTURE_ANCHOR_MS,
   GATUS_FIXTURE_ANCHOR_MS,
   applyTimeline,
   freshenGatus,
+  rebaseAlertmanager,
+  rebaseVm,
+  rebaseVmalert,
+  shiftInstant,
   type ScenarioBase,
   type Timeline,
   type VmalertRulesResponse,
@@ -171,5 +177,147 @@ describe("freshenGatus rebase (05 §2.4 refinement)", () => {
     const before = JSON.stringify(base.gatus);
     freshenGatus(base.gatus, 1_800_000_000_000);
     expect(JSON.stringify(base.gatus)).toBe(before);
+  });
+});
+
+describe("scenario-clock rebase (GitHub #3)", () => {
+  const START = Date.parse("2026-10-08T12:00:00.000Z");
+  const offset = (iso: string, anchor: number): number => Date.parse(iso) - anchor;
+
+  test("every shipped fixture timestamp is authored around the shared anchor", async () => {
+    // Guard for future fixtures: a timestamp authored against some other reference would re-base to
+    // a nonsense age. Covers every field the mock engine shifts.
+    const NEAR_MS = 2 * 86_400_000;
+    const ENDS_MAX_MS = 400 * 86_400_000; // Alertmanager endsAt is resolve-timeout-far in the future
+    const near = (iso: string | undefined, what: string): void => {
+      expect({ what, ok: iso !== undefined && Math.abs(offset(iso, FIXTURE_ANCHOR_MS)) <= NEAR_MS }).toEqual({ what, ok: true });
+    };
+    const ends = (a: { startsAt: string; endsAt?: string }, what: string): void => {
+      const e = Date.parse(a.endsAt ?? "");
+      const ok = e > Date.parse(a.startsAt) && e - FIXTURE_ANCHOR_MS <= ENDS_MAX_MS;
+      expect({ what, ok }).toEqual({ what, ok: true });
+    };
+    const anchorIso = new Date(FIXTURE_ANCHOR_MS).toISOString();
+    for (const scenario of ["all-green", "degraded-mix", "source-outage"]) {
+      const base = await loadBase(scenario);
+      for (const a of base.alertmanager) {
+        const id = `${scenario} alertmanager ${a.labels.alertname}`;
+        near(a.startsAt, `${id} startsAt`);
+        near(a.updatedAt, `${id} updatedAt`);
+        ends(a, `${id} endsAt`);
+      }
+      for (const g of base.vmalert.data.groups) {
+        if (g.lastEvaluation !== undefined) expect(g.lastEvaluation).toBe(anchorIso);
+        for (const r of g.rules) {
+          if (r.lastEvaluation !== undefined) expect(r.lastEvaluation).toBe(anchorIso);
+          for (const alert of r.alerts ?? []) {
+            near((alert as { activeAt?: string }).activeAt, `${scenario} vmalert ${r.name} activeAt`);
+          }
+        }
+      }
+      for (const sample of base.vm.data?.result ?? []) {
+        expect(sample.value[0] * 1000).toBe(FIXTURE_ANCHOR_MS);
+      }
+      let timeline: Timeline;
+      try {
+        timeline = await loadTimeline(scenario);
+      } catch {
+        continue; // timeline.json is optional
+      }
+      for (const { atMs, step } of timeline.steps) {
+        if (step.op !== "alert-fire") continue;
+        const id = `${scenario} timeline ${step.alert.labels.alertname}`;
+        expect({ id, startsAt: Date.parse(step.alert.startsAt) }).toEqual({ id, startsAt: FIXTURE_ANCHOR_MS + atMs });
+        near(step.alert.updatedAt, `${id} updatedAt`);
+        ends(step.alert, `${id} endsAt`);
+      }
+    }
+  });
+
+  test("Alertmanager: each alert's age at scenario start equals its authored offset", async () => {
+    const base = await loadBase("degraded-mix");
+    const rebased = rebaseAlertmanager(base.alertmanager, START);
+    expect(rebased.length).toBe(base.alertmanager.length);
+    for (let i = 0; i < base.alertmanager.length; i += 1) {
+      const before = base.alertmanager[i]!;
+      const after = rebased[i]!;
+      expect(START - Date.parse(after.startsAt)).toBe(FIXTURE_ANCHOR_MS - Date.parse(before.startsAt));
+      expect(offset(after.endsAt!, START)).toBe(offset(before.endsAt!, FIXTURE_ANCHOR_MS));
+      expect(offset(after.updatedAt!, START)).toBe(offset(before.updatedAt!, FIXTURE_ANCHOR_MS));
+      // Firing semantics hold at scenario start: started in the past, ends in the future.
+      expect(Date.parse(after.startsAt)).toBeLessThanOrEqual(START);
+      expect(Date.parse(after.endsAt!)).toBeGreaterThan(START);
+      expect(after.labels).toEqual(before.labels);
+      expect(after.status).toEqual(before.status);
+    }
+    // degraded-mix: HypervisorUnreachable started 19 minutes before the anchor.
+    expect(START - Date.parse(rebased[0]!.startsAt)).toBe(19 * 60_000);
+  });
+
+  test("Alertmanager: a resolved alert's window and the zero time are preserved", () => {
+    const zero = "0001-01-01T00:00:00Z";
+    const body: AmAlertsResponse = [{
+      labels: { alertname: "Resolved" },
+      annotations: {},
+      startsAt: "2025-12-31T22:00:00.000Z",
+      endsAt: "2025-12-31T23:30:00.000Z",
+      updatedAt: zero,
+      fingerprint: "0000000000000001",
+      status: { state: "unprocessed", silencedBy: [], inhibitedBy: [] },
+      receivers: [{ name: "default" }],
+    }];
+    const [after] = rebaseAlertmanager(body, START);
+    expect(after!.updatedAt).toBe(zero);
+    expect(Date.parse(after!.endsAt!) - Date.parse(after!.startsAt)).toBe(90 * 60_000);
+    expect(START - Date.parse(after!.endsAt!)).toBe(30 * 60_000); // still ended in the past
+  });
+
+  test("shiftInstant leaves unset and unparseable values untouched", () => {
+    expect(shiftInstant("0001-01-01T00:00:00Z", 1_000)).toBe("0001-01-01T00:00:00Z");
+    expect(shiftInstant("1970-01-01T00:00:00Z", 1_000)).toBe("1970-01-01T00:00:00Z");
+    expect(shiftInstant("not a date", 1_000)).toBe("not a date");
+    expect(shiftInstant("2026-01-01T00:00:00.000Z", 1_000)).toBe("2026-01-01T00:00:01.000Z");
+  });
+
+  test("vmalert: lastEvaluation and activeAt keep their offsets from the anchor", async () => {
+    const base = await loadBase("degraded-mix");
+    const rebased = rebaseVmalert(base.vmalert, START);
+    base.vmalert.data.groups.forEach((g, gi) => {
+      const ag = rebased.data.groups[gi]!;
+      if (g.lastEvaluation !== undefined) expect(offset(ag.lastEvaluation!, START)).toBe(offset(g.lastEvaluation, FIXTURE_ANCHOR_MS));
+      g.rules.forEach((r, ri) => {
+        const ar = ag.rules[ri]!;
+        if (r.lastEvaluation !== undefined) expect(offset(ar.lastEvaluation!, START)).toBe(offset(r.lastEvaluation, FIXTURE_ANCHOR_MS));
+        (r.alerts ?? []).forEach((a, ai) => {
+          const before = (a as { activeAt: string }).activeAt;
+          const after = (ar.alerts![ai] as { activeAt: string }).activeAt;
+          expect(offset(after, START)).toBe(offset(before, FIXTURE_ANCHOR_MS));
+        });
+      });
+    });
+  });
+
+  test("VM: sample times shift by the same delta (seconds)", async () => {
+    const base = await loadBase("all-green");
+    const rebased = rebaseVm(base.vm, START);
+    base.vm.data!.result.forEach((s, i) => {
+      const after = rebased.data!.result[i]!;
+      expect((after.value[0] - s.value[0]) * 1000).toBe(START - FIXTURE_ANCHOR_MS);
+      expect(after.value[1]).toBe(s.value[1]);
+      expect(after.metric).toEqual(s.metric);
+    });
+  });
+
+  test("identity at the anchor, no input mutation, and deterministic output", async () => {
+    const base = await loadBase("degraded-mix");
+    const before = JSON.stringify(base);
+    expect(JSON.stringify(rebaseAlertmanager(base.alertmanager, FIXTURE_ANCHOR_MS))).toBe(JSON.stringify(base.alertmanager));
+    expect(JSON.stringify(rebaseVmalert(base.vmalert, FIXTURE_ANCHOR_MS))).toBe(JSON.stringify(base.vmalert));
+    expect(JSON.stringify(rebaseVm(base.vm, FIXTURE_ANCHOR_MS))).toBe(JSON.stringify(base.vm));
+    const a = JSON.stringify([rebaseAlertmanager(base.alertmanager, START), rebaseVmalert(base.vmalert, START), rebaseVm(base.vm, START)]);
+    const b = JSON.stringify([rebaseAlertmanager(base.alertmanager, START), rebaseVmalert(base.vmalert, START), rebaseVm(base.vm, START)]);
+    expect(a).toBe(b);
+    expect(JSON.stringify(base)).toBe(before);
+    expect(GATUS_FIXTURE_ANCHOR_MS).toBe(FIXTURE_ANCHOR_MS);
   });
 });

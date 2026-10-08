@@ -27,7 +27,7 @@ import {
   loadScenario,
 } from "../src/server/dev/scenario.js";
 import { fetchJson } from "../src/server/sources/index.js";
-import type { GatusStatusesResponse } from "../src/server/sources/index.js";
+import type { AmAlertsResponse, GatusStatusesResponse } from "../src/server/sources/index.js";
 
 const FIXED_START = Date.parse("2026-01-01T00:00:00.000Z");
 
@@ -309,5 +309,80 @@ describe("loadScenario — MOCK_SCENARIO_INVALID on malformed JSON", () => {
     expect(err.code).toBe("MOCK_SCENARIO_UNKNOWN");
     // `available` includes the shipped scenarios for a helpful error message (REQ-MOCK-07).
     for (const s of SCENARIO_NAMES) expect(err.available).toContain(s);
+  });
+});
+
+describe("createMockEngine — fixture timestamps follow the scenario clock (GitHub #3)", () => {
+  const CLOCK = Date.parse("2026-10-08T12:00:00.000Z");
+  const ANCHOR = Date.parse("2026-01-01T00:00:00.000Z");
+
+  async function alertsAt(engine: Awaited<ReturnType<typeof createMockEngine>>): Promise<AmAlertsResponse> {
+    const res = await engine.fetchImpl(`${MOCK_BASE_URLS.alertmanagerUrl}${MOCK_PATHS.alertmanager}`);
+    return (await readJsonResponse(res)) as AmAlertsResponse;
+  }
+
+  test("a fixture alert's age at scenario start equals its authored offset", async () => {
+    const scenario = await loadScenario(DEFAULT_SCENARIO_DIR, "degraded-mix");
+    const engine = await createMockEngine({ scenario: "degraded-mix", now: () => CLOCK, startedAt: CLOCK });
+    const served = await alertsAt(engine);
+    expect(served.length).toBe(scenario.base.alertmanager.length);
+    for (let i = 0; i < served.length; i += 1) {
+      const authored = scenario.base.alertmanager[i]!;
+      expect(CLOCK - Date.parse(served[i]!.startsAt)).toBe(ANCHOR - Date.parse(authored.startsAt));
+      // Silence/active window preserved: endsAt stays the same distance after startsAt.
+      expect(Date.parse(served[i]!.endsAt!) - Date.parse(served[i]!.startsAt))
+        .toBe(Date.parse(authored.endsAt!) - Date.parse(authored.startsAt));
+      expect(served[i]!.status).toEqual(authored.status);
+    }
+    // HypervisorUnreachable: 19 minutes old at scenario start, not hundreds of days.
+    expect(CLOCK - Date.parse(served[0]!.startsAt)).toBe(19 * 60_000);
+  });
+
+  test("alerts age with the wall clock from a fixed scenario start; timeline alerts fire 'now'", async () => {
+    let now = CLOCK;
+    const engine = await createMockEngine({ scenario: "degraded-mix", now: () => now, startedAt: CLOCK });
+    const first = await alertsAt(engine);
+    now = CLOCK + 25_000; // past the alert-fire step at atMs 20_000
+    const later = await alertsAt(engine);
+    expect(later[0]!.startsAt).toBe(first[0]!.startsAt);
+    const fired = later.find((a) => a.labels.alertname === "BackupJobFailed");
+    expect(fired).toBeDefined();
+    expect(Date.parse(fired!.startsAt)).toBe(CLOCK + 20_000);
+  });
+
+  test("vmalert timestamps keep their offsets from the scenario start", async () => {
+    const engine = await createMockEngine({ scenario: "degraded-mix", now: () => CLOCK, startedAt: CLOCK });
+    const res = await engine.fetchImpl(`${MOCK_BASE_URLS.vmalertUrl}${MOCK_PATHS.vmalert}`);
+    const body = (await readJsonResponse(res)) as {
+      data: { groups: Array<{ lastEvaluation?: string; rules: Array<{ name: string; lastEvaluation?: string; alerts?: Array<{ activeAt: string }> }> }> };
+    };
+    for (const g of body.data.groups) {
+      expect(g.lastEvaluation).toBe(new Date(CLOCK).toISOString());
+      for (const r of g.rules) if (r.lastEvaluation !== undefined) expect(r.lastEvaluation).toBe(new Date(CLOCK).toISOString());
+    }
+    const hv = body.data.groups.flatMap((g) => g.rules).find((r) => r.name === "HypervisorUnreachable");
+    expect(CLOCK - Date.parse(hv!.alerts![0]!.activeAt)).toBe(19 * 60_000);
+  });
+
+  test("a pinned --clock serves byte-identical VM/Alertmanager/vmalert bodies across runs", async () => {
+    const read = async (): Promise<string[]> => {
+      const engine = await createMockEngine({ scenario: "degraded-mix", now: () => CLOCK, startedAt: CLOCK });
+      const out: string[] = [];
+      for (const [base, path] of [
+        [MOCK_BASE_URLS.vmUrl, MOCK_PATHS.vm],
+        [MOCK_BASE_URLS.alertmanagerUrl, MOCK_PATHS.alertmanager],
+        [MOCK_BASE_URLS.vmalertUrl, MOCK_PATHS.vmalert],
+      ] as const) {
+        out.push(await (await engine.fetchImpl(`${base}${path}`)).text());
+      }
+      return out;
+    };
+    expect(await read()).toEqual(await read());
+  });
+
+  test("a clock at the fixture anchor serves the fixtures verbatim", async () => {
+    const engine = await createMockEngine({ scenario: "degraded-mix", now: () => ANCHOR, startedAt: ANCHOR });
+    const scenario = await loadScenario(DEFAULT_SCENARIO_DIR, "degraded-mix");
+    expect(await alertsAt(engine)).toEqual(scenario.base.alertmanager);
   });
 });
