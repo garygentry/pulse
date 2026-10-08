@@ -578,9 +578,12 @@ describeDom("timeline keyboard — RangeSelector, view shortcuts and hints (item
     const group = c.querySelector<HTMLElement>('[role="radiogroup"]')!;
     expect(group.getAttribute("aria-label")).toBe("Time range");
     expect(group.getAttribute("data-slot")).toBe("segmented-control");
-    expect(group.closest("[aria-keyshortcuts]")!.getAttribute("aria-keyshortcuts")).toBe("[ ]");
     const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="radio"]'));
     expect(radios.length).toBe(4);
+    // The `[` / `]` hint is on the focusable radios (key values, two alternatives), not a wrapper.
+    expect(radios.map((r) => r.getAttribute("aria-keyshortcuts"))).toEqual(["[ ]", "[ ]", "[ ]", "[ ]"]);
+    expect(group.hasAttribute("aria-keyshortcuts")).toBe(false);
+    expect(group.parentElement!.closest("[aria-keyshortcuts]")).toBeNull();
     expect(radios.map((r) => r.tagName)).toEqual(["BUTTON", "BUTTON", "BUTTON", "BUTTON"]);
     expect(radios.map((r) => r.getAttribute("type"))).toEqual(["button", "button", "button", "button"]);
     expect(radios.map((r) => r.textContent)).toEqual(["1h", "6h", "24h", "7d"]);

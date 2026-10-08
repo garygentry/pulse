@@ -1,13 +1,20 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/ui/lib/utils";
 import { Icon } from "@/ui/patterns/icon";
+import { VisuallyHidden } from "@/ui/patterns/visually-hidden";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/primitives/collapsible";
 
 export interface DisclosureProps {
   /** Trigger text; it names the button. */
   label: ReactNode;
-  /** Optional count shown after the label (e.g. hidden items), in tabular figures. */
+  /**
+   * Optional count shown after the label as a pill (e.g. hidden items), in tabular figures. The
+   * pill is decorative: the trigger's accessible name gets a separated phrase instead, so it reads
+   * "Proposals, 3 items" rather than running the number into the label.
+   */
   count?: number;
+  /** The spoken count phrase; default "1 item" / "N items". */
+  countLabel?: (count: number) => string;
   children: ReactNode;
   defaultOpen?: boolean;
   /** Controlled open state (pair with `onOpenChange`). */
@@ -23,6 +30,10 @@ export interface DisclosureProps {
   contentClassName?: string;
 }
 
+function defaultCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "item" : "items"}`;
+}
+
 /**
  * A collapsible section with a consistent trigger: a chevron, the label and an
  * optional count. The trigger is a real button with `aria-expanded` and
@@ -31,6 +42,7 @@ export interface DisclosureProps {
 export function Disclosure({
   label,
   count,
+  countLabel = defaultCountLabel,
   children,
   defaultOpen = false,
   open: openProp,
@@ -82,9 +94,14 @@ export function Disclosure({
           name="chevron-right"
           className="text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
         />
-        <span>{label}</span>
+        <span>
+          {label}
+          {count !== undefined ? <VisuallyHidden>{`, ${countLabel(count)}`}</VisuallyHidden> : null}
+        </span>
         {count !== undefined ? (
-          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">{count}</span>
+          <span aria-hidden="true" className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
+            {count}
+          </span>
         ) : null}
       </CollapsibleTrigger>
       <CollapsibleContent

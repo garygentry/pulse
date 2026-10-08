@@ -376,16 +376,42 @@ describeUi("@/ui content & data display", () => {
   });
 
   describe("Disclosure", () => {
-    it("is a button with aria-expanded/aria-controls, named by label and count", async () => {
+    // The visually hidden ", 3 items" is absolutely positioned (sr-only), so name computation (Chromium
+    // and dom-accessibility-api alike) treats it as non-inline and may put a space before the comma
+    // ("Waivers , 3 items"); speech is the same. Allow that one space, and no more.
+    const named = (label: string, count: string): RegExp => new RegExp(`^${label} ?, ${count}$`);
+    it("speaks a singular count, a custom count phrase, and no separator without a count", () => {
+      render(
+        <>
+          <Disclosure label="Waivers" count={1}>
+            <p>One</p>
+          </Disclosure>
+          <Disclosure label="Findings" count={0} countLabel={(n) => `${n} open`}>
+            <p>None</p>
+          </Disclosure>
+          <Disclosure label="Details">
+            <p>Body</p>
+          </Disclosure>
+        </>,
+      );
+      expect(screen.getByRole("button", { name: named("Waivers", "1 item") })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: named("Findings", "0 open") })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Details$/ })).toBeInTheDocument();
+    });
+
+    it("is a button with aria-expanded/aria-controls, named by label and a separated count", async () => {
       const user = userEvent.setup();
       render(
         <Disclosure label="Waivers" count={3}>
           <p>Three waived findings</p>
         </Disclosure>,
       );
-      const trigger = screen.getByRole("button", { name: "Waivers 3" });
+      const trigger = screen.getByRole("button", { name: named("Waivers", "3 items") });
       expect(trigger).toHaveAttribute("aria-expanded", "false");
       expect(screen.queryByText("Three waived findings")).toBeNull();
+
+      // The visible pill still shows the bare number.
+      expect(within(trigger).getByText("3")).toHaveAttribute("aria-hidden", "true");
 
       await user.click(trigger);
       expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -406,7 +432,7 @@ describeUi("@/ui content & data display", () => {
           <p>Body</p>
         </Disclosure>,
       );
-      expect(screen.getByRole("button", { name: "Details" })).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("button", { name: /^Details$/ })).toHaveAttribute("aria-expanded", "true");
       expect(screen.getByText("Body")).toBeInTheDocument();
     });
 

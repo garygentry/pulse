@@ -1,4 +1,5 @@
 import * as React from "react";
+import { isTextEntryTarget } from "@/ui/lib/dom";
 import { cn } from "@/ui/lib/utils";
 import { Icon } from "@/ui/patterns/icon";
 
@@ -18,12 +19,6 @@ export interface SearchInputProps
   shortcut?: boolean;
   /** Extra classes for the root wrapper (`className` goes to the input). */
   rootClassName?: string;
-}
-
-function isEditable(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 /**
@@ -78,7 +73,7 @@ export function SearchInput({
     if (!shortcut) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.defaultPrevented || isEditable(event.target)) return;
+      if (event.defaultPrevented || isTextEntryTarget(event.target)) return;
       event.preventDefault();
       inputRef.current?.focus();
     };

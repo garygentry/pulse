@@ -54,6 +54,8 @@ export interface TreeViewProps<T> {
   empty?: ReactNode;
   "aria-label"?: string;
   "aria-labelledby"?: string;
+  /** The tree's description, e.g. the id of visible keyboard help. */
+  "aria-describedby"?: string;
   className?: string;
 }
 

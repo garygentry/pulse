@@ -76,7 +76,7 @@ function filterItem(_value: string, search: string, keywords?: string[]): number
 /**
  * A search-and-jump dialog over data-driven groups. Router-agnostic: each item
  * carries its own `onSelect`. Choosing an item runs it, then closes the dialog.
- * Opening focuses the search field; closing returns focus to whatever had it
+ * Opening focuses the search field, caret at the end of any text already in it; closing returns focus to whatever had it
  * before opening (Radix only does that for a `DialogTrigger`, and the palette is
  * usually opened by a shortcut or an outside button).
  */
@@ -101,7 +101,13 @@ export function CommandPalette({
     const active = (event.currentTarget as HTMLElement | null)?.ownerDocument.activeElement;
     returnFocusRef.current = returnFocusTo !== undefined ? returnFocusTo : active instanceof HTMLElement ? active : null;
     event.preventDefault();
-    inputRef.current?.focus();
+    const input = inputRef.current;
+    if (input === null) return;
+    input.focus();
+    // Text typed before the dialog mounted (a caller buffering keys) is already in the field: put
+    // the caret after it so typing continues where it left off.
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
   };
 
   const onCloseAutoFocus = (event: Event) => {
