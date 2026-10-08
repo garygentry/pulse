@@ -6,6 +6,11 @@
 // `@/ui` CommandPalette on cmdk) is a lazy chunk, prefetched when the browser is idle so the first
 // Ctrl/Cmd-K opens at once; opening before the prefetch lands loads it then. Selecting navigates
 // through the router, which carries kiosk/rotate; the dialog returns focus to the opener on close.
+// Until the chunk lands an open palette is a small entry-side dialog: a loading state while the
+// import is in flight, and an error state if it failed. Browsers cache a failed dynamic import for
+// the life of the document (a second import() of the same chunk rejects without a request), so the
+// error state's recovery is a page reload through the shared once-only `reloadOnce`, not an in-page
+// re-import. A deploy that removed the chunk is also covered by live-state's version-skew reload.
 import type { ComponentType, ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useComputed } from "@preact/signals-react";
@@ -14,6 +19,12 @@ import { useSignals } from "@preact/signals-react/runtime";
 import type { AppStore } from "../store/index.js";
 import type { PathRouter } from "../router.js";
 import { registerShortcut } from "../a11y/index.js";
+// ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
+import { ErrorState } from "@/ui/patterns/error-state";
+// ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
+import { LoadingState } from "@/ui/patterns/loading-state";
+// ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
+import { Dialog as DialogRoot, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/ui/primitives/dialog";
 import { buildIndex, matchEntries, type PaletteEntry } from "./command-index.js";
 import type { PaletteDialogProps } from "./PaletteDialog.js";
 
@@ -22,7 +33,15 @@ export interface CommandPaletteProps {
   store: AppStore;
   /** The router — `navigate` is called on selection (REQ-CMD-02). */
   router: PathRouter;
+  /** The shared once-only reload (`LiveStateHandle.reloadOnce`): the chunk-failure state's action. */
+  reloadOnce: () => void;
+  /** Loads the palette's dialog chunk. Default: the lazy `./PaletteDialog.js` import. Tests inject a
+   *  rejecting loader to drive the error state. */
+  loadDialog?: () => Promise<ComponentType<PaletteDialogProps>>;
 }
+
+const loadPaletteDialog = (): Promise<ComponentType<PaletteDialogProps>> =>
+  import("./PaletteDialog.js").then((m) => m.PaletteDialog);
 
 /** Idle-time prefetch with a timer fallback where `requestIdleCallback` is missing. */
 function whenIdle(run: () => void): () => void {
@@ -38,26 +57,32 @@ function whenIdle(run: () => void): () => void {
   return () => clearTimeout(timer);
 }
 
-export function CommandPalette({ store, router }: CommandPaletteProps): ReactElement | null {
+export function CommandPalette({
+  store,
+  router,
+  reloadOnce,
+  loadDialog = loadPaletteDialog,
+}: CommandPaletteProps): ReactElement | null {
   useSignals();
   const [open, setOpenState] = useState(false);
   const [query, setQuery] = useState("");
   const openRef = useRef(open);
   openRef.current = open;
 
-  // The lazily loaded dialog. A failed load clears the in-flight mark so the next open retries.
+  // The lazily loaded dialog, imported at most once: the in-flight mark is never cleared, because
+  // the browser would only replay a failed import's rejection. A failure is recorded for the open
+  // palette to show.
   const [Dialog, setDialog] = useState<ComponentType<PaletteDialogProps> | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const loading = useRef(false);
+  const loadDialogRef = useRef(loadDialog);
+  loadDialogRef.current = loadDialog;
   const load = useCallback((): void => {
     if (loading.current) return;
     loading.current = true;
-    import("./PaletteDialog.js").then(
-      (m) => setDialog(() => m.PaletteDialog),
-      () => {
-        // Nothing to show: drop the open state so the next Ctrl/Cmd-K opens (and retries) at once.
-        loading.current = false;
-        setOpenState(false);
-      },
+    loadDialogRef.current().then(
+      (component) => setDialog(() => component),
+      () => setLoadFailed(true),
     );
   }, []);
   useEffect(() => whenIdle(load), [load]);
@@ -92,7 +117,9 @@ export function CommandPalette({ store, router }: CommandPaletteProps): ReactEle
   const results = useMemo(() => (entries !== null ? matchEntries(entries, query) : []), [entries, query]);
   const navigate = useCallback((path: string) => router.navigate(path), [router]);
 
-  if (Dialog === null) return null;
+  if (Dialog === null) {
+    return <PaletteLoadDialog open={open} onOpenChange={setOpen} failed={loadFailed} onReload={reloadOnce} />;
+  }
   return (
     <Dialog
       open={open}
@@ -102,5 +129,51 @@ export function CommandPalette({ store, router }: CommandPaletteProps): ReactEle
       search={query}
       onSearchChange={setQuery}
     />
+  );
+}
+
+/** The open palette before its chunk has loaded: a loading state, or an error state whose action
+ *  reloads the page.
+ *  Like the palette pattern, it returns focus to the opener itself (a controlled Radix Dialog with
+ *  no trigger would drop it on `<body>`). */
+function PaletteLoadDialog(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  failed: boolean;
+  onReload: () => void;
+}): ReactElement {
+  const returnFocus = useRef<HTMLElement | null>(null);
+  return (
+    <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent
+        data-slot="command-palette-loader"
+        onOpenAutoFocus={(event) => {
+          const active = (event.currentTarget as HTMLElement | null)?.ownerDocument.activeElement;
+          returnFocus.current = active instanceof HTMLElement ? active : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocus.current;
+          returnFocus.current = null;
+          if (target === null || !target.isConnected) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Command palette</DialogTitle>
+          <DialogDescription>Search views, hosts, services, and alerts</DialogDescription>
+        </DialogHeader>
+        {props.failed ? (
+          <ErrorState
+            title="The command palette could not be loaded."
+            message="Check the connection to the Pulse server, then reload the page to try again."
+            onRetry={props.onReload}
+            retryLabel="Reload page"
+          />
+        ) : (
+          <LoadingState label="Loading the command palette…" rows={2} />
+        )}
+      </DialogContent>
+    </DialogRoot>
   );
 }

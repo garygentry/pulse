@@ -5,7 +5,8 @@
 //  • health region: estate name and the live/staleness pill; the stale-data callout;
 //  • display preferences: theme and density menus write the store;
 //  • kiosk: no sidebar, top-bar controls or palette;
-//  • palette: Ctrl/Cmd-K opens it over the ranked index; Enter navigates; Escape closes;
+//  • palette: Ctrl/Cmd-K opens it over the ranked index; Enter navigates; Escape closes; a failed
+//    chunk load shows an error state (with the shared reload) inside the palette;
 //  • ViewHost: retry → once-per-build reload escalation via an injected loadFor.
 import { afterEach, beforeEach, expect, it, mock, test } from "bun:test";
 import type { ComponentType } from "react";
@@ -20,6 +21,8 @@ import { createEstateClock, TZ_FALLBACK_MARKER } from "../src/client/format.js";
 import { groupNavViews, orderedNavViews } from "../src/client/shell/nav.js";
 import { CHUNK_RELOAD_SESSION_KEY, Shell, ViewHost } from "../src/client/shell/index.js";
 import { LiveStatusPill } from "../src/client/shell/HealthRegion.js";
+import { CommandPalette } from "../src/client/shell/CommandPalette.js";
+import type { PaletteDialogProps } from "../src/client/shell/PaletteDialog.js";
 import { VIEWS } from "../src/client/views/registry.js";
 import { NOW } from "./factories.js";
 
@@ -374,6 +377,83 @@ describeUi("Shell command palette", () => {
 
     pressModK();
     await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue(""));
+  });
+});
+
+describeUi("Shell command palette: chunk load failure", () => {
+  const pressModK = (): void => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+  };
+  const rejecting = (): { load: () => Promise<ComponentType<PaletteDialogProps>>; calls: () => number } => {
+    let calls = 0;
+    return {
+      load: async () => {
+        calls += 1;
+        throw new TypeError("Failed to fetch dynamically imported module");
+      },
+      calls: () => calls,
+    };
+  };
+
+  it("a rejected dynamic import shows an error state in the open palette; its action is the shared reload", async () => {
+    const ctx = setup("overview");
+    const loader = rejecting();
+    const reloadOnce = mock(() => {});
+    render(<CommandPalette store={ctx.store} router={ctx.router} reloadOnce={reloadOnce} loadDialog={loader.load} />);
+    // The idle prefetch (1 s timer fallback) fails quietly: nothing is open, nothing is shown.
+    await waitFor(() => expect(loader.calls()).toBe(1), { timeout: 3_000 });
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+
+    // Ctrl/Cmd-K no longer closes silently: the palette opens on an error state (tone, icon, text).
+    pressModK();
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("The command palette could not be loaded.");
+    expect(alert.closest("[data-slot=error-state]")).toHaveAttribute("data-tone", "danger");
+    expect(alert.querySelector("svg")).not.toBeNull();
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    // Browsers replay a failed import's rejection, so it is not retried in-page.
+    expect(loader.calls()).toBe(1);
+
+    await userEvent.click(within(alert).getByRole("button", { name: "Reload page" }));
+    expect(reloadOnce).toHaveBeenCalledTimes(1);
+  });
+
+  it("opening before the import settles shows a loading state, then the palette", async () => {
+    const ctx = setup("overview");
+    const { PaletteDialog } = await import("../src/client/shell/PaletteDialog.js");
+    let resolve: (c: ComponentType<PaletteDialogProps>) => void = () => {};
+    const loadDialog = () => new Promise<ComponentType<PaletteDialogProps>>((r) => (resolve = r));
+    render(<CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loadDialog} />);
+    pressModK();
+    const dialog = await screen.findByRole("dialog", { name: "Command palette" });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Loading the command palette…");
+    resolve(PaletteDialog);
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeInTheDocument());
+    expect(screen.queryByText("Loading the command palette…")).toBeNull();
+  });
+
+  it("the error state closes with Escape, returns focus to the opener, and shows again on reopen", async () => {
+    const ctx = setup("overview");
+    const loader = rejecting();
+    render(
+      <>
+        <button type="button">Opener</button>
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loader.load} />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "Opener" });
+    opener.focus();
+
+    pressModK();
+    await screen.findByRole("alert");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryAllByRole("dialog")).toHaveLength(0));
+    await waitFor(() => expect(opener).toHaveFocus());
+
+    pressModK();
+    await screen.findByRole("alert");
+    expect(loader.calls()).toBe(1);
   });
 });
 
