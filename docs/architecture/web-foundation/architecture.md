@@ -51,6 +51,7 @@ interface ClientManifest {
   entries: { js: string[]; css: string[] };
   chunks: string[];
   chunkCss?: Record<string, string[]>;
+  inlineScriptHashes?: string[]; // CSP sha256 of each inline script in index.html
 }
 ```
 
@@ -69,6 +70,8 @@ For a valid manifest, `injectEntryTags()` adds:
 - an inert `pulse-chunk-css` JSON island;
 - a development marker when enabled;
 - entry JavaScript before `</body>`.
+
+The loader also exposes the inline-script hashes the shell's Content-Security-Policy allows; see [Security Headers](#security-headers).
 
 Chunks and sourcemaps are served under `/assets/` but are not injected. If the manifest is missing, invalid JSON, or structurally invalid, the loader logs one fallback event and scans the directory for entry candidates. Operational routes remain available even with a damaged client build.
 
@@ -138,6 +141,48 @@ The runtime fetches sources concurrently with independent failure capture, folds
 
 Registered server routes receive a `ServerContext` containing the current estate, snapshot, typed source clients, and parsed configuration. `RouteDefinition.method` is the literal `"GET"`, enforcing the read-only extension seam at compile time.
 
+## Security Headers
+
+`src/server/security-headers.ts` owns every security header, and `createFetchHandler()` applies them to every response it returns, error paths included. Nothing in the stack's compose files adds headers; the operator's reverse proxy should not either (see [Exposure](../../operator/exposure.md#security-headers)).
+
+| Response | Headers |
+|----------|---------|
+| Every response | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` |
+| HTML documents (shell, error page) | the above, plus `Content-Security-Policy`, `Cross-Origin-Opener-Policy: same-origin`, and `Permissions-Policy` disabling camera, microphone, geolocation, payment, USB, and motion sensors |
+| SPA shell only | `Cache-Control: no-store`, because each response carries a fresh nonce |
+
+`/assets/*` and `/api/*` get no CSP: a policy on a script, stylesheet, font, or JSON response does nothing when the response loads as a subresource. No HSTS is sent, because TLS terminates at the operator's reverse proxy, and HSTS belongs there.
+
+The shell's policy, with the build's hash and the response's nonce filled in:
+
+```text
+default-src 'self'; script-src 'self' 'sha256-<inline script>'; style-src 'self' 'nonce-<per response>';
+img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none';
+form-action 'self'; frame-ancestors 'none'
+```
+
+- **`script-src`** allows same-origin bundles and, by hash, the one inline script: the pre-paint theme/density stamp in `src/client/index.html`. The `pulse-chunk-css` island is `type="application/json"`, a data block the browser never executes, so CSP does not apply to it and it needs no hash.
+- **`style-src`** has no `'unsafe-inline'`. Stylesheets are same-origin files. React, Radix positioning, and uPlot set inline styles through the CSSOM (`element.style`), which CSP does not govern. The one `<style>` element the app creates at runtime is react-remove-scroll's scroll lock, which every modal Radix dialog, sheet, select, and menu injects. It carries the response's nonce: the router stamps `<meta name="pulse-csp-nonce" nonce="…">` into the shell, and `main.tsx` passes the meta's `.nonce` property to `get-nonce`, which react-style-singleton reads. Browsers hide the `nonce` attribute from the DOM and from CSS selectors once the header applies, so the value is not readable through markup. A `style="…"` attribute in parsed HTML is still blocked.
+- **`img-src 'self' data:`** allows data-URI images. **`font-src 'self'`** covers the self-hosted Geist files. **`connect-src 'self'`** covers `/api/*` fetches, the `/api/events` EventSource, and the dev loop's `/__dev/build-id` poll. The app uses no WebSocket, and dev and production share one policy.
+- **`object-src 'none'`, `base-uri 'none'`, `form-action 'self'`, and `frame-ancestors 'none'`** close plugin content, `<base>` hijacking, off-origin form posts, and framing (clickjacking).
+
+The estate error page has its own policy, `default-src 'none'` plus the hash of its one inline `<style>`. The hash is computed from the same constant that renders the page, so the two cannot drift.
+
+### How the hashes are generated
+
+`buildClient()` runs `inlineScriptHashes()` over `src/client/index.html` when it copies the file into the output, and records the result as `manifest.inlineScriptHashes`. `inlineScriptHashes()` hashes each inline `<script>` whose type is absent, a JavaScript MIME type, or `module`. It skips `src=` scripts, data blocks, and HTML comments, and it normalises CRLF to LF as the HTML parser does. Nobody maintains a hash by hand: edit the inline script, rebuild, and the new hash ships with the new bytes.
+
+At load, `loadStaticAssets()` re-hashes the composed shell. If the hashes differ from the manifest's, for example when `index.html` was edited in `dist/` after the build, it logs `assets_csp_hash_drift` and serves the hashes of the bytes it actually serves, so the pre-paint script is never silently blocked. A manifest with a malformed hash fails validation and takes the directory-scan fallback, which hashes the shell itself.
+
+### Extending the policy
+
+- **A new inline script in `index.html`** needs nothing: the build hashes it. Prefer a module under `src/client/` anyway.
+- **A new third-party UI library** that injects `<style>` elements needs the nonce. Check whether it reads `get-nonce` (react-remove-scroll does) or takes a `nonce` prop, and pass `getNonce()`. Never add `'unsafe-inline'`.
+- **A new origin** (an image CDN, a remote API) goes into the matching directive in `shellContentSecurityPolicy()`, with a test update. The browser only ever talks to this origin today, so think twice.
+- **A new HTML page** rendered by the server should carry its own policy, as the error page does. `withSecurityHeaders()` never overwrites a CSP the response already set.
+
+`tests/security-headers.test.ts` pins the exact headers per response type, the hashing rules, and, over a real build, that the served policy carries exactly the shipped inline-script hashes and follows an edited script on rebuild. `tests/browser/csp.test.ts` serves a production build and a development build through the production router in auth mode `proxy-header`. In Chromium it loads every route and tab in both themes and opens the command palette, the theme and density menus, a tooltip, the alert detail with its Silence and Acknowledge dialogs, the Expire confirm, the Propose edit dialog, the uPlot charts, and the mobile sheet. It asserts zero `securitypolicyviolation` events and zero CSP console messages. A positive control first proves that the capture sees a deliberate violation.
+
 ## Development Composition
 
 `scripts/dev.ts` is a supervisor rather than an alternate application server. It performs the first client build, starts `src/server/dev/entry.ts`, and watches source trees:
@@ -172,3 +217,4 @@ The browser harness builds isolated fixture pages for dark and light themes. CI 
 - **Compile-time registries** keep extensions visible and deterministic; this is not a runtime plugin system.
 - **Injected fetch in development** exercises production parsing and folding rather than maintaining a second fake server.
 - **Last-good behavior** keeps the tool useful while code or upstream systems are failing.
+- **Hashes from the build, a nonce per response** give a strict CSP without `'unsafe-inline'`, and leave nothing to update by hand.

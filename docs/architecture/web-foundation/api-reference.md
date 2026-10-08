@@ -325,6 +325,28 @@ console.log(shell.length, js?.contentType, assets.buildId?.());
 
 The loader never throws for missing or invalid client output. `MANIFEST_FILENAME`, `ASSET_PREFIX`, and `SHELL_MARKERS` define the shared file/HTML contract.
 
+`assets.inlineScriptHashes?.()` returns the CSP hashes the shell's `script-src` allows (see below).
+
+## Security Headers
+
+Source: `apps/web/src/server/security-headers.ts`. The policy and its rationale are in [Architecture](architecture.md#security-headers).
+
+### `inlineScriptHashes(html): CspHash[]`
+
+Returns `sha256-<base64>` for each inline executable `<script>` in document order, deduplicated. It skips external scripts, data blocks such as `type="application/json"`, and HTML comments. `buildClient()` records the result in `manifest.inlineScriptHashes`.
+
+### `shellContentSecurityPolicy(scriptHashes, styleNonce?): string`
+
+Builds the SPA shell's policy. Without `styleNonce`, no runtime `<style>` element applies.
+
+### `withSecurityHeaders(res, documentPolicy): Response`
+
+Adds the base headers to any response. An HTML response also gets COOP, Permissions-Policy, and `documentPolicy` as its CSP, unless it already has one. It never overwrites a header, and it copies a response whose headers are immutable.
+
+### `newCspNonce()`, `withCspNonceMeta(shell, nonce)`, `staticPageContentSecurityPolicy(styleHashes)`
+
+These generate a 128-bit nonce, stamp `<meta name="pulse-csp-nonce" nonce="…">` before `</head>`, and build the policy for a script-free server-rendered page such as the estate error page.
+
 ## Mock Scenarios and Timeline
 
 Sources: `apps/web/src/server/dev/scenario.ts`, `timeline.ts`, and `mock-engine.ts`.

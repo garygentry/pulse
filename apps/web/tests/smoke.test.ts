@@ -38,6 +38,7 @@ import {
 } from "../../../stack/tests/harness.js";
 import type { HealthBody, OverviewSnapshot } from "../src/shared/snapshot.js";
 import { loadProposalSecret, loadServerConfig } from "../src/server/config.js";
+import { inlineScriptHashes } from "../src/server/security-headers.js";
 import { buildWriteRuntime, type WriteRuntime } from "../src/server/mutations/bootstrap.js";
 import { createServerRuntime, type ServerRuntime } from "../src/server/refresh.js";
 import { dispatch } from "../src/server/router.js";
@@ -85,6 +86,8 @@ const compose = (...args: string[]) =>
  *  internal `web:8080` DNS without publishing a host port (the slot declares NO `ports:`). Pinned
  *  image, mirroring bringup.smoke.test.ts's probe sidecar. */
 const CURL_IMAGE = "curlimages/curl:8.11.1";
+/** The shell template the image is built from (its inline-script hashes must be in the CSP). */
+const CLIENT_INDEX_HTML = resolve(import.meta.dir, "../src/client/index.html");
 const NETWORK = composeNetworkName(TEST_PROJECT);
 
 function inStackGet(url: string): { ok: boolean; body: string } {
@@ -185,6 +188,32 @@ webDescribe("smoke:web — profile-web bring-up (SC-1, SC-6)", () => {
       .flatMap((h) => h.services.map((s) => `${s.host}/${s.name}`))
       .sort();
     expect(serviceKeys).toEqual([...FIXTURE_SERVICES].sort());
+  }, 60_000);
+
+  // Issue #2 — the image's shell carries the strict CSP, with the hash of the inline script the
+  // image was built from and a per-response style nonce, and every response carries nosniff.
+  test("the shell carries the build-hashed CSP and the hardening headers (issue #2)", () => {
+    const headersOf = (path: string): string => {
+      const res = run([
+        "docker", "run", "--rm", "--network", NETWORK, CURL_IMAGE,
+        "-sS", "--max-time", "10", "-o", "/dev/null", "-D", "-", `http://web:8080${path}`,
+      ]);
+      expect(res.exitCode, `GET ${path} failed: ${res.stderr}`).toBe(0);
+      return res.stdout;
+    };
+    const shell = headersOf("/overview");
+    const hashes = inlineScriptHashes(readFileSync(CLIENT_INDEX_HTML, "utf8"));
+    expect(hashes.length).toBeGreaterThan(0);
+    const csp = /^content-security-policy: (.*)$/im.exec(shell)?.[1]?.trim() ?? "";
+    expect(csp).toContain(`script-src 'self' ${hashes.map((h) => `'${h}'`).join(" ")};`);
+    expect(csp).toMatch(/style-src 'self' 'nonce-[A-Za-z0-9+/]{22}=='/);
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain("unsafe-");
+    expect(shell).toMatch(/^x-content-type-options: nosniff/im);
+    expect(shell).toMatch(/^cross-origin-opener-policy: same-origin/im);
+    const api = headersOf("/healthz");
+    expect(api).toMatch(/^x-content-type-options: nosniff/im);
+    expect(api).not.toMatch(/^content-security-policy:/im);
   }, 60_000);
 
   // §11.4 — the :ro rendered-model mount is readable (and NOT writable) in-container. This is the

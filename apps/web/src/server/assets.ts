@@ -11,6 +11,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, extname } from "node:path";
 
 import { log } from "./log.js";
+import { CSP_HASH_PATTERN, CSP_NONCE_META, inlineScriptHashes, type CspHash } from "./security-headers.js";
 
 /** The manifest file name inside the client output directory. */
 export const MANIFEST_FILENAME = "manifest.json" as const;
@@ -30,6 +31,9 @@ export const SHELL_MARKERS = {
   devMeta: "pulse-dev",
   /** `<script type="application/json" id="pulse-chunk-css">` — the inert `chunkCss` island. */
   chunkCssIsland: "pulse-chunk-css",
+  /** `<meta name="pulse-csp-nonce" nonce="<nonce>">` — the per-response CSP style nonce, stamped by
+   *  the router on every shell response (read through the element's `.nonce` property). */
+  cspNonceMeta: CSP_NONCE_META,
 } as const;
 
 /**
@@ -53,6 +57,10 @@ export interface ClientManifest {
   /** Lazily imported module key → chunk stylesheets that module owns. Optional so an older build
    *  without the field still parses; consumers treat absence as `{}`. */
   chunkCss?: Record<string, string[]>;
+  /** CSP hash (`sha256-<base64>`) of each inline executable script in the shipped `index.html`,
+   *  computed by `buildClient` from the file it publishes. The shell's `script-src` allows exactly
+   *  these. Optional so an older build still parses; the loader then hashes the shell itself. */
+  inlineScriptHashes?: string[];
 }
 
 /** One served static asset: its raw bytes and its content type. */
@@ -77,6 +85,10 @@ export interface StaticAssets {
   /** The manifest's `buildId`, or `null` in fallback mode. OPTIONAL so a plain literal (see
    *  `tests/routes.test.ts`) still satisfies the interface; the loader always implements it. */
   buildId?(): string | null;
+  /** CSP hashes of the inline scripts in the shell `shell()` returns — the shell policy's
+   *  `script-src` allows exactly these. OPTIONAL for the same reason as `buildId`; the router then
+   *  allows no inline script. */
+  inlineScriptHashes?(): readonly CspHash[];
 }
 
 /** Options for `loadStaticAssets`. */
@@ -153,12 +165,38 @@ export function parseClientManifest(text: string): ClientManifest | null {
       chunkCss[key] = [...value];
     }
   }
+  const hashes = doc["inlineScriptHashes"];
+  if (
+    hashes !== undefined &&
+    !(Array.isArray(hashes) && hashes.every((h) => typeof h === "string" && CSP_HASH_PATTERN.test(h)))
+  ) {
+    return null; // R9
+  }
   return {
     buildId: doc["buildId"],
     entries: { js: [...entries["js"]], css: [...entries["css"]] },
     chunks: [...doc["chunks"]],
     chunkCss,
+    ...(hashes !== undefined ? { inlineScriptHashes: [...(hashes as string[])] } : {}),
   };
+}
+
+/**
+ * The inline-script hashes the shell's policy allows. `buildClient` records them in the manifest;
+ * the loader re-hashes the composed shell and checks the two agree. On any difference (a shell
+ * edited in place after the build) the hashes of the bytes actually served win, with an
+ * `assets_csp_hash_drift` log line, so the pre-paint script is never silently blocked. A manifest
+ * without the field (an older build) uses the served hashes silently.
+ */
+function policyHashes(manifest: ClientManifest | null, shell: string): CspHash[] {
+  const served = inlineScriptHashes(shell);
+  const recorded = manifest?.inlineScriptHashes;
+  if (recorded === undefined) return served;
+  const same = recorded.length === served.length && recorded.every((h, i) => h === served[i]);
+  if (!same) {
+    log({ event: "assets_csp_hash_drift", ok: false, recorded: recorded.length, served: served.length });
+  }
+  return served;
 }
 
 /**
@@ -264,6 +302,8 @@ interface LoaderState {
   shell: string;
   /** `statSync(<dir>/manifest.json).mtimeMs` at load time, or `null` when absent/unreadable. */
   mtimeMs: number | null;
+  /** CSP hashes of the shell's inline scripts (see `policyHashes`). */
+  scriptHashes: CspHash[];
 }
 
 /** Result of one manifest read attempt. */
@@ -369,7 +409,8 @@ export function loadStaticAssets(
       }
     }
 
-    state = { manifest, buildId, assets, shell: shellHtml, mtimeMs };
+    const scriptHashes = policyHashes(manifest, shellHtml);
+    state = { manifest, buildId, assets, shell: shellHtml, mtimeMs, scriptHashes };
   };
 
   const checkForReload = (): void => {
@@ -400,10 +441,21 @@ export function loadStaticAssets(
     buildId() {
       return state.buildId;
     },
+    inlineScriptHashes() {
+      checkForReload();
+      return state.scriptHashes;
+    },
   };
 }
 
 /** An empty starting state so the first `reload()` has something to replace. */
 function emptyState(): LoaderState {
-  return { manifest: null, buildId: null, assets: new Map(), shell: FALLBACK_SHELL, mtimeMs: null };
+  return {
+    manifest: null,
+    buildId: null,
+    assets: new Map(),
+    shell: FALLBACK_SHELL,
+    mtimeMs: null,
+    scriptHashes: [],
+  };
 }
