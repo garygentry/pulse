@@ -188,13 +188,15 @@ services:
 
 The rule reads Gatus's own `gatus_results_total` counter (exposed by the `metrics: true` toggle in
 `stack/gatus/alerting-provider.yaml` and scraped by the `gatus` job). With F = `failure_threshold`
-and S = `success_threshold`, it **fires** once there were at least F failed checks in the last 4·F
-minutes and no passing check in the last F minutes (F consecutive failures at Gatus's nominal 60s
-cadence). Once firing it **holds** — reading its own state back from the `ALERTS` series vmalert
-remote-writes — until at least S passing checks and no failed check occur in the last S+1 minutes.
-With no fresh results (Gatus down) nothing clears it, so it never false-resolves. The 4·F failure
-window tolerates Gatus slowing down (it runs checks one at a time, so a broad outage stretches the
-real cadence): slow checks delay firing instead of making it flap. The rule carries the labels the
+and S = `success_threshold`, it **fires** when, within one window, there were at least F failed
+checks and no passing check — over F minutes + 30s (about the F-th consecutive failure at Gatus's
+nominal 60s cadence) or over 4·F minutes (Gatus runs checks one at a time, so a broad outage
+stretches the real cadence; slow checks fire later instead of flapping). Once firing it **holds**
+— reading its own state back from the `ALERTS` series vmalert remote-writes, accepting a sample up
+to 330s old — until, within ceil(1.5·S) + 1 minutes, at least S passing checks and no failed check
+occur. With no fresh results (Gatus down) nothing clears it, so it never false-resolves. vmalert
+runs with `-remoteRead.url`, which restores `for:` rules across restarts; this rule has no `for:`
+and relies on its own read-back instead. The rule carries the labels the
 old provider posted (`severity: critical`, `source: gatus`, `endpoint: <host>/<service>`,
 `group: <host>`), plus `name` from the expression and vmalert's `alertgroup` and `estate`. The
 renderer emits no `endpoints[].alerts` into `gatus/config.yaml`.
