@@ -326,8 +326,9 @@ describeUi("Shell command palette", () => {
     expect(screen.queryAllByRole("dialog")).toHaveLength(0);
 
     pressModK();
-    await screen.findByRole("dialog", { name: "Command palette" });
-    const input = screen.getByRole("combobox");
+    // The combobox, not the dialog: until the chunk lands the loading dialog carries the same name.
+    const input = await screen.findByRole("combobox");
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toContainElement(input);
     await waitFor(() => expect(input).toHaveFocus());
     // Empty query lists every view; they tie on tier and kind, so they rank by label.
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
@@ -431,6 +432,33 @@ describeUi("Shell command palette: chunk load failure", () => {
     resolve(PaletteDialog);
     await waitFor(() => expect(screen.getByRole("combobox")).toBeInTheDocument());
     expect(screen.queryByText("Loading the command palette…")).toBeNull();
+  });
+
+  it("a palette that loads while open (loading → ready) still returns focus to the opener on Escape", async () => {
+    const ctx = setup("overview");
+    const { PaletteDialog } = await import("../src/client/shell/PaletteDialog.js");
+    let resolve: (c: ComponentType<PaletteDialogProps>) => void = () => {};
+    const loadDialog = () => new Promise<ComponentType<PaletteDialogProps>>((r) => (resolve = r));
+    render(
+      <>
+        <button type="button">Opener</button>
+        <CommandPalette store={ctx.store} router={ctx.router} reloadOnce={() => {}} loadDialog={loadDialog} />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "Opener" });
+    opener.focus();
+
+    pressModK();
+    const loader = await screen.findByRole("dialog", { name: "Command palette" });
+    await waitFor(() => expect(loader).toContainElement(document.activeElement as HTMLElement));
+    expect(opener).not.toHaveFocus();
+
+    resolve(PaletteDialog);
+    const input = await screen.findByRole("combobox");
+    await waitFor(() => expect(input).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryAllByRole("dialog")).toHaveLength(0));
+    await waitFor(() => expect(opener).toHaveFocus());
   });
 
   it("the error state closes with Escape, returns focus to the opener, and shows again on reopen", async () => {

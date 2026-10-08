@@ -20,10 +20,12 @@ export interface PaletteDialogProps {
   navigate: (path: string) => void;
   search: string;
   onSearchChange: (search: string) => void;
+  /** The element focused when the palette was opened; focus returns there on close. */
+  returnFocusTo: HTMLElement | null;
 }
 
 export function PaletteDialog(props: PaletteDialogProps): ReactElement {
-  const { open, onOpenChange, results, navigate, search, onSearchChange } = props;
+  const { open, onOpenChange, results, navigate, search, onSearchChange, returnFocusTo } = props;
   const groups = useMemo(
     () => commandGroupsFromIndex(results, navigate, { groupOrder: "entries" }),
     [results, navigate],
@@ -40,6 +42,7 @@ export function PaletteDialog(props: PaletteDialogProps): ReactElement {
       search={search}
       onSearchChange={onSearchChange}
       shouldFilter={false}
+      returnFocusTo={returnFocusTo}
     />
   );
 }

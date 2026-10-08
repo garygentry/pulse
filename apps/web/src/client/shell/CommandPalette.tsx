@@ -87,11 +87,18 @@ export function CommandPalette({
   }, []);
   useEffect(() => whenIdle(load), [load]);
 
-  // Opening starts from an empty query.
+  // Opening starts from an empty query and records the opener: focus returns to it on close, from
+  // the loading/error dialog or the palette, even when the palette replaces the loading dialog while
+  // open (by then the loading dialog holds focus, so the palette cannot read the opener itself).
+  const [opener, setOpener] = useState<HTMLElement | null>(null);
   const setOpen = useCallback(
     (next: boolean): void => {
       if (next) load();
-      if (next && !openRef.current) setQuery("");
+      if (next && !openRef.current) {
+        setQuery("");
+        const active = globalThis.document?.activeElement;
+        setOpener(active instanceof HTMLElement && active !== active.ownerDocument.body ? active : null);
+      }
       setOpenState(next);
     },
     [load],
@@ -118,7 +125,15 @@ export function CommandPalette({
   const navigate = useCallback((path: string) => router.navigate(path), [router]);
 
   if (Dialog === null) {
-    return <PaletteLoadDialog open={open} onOpenChange={setOpen} failed={loadFailed} onReload={reloadOnce} />;
+    return (
+      <PaletteLoadDialog
+        open={open}
+        onOpenChange={setOpen}
+        failed={loadFailed}
+        onReload={reloadOnce}
+        returnFocusTo={opener}
+      />
+    );
   }
   return (
     <Dialog
@@ -128,32 +143,27 @@ export function CommandPalette({
       navigate={navigate}
       search={query}
       onSearchChange={setQuery}
+      returnFocusTo={opener}
     />
   );
 }
 
 /** The open palette before its chunk has loaded: a loading state, or an error state whose action
- *  reloads the page.
- *  Like the palette pattern, it returns focus to the opener itself (a controlled Radix Dialog with
- *  no trigger would drop it on `<body>`). */
+ *  reloads the page. Like the palette, it returns focus to the opener itself (a controlled Radix
+ *  Dialog with no trigger would drop it on `<body>`). */
 function PaletteLoadDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   failed: boolean;
   onReload: () => void;
+  returnFocusTo: HTMLElement | null;
 }): ReactElement {
-  const returnFocus = useRef<HTMLElement | null>(null);
   return (
     <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
         data-slot="command-palette-loader"
-        onOpenAutoFocus={(event) => {
-          const active = (event.currentTarget as HTMLElement | null)?.ownerDocument.activeElement;
-          returnFocus.current = active instanceof HTMLElement ? active : null;
-        }}
         onCloseAutoFocus={(event) => {
-          const target = returnFocus.current;
-          returnFocus.current = null;
+          const target = props.returnFocusTo;
           if (target === null || !target.isConnected) return;
           event.preventDefault();
           target.focus();
