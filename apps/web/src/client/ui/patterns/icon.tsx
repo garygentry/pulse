@@ -1,5 +1,8 @@
+import { useEffect, useSyncExternalStore, type ReactElement } from "react";
 import type { LucideProps } from "lucide-react";
-import { FALLBACK_ICON, ICONS, isIconName, type IconName } from "@/ui/lib/icons";
+import { iconRegistry, loadIconSet, type IconRegistry } from "@/ui/lib/icon-registry";
+import type { IconName } from "@/ui/lib/icons";
+import { FALLBACK_ICON } from "@/ui/lib/icons-shell";
 
 export interface IconProps extends Omit<LucideProps, "ref"> {
   /** A curated `IconName`, or a config-supplied token that may not be one. */
@@ -11,18 +14,55 @@ export interface IconProps extends Omit<LucideProps, "ref"> {
 const warned = new Set<string>();
 
 /**
+ * Build an `<Icon>` over a registry and a loader for the full set. The app's `Icon` uses the app
+ * registry; tests build one over their own to exercise the pending and failure paths.
+ */
+export function createIcon(registry: IconRegistry, load: () => Promise<void>) {
+  return function Icon({ name, size = 16, ...props }: IconProps): ReactElement {
+    useSyncExternalStore(registry.subscribe, registry.version, registry.version);
+    const found = registry.lookup(name);
+    const pending = found === "pending";
+    useEffect(() => {
+      if (pending) load().catch(() => {});
+    }, [pending]);
+
+    if (pending) {
+      const { absoluteStrokeWidth: _absolute, ...svgProps } = props;
+      return (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+          data-slot="icon"
+          {...svgProps}
+        />
+      );
+    }
+
+    let Component = FALLBACK_ICON;
+    if (typeof found !== "string") {
+      Component = found;
+    } else if (found === "unknown" && import.meta.env.DEV && !warned.has(name)) {
+      warned.add(name);
+      console.warn(`[pulse] Unknown icon "${name}"; rendering the fallback icon.`);
+    }
+    return <Component aria-hidden="true" focusable="false" size={size} data-slot="icon" {...props} />;
+  };
+}
+
+/**
  * A decorative icon from the curated set. Always `aria-hidden`: the adjacent
  * text is the accessible label, so an icon is never the only signal. An unknown
  * token renders a neutral circle (and warns once in development) rather than an
  * empty box or the raw token text.
+ *
+ * Names resolve through `icon-registry.ts`: the shell's icons are there from the
+ * first paint, the rest once the lazy icon chunk has loaded (`ViewHost` loads it
+ * with every view). A name asked for before then renders an empty svg of the
+ * same size, so nothing shifts, and fills in when the chunk arrives. If the
+ * chunk fails to load, it renders the neutral circle while the registry retries.
  */
-export function Icon({ name, size = 16, ...props }: IconProps) {
-  let Component = FALLBACK_ICON;
-  if (isIconName(name)) {
-    Component = ICONS[name];
-  } else if (import.meta.env.DEV && !warned.has(name)) {
-    warned.add(name);
-    console.warn(`[pulse] Unknown icon "${name}"; rendering the fallback icon.`);
-  }
-  return <Component aria-hidden="true" focusable="false" size={size} data-slot="icon" {...props} />;
-}
+export const Icon = createIcon(iconRegistry, loadIconSet);

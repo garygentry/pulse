@@ -4,8 +4,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import { FALLBACK_ICON, Icon, ICONS, isIconName } from "@/ui";
+import { chunkUrlFromError, createIconRegistry, createIconSetLoader, iconRegistry, ICON_LOAD_RETRY_DELAYS_MS } from "@/ui/lib/icon-registry";
+import { createIcon } from "@/ui/patterns/icon";
+import { SHELL_ICONS } from "@/ui/lib/icons-shell";
 
-import { cleanup, describeUi, render } from "./rtl.js";
+import { act, cleanup, describeUi, render } from "./rtl.js";
 
 // Resolve from the web package root.
 const webRoot = resolve(import.meta.dir, "..");
@@ -68,6 +71,135 @@ describe("icon registry", () => {
   });
 });
 
+describe("icon chunks (shell set eager, the rest lazy)", () => {
+  it("the shell set is part of the curated set, with the same components", () => {
+    for (const [name, component] of Object.entries(SHELL_ICONS)) {
+      expect(isIconName(name), name).toBe(true);
+      expect(ICONS[name as keyof typeof ICONS], name).toBe(component);
+    }
+    expect(Object.keys(SHELL_ICONS).length).toBeLessThan(Object.keys(ICONS).length / 2);
+  });
+
+  it("importing the curated set registers it with <Icon>'s registry", () => {
+    expect(iconRegistry.lookup("bell")).toBe(ICONS.bell);
+    expect(iconRegistry.lookup("lantern")).toBe("unknown");
+  });
+
+  it("a registry resolves its seed at once and the rest after the full set registers", () => {
+    const registry = createIconRegistry({ server: ICONS.server });
+    const notified: number[] = [];
+    const unsubscribe = registry.subscribe(() => notified.push(registry.version()));
+    expect(registry.lookup("server")).toBe(ICONS.server);
+    expect(registry.lookup("bell")).toBe("pending");
+    expect(registry.lookup("lantern")).toBe("pending");
+    registry.registerFullSet(ICONS);
+    expect(registry.lookup("bell")).toBe(ICONS.bell);
+    expect(registry.lookup("lantern")).toBe("unknown");
+    expect(registry.lookup("toString")).toBe("unknown");
+    registry.registerFullSet(ICONS); // idempotent: no second notification
+    expect(notified).toEqual([1]);
+    unsubscribe();
+  });
+});
+
+describe("icon set loader", () => {
+  /** A loader whose imports the test settles by hand, with retries queued instead of timed. */
+  function harness() {
+    const registry = createIconRegistry({ server: ICONS.server });
+    const attempts: { resolve: () => void; reject: () => void }[] = [];
+    const retries: { run: () => void; ms: number }[] = [];
+    const loader = createIconSetLoader(
+      registry,
+      () => new Promise((resolve, reject) => attempts.push({ resolve: () => resolve({ ICONS }), reject: () => reject(new Error("chunk")) })),
+      (run, ms) => retries.push({ run, ms }),
+    );
+    return { registry, attempts, retries, loader };
+  }
+
+  it("marks the set unavailable on a failed load and retries on a bounded backoff", async () => {
+    const { registry, attempts, retries, loader } = harness();
+    const first = loader.load();
+    attempts[0]!.reject();
+    await expect(first).rejects.toThrow("chunk");
+    expect(registry.lookup("bell")).toBe("unavailable");
+    expect(retries.map((r) => r.ms)).toEqual([ICON_LOAD_RETRY_DELAYS_MS[0]]);
+    for (let i = 1; i <= ICON_LOAD_RETRY_DELAYS_MS.length; i += 1) {
+      retries[i - 1]!.run();
+      attempts[i]!.reject();
+      await Promise.resolve().then(() => Promise.resolve());
+    }
+    // One retry per delay, then it waits for the next call.
+    expect(retries.map((r) => r.ms)).toEqual([...ICON_LOAD_RETRY_DELAYS_MS]);
+    const late = loader.load();
+    attempts.at(-1)!.resolve();
+    await late;
+    expect(registry.lookup("bell")).toBe(ICONS.bell);
+  });
+
+  it("shares one attempt between concurrent calls and stops once loaded", async () => {
+    const { registry, attempts, loader } = harness();
+    const a = loader.load();
+    const b = loader.load();
+    expect(attempts).toHaveLength(1);
+    attempts[0]!.resolve();
+    await Promise.all([a, b]);
+    await loader.load();
+    expect(attempts).toHaveLength(1);
+    expect(registry.lookup("bell")).toBe(ICONS.bell);
+  });
+});
+
+describeUi("<Icon> before the full set loads", () => {
+  function setup() {
+    const registry = createIconRegistry({ server: ICONS.server });
+    let loads = 0;
+    const TestIcon = createIcon(registry, () => {
+      loads += 1;
+      return new Promise<void>(() => {});
+    });
+    return { registry, TestIcon, loads: () => loads };
+  }
+
+  it("renders a shell icon at once", () => {
+    const { TestIcon } = setup();
+    const svg = render(<TestIcon name="server" />).container.querySelector("svg")!;
+    expect(svg).toHaveClass("lucide-server");
+  });
+
+  it("renders an empty svg of the same size, asks for the set, and fills in when it registers", () => {
+    const { registry, TestIcon, loads } = setup();
+    const { container } = render(<TestIcon name="bell" size={20} className="text-muted-foreground" />);
+    const placeholder = container.querySelector("svg")!;
+    expect(placeholder.childElementCount).toBe(0);
+    expect(placeholder).toHaveAttribute("width", "20");
+    expect(placeholder).toHaveAttribute("height", "20");
+    expect(placeholder).toHaveAttribute("aria-hidden", "true");
+    expect(placeholder).toHaveAttribute("data-slot", "icon");
+    expect(placeholder).toHaveClass("text-muted-foreground");
+    expect(loads()).toBe(1);
+    act(() => registry.registerFullSet(ICONS));
+    const svg = container.querySelector("svg")!;
+    expect(svg).toHaveClass("lucide-bell");
+    expect(svg).toHaveAttribute("width", "20");
+  });
+
+  it("renders the fallback glyph after a failed load, without an unknown-icon warning, then fills in", () => {
+    const { registry, TestIcon } = setup();
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { container } = render(<TestIcon name="bell" />);
+      act(() => registry.markUnavailable());
+      const fallback = render(<FALLBACK_ICON />).container.querySelector("svg")!;
+      expect(container.querySelector("svg")!.getAttribute("class")).toBe(fallback.getAttribute("class"));
+      expect(warn).not.toHaveBeenCalled();
+      act(() => registry.registerFullSet(ICONS));
+      expect(container.querySelector("svg")).toHaveClass("lucide-bell");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describeUi("<Icon>", () => {
   it("renders the mapped icon as a decorative, unfocusable svg", () => {
     const { container } = render(<Icon name="check-circle" className="text-status-ok-fg" />);
@@ -110,5 +242,21 @@ describeUi("<Icon>", () => {
       if (previousDev === undefined) delete process.env["DEV"];
       else process.env["DEV"] = previousDev;
     }
+  });
+});
+
+describe("chunkUrlFromError", () => {
+  const origin = "https://pulse.example.org";
+  it("re-roots the /assets/*.js path named in a Chromium/Firefox error on the page origin", () => {
+    const err = new TypeError("Failed to fetch dynamically imported module: https://pulse.example.org/assets/chunk-icons-ab12cd34.js");
+    expect(chunkUrlFromError(err, origin)).toBe("https://pulse.example.org/assets/chunk-icons-ab12cd34.js");
+  });
+  it("never yields another origin, even for a host with a .js label or a foreign URL", () => {
+    const err = new TypeError("error loading dynamically imported module: http://pulse.js.example.com/assets/chunk-icons-x.js");
+    expect(chunkUrlFromError(err, origin)).toBe("https://pulse.example.org/assets/chunk-icons-x.js");
+    expect(chunkUrlFromError(new Error("https://evil.example/x.js"), origin)).toBeNull();
+  });
+  it("returns null when the error names no asset (Safari)", () => {
+    expect(chunkUrlFromError(new TypeError("Importing a module script failed."), origin)).toBeNull();
   });
 });

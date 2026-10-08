@@ -15,8 +15,13 @@ const STATIC_IMPORT = /(?:\bfrom|\bimport)\s*["'](\.{1,2}\/[^"']+)["']/g;
 
 /** File names (basenames) of the entry JS plus every chunk it reaches through static imports. */
 export function initialRouteJsFiles(manifest: ClientManifest, outdir: string): string[] {
+  return staticClosure(manifest.entries.js, outdir);
+}
+
+/** File names (basenames) of `files` plus every chunk they reach through static imports. */
+export function staticClosure(files: readonly string[], outdir: string): string[] {
   const seen = new Set<string>();
-  const pending = manifest.entries.js.map((p) => basename(p));
+  const pending = files.map((p) => basename(p));
   while (pending.length > 0) {
     const file = pending.pop()!;
     if (seen.has(file)) continue;
