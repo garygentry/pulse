@@ -83,11 +83,12 @@ the `useSignals()` rule, imports, tests and guardrails) are in
 [docs/architecture/ui.md](../../docs/architecture/ui.md).
 
 Every view and the workbench have committed visual baselines (`tests/visual/`), verified in CI.
-They are made on CI Linux only. When a change moves pixels, regenerate them on your branch and
-commit the result:
+They are made on CI Linux only. When a change moves pixels, merge main into your branch, then
+regenerate them there and commit the result:
 
 ```
-gh workflow run ci.yml --ref <branch> -f update_visuals=true
+gh workflow run visual-update.yml --ref <branch>
+rm -rf apps/web/tests/visual/*-snapshots
 gh run download <run-id> -n visual-baselines -D apps/web/tests/visual
 ```
 

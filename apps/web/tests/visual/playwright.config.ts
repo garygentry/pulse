@@ -27,10 +27,13 @@ export default defineConfig({
   workers: CI ? 3 : 2,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
-  // A mass failure (e.g. missing baselines) must not run every test to its expect timeout.
-  maxFailures: CI ? 15 : 0,
+  // Bound a mass failure (e.g. a theme-wide change) to well inside the job timeout while keeping
+  // enough failures in the `visual-results` artifact to show the pattern.
+  maxFailures: CI ? 50 : 0,
   timeout: 150_000,
-  expect: { timeout: 20_000, toHaveScreenshot: { maxDiffPixels: 0 } },
+  // threshold 0.1 (default 0.2) is the per-pixel colour distance: anti-aliasing noise passes, a
+  // token colour shift does not. maxDiffPixels 0: no pixel may exceed it.
+  expect: { timeout: 20_000, toHaveScreenshot: { threshold: 0.1, maxDiffPixels: 0 } },
   reporter: CI ? [["github"], ["list"]] : "list",
   use: {
     ...devices["Desktop Chrome"],
@@ -50,7 +53,9 @@ export default defineConfig({
     cwd: webDir,
     env: { ...process.env, PULSE_VISUAL_NOW: FROZEN_NOW_ISO } as Record<string, string>,
     url: `http://127.0.0.1:${port}/healthz`,
-    reuseExistingServer: !CI,
+    // Never attach to whatever already holds the port (a stale or foreign server would be compared
+    // silently); set PULSE_VISUAL_PORT to run beside another server.
+    reuseExistingServer: false,
     timeout: 120_000,
     stdout: "ignore",
     stderr: "pipe",

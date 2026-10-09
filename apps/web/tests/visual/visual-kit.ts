@@ -2,8 +2,8 @@
 //
 // The `visual-*.pw.ts` specs capture committed `toHaveScreenshot` baselines. Font rasterisation
 // differs across hosts, so baselines are generated and verified on CI Linux only: locally every
-// spec skips unless UPDATE_VISUALS is set (deck's mechanism). Refresh them with the `update_visuals`
-// workflow_dispatch input of ci.yml (see docs/architecture/ui.md).
+// spec skips unless UPDATE_VISUALS is set (deck's mechanism). Refresh them with the visual-update.yml
+// workflow dispatch (see docs/architecture/ui.md, "Visual baselines").
 //
 // Determinism, layer by layer:
 //   - data: the dev server serves the pinned `degraded-mix` mock scenario with its WALL CLOCK frozen
@@ -12,8 +12,10 @@
 //   - history: the mock engine serves no range queries, so every `/api/history/**` request is
 //     answered here with a series generated from (query, target, range) alone — charts render;
 //   - browser clock: `page.clock.setFixedTime(FROZEN_NOW)`, so relative ages ("34m") never drift;
-//   - timers: callbacks scheduled ≥ HOLD_TIMERS_MS out never fire (poll refreshes, kiosk paging), so
-//     the capture is the first settled render;
+//   - timers: `setTimeout` callbacks scheduled ≥ HOLD_TIMERS_MS out never fire (the overview poll
+//     chain, kiosk paging), so those never change the page mid-capture. `setInterval` (history
+//     refresh, `useNow`) and the SSE stream still run; they re-render the same frozen data, and
+//     `toHaveScreenshot` waits for two identical consecutive captures;
 //   - rendering: animations disabled, caret hidden, reduced motion, `document.fonts.ready` awaited,
 //     timezone and locale pinned, and the build-id-bearing app version masked.
 
@@ -123,11 +125,16 @@ function volatile(page: Page): Locator[] {
 export async function snap(
   page: Page,
   name: string,
-  opts: { fullPage?: boolean; target?: Locator } = {},
+  opts: { fullPage?: boolean; target?: Locator; timeout?: number } = {},
 ): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
   await stableHeight(page.locator("main").first());
-  const options = { animations: "disabled", caret: "hide", mask: volatile(page) } as const;
+  const options = {
+    animations: "disabled",
+    caret: "hide",
+    mask: volatile(page),
+    ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
+  } as const;
   if (opts.target !== undefined) {
     await expect(opts.target).toHaveScreenshot(name, options);
   } else {
@@ -139,6 +146,15 @@ export async function snap(
 export const VIEWPORTS: readonly { theme: Theme; width: number }[] = THEMES.flatMap((theme) =>
   WIDTHS.map((width) => ({ theme, width })),
 );
+
+/** The workbench's viewports: one wide capture per theme plus a narrow light one. Library
+ *  components are theme-sensitive but rarely width-sensitive between 768 and 1280, and every view
+ *  spec already covers all six combinations. */
+export const WORKBENCH_VIEWPORTS: readonly { theme: Theme; width: number }[] = [
+  { theme: "light", width: 1280 },
+  { theme: "dark", width: 1280 },
+  { theme: "light", width: 375 },
+];
 
 // The specs call `test()` themselves (not through a helper here) so Playwright attributes each test
 // to its spec file. Every describe title ends in "visual baselines" — the grep tag CI and docs use.

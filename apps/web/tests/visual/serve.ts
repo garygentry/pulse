@@ -11,7 +11,7 @@
 // It never watches files and never rebuilds; a run serves one bundle. Usage:
 //   bun tests/visual/serve.ts --mock <scenario> --clock <iso> --port <n>   (with PULSE_VISUAL_NOW)
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -42,6 +42,7 @@ if (!packages.ok) {
 }
 const build = await buildClient({ outdir: clientDir, minify: false, sourcemap: "none", clean: true });
 if (!build.ok) {
+  rmSync(clientDir, { recursive: true, force: true });
   for (const e of build.errors) console.error(e);
   console.error("[visual] client build failed");
   process.exit(1);
@@ -59,4 +60,6 @@ const stop = (): void => {
 };
 process.once("SIGTERM", stop);
 process.once("SIGINT", stop);
-process.exit(await child.exited);
+const code = await child.exited;
+rmSync(clientDir, { recursive: true, force: true });
+process.exit(code);
