@@ -9,8 +9,6 @@
 name: visual-update
 on:
   workflow_dispatch:
-  push:   # TEMPORARY: dispatch needs the file on main; removed before merge
-    branches: [feat/4-visual-baselines]
 permissions:
   contents: read
 concurrency:
