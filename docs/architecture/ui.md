@@ -313,13 +313,72 @@ from a production build.
   grayscale and reflow suites per view and the performance suites (the overview one is opt-in
   through `bun run perf`); `tests/contrast.test.ts` checks status contrast on rendered pages. They
   skip when Chromium is absent unless `PULSE_REQUIRE_BROWSER=1` is set.
-- **Visual review:** there are no committed visual baselines. Screenshots of a changed view at
-  375, 768 and 1280 px in light and dark (and wallboard for overview and kiosk) are captured to the
-  git-ignored `screenshots/` directory and reviewed locally.
+- **Visual regression:** committed `toHaveScreenshot` baselines, generated and verified on CI
+  Linux only (see [Visual baselines](#visual-baselines)). A change that moves pixels updates them in
+  the same PR, regenerated on CI. Screenshots of a changed view at 375, 768 and 1280 px in light and
+  dark are still worth reviewing locally under the git-ignored `screenshots/` while you work.
 - **Budgets:** `tests/build-budget.test.ts` holds the initial-route JS, total JS, total CSS and
   per-view first-load ceilings, uPlot's absence from the initial route, the curated-icon and
   shell-icon checks, barrel tree-shaking and the workbench's absence. `tests/client-build.test.ts` holds the initial-route JS + entry
   CSS ceiling. Raising a ceiling is a deliberate, reviewed change.
+
+## Visual baselines
+
+`apps/web/tests/visual/` holds the visual-regression suite, run by `@playwright/test` (pinned to
+the playwright-core release; `tests/deps.test.ts` checks both). It sits beside the playwright-core
+browser suites, which still run under `bun test`. Its files are `visual-<view>.pw.ts`: the `.pw.ts`
+suffix keeps them out of `bun test`, which collects `*.spec.*`.
+
+- **Coverage:**
+  - One spec per view: overview, the alerts tabs and detail pane, the estate tabs and entity pages,
+    timeline and engine. Each is captured at 375, 768 and 1280 px in light and dark, with the side
+    nav and top bar hidden.
+  - The shell itself (side nav and top bar) is captured on overview at 375 and 1280 px in both
+    themes.
+  - Overview, alerts and timeline also get a 1920×1080 kiosk wallboard capture.
+  - The `/_ui` workbench gets one capture per section, at 1280 px in both themes and 375 px light.
+- **Determinism:**
+  - **Server:** `tests/visual/serve.ts` builds the client once and serves the `degraded-mix` mock
+    through the dev composition root. It spawns `entry.ts` with `--preload freeze-clock.ts`, a
+    test-only preload that freezes the server's wall clock. `--clock` sits 15 minutes before the
+    frozen instant, so the scenario timeline has fully played out.
+  - **History:** the mock engine serves no range queries, so `visual-kit.ts` answers
+    `/api/history/**` with series generated from the query, target and range alone.
+  - **Browser clock:** frozen at the same instant (`page.clock.setFixedTime`).
+  - **Timers:** `setTimeout` callbacks 4 s or more out are held, so the overview poll chain and
+    kiosk paging never fire mid-capture. `setInterval` refreshes and the SSE stream still run.
+    They re-render the same frozen data, and `toHaveScreenshot` waits for two identical
+    consecutive captures.
+  - **Rendering:** animations are disabled and fonts are awaited. The timezone and locale are
+    pinned. The build-id-bearing app version on the engine page is masked. Workbench inner
+    scrollers are pinned to the top.
+  - **Comparison:** per-pixel `threshold: 0.1`, and no pixel may exceed it.
+- **CI only:** font rasterisation differs between hosts, so baselines are made and checked only on
+  the CI Linux image. Locally the specs skip unless `UPDATE_VISUALS=1` is set. With it set, they
+  run against the committed Linux baselines and will usually fail on a laptop. That is still useful
+  for debugging a spec. Don't commit locally generated PNGs. The suite always starts its own server
+  (`PULSE_VISUAL_PORT`, default 4319) and never attaches to one already running.
+- **Verifying:** the `ci` job runs `bun run visual` after `bun run ci`, whenever the change touches
+  something the suite renders from. That means `apps/web/`, `packages/{web-data,renderer,core}/`,
+  `examples/reference/rendered/`, the dependency pins and `ci.yml`. Other changes skip the step,
+  but the job still runs and reports. On failure, the actual, expected and diff images are uploaded
+  as the `visual-results` artifact.
+- **Updating baselines:** run the separate `visual-update.yml` workflow. It is dispatch-only, its job
+  is not named `ci`, and it never reports the required check. It deletes the committed set,
+  regenerates every baseline on CI, and uploads exactly that set as the `visual-baselines` artifact.
+- **Keeping up with main:** a PR's `ci` run checks the merge with main. So when main has moved,
+  merge it into the branch first, regenerate, then commit:
+
+  ```
+  git merge origin/main && git push                    # 1. bring the branch up to date
+  gh workflow run visual-update.yml --ref <branch>     # 2. regenerate on CI
+  gh run list --workflow visual-update.yml --branch <branch> --limit 1   # note the run id
+  rm -rf apps/web/tests/visual/*-snapshots             # 3. replace the set (drops stale images)
+  gh run download <run-id> -n visual-baselines -D apps/web/tests/visual
+  git add apps/web/tests/visual && git commit           # 4. review the PNG diffs, commit, push
+  ```
+
+  A new view or state gets a spec here, and its baselines arrive the same way.
 
 ## Guardrails
 

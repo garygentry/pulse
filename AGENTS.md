@@ -16,7 +16,11 @@ See `docs/architecture/ui.md` for the full picture. The rules that matter most:
 - A page root and every pattern root carry `data-slot="…"`. There is one `h1` per page
   (`PageHeader`), and keyboard list navigation goes through `useListNavigation`.
 - Test the a11y contract with React Testing Library role queries (via `tests/rtl.ts`), never
-  class strings. There are no committed visual baselines: review screenshots of changed views
-  locally (375/768/1280, light and dark) under `screenshots/`.
+  class strings. Visual baselines are committed under `apps/web/tests/visual/` and generated and
+  verified on CI Linux only. When a change moves pixels, merge main, then run
+  `gh workflow run visual-update.yml --ref <branch>`. Replace the baselines with the
+  `visual-baselines` artifact (`rm -rf apps/web/tests/visual/*-snapshots && gh run download <id> -n
+  visual-baselines -D apps/web/tests/visual`) and commit it. Never commit locally made PNGs. While
+  working, still review screenshots (375/768/1280, light and dark) under `screenshots/`.
 - `apps/web/tests/ui-guardrails.test.ts` enforces the mechanical rules; keep it green instead of
   allowlisting around it.

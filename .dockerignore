@@ -9,3 +9,6 @@ specs
 **/.tsbuildinfo
 scratchpad
 tmp
+# visual-regression baselines and run output (CI-only test assets, ~10 MB)
+apps/web/tests/visual/*-snapshots
+apps/web/visual-results

@@ -1,0 +1,64 @@
+# .github/workflows/visual-update.yml — regenerate the visual baselines on CI Linux (GitHub #4).
+#
+# Baselines are made only on this image (font rasterisation differs across hosts). Dispatch it on a
+# branch, download the artifact over apps/web/tests/visual, review and commit:
+#   gh workflow run visual-update.yml --ref <branch>
+#   gh run download <run-id> -n visual-baselines -D apps/web/tests/visual
+# It is deliberately a separate workflow whose job is NOT named `ci`: a regeneration run must never
+# report the required `ci` check for a commit. It verifies nothing and pushes nothing.
+name: visual-update
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: visual-update-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"   # mirrors ci.yml
+      - run: bun install
+      - id: pw
+        name: Read the pinned playwright-core version
+        run: echo "version=$(bun -e 'console.log(require("./package.json").devDependencies["playwright-core"])')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}   # shared with ci.yml
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: bunx playwright-core install chromium
+      - run: bunx playwright-core install-deps chromium
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build workspace packages
+        run: bun run typecheck
+      # Start from an empty set, so the artifact holds exactly the baselines the current specs make
+      # (a removed or renamed capture leaves no stale PNG behind).
+      - name: Remove the committed baselines
+        run: rm -rf apps/web/tests/visual/*-snapshots
+      - name: Regenerate visual baselines
+        env:
+          UPDATE_VISUALS: "1"
+        run: bun run visual --update-snapshots=all
+      - name: Upload visual baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: apps/web/tests/visual/*-snapshots/
+          if-no-files-found: error
+      - name: Upload run output
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-results
+          path: apps/web/visual-results/
+          if-no-files-found: ignore
+          retention-days: 7
