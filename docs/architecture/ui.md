@@ -18,7 +18,8 @@ apps/web/src/client/
     status/       pulse status maps: TARGET_STATUS, ALERT_SEVERITY, MUTATION_STATE
     viz/          pulse charts: Sparkline, StatusTimeline, Gauge, TimeSeriesChart (lazy uPlot)
     index.ts      the public barrel: code outside ui/ imports from "@/ui"
-    VENDORED.md   the deck commit the library was copied from, and every pulse divergence
+    VENDORED.md   the deck commit the library was copied from, every pulse divergence, the sync procedure
+    VENDORED.json the same record, machine-readable: per-file blob ids and divergence notes (ui:drift)
   shell/          Shell (frame + ViewHost), AppSidebar, Topbar, HealthRegion, StaleDataCallout,
                   ThemeMenu, CommandPalette, router-hooks.ts, kiosk.ts
   views/<id>/     one directory per view; view.tsx is the lazy entry. views/_ui/ is the workbench
@@ -44,10 +45,26 @@ file from deck's `apps/web/src/`. `ui/VENDORED.md` records the source commit, ev
 divergence (scoped Radix imports, the `Button` `loading` prop, `DataTable` virtualization, and a
 few type widenings), and the Pulse-only additions that are candidates to move upstream.
 
-To sync with a newer deck: diff these files against deck at the new commit, apply the changes,
-keep the divergences listed in `VENDORED.md`, update the recorded commit, then re-run the
-guardrail, contrast and `ui-*` tests. A shared package is deliberately not used yet. Keeping the
-trees in parity means it can be extracted mechanically later.
+Pulse keeps vendoring rather than sharing a package with deck (issue #5), and a scripted check
+keeps the copies honest. `ui/VENDORED.json` records, for every vendored file, deck's path, the git
+blob id of deck's file at the pinned commit, the blob id of Pulse's copy as last reviewed, and the
+ids of the divergence notes that explain any difference. `VENDORED.md`'s file and note tables are
+generated from it. `bun run ui:drift` (`apps/web/scripts/ui-drift.ts`) checks it:
+
+- **Offline**, in `tests/ui-drift.test.ts` and so in the required `ci` check: a vendored file that
+  changed since it was recorded, differs from deck without a note, or matches deck but still lists
+  notes fails, as does a file under `ui/` or `styles/` that is neither vendored nor listed as
+  pulse-only, or a stale generated table. After a reviewed change, edit the file's notes and run
+  `bun run ui:drift --record`, which re-records the hashes and regenerates `VENDORED.md`.
+- **Upstream**, on demand (`--deck <checkout>` or `--fetch`, which fetches the pin and a ref from
+  GitHub into a cache) and weekly in the report-only `ui-drift` workflow: the recorded deck blobs
+  must match deck at the pin, and the report lists the vendored files deck changed, removed or
+  added since then, with whether each needs a copy or a merge.
+
+To sync with a newer deck, follow "Syncing with a newer deck" in `VENDORED.md`: report the changes
+(`--deck <checkout> --ref <commit> --diff`), apply them while keeping the notes (the scoped Radix
+imports and the style nonce first), then bump the pin with `--record --pin <commit>` and re-run
+the guardrail, contrast and `ui-*` tests. Pulse-only additions go upstream first (issue #18).
 
 ## Tokens and tones
 

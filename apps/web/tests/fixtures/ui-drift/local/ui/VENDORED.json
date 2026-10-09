@@ -1,0 +1,66 @@
+{
+  "$comment": "Fixture for tests/ui-drift.test.ts. upstream.commit is the deterministic pin commit the test builds from ../../upstream-pin.",
+  "upstream": {
+    "repo": "file:///unused",
+    "commit": "f972b461fd20010c8758ad781249308ac54cd2eb",
+    "describe": "fixture pin",
+    "defaultRef": "main"
+  },
+  "docs": "ui/VENDORED.md",
+  "scope": {
+    "upstream": [
+      "lib/"
+    ],
+    "local": [
+      "ui/"
+    ]
+  },
+  "notes": {
+    "pulse-text": "Pulse rewords the line."
+  },
+  "files": [
+    {
+      "local": "ui/same.txt",
+      "upstream": "lib/same.txt",
+      "upstreamBlob": "2a3ffa876bdbe10308f25acbf77b4aff566aaa92",
+      "localBlob": "2a3ffa876bdbe10308f25acbf77b4aff566aaa92",
+      "notes": []
+    },
+    {
+      "local": "ui/diverged.txt",
+      "upstream": "lib/diverged.txt",
+      "upstreamBlob": "412e779f13ae72a54da47dd8f18e88c907312e68",
+      "localBlob": "f42ac3f834ddbfe0c17c18a2e42ce5161f96a10a",
+      "notes": [
+        "pulse-text"
+      ]
+    },
+    {
+      "local": "ui/changed.txt",
+      "upstream": "lib/changed.txt",
+      "upstreamBlob": "83baae61804e65cc73a7201a7252750c76066a30",
+      "localBlob": "83baae61804e65cc73a7201a7252750c76066a30",
+      "notes": []
+    },
+    {
+      "local": "ui/removed.txt",
+      "upstream": "lib/removed.txt",
+      "upstreamBlob": "003722b975de8de25f13f93d0837da50ea0dda53",
+      "localBlob": "003722b975de8de25f13f93d0837da50ea0dda53",
+      "notes": []
+    }
+  ],
+  "excluded": [
+    {
+      "upstream": "lib/skip.txt",
+      "reason": "Deck only."
+    }
+  ],
+  "localOnly": [
+    {
+      "local": "ui/extra.txt",
+      "source": "pulse",
+      "note": "Pulse only."
+    }
+  ]
+}

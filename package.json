@@ -23,6 +23,7 @@
     "verify:golden": "bun test tests/deploy-toolkit/golden.test.ts",
     "verify:estate": "bun test tests/deploy-toolkit/estate.test.ts",
     "docs:build": "cd apps/docs && bun run build",
+    "ui:drift": "bun run apps/web/scripts/ui-drift.ts",
     "visual": "playwright test -c apps/web/tests/visual",
     "perf": "PULSE_REQUIRE_BROWSER=1 PULSE_REQUIRE_PERF=1 bun test apps/web/tests/browser/overview-performance.test.ts",
     "ci": "bun run typecheck && bun test && bun run perf && bun run smoke && bun run docs:build"
