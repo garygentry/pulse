@@ -78,7 +78,9 @@ A new file under `ui/` or `styles/` goes into `localOnly` (pulse-only) or `files
    `upstream.commit`. Update `upstream.describe` by hand (deck version). It refuses a diverged
    file whose deck blob moved while pulse's copy did not, since the next report would compare
    from the new pin and deck's change would drop out of sight. Merge it, or pass
-   `--accept-unmerged` when deck's change does not apply to pulse.
+   `--accept-unmerged` when deck's change does not apply to pulse. The guard only detects an
+   unchanged pulse copy: if pulse's copy was edited too, the bump goes through, so read every
+   "upstream changed" line the bump prints.
 4. Re-run the gates: `bunx tsc -b`, `bun test` (the guardrail, contrast and `ui-*` suites cover the
    library) and `bun run ui:drift --deck <deck checkout> --ref none`, which checks the new pin.
 

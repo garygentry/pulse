@@ -148,7 +148,7 @@ function walk(root: string, rel: string, out: LocalListing): void {
 function gitTracked(root: string, scope: readonly string[]): string[] | null {
   const top = spawnSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
   if (top.status !== 0 || realpathSync(top.stdout.trim()) !== realpathSync(root)) return null;
-  const r = spawnSync("git", ["-C", root, "ls-files", "-z", "--cached", "--", ...scope], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync("git", ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...scope], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) return null;
   return r.stdout.split("\0").filter(Boolean);
 }
@@ -716,6 +716,8 @@ Options:
   --pin <ref>            The commit to pin with --record (default: the current pin).
   --accept-unmerged      With --record --pin: record diverged files deck changed between the
                          pins although pulse's copy did not change (deck's change does not apply).
+                         The guard only sees "pulse's copy unchanged": any local edit to such a
+                         file lets the bump through, so review every "upstream changed" line.
   --format <f>           text (default), markdown or json.
   --root <dir>           Repository root (default: this repository).
   --manifest <path>      Manifest path relative to the root (default: ${DEFAULT_MANIFEST}).
@@ -791,7 +793,13 @@ export function main(argv: string[]): number {
     console.log(HELP);
     return 0;
   }
-  const manifest = loadManifest(args.root, args.manifest);
+  let manifest: Manifest;
+  try {
+    manifest = loadManifest(args.root, args.manifest);
+  } catch (e) {
+    console.error(`ui-drift: cannot read the manifest under ${args.root}: ${(e as Error).message}`);
+    return 2;
+  }
   const pin = args.pin ?? manifest.upstream.commit;
   if (args.record && args.ref) console.error(`ui-drift: warning: --ref is ignored with --record (bump the pin with --pin)`);
   const ref = args.record ? undefined : args.ref === "none" ? undefined : (args.ref ?? manifest.upstream.defaultRef);

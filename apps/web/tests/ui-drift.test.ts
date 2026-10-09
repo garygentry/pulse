@@ -125,12 +125,18 @@ describe("offline classification", () => {
     expect(stateOf(root, manifest, "ui/diverged.txt")?.detail).toMatch(/check that its notes \(pulse-text\) in ui\/VENDORED\.json still describe it, then run `bun run ui:drift --record`$/);
   });
 
-  test("in a git work tree only tracked files count: editor and merge leftovers are not unlisted", () => {
+  test("in a git work tree git-ignored leftovers are skipped, but an un-added new file is unlisted", () => {
     const { root, manifest } = workspace();
     git(root, "init", "--quiet");
+    writeFileSync(join(root, ".gitignore"), "*.swp\n.DS_Store\n*.orig\n*.rej\n");
     git(root, "add", "-A");
     for (const junk of ["ui/.same.txt.swp", "ui/same.txt.orig", "ui/same.txt.rej", "ui/.DS_Store"]) writeFileSync(join(root, junk), "junk\n");
     expect(offline(root, manifest).unlisted).toEqual([]);
+    // A new file that hasn't been `git add`ed yet is caught before commit, not only in CI.
+    writeFileSync(join(root, "ui/new-thing.txt"), "new\n");
+    expect(offline(root, manifest).unlisted).toEqual(["ui/new-thing.txt"]);
+    rmSync(join(root, "ui/new-thing.txt"));
+    rmSync(join(root, ".gitignore"));
     // Outside git the directory walk sees them.
     rmSync(join(root, ".git"), { recursive: true });
     expect(offline(root, manifest).unlisted).toEqual(["ui/.DS_Store", "ui/.same.txt.swp", "ui/same.txt.orig", "ui/same.txt.rej"]);

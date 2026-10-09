@@ -44,3 +44,11 @@ forge.config.json
 .remember/
 .handoff/
 .system1/
+
+# Editor and merge leftovers (also keeps them out of the ui:drift check)
+*.swp
+*.swo
+*~
+.DS_Store
+*.orig
+*.rej
