@@ -48,10 +48,10 @@ Pulse-specific choices on top of deck's:
   build becomes a bottleneck.
 - **Extract `@/ui` into a shared package** used by both deck and Pulse. Deferred: vendoring was
   faster and keeps the trees in parity, so a later extraction is mechanical.
-- **Committed visual regression baselines**, as deck verifies in CI. Deferred: Pulse has no
-  `@playwright/test`, and deck's CI-only baseline machinery would be new infrastructure. Changed
-  views are reviewed through local screenshots at three widths in both themes instead, and the axe,
-  grayscale, reflow and contrast suites remain the automated gate.
+- **Committed visual regression baselines**, as deck verifies in CI. Deferred at the port: Pulse
+  had no `@playwright/test`, and deck's CI-only baseline machinery would have been new
+  infrastructure. Adopted afterwards (GitHub #4): see "Visual baselines" in
+  [ui.md](../ui.md#visual-baselines).
 - **A `useSyncExternalStore` hook per signal** instead of `@preact/signals-react`. Held as a
   fallback; not needed once a spike showed `useSignals()` works under React 19 and `Bun.build`.
 

@@ -60,6 +60,9 @@ export const PINNED_DEPS: readonly PinnedDep[] = [
   { name: "culori",                   manifest: "apps/web/package.json", field: "devDependencies", version: "4.0.2",  license: "MIT" },
   { name: "@types/culori",            manifest: "apps/web/package.json", field: "devDependencies", version: "4.0.1",  license: "MIT" },
   { name: "playwright-core", manifest: "package.json",          field: "devDependencies", version: "1.62.1",  license: "Apache-2.0" },
+  // The visual-regression runner (apps/web/tests/visual, GitHub #4). It drives its own `playwright`
+  // copy of playwright-core, so it must stay on the same release as the pin above.
+  { name: "@playwright/test", manifest: "package.json",         field: "devDependencies", version: "1.62.1",  license: "Apache-2.0" },
 ];
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
@@ -111,6 +114,11 @@ describe("PINNED_DEPS — exact versions and licences (REQ-DEPS-01/02)", () => {
       expect(installed.license, `installed ${dep.name} license`).toBe(dep.license);
     });
   }
+
+  test("@playwright/test and playwright-core are pinned to the same release", () => {
+    const pin = (name: string) => PINNED_DEPS.find((d) => d.name === name)?.version;
+    expect(pin("@playwright/test")).toBe(pin("playwright-core"));
+  });
 
   test("every PINNED_DEPS row resolves (no silent miss)", () => {
     for (const dep of PINNED_DEPS) {
