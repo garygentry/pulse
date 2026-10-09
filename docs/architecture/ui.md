@@ -364,8 +364,8 @@ suffix keeps them out of `bun test`, which collects `*.spec.*`.
   but the job still runs and reports. On failure, the actual, expected and diff images are uploaded
   as the `visual-results` artifact.
 - **Updating baselines:** run the separate `visual-update.yml` workflow. It is dispatch-only, its job
-  is not named `ci`, and it never reports the required check. It regenerates every baseline on CI
-  and uploads them as the `visual-baselines` artifact.
+  is not named `ci`, and it never reports the required check. It deletes the committed set,
+  regenerates every baseline on CI, and uploads exactly that set as the `visual-baselines` artifact.
 - **Keeping up with main:** a PR's `ci` run checks the merge with main. So when main has moved,
   merge it into the branch first, regenerate, then commit:
 

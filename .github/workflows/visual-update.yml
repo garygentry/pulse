@@ -42,6 +42,10 @@ jobs:
           node-version: 22
       - name: Build workspace packages
         run: bun run typecheck
+      # Start from an empty set, so the artifact holds exactly the baselines the current specs make
+      # (a removed or renamed capture leaves no stale PNG behind).
+      - name: Remove the committed baselines
+        run: rm -rf apps/web/tests/visual/*-snapshots
       - name: Regenerate visual baselines
         env:
           UPDATE_VISUALS: "1"
