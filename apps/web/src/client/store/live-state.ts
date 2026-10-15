@@ -233,6 +233,8 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
   // When the newest request for each view started (the window restarts there once the server answers
   // an older, superseded request: it is responsive, only the newest request is outstanding).
   const latestStart: Record<ViewId, number> = { overview: 0, alerts: 0, estate: 0, engine: 0, timeline: 0 };
+  // Requests per view still in flight; when it drops to 0 the window closes (pendingSince = null).
+  const inFlight: Record<ViewId, number> = { overview: 0, alerts: 0, estate: 0, engine: 0, timeline: 0 };
   const deadlineTimers = new Set<ReturnType<typeof setTimeout>>();
 
   const controllers = new Set<AbortController>();
@@ -275,6 +277,9 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
   function abortControllers(): void {
     for (const c of controllers) c.abort();
     controllers.clear();
+    // Every in-flight request is dead: a request started after this opens a fresh deadline window
+    // instead of inheriting a cancelled request's start.
+    for (const v of VIEW_IDS) pendingSince[v] = null;
   }
 
   // ── Connection publication ──────────────────────────────────────────────────────────────────
@@ -444,6 +449,7 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
     // current. The local flag, not the abort reason, marks the expiry.
     const startedAt = now();
     latestStart[view] = startedAt;
+    inFlight[view] += 1;
     if (pendingSince[view] === null) pendingSince[view] = startedAt;
     let timedOut = false;
     let deadline: ReturnType<typeof setTimeout> | null = null;
@@ -472,6 +478,10 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
         deadlineTimers.delete(deadline);
       }
       controllers.delete(controller);
+      inFlight[view] -= 1;
+      // No request for this view remains outstanding: close the window, so a later request never
+      // inherits the start of one that was cancelled or superseded long ago.
+      if (inFlight[view] === 0) pendingSince[view] = null;
     }
     const superseded = stopped || reloaded || myEpoch !== epoch || myToken !== requestTokens[view];
     if (superseded) {

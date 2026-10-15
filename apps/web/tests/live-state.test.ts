@@ -1245,6 +1245,38 @@ describe("#57 view GET deadline", () => {
     live.stop();
   });
 
+  test("a request cancelled by an SSE takeover leaves no stale window: a later healthy GET succeeds", async () => {
+    FakeEventSource.reset();
+    const store = createAppStore({ storage: null, initialQuery: {} });
+    const sched = new Scheduler();
+    const { server, fetchImpl, hang } = hangingServer();
+    const live = startLiveState(store, {
+      transport: "sse", eventSourceFactory: esFactory, fetchImpl,
+      setTimer: sched.setTimer, clearTimer: sched.clearTimer, now: sched.nowFn,
+      activeView: () => "estate", intervalMs: 10_000, staleMs: 1_000_000, reload: () => {}, viewTimeoutMs: 20_000,
+    });
+    server.script("/api/estate", () => ok200({ e: 1 }, { etag: hash("a"), payloadId: hash("e"), obs: observation(GEN_A, 5) }));
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("e") });
+    await flush();
+    hang("/api/estate");
+    FakeEventSource.last().emitError(); // stream fails → poll immediately; the estate poll hangs
+    await sched.advance(0);
+    await sched.advance(10_000); // the reconnect opens a new stream
+    // Its first tick takes over and aborts the hung poll; identities are unchanged, so no refetch.
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("e") });
+    await flush();
+    expect(store.connection.value.views.estate.failure).toBeNull();
+
+    await sched.advance(60_000); // long after the cancelled request's window would have ended
+    server.script("/api/estate", () => ok200({ e: 2 }, { etag: hash("c"), payloadId: hash("7"), obs: observation(GEN_A, 6) }));
+    FakeEventSource.last().emitTick(observation(GEN_A, 6), { ...identitiesAll(hash("b")), estate: hash("7") });
+    await flush();
+    await sched.advance(0);
+    live.stop();
+    expect(store.connection.value.views.estate.failure).toBeNull(); // not a spurious SERVER_TIMEOUT
+    expect(store.estate.value as unknown).toEqual({ e: 2 });
+  });
+
   test("a failure whose code alone changes is republished (connectionEquals compares code)", async () => {
     const { store, server, sched, live } = harness({
       transport: "poll", intervalMs: 5_000, staleMs: 1_000_000, activeView: () => "estate",
