@@ -72,6 +72,7 @@ export interface OverviewFixtureQuery {
   readonly mode?: "status" | "envelope" | "kiosk" | "motion" | "degraded";
   readonly density?: "desk" | "wallboard";
   readonly dwell?: number;
+  readonly scale?: "standard" | "large";
 }
 
 /** Options for one opened fixture page. */
@@ -102,6 +103,7 @@ function queryString(q: OverviewFixtureQuery): string {
   if (q.mode !== undefined) params.set("mode", q.mode);
   if (q.density !== undefined) params.set("density", q.density);
   if (q.dwell !== undefined) params.set("dwell", String(q.dwell));
+  if (q.scale !== undefined) params.set("scale", q.scale);
   const s = params.toString();
   return s === "" ? "" : `?${s}`;
 }

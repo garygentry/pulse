@@ -12,6 +12,7 @@
 //             300 services) | kiosk (envelope under ?kiosk=1 paging) | motion (4 hosts, meant for
 //             repeated cycle commits) | degraded (4 hosts, one source stale + retained stale delivery)
 //   density = desk (default) | wallboard  (ignored by kiosk, which always implies wallboard)
+//   scale   = standard (default) | large  (kiosk only: 1,200 hosts / 6,000 services)
 //   dwell   = kiosk rotation dwell in ms, an integer in [1000, 600000]; absent → no rotation context
 //             (the overview's own 30 s non-rotating cycle). Anything else is rejected.
 //
@@ -131,7 +132,11 @@ function dwellParam(): number | null {
   return dwell;
 }
 
+const SCALES = ["standard", "large"] as const;
+
 const mode = closedChoice("mode", MODES, "status");
+/** `large` (kiosk only): 1,200 hosts / 6,000 services, so strip counts reach the thousands. */
+const scale = closedChoice("scale", SCALES, "standard");
 const density = closedChoice("density", DENSITIES, "desk");
 const dwellMs = dwellParam();
 const kiosk = mode === "kiosk";
@@ -152,8 +157,11 @@ const DEGRADED_TARGET_ID = FIXTURE_IDS.okService;
 function baseSnapshot(cycle: number): OverviewSnapshotV2 {
   switch (mode) {
     case "envelope":
-    case "kiosk":
       return makeEnvelopeOverviewSnapshot(cycle);
+    case "kiosk":
+      return scale === "large"
+        ? makeOverviewSnapshot({ hostCount: 1_200, serviceCount: 6_000, cycle })
+        : makeEnvelopeOverviewSnapshot(cycle);
     case "degraded":
       return makeOverviewSnapshot({
         cycle,

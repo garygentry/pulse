@@ -298,8 +298,27 @@ const KIOSK_VIEWPORTS = [
   { width: 1280, height: 720 },
   { width: 1920, height: 1080 },
   { width: 768, height: 1024 },
+  { width: 1024, height: 768 },
   { width: 375, height: 812 },
 ] as const;
+
+/** Badges in the kiosk stat strip that are not wholly inside it (clipped or pushed out of view). */
+function stripClipped(page: Page): Promise<{ clipped: string[]; badges: number; scrollWidth: number; innerWidth: number }> {
+  return page.evaluate(() => {
+    const strip = document.querySelector<HTMLElement>("[data-stat-strip]");
+    const box = strip?.getBoundingClientRect();
+    const badges = Array.from(strip?.querySelectorAll<HTMLElement>('[data-slot="status-badge"], [data-slot="badge"]') ?? []);
+    const clipped = badges
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        const inner = el.querySelector<HTMLElement>(":scope > span");
+        const truncated = inner !== null && inner.scrollWidth > inner.clientWidth + 1;
+        return box === undefined || r.left < box.left - 0.5 || r.right > box.right + 0.5 || r.right > window.innerWidth || truncated;
+      })
+      .map((el) => el.textContent ?? "");
+    return { clipped, badges: badges.length, scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth };
+  });
+}
 
 browserDescribe()("browser: overview kiosk page fits below the chrome and pages by columns × rows (no page scroll)", () => {
   let browser: Browser;
@@ -401,6 +420,10 @@ browserDescribe()("browser: overview kiosk page fits below the chrome and pages 
         // tile region.
         if (viewport.width >= 1280) expect(geometry.stripRows, detail).toBe(1);
         if (viewport.width >= 640) expect(geometry.ribbonRows, detail).toBe(1);
+        // No strip badge is clipped or pushed out of view at any width (it wraps instead).
+        const strip = await stripClipped(page);
+        expect(strip.badges, JSON.stringify(strip)).toBeGreaterThanOrEqual(5);
+        expect(strip.clipped, JSON.stringify(strip)).toEqual([]);
         // The estate zone stays visible in the footer.
         expect(geometry.zoneWidth, detail).toBeGreaterThan(0);
         // Service chips truncate the name, never the status word.
@@ -411,4 +434,29 @@ browserDescribe()("browser: overview kiosk page fits below the chrome and pages 
       }
     }, 90_000);
   }
+
+  test("kiosk at 1280×720 with thousands of services: compact counts, Coverage and Engine in view, nothing clipped", async () => {
+    const handle = await openOverviewPage(browser, fixtures!, { theme: "dark", mode: "kiosk", viewport: { width: 1280, height: 720 }, scale: "large" });
+    try {
+      const { page } = handle;
+      await page.waitForSelector('[data-slot="overview-kiosk-tile"]');
+      const strip = await stripClipped(page);
+      const detail = JSON.stringify(strip);
+      expect(strip.clipped, detail).toEqual([]);
+      expect(strip.scrollWidth, detail).toBeLessThanOrEqual(strip.innerWidth);
+      const text = await page.evaluate(() => document.querySelector("[data-stat-strip]")?.textContent ?? "");
+      expect(text, detail).toMatch(/\d(\.\d)?K/); // compact visible count
+      expect(text, detail).toMatch(/\d,?\d{3} services/); // exact count for assistive technology
+      for (const stat of ["coverage", "engine"]) {
+        const visible = await page.evaluate((s) => {
+          const el = document.querySelector<HTMLElement>(`[data-stat-strip] [data-stat="${s}"]`);
+          const r = el?.getBoundingClientRect();
+          return r !== undefined && r.width > 0 && r.right <= window.innerWidth;
+        }, stat);
+        expect(visible, `${stat} not in view: ${detail}`).toBe(true);
+      }
+    } finally {
+      await handle.close();
+    }
+  }, 90_000);
 });

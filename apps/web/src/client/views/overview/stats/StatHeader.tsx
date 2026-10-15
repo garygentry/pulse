@@ -163,10 +163,10 @@ export function StatHeader(props: StatHeaderProps): ReactElement {
   );
 }
 
-/** One labelled run of the kiosk strip: a muted label, then its badges; never shrinks. */
+/** One labelled run of the kiosk strip: a muted label, then its badges, wrapping when it must. */
 function StripGroup(props: { readonly stat: string; readonly label: string; readonly children: ReactNode }): ReactElement {
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-1.5 xl:flex-nowrap" data-stat={props.stat} role="group" aria-label={props.label}>
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-stat={props.stat} role="group" aria-label={props.label}>
       <span className="text-sm font-medium text-muted-foreground" aria-hidden="true">
         {props.label}
       </span>
@@ -175,9 +175,17 @@ function StripGroup(props: { readonly stat: string; readonly label: string; read
   );
 }
 
+const COMPACT = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+
+/** A count as shown on the strip: exact below 1,000, compact above ("5K", "12.3K"). */
+export function compactCount(value: number): string {
+  const text = countText(value);
+  return text === String(value) && value >= 1_000 ? COMPACT.format(value) : text;
+}
+
 /**
  * Host and service counts per status as one badge each: "Critical 1 · 2" reads hosts · services
- * (the run's label says so); the accessible text spells both out. Statuses with no host and no
+ * (the run's label says so), compact from 1,000 up; the accessible text spells both out exactly. Statuses with no host and no
  * service are left out (OK always shows, so the run is never empty).
  */
 function StripStatuses(props: { readonly hosts: StatusCounts; readonly services: StatusCounts }): ReactElement {
@@ -191,7 +199,7 @@ function StripStatuses(props: { readonly hosts: StatusCounts; readonly services:
             status={status}
             label={
               <>
-                <span aria-hidden="true">{`${TARGET_STATUS[status].label} ${countText(hosts[status])} · ${countText(services[status])}`}</span>
+                <span aria-hidden="true">{`${TARGET_STATUS[status].label} ${compactCount(hosts[status])} · ${compactCount(services[status])}`}</span>
                 <VisuallyHidden>{`${TARGET_STATUS[status].label}: ${countText(hosts[status])} hosts, ${countText(services[status])} services`}</VisuallyHidden>
               </>
             }
@@ -255,28 +263,28 @@ function StripEngine(props: { readonly engine: EngineOkStat; readonly clock: Est
 }
 
 /**
- * The kiosk's estate totals as one line: host · service counts per status, coverage gaps and engine
- * state (with its last-good time when not current). From `xl` (wallboard widths) up it never wraps —
- * details truncate instead — so its height, and with it the tile region's, stays fixed; narrower
- * screens may wrap rather than clip a count. Firing counts are on the kiosk alert line below; the
- * estate time zone is in the tile wall's footer. `relative` keeps the visually
- * hidden badge text inside the strip's clip, so it never widens the page.
+ * The kiosk's estate totals as one line when it fits: coverage gaps and engine state (with its
+ * last-good time when not current) first, so they never drop out of view, then host · service counts
+ * per status. It wraps rather than clip a count — at wallboard widths it fits one line for a typical
+ * estate, and a wrap only restarts the paging at page 1. Firing counts are on the kiosk alert line
+ * below; the estate time zone is in the tile wall's footer. `relative` keeps the visually hidden
+ * badge text positioned inside the strip, so it never widens the page.
  */
 export function KioskStatStrip(props: StatHeaderProps): ReactElement {
   const { stats, surface, clock } = props;
   return (
     <section
-      className="relative flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 overflow-hidden whitespace-nowrap xl:flex-nowrap"
+      className="relative flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1"
       aria-label="Estate statistics"
       data-surface={surface.status}
       data-slot="overview-stat-strip"
       data-stat-strip=""
     >
+      <StripCoverage coverage={stats.coverage} clock={clock} />
+      <StripEngine engine={stats.engine} clock={clock} />
       <StripGroup stat="hosts" label="Hosts · services">
         <StripStatuses hosts={stats.hosts} services={stats.services} />
       </StripGroup>
-      <StripCoverage coverage={stats.coverage} clock={clock} />
-      <StripEngine engine={stats.engine} clock={clock} />
     </section>
   );
 }

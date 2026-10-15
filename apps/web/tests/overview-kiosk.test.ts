@@ -578,6 +578,66 @@ describeDom("useKioskPaging", (dom) => {
     expect(state.activePageIndex).toBe(0);
   });
 
+  describe("flap guard for the critical restart", () => {
+    const FLAPPER = "host:host-001";
+    const snapshot = makeOverviewSnapshot({ hostCount: 12 });
+    // host-001 (OK) last, so it sits on the last page whatever the capacity.
+    const order = [...snapshot.hosts.map((h) => h.drilldownId).filter((id) => id !== FLAPPER), FLAPPER];
+    const hostsOf = (next: typeof snapshot): HostStatus[] => order.map((id) => next.hosts.find((h) => h.drilldownId === id)!);
+    const calm = hostsOf(snapshot);
+    const alarmed = hostsOf(withTargetStatus(snapshot, FLAPPER, "critical", 2));
+
+    test("a host flapping critical/OK every 3 s restarts at most once per cycle, so later pages still show", async () => {
+      const fc = fakeClock();
+      layout.height = 100; // 3 pages, 10 s each, 30 s cycle
+      await renderHook({ hosts: calm, rotation: null, clock: fc.clock });
+      const seen = new Set<number>([state.activePageIndex]);
+      let restarts = 0;
+      for (let t = 0; t < 90_000; t += 3_000) {
+        const before = state.activePageIndex;
+        await renderHook({ hosts: (t / 3_000) % 2 === 0 ? alarmed : calm, rotation: null, clock: fc.clock });
+        if (state.activePageIndex === 0 && before !== 0) restarts += 1;
+        fc.advance(3_000);
+        seen.add(state.activePageIndex);
+      }
+      expect([...seen].sort()).toEqual([0, 1, 2]);
+      // 90 s of flapping: at most one restart per 30 s cycle (natural wraps to page 1 included).
+      expect(restarts).toBeLessThanOrEqual(3);
+    });
+
+    test("no restart when the newly critical host is already on the visible page", async () => {
+      const fc = fakeClock();
+      layout.height = 100;
+      await renderHook({ hosts: calm, rotation: null, clock: fc.clock });
+      fc.advance(20_000);
+      expect(state.activePageIndex).toBe(2); // the flapper's page
+      const scheduled = fc.scheduled.length;
+      await renderHook({ hosts: alarmed, rotation: null, clock: fc.clock });
+      expect(state.activePageIndex).toBe(2);
+      expect(fc.scheduled.length).toBe(scheduled);
+    });
+
+    test("inside a rotation a flapping host does not reset the resume page on every visit", async () => {
+      const fc = fakeClock();
+      layout.height = 100;
+      layout.columns = 2; // 6 pages at 10 s: a 60 s cycle, two pages per 20 s visit
+      await renderHook({ hosts: calm, rotation: rotation(1, 20_000), clock: fc.clock });
+      await renderHook({ hosts: alarmed, rotation: rotation(1, 20_000), clock: fc.clock }); // restart (page 1)
+      fc.advance(3_000);
+      await renderHook({ hosts: calm, rotation: rotation(1, 20_000), clock: fc.clock });
+      fc.advance(7_000);
+      expect(state.activePageIndex).toBe(1);
+      fc.advance(10_000);
+      await unmount();
+
+      // The next visit mounts while the host keeps flapping; the flap is in its cooldown.
+      await renderHook({ hosts: calm, rotation: rotation(2, 20_000), clock: fc.clock });
+      expect(state.activePageIndex).toBe(2);
+      await renderHook({ hosts: alarmed, rotation: rotation(2, 20_000), clock: fc.clock });
+      expect(state.activePageIndex).toBe(2);
+    });
+  });
+
   test("a resize that changes capacity rebuilds pages, resets page 1 and clears the prior timer", async () => {
     const fc = fakeClock();
     layout.height = 100;

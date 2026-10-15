@@ -102,9 +102,16 @@ const defaultClock: KioskPagingClock = {
  */
 let rotationCursor = 0;
 
-/** Forget where rotation visits resume (tests). */
+/**
+ * When each host id last restarted the sequence by turning critical (clock ms). Module scope for
+ * the same reason as the cursor: a host flapping across rotation visits must not reset every visit.
+ */
+const criticalRestarts = new Map<string, number>();
+
+/** Forget where rotation visits resume and which hosts recently restarted the sequence (tests). */
 export function resetKioskRotationCursor(): void {
   rotationCursor = 0;
+  criticalRestarts.clear();
 }
 
 /** Ids of the hosts whose effective rollup is critical (the danger tone). */
@@ -163,25 +170,43 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
   const epoch = rotating && rotation !== null ? rotation.epoch : null;
   // A change here starts a new sequence: page timers restart and the visible page is re-chosen.
   // Status/order changes keep the sequence, so a flapping host never pins the wall to page 1 — except
-  // when a host newly turns critical: the sequence restarts at page 1 so it is on screen at once.
+  // when a host newly turns critical off screen: the sequence restarts at page 1 so it shows at once.
   const resetKey = `${effectiveCapacity}|${pageCount}|${rotationDwell ?? "-"}|${epoch ?? "-"}`;
+  const cycleMs = pageCount * pageDwellMs;
+
+  const [advance, setAdvance] = useState<{ readonly sequence: number; readonly steps: number }>({ sequence: 0, steps: 0 });
+  const sequence = useRef<{ readonly id: number; readonly key: string; readonly start: number } | null>(null);
 
   const critical = useMemo(() => criticalIds(hosts), [hosts]);
   const previousCritical = useRef<ReadonlySet<string> | null>(null);
-  const criticalGained = previousCritical.current !== null && [...critical].some((id) => !previousCritical.current!.has(id));
+  const gained = previousCritical.current === null ? [] : [...critical].filter((id) => !previousCritical.current!.has(id));
   previousCritical.current = critical;
+
+  // Flap guard: a newly critical host restarts the sequence only when it is not already on the
+  // visible page and has not triggered a restart within the last full cycle.
+  let criticalRestart = false;
+  if (gained.length > 0 && sequence.current !== null && sequence.current.key === resetKey && pageCount > 0) {
+    const currentSteps = advance.sequence === sequence.current.id ? advance.steps : 0;
+    const visible = pages[(sequence.current.start + currentSteps) % pageCount]?.hosts ?? [];
+    const now = clock.now();
+    const triggers = gained.filter(
+      (id) => !visible.some((host) => host.drilldownId === id) && !(now - (criticalRestarts.get(id) ?? Number.NEGATIVE_INFINITY) < cycleMs),
+    );
+    if (triggers.length > 0) {
+      criticalRestart = true;
+      for (const id of triggers) criticalRestarts.set(id, now);
+    }
+  }
 
   // Each sequence has its own id (never reused, so returning to an earlier key cannot resurrect an
   // old step count) and starts on page 1, or inside a rotation on the page the last visit stopped
-  // before. A newly critical host always restarts at page 1, where the worst hosts are.
-  const sequence = useRef<{ readonly id: number; readonly key: string; readonly start: number } | null>(null);
-  if (sequence.current === null || sequence.current.key !== resetKey || criticalGained) {
-    const resume = rotating && pageCount > 0 && !criticalGained ? rotationCursor % pageCount : 0;
+  // before. A critical restart always starts at page 1, where the worst hosts are.
+  if (sequence.current === null || sequence.current.key !== resetKey || criticalRestart) {
+    const resume = rotating && pageCount > 0 && !criticalRestart ? rotationCursor % pageCount : 0;
     sequence.current = { id: (sequence.current?.id ?? 0) + 1, key: resetKey, start: resume };
   }
   const { id: sequenceId, start } = sequence.current;
 
-  const [advance, setAdvance] = useState<{ readonly sequence: number; readonly steps: number }>({ sequence: 0, steps: 0 });
   const steps = advance.sequence === sequenceId ? advance.steps : 0;
   const activePageIndex = pageCount > 0 ? (start + steps) % pageCount : 0;
 

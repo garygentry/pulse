@@ -307,14 +307,14 @@ no density.
 (`views/overview/kiosk/`):
 
 - **Chrome.** The page `h1` stays but is visually hidden (`sr-only`), so there is still one per page.
-  The stat cards collapse into `KioskStatStrip`, one line: a badge per status reading
-  "Critical hosts · services" (spelled out for assistive technology), coverage gaps, and engine state
-  with its last-good time when not current. The firing ribbon collapses to one line: severity
-  counts, the first names truncated to the line, and "+N more". At wallboard widths (`xl` and up for
-  the strip, `sm` and up for the alert line) neither wraps, so their height never moves the tile
-  region. Narrower screens may wrap rather than clip a count, and below `sm` the alert line shows two
-  names instead of five. The estate time zone (with the UTC-fallback marker), which the hidden page
-  header shows on the desk, sits in the tile wall's footer beside "i / P".
+  The stat cards collapse into `KioskStatStrip`: coverage gaps and engine state (with its last-good
+  time when not current) first, then a badge per status reading "Critical hosts · services". Counts
+  from 1,000 up are compact ("5K"), and assistive technology hears the exact numbers. The strip is
+  one line when it fits, which a typical estate does at wallboard widths, and wraps rather than clip
+  a count. The firing ribbon collapses to one line: severity counts, the first names truncated to
+  the line, and "+N more". It never wraps at `sm` and up, and below `sm` it shows two names instead
+  of five. The estate time zone (with the UTC-fallback marker), which the hidden page header shows on
+  the desk, sits in the tile wall's footer beside "i / P".
 - **Tiles.** `deriveKioskHosts` flattens every host into one list, worst effective status first,
   then class, then name. It ignores the desk group/sort preferences. Each `KioskTile` is two fixed
   lines. The first holds the host name, its class label and its rollup status. The second holds the
@@ -332,8 +332,11 @@ no density.
   resize re-measures. A new capacity or page count rebuilds the pages and restarts the sequence (at
   page 1, or at the resume page inside a rotation). Each sequence has its own id,
   so a capacity that changes and changes back never resurrects an earlier page. Status changes that
-  reorder the tiles keep the current page and its timer, except that a host newly turning critical
-  restarts the sequence at page 1 (even inside a rotation), so it is on screen at once.
+  reorder the tiles keep the current page and its timer. One exception: a host that newly turns
+  critical restarts the sequence at page 1 (even inside a rotation), unless it is already on the
+  visible page. To stop a flapping host pinning the wall to page 1, each host id restarts the
+  sequence at most once per full cycle. That cooldown is module-level, like the rotation cursor, so
+  it holds across rotation visits.
 - **Timing.** Each page stays up for `max(10 s, cycle / P)`. Without rotation the cycle is 30 s, so
   up to three pages share it and more pages lengthen it. Inside a shell rotation (`?rotate=`) the
   cycle is the overview's dwell. A visit shows the pages that fit at that page dwell and holds the
