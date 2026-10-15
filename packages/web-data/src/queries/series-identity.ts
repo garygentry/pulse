@@ -23,7 +23,10 @@ export type ScrapeInstanceSource =
 /**
  * Every estate (file_sd) scrape job in `scrape.yml`, mapped to how it derives `instance`.
  * A job missing from this table (for example `probe-only`, which no VM job scrapes) falls back
- * to `"address"`, which is what Prometheus does when no relabel rule writes `instance`.
+ * SILENTLY at runtime to `"address"`, which is what Prometheus does when no relabel rule writes
+ * `instance`. Nothing checks the table against the live scrape config at runtime: the guard is
+ * `tests/queries/series-identity-contract.test.ts`, which fails when a `scrape.yml` job is added,
+ * removed or relabeled differently without updating this table.
  */
 export const ESTATE_SCRAPE_INSTANCE_SOURCE: Readonly<Record<string, ScrapeInstanceSource>> = Object.freeze({
   "managed-linux": "host",
@@ -36,6 +39,43 @@ export const ESTATE_SCRAPE_INSTANCE_SOURCE: Readonly<Record<string, ScrapeInstan
   "hypervisor-api": "address",
   "nas-api": "host",
 });
+
+/**
+ * The scrape job whose `up` is a host's liveness, by collection class. It matches the HostDown
+ * rule (`up{job="managed-linux"} == 0`, stack/compose/config/vmalert/rules/availability.yml): an
+ * auxiliary exporter on the same host (cadvisor, process-exporter, heartbeat, …) has its own job
+ * so its failure never reads as the host being down. probe-only and excluded hosts have no VM
+ * liveness job.
+ */
+export const HOST_LIVENESS_JOB: Readonly<Record<string, string>> = Object.freeze({
+  "managed-linux": "managed-linux",
+  "nas-api": "nas-api",
+  "hypervisor-api": "hypervisor-api",
+});
+
+/**
+ * The scrape jobs that scrape node_exporter directly (managed-linux :9100, and nas-api, which
+ * TrueNAS serves as a direct node_exporter scrape). The host CPU/memory/disk/load queries read
+ * `node_*` series, so they apply only to hosts with one of these jobs; a hypervisor-api host is
+ * scraped through pve-exporter and has no `node_*` series.
+ */
+export const NODE_EXPORTER_JOBS: ReadonlySet<string> = new Set(["managed-linux", "nas-api"]);
+
+/**
+ * The stack's own static scrape jobs in `scrape.yml` (engine self-observability, the central
+ * prober and the web app). They are expected on every stack and are never estate targets, so the
+ * declared-versus-scraped comparison classifies them as `engine`, not `unexpected`.
+ */
+export const ENGINE_SCRAPE_JOBS: ReadonlySet<string> = new Set([
+  "victoriametrics",
+  "vmalert",
+  "alertmanager",
+  "gatus",
+  "pve-exporter",
+  "engine-cadvisor",
+  "prober",
+  "web",
+]);
 
 /** The `job`/`instance` label pair a stored series carries for one rendered scrape target. */
 export interface ScrapeSeriesIdentity {
@@ -51,8 +91,10 @@ export interface ScrapeSeriesIdentity {
  * @param target - The model's pre-relabel scrape target.
  */
 export function scrapeSeriesIdentity(hostName: string, target: WebScrapeTarget): ScrapeSeriesIdentity {
-  const source = Object.hasOwn(ESTATE_SCRAPE_INSTANCE_SOURCE, target.job)
-    ? ESTATE_SCRAPE_INSTANCE_SOURCE[target.job]
-    : "address";
-  return { job: target.job, instance: source === "host" ? hostName : target.instance };
+  return { job: target.job, instance: scrapeInstanceSource(target.job) === "host" ? hostName : target.instance };
+}
+
+/** Where `job`'s stored `instance` comes from; an unknown job falls back to `"address"`. */
+export function scrapeInstanceSource(job: string): ScrapeInstanceSource {
+  return Object.hasOwn(ESTATE_SCRAPE_INSTANCE_SOURCE, job) ? ESTATE_SCRAPE_INSTANCE_SOURCE[job]! : "address";
 }

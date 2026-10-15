@@ -56,6 +56,7 @@ export const DIFF_STATUS: Readonly<Record<DeclaredScrapeComparison["state"], Tar
   matched: "ok",
   missing: "warning",
   unexpected: "warning",
+  engine: "ok",
   unknown: "unknown",
 };
 

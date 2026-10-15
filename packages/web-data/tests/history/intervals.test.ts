@@ -30,7 +30,7 @@ function host(name: string): WebEstateModelV2["hosts"][number] {
     expectedChurn: false,
     scrapeIntervalClass: null,
     provenance: prov(),
-    scrapeTargets: [{ job: "node", instance: "10.0.0.1:9100" }],
+    scrapeTargets: [{ job: "managed-linux", instance: "10.0.0.1:9100" }],
     artifacts: [],
     detail: { exporterPorts: [9100], cadvisor: false, heartbeat: true, deliveryForm: "compose", commandSignals: [] },
   };

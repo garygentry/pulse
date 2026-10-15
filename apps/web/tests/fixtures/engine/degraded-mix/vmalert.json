@@ -53,7 +53,7 @@
             "alerts": [
               {
                 "state": "firing",
-                "labels": { "alertname": "HypervisorUnreachable", "severity": "critical", "estate": "reference-estate", "host": "harbor-hv-01", "instance": "harbor-hv-01:9633", "job": "hypervisor-api" },
+                "labels": { "alertname": "HypervisorUnreachable", "severity": "critical", "estate": "reference-estate", "host": "harbor-hv-01", "instance": "https://harbor-hv-01.nimbus.example/api", "job": "hypervisor-api" },
                 "annotations": { "summary": "harbor-hv-01 hypervisor API has not answered for 5m" },
                 "activeAt": "2025-12-31T23:41:00.000Z",
                 "value": "0e+00"
@@ -75,7 +75,7 @@
             "alerts": [
               {
                 "state": "pending",
-                "labels": { "alertname": "NasCapacityHigh", "severity": "warning", "estate": "reference-estate", "host": "harbor-nas-01", "instance": "harbor-nas-01:9101", "job": "nas-api" },
+                "labels": { "alertname": "NasCapacityHigh", "severity": "warning", "estate": "reference-estate", "host": "harbor-nas-01", "instance": "harbor-nas-01", "job": "nas-api" },
                 "annotations": { "summary": "harbor-nas-01 volume pool is above 85% capacity" },
                 "activeAt": "2025-12-31T23:55:00.000Z",
                 "value": "8.7e-01"

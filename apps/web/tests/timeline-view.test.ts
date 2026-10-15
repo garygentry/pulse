@@ -1894,8 +1894,10 @@ describeDom("timeline detail — TargetDetail (item 021)", (dom) => {
     expect(slots(noEndpoints).length).toBe(0);
 
     const noCharts = await mountDetail({ node: { ...host, queryIds: ["estate.liveness"] } });
-    expect(noCharts.textContent).toContain("No curated charts for this host");
-    expect(noCharts.textContent).toContain("The timeline index advertises no capacity charts for this host.");
+    expect(noCharts.textContent).toContain("Capacity metrics not collected for this host");
+    expect(noCharts.textContent).toContain(
+      "CPU, memory, disk and load come from node_exporter, which is not scraped for this host's collection class.",
+    );
     expect(slots(noCharts).length).toBe(0);
     expect(stub.calls.length).toBe(0);
   });

@@ -357,6 +357,11 @@ function DiffBody(props: {
         <span data-testid="estate-diff-matched-count">
           <Status status={effectiveStatus(DIFF_STATUS.matched, stale)} label={`${parts.matched.length} matched`} />
         </span>
+        {parts.engine.length > 0 ? (
+          <span data-testid="estate-diff-engine-count">
+            <Status status={effectiveStatus(DIFF_STATUS.engine, stale)} label={`${parts.engine.length} engine (expected)`} />
+          </span>
+        ) : null}
         <span data-testid="estate-diff-unknown-count">
           <Status status="unknown" label={`${parts.unknown.length} unknown`} />
         </span>

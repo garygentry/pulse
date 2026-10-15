@@ -22,8 +22,12 @@ export interface EstateTargetState {
 export interface DeclaredScrapeComparison {
   /** Declared target drilldown identity. */ readonly drilldownId: string;
   /** Rendered scrape relationship, or null when none is declared. */ readonly scrapeTarget: string | null;
-  /** Comparison outcome; unknown when scrape discovery is unavailable. */
-  readonly state: "matched" | "missing" | "unexpected" | "unknown";
+  /**
+   * Comparison outcome; unknown when scrape discovery is unavailable. `engine` is a discovered
+   * target of the stack's own static scrape jobs (VictoriaMetrics, vmalert, …): expected, and
+   * never an estate declaration.
+   */
+  readonly state: "matched" | "missing" | "unexpected" | "engine" | "unknown";
   /** Human-readable explanation. */ readonly message: string;
 }
 

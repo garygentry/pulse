@@ -16,7 +16,12 @@ import type {
 } from "@pulse/renderer";
 import { QUERY_CATALOG, isQueryId } from "./catalog.js";
 import { parseRange } from "./ranges.js";
-import { scrapeSeriesIdentity, type ScrapeSeriesIdentity } from "./series-identity.js";
+import {
+  HOST_LIVENESS_JOB,
+  NODE_EXPORTER_JOBS,
+  scrapeSeriesIdentity,
+  type ScrapeSeriesIdentity,
+} from "./series-identity.js";
 
 // ---------------------------------------------------------------------------
 // Public contracts (01-core-definitions.md §… / 06 §1)
@@ -59,7 +64,10 @@ export type QueryBindResult =
 interface ResolvedTargetBase {
   readonly target: TargetIdentity;
   readonly host: string | null;
-  /** Post-relabel `job`/`instance` pairs of the host's stored series (empty for non-hosts). */
+  /**
+   * Post-relabel `job`/`instance` pairs this query selects for a host, already narrowed to the
+   * query's source job(s) (empty for non-hosts).
+   */
   readonly series: readonly ScrapeSeriesIdentity[];
 }
 type ResolvedTarget =
@@ -159,12 +167,41 @@ function seriesOf(host: WebEstateHostV2): readonly ScrapeSeriesIdentity[] {
     .map(([, identity]) => identity);
 }
 
-function resolveHost(model: WebEstateModelV2, id: string, targetKind: TargetKind): ResolveOutcome {
+/** The host capacity queries, all read from node_exporter series. */
+const NODE_EXPORTER_QUERIES: ReadonlySet<QueryId> = new Set([
+  "host.cpu.utilization",
+  "host.memory.utilization",
+  "host.disk.utilization",
+  "host.load.1m",
+]);
+
+/**
+ * Narrow a host's series to the ones `queryId` reads:
+ *  - liveness reads only the host's main collection job (`HOST_LIVENESS_JOB`), matching the
+ *    HostDown rule, so a failed auxiliary exporter (cadvisor, process-exporter, …) never draws
+ *    the host as down; a class with no main VM job (probe-only) keeps every declared target;
+ *  - capacity queries read only node_exporter jobs; a host without one gets none (not applicable).
+ */
+function seriesForQuery(
+  host: WebEstateHostV2,
+  queryId: QueryId,
+  series: readonly ScrapeSeriesIdentity[],
+): readonly ScrapeSeriesIdentity[] {
+  if (NODE_EXPORTER_QUERIES.has(queryId)) return series.filter((s) => NODE_EXPORTER_JOBS.has(s.job));
+  if (queryId === "estate.liveness") {
+    const main = Object.hasOwn(HOST_LIVENESS_JOB, host.collectionClass) ? HOST_LIVENESS_JOB[host.collectionClass] : undefined;
+    const narrowed = series.filter((s) => s.job === main);
+    return narrowed.length > 0 ? narrowed : series;
+  }
+  return series;
+}
+
+function resolveHost(model: WebEstateModelV2, id: string, targetKind: TargetKind, queryId: QueryId): ResolveOutcome {
   const matches = model.hosts.filter((h) => h.drilldownId === id);
   if (matches.length === 0) return fail("TARGET_NOT_FOUND");
   if (matches.length > 1) return fail("TARGET_NOT_FOUND"); // ambiguous identity: never "first wins"
   const host = matches[0]!;
-  const series = seriesOf(host);
+  const series = seriesForQuery(host, queryId, seriesOf(host));
   if (series.length === 0 || series.some((s) => hasForbiddenControl(s.job) || hasForbiddenControl(s.instance))) {
     return fail("QUERY_NOT_APPLICABLE", { queryId: id, targetKind });
   }
@@ -243,7 +280,7 @@ function resolveTarget(
 ): ResolveOutcome {
   if (queryId === "estate.liveness" && target !== null) {
     if (!isBoundedControlFreeId(target.id)) return fail("INVALID_REQUEST");
-    if (target.kind === "host") return resolveHost(model, target.id, "host");
+    if (target.kind === "host") return resolveHost(model, target.id, "host", queryId);
     if (target.kind === "service") return resolveService(model, target.id, "service");
     return fail("QUERY_NOT_APPLICABLE", { queryId, targetKind: target.kind });
   }
@@ -259,7 +296,7 @@ function resolveTarget(
     return fail("INVALID_REQUEST");
   }
 
-  if (targetKind === "host") return resolveHost(model, target.id, targetKind);
+  if (targetKind === "host") return resolveHost(model, target.id, targetKind, queryId);
   if (targetKind === "endpoint") return resolveEndpoint(model, target.id);
 
   const resolved = resolveService(model, target.id, targetKind);
@@ -308,7 +345,9 @@ const QUERY_BUILDERS: Readonly<Record<QueryId, QueryBuilder>> = {
   "estate.liveness": (target) => {
     const host = asHost(target);
     if (host !== null) {
-      return `${hostQuery(target, "min", (selector) => `(up{${selector}} or pulse_agent_up{${selector}})`)} or vector(0/0)`;
+      // `up` of the main collection job only, as HostDown reads it; pulse_agent_up only ever
+      // emits 1, so it can never show a host down and is not part of host liveness.
+      return `${hostQuery(target, "min", (selector) => `up{${selector}}`)} or vector(0/0)`;
     }
     const service = asService(target);
     if (service !== null) {

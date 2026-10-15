@@ -19,7 +19,7 @@ import { CLIENT_QUERY_META, HOST_CHART_QUERIES, rangeExceedsMax, SERVICE_CHART_Q
 import type { ClientQueryMeta } from "../_shared/timeseries/query-meta.js";
 import { targetKey } from "./model.js";
 import type { LaneNode } from "./model.js";
-import { CHART_READOUT_ORDER, CHECK_LATENCY_UNAVAILABLE, HOST_CHART_TITLE, estateHref, notAvailableAtRange, safeGrafanaHref } from "./detail-model.js";
+import { CHART_READOUT_ORDER, CHECK_LATENCY_UNAVAILABLE, HOST_CAPACITY_NOT_COLLECTED, HOST_CHART_TITLE, estateHref, notAvailableAtRange, safeGrafanaHref } from "./detail-model.js";
 
 const TITLE_ID = "timeline-detail-title";
 /** Auto-fit chart columns, at least 20rem each; one column on narrow viewports. */
@@ -73,8 +73,8 @@ export function TargetDetail(props: TargetDetailProps): ReactElement {
     charts = queries.length === 0 ? (
       <EmptyState
         icon="info"
-        title="No curated charts for this host"
-        description="The timeline index advertises no capacity charts for this host."
+        title={HOST_CAPACITY_NOT_COLLECTED.title}
+        description={HOST_CAPACITY_NOT_COLLECTED.description}
       />
     ) : (
       <div data-slot="timeline-detail-charts" className={CHARTS_CLASS}>

@@ -124,6 +124,8 @@ export interface DiffPartition {
   /** Scraped-but-not-declared. */
   readonly unexpected: readonly DeclaredScrapeComparison[];
   readonly matched: readonly DeclaredScrapeComparison[];
+  /** The stack's own engine targets: expected, counted, never a gap. */
+  readonly engine: readonly DeclaredScrapeComparison[];
   readonly unknown: readonly DeclaredScrapeComparison[];
 }
 
@@ -132,12 +134,14 @@ export function partitionComparisons(list: readonly DeclaredScrapeComparison[]):
   const missing: DeclaredScrapeComparison[] = [];
   const unexpected: DeclaredScrapeComparison[] = [];
   const matched: DeclaredScrapeComparison[] = [];
+  const engine: DeclaredScrapeComparison[] = [];
   const unknown: DeclaredScrapeComparison[] = [];
   for (const c of list) {
     if (c.state === "missing") missing.push(c);
     else if (c.state === "unexpected") unexpected.push(c);
     else if (c.state === "matched") matched.push(c);
+    else if (c.state === "engine") engine.push(c);
     else unknown.push(c);
   }
-  return { missing, unexpected, matched, unknown };
+  return { missing, unexpected, matched, engine, unknown };
 }

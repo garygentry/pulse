@@ -13,13 +13,14 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import type { WebEstateModelV2 } from "@pulse/renderer";
-import { scrapeSeriesIdentity } from "@pulse/web-data/queries";
+import { bindCuratedQuery, scrapeSeriesIdentity } from "@pulse/web-data/queries";
 import { createAlertmanagerClient, createGatusClient, createVmClient } from "@pulse/web-data/sources";
 
 import { loadServerConfig } from "../src/server/config.js";
 import { MOCK_BASE_URLS, MOCK_ENV, SCENARIO_NAMES, createMockEngine } from "../src/server/dev/mock-engine.js";
 import { DEFAULT_SCENARIO_DIR, MockScenarioError, loadScenario } from "../src/server/dev/scenario.js";
 import { createServerRuntime } from "../src/server/refresh.js";
+import { mockRangeBody } from "../src/server/dev/history.js";
 
 const REFERENCE_MODEL = resolve(import.meta.dir, "../../../examples/reference/rendered/web-estate-model.json");
 const CLOCK = Date.parse("2026-10-08T12:00:00.000Z");
@@ -113,7 +114,7 @@ describe("history reads", () => {
       alertname: "HypervisorUnreachable",
       severity: "critical",
       host: "harbor-hv-01",
-      instance: "harbor-hv-01:9633",
+      instance: "https://harbor-hv-01.nimbus.example/api",
     });
     // Fired 19 minutes before the scenario start: firing samples cover only the last 19 minutes.
     expect(hv.samples[0]!.timestampMs).toBeGreaterThanOrEqual(CLOCK - 19 * 60_000);
@@ -125,7 +126,7 @@ describe("history reads", () => {
     const down = await vm.queryRange({
       ...range,
       promql:
-        'min((up{job="hypervisor-api",instance="https://harbor-hv-01.nimbus.example/api"} or pulse_agent_up{job="hypervisor-api",instance="https://harbor-hv-01.nimbus.example/api"})) or vector(0/0)',
+        'min(up{job="hypervisor-api",instance="https://harbor-hv-01.nimbus.example/api"}) or vector(0/0)',
     });
     if (!down.ok) throw new Error("liveness failed");
     expect(down.data.series[0]!.samples.every((s) => s.value === 0)).toBe(true);
@@ -169,6 +170,25 @@ describe("history reads", () => {
     expect(result.data.results.map((r) => r.success)).toEqual([true, false]);
     expect((await gatus.endpointHistory("estate_dns-nimbus-example")).ok).toBe(true);
     expect((await gatus.endpointHistory("no-such_endpoint")).ok).toBe(false);
+  });
+});
+
+describe("host liveness reads the main job only (issue #69)", () => {
+  test("a down auxiliary exporter on a healthy host does not draw the host down", () => {
+    const sample = (job: string, value: string) => ({
+      metric: { __name__: "up", job, instance: "harbor-web-01", host: "harbor-web-01" },
+      value: [CLOCK / 1000, value] as [number, string],
+    });
+    const vmBody = {
+      status: "success" as const,
+      data: { resultType: "vector" as const, result: [sample("managed-linux", "1"), sample("cadvisor", "0"), sample("process-exporter", "0")] },
+    };
+    const model = JSON.parse(readFileSync(REFERENCE_MODEL, "utf8")) as WebEstateModelV2;
+    const bound = bindCuratedQuery("estate.liveness", { kind: "host", id: "host:harbor-web-01" }, null, model);
+    if (!bound.ok) throw new Error(bound.error.code);
+    const body = mockRangeBody(bound.query.promql, { start: CLOCK / 1000 - 600, end: CLOCK / 1000, step: 60 }, { vm: vmBody, alertmanager: [] }, CLOCK);
+    expect(body.data.result).toHaveLength(1);
+    expect(body.data.result[0]!.values.every(([, v]) => v === "1")).toBe(true);
   });
 });
 

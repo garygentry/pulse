@@ -394,6 +394,7 @@ describe("foldEstate — rendered vocabulary, joins, artifacts", () => {
             scrapeTarget({ job: "managed-linux", instance: "hostA" }),
             scrapeTarget({ job: "hypervisor-api", instance: "https://10.0.0.1:8006" }),
             scrapeTarget({ job: "cadvisor", instance: "hostA" }),
+            scrapeTarget({ job: "victoriametrics", instance: "victoriametrics:8428" }),
           ]),
         }),
       }),
@@ -402,7 +403,46 @@ describe("foldEstate — rendered vocabulary, joins, artifacts", () => {
       ["10.0.0.1:9100", "matched"],
       ["https://10.0.0.1:8006", "matched"],
       ["hostA", "unexpected"],
+      // The stack's own static scrape jobs are expected engine targets, never "unexpected".
+      ["victoriametrics:8428", "engine"],
     ]);
+  });
+
+  test("declared-versus-scraped tells custom-exporter ports apart by scrape URL (issue #69)", () => {
+    // Both ports relabel to {job="managed-linux-exporters", instance="hostA"}; only the scrape
+    // URL's host:port says which one VM actually discovered.
+    const twoPorts = model({
+      hosts: [
+        {
+          ...model().hosts[0]!,
+          scrapeTargets: [
+            { job: "managed-linux-exporters", instance: "10.0.0.1:9400" },
+            { job: "managed-linux-exporters", instance: "10.0.0.1:9500" },
+          ],
+        },
+      ],
+    });
+    const est = foldEstate(
+      inputs({
+        model: twoPorts,
+        records: records({
+          "victoriametrics-targets": ok<readonly ScrapeTargetState[]>([
+            scrapeTarget({ job: "managed-linux-exporters", instance: "hostA", scrapeUrl: "http://10.0.0.1:9400/metrics" }),
+            scrapeTarget({ job: "managed-linux-exporters", instance: "hostA", scrapeUrl: "http://10.0.0.1:9600/metrics" }),
+          ]),
+        }),
+      }),
+    );
+    const rows = est.declaredVersusScraped.value ?? [];
+    expect(rows.map((row) => [row.scrapeTarget, row.state])).toEqual([
+      ["10.0.0.1:9400", "matched"],
+      ["10.0.0.1:9500", "missing"],
+      ["hostA", "unexpected"],
+    ]);
+    // Rows name the job, and an unexpected row names the address it was scraped at.
+    expect(rows[1]!.message).toContain("job managed-linux-exporters");
+    expect(rows[2]!.message).toContain("job managed-linux-exporters");
+    expect(rows[2]!.message).toContain("10.0.0.1:9600");
   });
 
   test("declared-versus-scraped reports missing and unexpected drift explicitly", () => {

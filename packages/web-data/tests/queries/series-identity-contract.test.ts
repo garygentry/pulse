@@ -16,7 +16,10 @@ import { render, type WebEstateModelV2 } from "@pulse/renderer";
 
 import { bindCuratedQuery } from "../../src/queries/binding.js";
 import {
+  ENGINE_SCRAPE_JOBS,
   ESTATE_SCRAPE_INSTANCE_SOURCE,
+  HOST_LIVENESS_JOB,
+  NODE_EXPORTER_JOBS,
   scrapeSeriesIdentity,
   type ScrapeInstanceSource,
   type ScrapeSeriesIdentity,
@@ -24,6 +27,7 @@ import {
 
 const REPO_ROOT = resolve(import.meta.dir, "../../../..");
 const SCRAPE_YML = resolve(REPO_ROOT, "stack/compose/config/victoriametrics/scrape.yml");
+const AVAILABILITY_RULES = resolve(REPO_ROOT, "stack/compose/config/vmalert/rules/availability.yml");
 
 // ---------------------------------------------------------------------------
 // A minimal Prometheus relabel engine (action: replace only — anything else fails loudly)
@@ -49,6 +53,20 @@ const scrapeJobs: readonly ScrapeJob[] = (
 const fileSdJobs = scrapeJobs.filter((job) => (job.file_sd_configs ?? []).length > 0);
 const fileSdJobByName = new Map(fileSdJobs.map((job) => [job.job_name, job]));
 
+/**
+ * Go `regexp.Expand` semantics for a relabel replacement: `$$` is a literal `$`; `$name` takes the
+ * longest run of letters, digits and underscores; `${name}` is explicit. An all-digit name is a
+ * group number, anything else a named group; an unknown or out-of-range reference expands empty.
+ */
+function expand(template: string, match: RegExpExecArray): string {
+  return template.replace(/\$(?:(\$)|\{([A-Za-z0-9_]+)\}|([A-Za-z0-9_]+))/g, (_, dollar, braced, bare) => {
+    if (dollar !== undefined) return "$";
+    const name: string = braced ?? bare;
+    if (/^\d+$/.test(name)) return match[Number(name)] ?? "";
+    return match.groups?.[name] ?? "";
+  });
+}
+
 /** Apply a job's relabel rules to one discovered target, returning the final target labels. */
 function relabel(job: ScrapeJob, address: string, groupLabels: Readonly<Record<string, string>>): Record<string, string> {
   const labels: Record<string, string> = { ...groupLabels, __address__: address, job: job.job_name };
@@ -58,9 +76,11 @@ function relabel(job: ScrapeJob, address: string, groupLabels: Readonly<Record<s
       throw new Error(`${job.job_name}: relabel action "${action}" is not modelled; extend this test`);
     }
     const value = (rule.source_labels ?? []).map((name) => labels[name] ?? "").join(rule.separator ?? ";");
-    const match = new RegExp(`^(?:${rule.regex ?? "(.*)"})$`).exec(value);
+    // RE2 named groups (?P<name>…) are spelled (?<name>…) in JS; the match is fully anchored.
+    const pattern = (rule.regex ?? "(.*)").replaceAll("(?P<", "(?<");
+    const match = new RegExp(`^(?:${pattern})$`).exec(value);
     if (match === null || rule.target_label === undefined) continue;
-    const replaced = (rule.replacement ?? "$1").replace(/\$(\d+)|\$\{(\d+)\}/g, (_, a, b) => match[Number(a ?? b)] ?? "");
+    const replaced = expand(rule.replacement ?? "$1", match);
     if (replaced === "") delete labels[rule.target_label];
     else labels[rule.target_label] = replaced;
   }
@@ -164,6 +184,42 @@ describe("scrape series identity contract (issue #69)", () => {
     expect(Object.entries(derived).filter(([, v]) => v === "address").map(([k]) => k)).toEqual(["hypervisor-api"]);
   });
 
+  test("the relabel engine expands replacements the way Prometheus (Go regexp.Expand) does", () => {
+    const m = /^(?:(?<h>[a-z]+):(\d+))$/.exec("node:9100")!;
+    expect(expand("$1", m)).toBe("node");
+    expect(expand("${1}x", m)).toBe("nodex");
+    expect(expand("$1x", m)).toBe(""); // `1x` is one (unknown) name, as in Go
+    expect(expand("$$1", m)).toBe("$1");
+    expect(expand("${h}-$2", m)).toBe("node-9100");
+    expect(expand("$h", m)).toBe("node");
+  });
+
+  test("engine scrape jobs are exactly scrape.yml's static (non-file_sd) jobs", () => {
+    const staticJobs = scrapeJobs.filter((job) => (job.file_sd_configs ?? []).length === 0).map((job) => job.job_name);
+    expect([...ENGINE_SCRAPE_JOBS].sort()).toEqual(staticJobs.sort());
+  });
+
+  test("host liveness jobs are wired file_sd jobs and managed-linux matches the HostDown rule", () => {
+    for (const job of Object.values(HOST_LIVENESS_JOB)) expect(fileSdJobByName.has(job), job).toBe(true);
+    const rules = parseYaml(readFileSync(AVAILABILITY_RULES, "utf8")) as {
+      groups: Array<{ rules: Array<{ alert?: string; expr?: string }> }>;
+    };
+    const hostDown = rules.groups.flatMap((g) => g.rules).find((r) => r.alert === "HostDown");
+    expect(hostDown?.expr).toContain(`up{job="${HOST_LIVENESS_JOB["managed-linux"]}"}`);
+  });
+
+  test("node_exporter jobs are exactly the wired jobs that scrape :9100", () => {
+    for (const job of NODE_EXPORTER_JOBS) expect(fileSdJobByName.has(job), job).toBe(true);
+    for (const bundle of bundles) {
+      for (const host of bundle.model.hosts) {
+        for (const t of host.scrapeTargets) {
+          if (UNWIRED_JOBS.has(t.job)) continue;
+          expect(t.instance.endsWith(":9100"), `${bundle.name} ${t.job} ${t.instance}`).toBe(NODE_EXPORTER_JOBS.has(t.job));
+        }
+      }
+    }
+  });
+
   test("bundles under test cover every wired file_sd job", () => {
     const covered = new Set(bundles.flatMap((b) => b.model.hosts.flatMap((h) => h.scrapeTargets.map((t) => t.job))));
     for (const job of fileSdJobs) expect(covered.has(job.job_name), `no bundle exercises ${job.job_name}`).toBe(true);
@@ -201,11 +257,22 @@ describe("scrape series identity contract (issue #69)", () => {
       for (const host of bundle.model.hosts) {
         const wired = host.scrapeTargets.filter((t) => !UNWIRED_JOBS.has(t.job));
         if (wired.length === 0) continue;
-        const expected = new Set(wired.map((t) => key(storedIdentity(bundle, host.name, t.job, t.instance))));
+        const stored = wired.map((t) => storedIdentity(bundle, host.name, t.job, t.instance));
+        const mainJob = HOST_LIVENESS_JOB[host.collectionClass];
+        expect(mainJob, `${bundle.name} ${host.name} has a liveness job`).toBeDefined();
         for (const queryId of HOST_QUERIES) {
+          const picked = queryId === "estate.liveness"
+            ? stored.filter((s) => s.job === mainJob)
+            : stored.filter((s) => NODE_EXPORTER_JOBS.has(s.job));
           const r = bindCuratedQuery(queryId, { kind: "host", id: host.drilldownId }, null, bundle.model);
+          if (picked.length === 0) {
+            // e.g. hypervisor capacity: no node_exporter series, so the query is not applicable.
+            expect(r.ok, `${bundle.name} ${host.name} ${queryId}`).toBe(false);
+            continue;
+          }
           expect(r.ok, `${bundle.name} ${host.name} ${queryId}`).toBe(true);
           if (!r.ok) continue;
+          const expected = new Set(picked.map(key));
           const selected = new Set(
             [...r.query.promql.matchAll(/\bjob="((?:[^"\\]|\\.)*)",instance="((?:[^"\\]|\\.)*)"/g)].map((m) =>
               key({ job: m[1]!, instance: m[2]! }),
