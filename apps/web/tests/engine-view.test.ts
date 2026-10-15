@@ -1214,6 +1214,13 @@ describeDom("engine view — EngineView (item 017)", (dom) => {
     expect(stub!.calls).toEqual([]);
   });
 
+  test("?kiosk=1 while loading: the loading page root is the kiosk page (the wallboard gutter does not wait for the payload)", async () => {
+    const m = await mountView({ search: "?kiosk=1", engine: null, phase: "initial", connection: "initial" });
+    const root = m.container.querySelector('[data-slot="engine-page"]')!;
+    expect(root.getAttribute("data-region")).toBe("loading");
+    expect(root.getAttribute("data-kiosk")).toBe("1");
+  });
+
   test("REQ-VERDICT-01 / REQ-DEGRADE-01: null engine with a persistently stale connection → Unknown banner and 'Engine data unavailable'", async () => {
     const m = await mountView({ engine: null, phase: "initial", connection: "stale" });
     const c = m.container;
