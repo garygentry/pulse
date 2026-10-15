@@ -1,4 +1,3 @@
-// Pulse divergence from deck: `fromMap` applies the entry's `variant` (caller props still win).
 import type { ComponentProps, ReactElement, ReactNode } from "react";
 import type { IconName } from "@/ui/lib/icons";
 import type { StatusMap, StatusPresentation, Tone } from "@/ui/lib/status";
@@ -19,7 +18,7 @@ export interface StatusBadgeProps
   /** Muted suffix after a separator, e.g. "as of 58s ago". Part of the accessible text. */
   detail?: ReactNode;
   size?: StatusBadgeSize;
-  variant?: StatusBadgeVariant;
+  variant?: StatusBadgeVariant | undefined;
   /**
    * Supplementary tooltip (e.g. the full observation time). It must never be the
    * only carrier of information. When set, the badge becomes focusable so the
@@ -95,22 +94,22 @@ function StatusBadgeBase({
 export type StatusBadgeMapProps = Omit<StatusBadgeProps, "tone" | "icon" | "label"> &
   Partial<Pick<StatusBadgeProps, "label">>;
 
-/** Bind a feature's `defineStatusMap` entry to a badge: `StatusBadge.fromMap(MAP, state)`. */
+/**
+ * Bind a feature's `defineStatusMap` entry to a badge: `StatusBadge.fromMap(MAP, state)`. The
+ * entry's tone, icon, label, role and variant apply; `props` win over all but tone and icon.
+ * An explicit `variant: undefined` keeps the entry's variant; `role: undefined` drops the entry's role
+ * (static text that must not be a live region).
+ */
 function fromMap<S extends string>(
   map: StatusMap<S>,
   state: S,
   props?: StatusBadgeMapProps,
 ): ReactElement {
   const { tone, icon, label, role, variant } = map[state];
+  // A defined variant prop wins; an explicit `variant: undefined` (e.g. a forwarded optional prop)
+  // keeps the entry's. `role: undefined` stays the way to drop the entry's live-region role.
   return (
-    <StatusBadgeBase
-      tone={tone}
-      icon={icon}
-      label={label}
-      role={role}
-      {...(variant !== undefined ? { variant } : {})}
-      {...props}
-    />
+    <StatusBadgeBase tone={tone} icon={icon} label={label} role={role} {...props} variant={props?.variant ?? variant} />
   );
 }
 

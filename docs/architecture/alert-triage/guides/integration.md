@@ -189,7 +189,7 @@ Check whether the data tier is changing `historyRef.queryId` or its target ident
 
 ### Keyboard focus does not reach an off-screen row
 
-Keep `TRIAGE_ROW_HEIGHT` derived from `DATA_TABLE_VIRTUALIZE_DEFAULTS` and pass it as the table's `virtualize.rowHeight`. The keyboard controller reaches virtualized-out rows through the `DataTable` handle's `scrollToIndex`, so wire `tableRef` through to it rather than scrolling by hand.
+The triage table passes plain `virtualize`: rows take their height from the density tokens and are measured as they render. The keyboard controller reaches virtualized-out rows through the `DataTable` handle's `scrollToIndex`, so wire `tableRef` through to it rather than scrolling by hand.
 
 ### Alert chunk unexpectedly includes uPlot
 

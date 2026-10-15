@@ -7,10 +7,9 @@ import type { ActiveAlert, AlertsPayload } from "@pulse/web-data/wire";
 import type { ReactElement } from "react";
 import { formatAge, formatTarget, summaryText } from "../src/client/views/alerts/table/columns-model.js";
 import { triageColumns } from "../src/client/views/alerts/table/columns.js";
-import { TRIAGE_ROW_HEIGHT } from "../src/client/views/alerts/table/TriageTable.js";
 import { firingRows } from "../src/client/views/alerts/model.js";
 import { describeDom } from "./dom.js";
-import { stubVirtualViewport } from "./alerts-dom-helpers.js";
+import { COMPACT_ROW_ESTIMATE, stubVirtualViewport } from "./alerts-dom-helpers.js";
 import { FIXTURE_FINGERPRINTS, FIXTURE_NOW, makeAlertsPayload } from "./alerts-fixtures.js";
 
 const F = FIXTURE_FINGERPRINTS;
@@ -257,7 +256,7 @@ describeDom("TriageTable virtualization", (dom) => {
   let restore: (() => void) | null = null;
   const live: (() => void)[] = [];
   beforeEach(() => {
-    restore = stubVirtualViewport(TRIAGE_ROW_HEIGHT);
+    restore = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
   });
   afterEach(() => {
     while (live.length > 0) live.pop()!();
@@ -289,7 +288,8 @@ describeDom("TriageTable virtualization", (dom) => {
     const container = await mountMany(5000);
     const root = container.querySelector('[data-slot="data-table"][data-virtualized]')!;
     expect(root).not.toBeNull();
-    const viewport = root.querySelector('[data-slot="data-table-viewport"]')!;
+    // The root is the scroll region.
+    const viewport = root;
     expect(viewport.getAttribute("role")).toBe("region");
     expect(viewport.getAttribute("class")).toContain("max-h-[70vh]");
     expect(root.querySelector("table")!.getAttribute("aria-rowcount")).toBe("5001");
@@ -299,7 +299,6 @@ describeDom("TriageTable virtualization", (dom) => {
     expect(controls[0]!.getAttribute("data-triage-open")).toBe("fp-0");
     // Header cells stick to the top of the table's own scroll region.
     for (const th of root.querySelectorAll("thead th")) expect(th.getAttribute("class")).toContain("sticky");
-    expect(TRIAGE_ROW_HEIGHT).toBe(36);
   });
 
   test("virtualizes at the default 300-row threshold, not below it", async () => {

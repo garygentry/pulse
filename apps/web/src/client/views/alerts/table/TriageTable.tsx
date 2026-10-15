@@ -7,14 +7,10 @@
 import type { RefObject, ReactElement, MouseEvent as ReactMouseEvent } from "react";
 import type { Signal } from "@preact/signals-core";
 
-import { DATA_TABLE_VIRTUALIZE_DEFAULTS, DataTable, EmptyState } from "@/ui";
+import { DataTable, EmptyState } from "@/ui";
 import type { DataTableHandle } from "@/ui";
 import type { ActiveAlert } from "@pulse/web-data/wire";
 import { triageColumns } from "./columns.js";
-
-/** Fixed row height of the virtualized triage table (the compact DataTable row). Exported so tests
- *  and the keyboard loop agree with the value passed to `virtualize.rowHeight`. */
-export const TRIAGE_ROW_HEIGHT: number = DATA_TABLE_VIRTUALIZE_DEFAULTS.rowHeight.compact;
 
 export interface TriageTableProps {
   /** Facet-filtered firing rows, in the data tier's order. Never re-sorted. */
@@ -78,7 +74,7 @@ export function TriageTable(props: TriageTableProps): ReactElement {
         data={props.rows}
         getRowId={(a) => a.fingerprint}
         rowHeader={false}
-        virtualize={{ rowHeight: TRIAGE_ROW_HEIGHT }}
+        virtualize
         className="max-h-[70vh]"
       />
     </div>

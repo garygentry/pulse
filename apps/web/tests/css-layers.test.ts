@@ -124,7 +124,7 @@ describe("cascade layers in the source stylesheets", () => {
     const app = readFileSync(join(CLIENT_DIR, "styles/app.css"), "utf8");
     const imports = [...app.matchAll(/@import "([^"]+)"[^;]*;/g)].map((m) => m[0]);
     // `source("..")` roots Tailwind's source detection at src/client, not the build's working directory.
-    expect(imports).toEqual(['@import "tailwindcss" source("..");', '@import "tw-animate-css";', '@import "./theme.css";', '@import "./theme-pulse.css";']);
+    expect(imports).toEqual(['@import "tailwindcss" source("..");', '@import "tw-animate-css";', '@import "./theme.css";', '@import "./tailwind-theme.css";', '@import "./theme-pulse.css";']);
     expect(app).not.toMatch(/\blegacy\b/);
   });
 });

@@ -132,7 +132,7 @@ export function SearchInput({
         ) : shortcut ? (
           <kbd
             aria-hidden="true"
-            className="pointer-events-none absolute right-2 rounded border border-border bg-muted px-1.5 font-mono text-xs text-muted-foreground"
+            className="pointer-events-none absolute right-2 rounded-sm border border-border bg-muted px-1.5 font-mono text-xs text-muted-foreground"
           >
             /
           </kbd>

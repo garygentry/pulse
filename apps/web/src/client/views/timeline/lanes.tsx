@@ -431,7 +431,7 @@ function PlotBlock(p: PlotBlockProps): ReactElement {
     return readouts.register({ id: block.id, read }, LANE_READOUT_ORDER + blockIndex);
   }, [block, blockIndex, evidence, readouts, clock]);
 
-  const lanes: TimelineLane[] = block.rows.map((row) => {
+  const lanes: TimelineLane<TargetStatus>[] = block.rows.map((row) => {
     const v = views.get(row.key)!;
     return { id: row.key, label: laneAccessibleLabel(v), segments: v.result.segments };
   });
@@ -441,6 +441,8 @@ function PlotBlock(p: PlotBlockProps): ReactElement {
       <StatusTimeline
         className="block max-w-none"
         lanes={lanes}
+        statusMap={TARGET_STATUS}
+        formatTime={(s) => clock.format(isoOf(s))}
         domainStart={view.start}
         domainEnd={view.end}
         width={width}

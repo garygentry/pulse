@@ -11,7 +11,7 @@ import type { ReactElement } from "react";
 import { describeDom } from "./dom.js";
 import { makeAlertsPayload } from "./alerts-fixtures.js";
 import { isolateDomGlobals } from "./alerts-dom-isolation.js";
-import { stubVirtualViewport } from "./alerts-dom-helpers.js";
+import { COMPACT_ROW_ESTIMATE, stubVirtualViewport } from "./alerts-dom-helpers.js";
 
 isolateDomGlobals();
 
@@ -220,8 +220,7 @@ describeDom("CatalogTab", (dom) => {
       ...(rules[i % rules.length] as RuleState),
       name: `Rule${i}`,
     }));
-    const { DATA_TABLE_VIRTUALIZE_DEFAULTS } = await import("@/ui");
-    const restore = stubVirtualViewport(DATA_TABLE_VIRTUALIZE_DEFAULTS.rowHeight.compact);
+    const restore = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
     let c: HTMLElement;
     try {
       c = await mountCatalog(many);

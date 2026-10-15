@@ -8,10 +8,9 @@ import type { ReactElement } from "react";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { firingRows } from "../src/client/views/alerts/model.js";
-import { TRIAGE_ROW_HEIGHT } from "../src/client/views/alerts/table/TriageTable.js";
 import type { DataTableHandle } from "@/ui";
 import { describeDom } from "./dom.js";
-import { eventually, stubVirtualViewport } from "./alerts-dom-helpers.js";
+import { COMPACT_ROW_ESTIMATE, eventually, stubVirtualViewport } from "./alerts-dom-helpers.js";
 import { makeAlertsPayload } from "./alerts-fixtures.js";
 
 const rows: readonly ActiveAlert[] = firingRows(makeAlertsPayload({ scenario: "mixed" }));
@@ -128,7 +127,7 @@ describeDom("triage keyboard", (dom) => {
     [...hn.container.querySelectorAll("[data-triage-open]")].map((el) => el.getAttribute("data-triage-open")!);
 
   test("j walks focus across the virtualized window boundary (rows render as focus moves)", async () => {
-    const restoreViewport = stubVirtualViewport(TRIAGE_ROW_HEIGHT);
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
     const hn = await setup(many);
     try {
       expect(hn.container.querySelector('[data-slot="data-table"][data-virtualized]')).not.toBeNull();
@@ -153,7 +152,7 @@ describeDom("triage keyboard", (dom) => {
   });
 
   test("a row outside the window is scrolled in through the DataTable handle, then focused on a later frame", async () => {
-    const restoreViewport = stubVirtualViewport(TRIAGE_ROW_HEIGHT);
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
     const originalRaf = globalThis.requestAnimationFrame;
     const frames: FrameRequestCallback[] = [];
     globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
@@ -176,8 +175,8 @@ describeDom("triage keyboard", (dom) => {
       expect(focusedFp()).toBe("virtual-4000");
       expect([...hn.container.querySelectorAll("[aria-current]")]).toHaveLength(1);
       // The table owns the scroll position: the viewport moved to the row.
-      const viewport = hn.container.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
-      expect(viewport.scrollTop).toBeGreaterThan(3900 * TRIAGE_ROW_HEIGHT);
+      const viewport = hn.container.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
+      expect(viewport.scrollTop).toBeGreaterThan(3900 * COMPACT_ROW_ESTIMATE);
     } finally {
       if (originalRaf === undefined) delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
       else globalThis.requestAnimationFrame = originalRaf;
@@ -188,7 +187,7 @@ describeDom("triage keyboard", (dom) => {
   });
 
   test("a pending focus retry yields to a newer cursor move", async () => {
-    const restoreViewport = stubVirtualViewport(TRIAGE_ROW_HEIGHT);
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
     const originalRaf = globalThis.requestAnimationFrame;
     const frames: FrameRequestCallback[] = [];
     globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
@@ -198,15 +197,15 @@ describeDom("triage keyboard", (dom) => {
     const hn = await setup(many);
     try {
       hn.selectedIndex.value = 3999;
-      press("j"); // → 4000, not rendered: retry scheduled
-      hn.selectedIndex.value = 0;
-      press("k"); // → 0, rendered: focused at once
-      expect(focusedFp()).toBe("virtual-0");
+      press("j"); // → 4000, not rendered: retry scheduled (its frames are held)
       await eventually(() => expect(rendered(hn)).toContain("virtual-4000"));
+      press("k"); // → 3999, rendered beside 4000: focused at once
+      expect(focusedFp()).toBe("virtual-3999");
+      // The held retry now finds row 4000 rendered, but the cursor has moved on: it must yield.
       for (const frame of frames.splice(0)) frame(0);
-      expect(focusedFp()).toBe("virtual-0");
+      expect(focusedFp()).toBe("virtual-3999");
       expect([...hn.container.querySelectorAll("[aria-current]")].map((e) => e.getAttribute("data-triage-open"))).toEqual([
-        "virtual-0",
+        "virtual-3999",
       ]);
     } finally {
       if (originalRaf === undefined) delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;

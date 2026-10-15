@@ -1,6 +1,7 @@
-import type { TargetStatus } from "@pulse/web-data/wire";
+import { TONE_SVG_FILL, TONE_SVG_STROKE } from "@/ui/lib/tone";
 import { cn } from "@/ui/lib/utils";
-import { MARK_DASH, TONE_FILL, TONE_STROKE, vizStatusMark } from "@/ui/viz/status-marks";
+import { clamp, round2 } from "@/ui/viz/geometry";
+import { MARK_DASH, presentationMark, type VizMarkSource } from "@/ui/viz/status-marks";
 
 /** One timestamped sample. A null value is an explicit gap and is never bridged. */
 export interface SparklineSample {
@@ -10,17 +11,26 @@ export interface SparklineSample {
 
 /** A compact, dependency-free SVG trend line, coloured by status tone. */
 export interface SparklineProps {
-  /** Values ordered oldest → newest. Do not combine with `samples`. */
+  /**
+   * Values ordered oldest → newest, one per evenly spaced slot. A non-finite value is a gap, as
+   * a null sample is. Do not combine with `samples`.
+   */
   values?: readonly number[];
   /** Timestamped input with explicit gaps. Do not combine with `values`. */
   samples?: readonly SparklineSample[];
   width?: number;
   height?: number;
+  /** Domain lower bound; lower values are drawn on the bottom edge. Default: the data minimum. */
   min?: number;
+  /** Domain upper bound; higher values are drawn on the top edge. Default: the data maximum. */
   max?: number;
   strokeWidth?: number;
-  /** Colours the line with the status tone; suppressed draws dashed. */
-  status?: TargetStatus;
+  /**
+   * Colours the line with a status-map entry's tone (`MAP[state]`); an outline entry draws
+   * dashed. The line is decorative next to the state's text: say the state in `ariaLabel` or
+   * beside the chart, never by colour alone.
+   */
+  status?: VizMarkSource;
   ariaLabel?: string;
   className?: string;
 }
@@ -38,68 +48,39 @@ export interface SparkGeometryOpts {
   max?: number;
 }
 
-/** Geometry for timestamped samples, split into finite runs. */
-export interface SparkSampleGeometry {
+/** Geometry split into finite runs. */
+export interface SparkGeometry {
   /** Contiguous finite runs in timestamp order. */
   readonly runs: readonly (readonly SparkPoint[])[];
   /** SVG paths for runs of at least two points. */
   readonly paths: readonly string[];
   /** Point markers for isolated one-sample runs. */
   readonly markers: readonly SparkPoint[];
-  /** The point when the whole input has exactly one finite sample. */
-  readonly singlePoint: SparkPoint | null;
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+/** Plain values as samples at their index; a non-finite value becomes a gap. */
+export function valuesToSamples(values: readonly number[]): SparklineSample[] {
+  return values.map((value, at) => ({ at, value: Number.isFinite(value) ? value : null }));
 }
 
-/** Geometry for plain values: evenly spaced, y inverted; null below two finite points. */
-export function sparklineGeometry(
-  values: readonly number[],
-  opts: SparkGeometryOpts,
-): { points: readonly SparkPoint[]; path: string } | null {
-  const finite = values.filter((v) => Number.isFinite(v));
-  const n = finite.length;
-  if (n < 2) return null;
-  const domainMin = opts.min ?? Math.min(...finite);
-  const domainMax = opts.max ?? Math.max(...finite);
-  const range = domainMax - domainMin || 1;
-  const points: SparkPoint[] = finite.map((v, i) => ({
-    x: round2((i / (n - 1)) * opts.width),
-    y: round2(opts.height - ((v - domainMin) / range) * opts.height),
-  }));
-  return {
-    points,
-    path: points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x},${p.y}`).join(" "),
-  };
-}
-
-/** Timestamp-aware runs that never join across null or non-finite samples. */
-export function sparklineSampleGeometry(
-  input: readonly SparklineSample[],
-  opts: SparkGeometryOpts,
-): SparkSampleGeometry {
+/**
+ * Timestamp-aware runs that never join across null or non-finite samples. y is inverted and
+ * clamped to [0, height], so a value outside an explicit min/max stays on the chart's edge.
+ */
+export function sparklineGeometry(input: readonly SparklineSample[], opts: SparkGeometryOpts): SparkGeometry {
   const byTime = new Map<number, number | null>();
   for (const sample of input) {
     if (!Number.isFinite(sample.at)) continue;
-    byTime.set(
-      sample.at,
-      sample.value !== null && Number.isFinite(sample.value) ? sample.value : null,
-    );
+    byTime.set(sample.at, sample.value !== null && Number.isFinite(sample.value) ? sample.value : null);
   }
   const samples = [...byTime].sort((a, b) => a[0] - b[0]);
   const finiteValues = samples.flatMap(([, value]) => (value === null ? [] : [value]));
-  if (samples.length === 0 || finiteValues.length === 0) {
-    return { runs: [], paths: [], markers: [], singlePoint: null };
-  }
+  if (finiteValues.length === 0) return { runs: [], paths: [], markers: [] };
 
   const firstAt = samples[0]![0];
-  const lastAt = samples[samples.length - 1]![0];
-  const timeRange = lastAt - firstAt || 1;
+  const timeRange = samples[samples.length - 1]![0] - firstAt || 1;
   const domainMin = opts.min ?? Math.min(...finiteValues);
-  const domainMax = opts.max ?? Math.max(...finiteValues);
-  const valueRange = domainMax - domainMin || 1;
+  const valueRange = (opts.max ?? Math.max(...finiteValues)) - domainMin || 1;
   const runs: SparkPoint[][] = [];
   let current: SparkPoint[] = [];
   for (const [at, value] of samples) {
@@ -110,20 +91,16 @@ export function sparklineSampleGeometry(
     }
     current.push({
       x: round2(((at - firstAt) / timeRange) * opts.width),
-      y: round2(opts.height - ((value - domainMin) / valueRange) * opts.height),
+      y: round2(clamp(opts.height - ((value - domainMin) / valueRange) * opts.height, 0, opts.height)),
     });
   }
   if (current.length > 0) runs.push(current);
-  const points = runs.flat();
   return {
     runs,
     paths: runs
       .filter((run) => run.length >= 2)
-      .map((run) =>
-        run.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x},${point.y}`).join(" "),
-      ),
+      .map((run) => run.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x},${point.y}`).join(" ")),
     markers: runs.filter((run) => run.length === 1).map((run) => run[0]!),
-    singlePoint: points.length === 1 ? points[0]! : null,
   };
 }
 
@@ -139,22 +116,19 @@ export function Sparkline({
   ariaLabel = "sparkline",
   className,
 }: SparklineProps) {
-  const mark = status !== undefined ? vizStatusMark(status) : null;
+  const mark = status !== undefined ? presentationMark(status) : null;
   const dash = mark !== null ? MARK_DASH[mark.pattern] : null;
-  const opts: SparkGeometryOpts = {
+  const geometry = sparklineGeometry(samples ?? valuesToSamples(values ?? []), {
     width,
     height,
     ...(min !== undefined ? { min } : {}),
     ...(max !== undefined ? { max } : {}),
-  };
-  const sampled = samples !== undefined ? sparklineSampleGeometry(samples, opts) : null;
-  const plain = sampled === null ? sparklineGeometry(values ?? [], opts) : null;
-  const paths = sampled !== null ? sampled.paths : plain !== null ? [plain.path] : [];
+  });
+  const markerFill = dash !== null ? "fill-none" : mark !== null ? TONE_SVG_FILL[mark.tone] : "fill-muted-foreground";
 
   return (
     <svg
       data-slot="sparkline"
-      data-status={status}
       data-tone={mark?.tone}
       data-mark={mark?.pattern}
       role="img"
@@ -164,20 +138,14 @@ export function Sparkline({
       height={height}
       className={cn(
         "overflow-visible",
-        mark !== null ? TONE_STROKE[mark.tone] : "stroke-muted-foreground",
+        mark !== null ? TONE_SVG_STROKE[mark.tone] : "stroke-muted-foreground",
         className,
       )}
     >
-      {paths.map((d, index) => (
-        <path
-          key={index}
-          d={d}
-          fill="none"
-          strokeWidth={strokeWidth}
-          strokeDasharray={dash?.join(" ")}
-        />
+      {geometry.paths.map((d, index) => (
+        <path key={index} d={d} fill="none" strokeWidth={strokeWidth} strokeDasharray={dash?.join(" ")} />
       ))}
-      {sampled?.markers.map((point, index) => (
+      {geometry.markers.map((point, index) => (
         <circle
           key={index}
           data-spark-point="single"
@@ -185,13 +153,7 @@ export function Sparkline({
           cy={point.y}
           r={Math.max(strokeWidth, 1.5)}
           strokeWidth={dash !== null ? 1 : 0}
-          className={
-            dash !== null
-              ? "fill-none"
-              : mark !== null
-                ? TONE_FILL[mark.tone]
-                : "fill-muted-foreground"
-          }
+          className={markerFill}
         />
       ))}
     </svg>

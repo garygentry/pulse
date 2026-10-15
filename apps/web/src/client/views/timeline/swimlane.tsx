@@ -312,6 +312,7 @@ function SwimRows(p: SwimRowsProps): ReactElement {
                     className="block max-w-none"
                     lanes={lanes}
                     statusMap={ALERT_SEVERITY}
+                    formatTime={(s) => clock.format(isoOf(s))}
                     domainStart={view.start}
                     domainEnd={view.end}
                     width={plotWidth}

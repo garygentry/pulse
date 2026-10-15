@@ -6,13 +6,21 @@
 // browser does. Call inside a DOM test (after happy-dom is registered); the returned function
 // restores the prototype.
 
-/** Viewport height in px used by the stub: 10 rows of the 36px compact row height. */
+/** Viewport height in px used by the stub. */
 export const VIEWPORT_HEIGHT = 360;
+
+/**
+ * A compact DataTable row's height without a stylesheet: the `--table-compact-cell-h` fallback
+ * (32px) the virtualized table estimates unmeasured rows with. Rows follow the density tokens.
+ */
+export const COMPACT_ROW_ESTIMATE = 32;
 
 export function stubVirtualViewport(rowHeight: number, viewportHeight: number = VIEWPORT_HEIGHT): () => void {
   const undo: (() => void)[] = [];
   const proto = (globalThis as unknown as { HTMLElement: { prototype: HTMLElement } }).HTMLElement.prototype;
-  const isViewport = (el: HTMLElement): boolean => el.getAttribute("data-slot") === "data-table-viewport";
+  // The virtualized table's root is its scroll region.
+  const isViewport = (el: HTMLElement): boolean =>
+    el.getAttribute("data-slot") === "data-table" && el.hasAttribute("data-virtualized");
   const stubs: Record<string, (el: HTMLElement) => number> = {
     offsetHeight: () => viewportHeight,
     clientHeight: () => viewportHeight,

@@ -31,3 +31,23 @@ export const TONE_FG: Readonly<Record<Tone, string>> = {
   pending: "text-status-pending-fg",
   neutral: "text-status-neutral-fg",
 };
+
+/** SVG fill (`fill-*`) in the tone's foreground: a chart mark's area or point. */
+export const TONE_SVG_FILL: Readonly<Record<Tone, string>> = {
+  ok: "fill-status-ok-fg",
+  warn: "fill-status-warn-fg",
+  danger: "fill-status-danger-fg",
+  info: "fill-status-info-fg",
+  pending: "fill-status-pending-fg",
+  neutral: "fill-status-neutral-fg",
+};
+
+/** SVG stroke (`stroke-*`) in the tone's foreground: a chart mark's line or outline. */
+export const TONE_SVG_STROKE: Readonly<Record<Tone, string>> = {
+  ok: "stroke-status-ok-fg",
+  warn: "stroke-status-warn-fg",
+  danger: "stroke-status-danger-fg",
+  info: "stroke-status-info-fg",
+  pending: "stroke-status-pending-fg",
+  neutral: "stroke-status-neutral-fg",
+};

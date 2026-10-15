@@ -27,7 +27,7 @@ export function EmptyState({ title, description, icon = "inbox", action, compact
         data-slot="empty-state"
         data-compact=""
         role="status"
-        className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm text-muted-foreground", className)}
+        className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 py-(--empty-state-compact-py) text-sm text-muted-foreground", className)}
       >
         <Icon name={icon} className="shrink-0" />
         <span className="font-medium text-foreground">{title}</span>
@@ -42,7 +42,7 @@ export function EmptyState({ title, description, icon = "inbox", action, compact
       data-slot="empty-state"
       role="status"
       className={cn(
-        "flex flex-col items-center gap-2 rounded-lg border border-dashed px-6 py-10 text-center",
+        "flex flex-col items-center gap-2 rounded-lg border border-dashed px-(--empty-state-px) py-(--empty-state-py) text-center",
         className,
       )}
     >

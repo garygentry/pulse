@@ -2,8 +2,9 @@
  * deck — design tokens.
  *
  * The shadcn/ui semantic set plus deck's six status tones, in OKLCH, for light
- * (`:root`) and dark (`.dark` on <html>). `@theme inline` exposes them to
- * Tailwind as colour utilities (`bg-card`, `text-status-ok-fg`, …).
+ * (`:root`) and dark (`.dark` on <html>). `@deck/sdk/tailwind/theme.css` exposes
+ * them to Tailwind as colour utilities (`bg-card`, `text-status-ok-fg`, …), for deck
+ * and for runtime modules alike.
  *
  * Status tones: feature state maps point a state at a tone, never at a colour.
  * Each tone has
@@ -13,6 +14,28 @@
  *
  * Accent is teal. `ok` is a true green at least 40° of hue away from `primary`,
  * and `info` is blue, so neither status reads as a link or an action.
+ *
+ * Presets (`ui.theme.preset`) re-point tokens without touching the defaults
+ * above: `teal` is `:root`/`.dark` itself, and every other preset is a pair of
+ * blocks keyed on `data-theme-preset` on <html> (set by the pre-paint script in
+ * index.html), a light one and a `.dark` one defining the same tokens. Accent
+ * presets (`slate`, `copper`, `rose`) re-point primary, accent and ring, each
+ * kept clearly apart from every status tone (CIEDE2000 >= 15, or >= 30deg of
+ * hue), so an accent never reads as a status. `high-contrast` also darkens
+ * (light) or lightens (dark) text, status foregrounds and edges: text 7:1,
+ * controls 4.5:1, edges 3:1. Status tones never move with an accent preset.
+ *
+ * The destructive control (Button/Badge `destructive`) paints
+ * `--destructive-control-foreground` on `--destructive`, at
+ * `--destructive-control-alpha` in dark mode, so a preset can make the
+ * rendered pair meet its contrast bar.
+ *
+ * Shape and spacing (the second `:root` block, after the presets) are layout
+ * tokens, not colours: the `--corner-*` radius scale behind `rounded-xs`…`xl`,
+ * rescaled by `data-theme-radius`, and the per-pattern spacing of DataTable,
+ * List, ListGroup, Section and EmptyState, tightened by
+ * `data-theme-density="compact"`. Patterns use them as `p-(--section-card-p)`
+ * and the like, so a class a screen passes still wins as written.
  *
  * Fonts: Geist Sans / Geist Mono, self-hosted from @fontsource-variable (no
  * CDN: home labs are often offline or egress-restricted).
@@ -24,6 +47,7 @@
 :root {
   color-scheme: light;
   --radius: 0.5rem;
+  --destructive-control-alpha: 100%;
 
   --background: oklch(0.985 0 0);
   --foreground: oklch(0.2 0 0);
@@ -41,6 +65,7 @@
   --accent-foreground: oklch(0.2 0 0);
   --destructive: oklch(0.52 0.2 27);
   --destructive-foreground: oklch(0.985 0 0);
+  --destructive-control-foreground: oklch(1 0 0);
   --border: oklch(0.9 0 0);
   --input: oklch(0.62 0 0);
   --ring: oklch(0.52 0.1 195);
@@ -99,6 +124,7 @@
   --accent-foreground: oklch(0.96 0 0);
   --destructive: oklch(0.65 0.2 25);
   --destructive-foreground: oklch(0.15 0 0);
+  --destructive-control-alpha: 60%;
   --border: oklch(0.3 0 0);
   --input: oklch(0.55 0 0);
   --ring: oklch(0.72 0.12 195);
@@ -138,64 +164,209 @@
   --status-neutral-border: oklch(0.4 0 0);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+/* --- Presets: each a light block and a `.dark` block over the same tokens. -- */
 
-  --color-status-ok-fg: var(--status-ok-fg);
-  --color-status-ok-bg: var(--status-ok-bg);
-  --color-status-ok-border: var(--status-ok-border);
-  --color-status-warn-fg: var(--status-warn-fg);
-  --color-status-warn-bg: var(--status-warn-bg);
-  --color-status-warn-border: var(--status-warn-border);
-  --color-status-danger-fg: var(--status-danger-fg);
-  --color-status-danger-bg: var(--status-danger-bg);
-  --color-status-danger-border: var(--status-danger-border);
-  --color-status-info-fg: var(--status-info-fg);
-  --color-status-info-bg: var(--status-info-bg);
-  --color-status-info-border: var(--status-info-border);
-  --color-status-pending-fg: var(--status-pending-fg);
-  --color-status-pending-bg: var(--status-pending-bg);
-  --color-status-pending-border: var(--status-pending-border);
-  --color-status-neutral-fg: var(--status-neutral-fg);
-  --color-status-neutral-bg: var(--status-neutral-bg);
-  --color-status-neutral-border: var(--status-neutral-border);
+[data-theme-preset="slate"] {
+  --primary: oklch(0.33 0.05 245);
+  --accent: oklch(0.95 0.01 250);
+  --ring: oklch(0.33 0.05 245);
+  --sidebar-primary: oklch(0.33 0.05 245);
+  --sidebar-accent: oklch(0.93 0.012 250);
+  --sidebar-ring: oklch(0.33 0.05 245);
+}
 
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+.dark[data-theme-preset="slate"] {
+  --primary: oklch(0.87 0.045 260);
+  --accent: oklch(0.3 0.02 260);
+  --ring: oklch(0.87 0.045 260);
+  --sidebar-primary: oklch(0.87 0.045 260);
+  --sidebar-accent: oklch(0.27 0.02 260);
+  --sidebar-ring: oklch(0.87 0.045 260);
+}
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+[data-theme-preset="copper"] {
+  --primary: oklch(0.4 0.11 40);
+  --accent: oklch(0.95 0.02 45);
+  --ring: oklch(0.4 0.11 40);
+  --sidebar-primary: oklch(0.4 0.11 40);
+  --sidebar-accent: oklch(0.93 0.025 45);
+  --sidebar-ring: oklch(0.4 0.11 40);
+}
+
+.dark[data-theme-preset="copper"] {
+  --primary: oklch(0.67 0.13 50);
+  --accent: oklch(0.3 0.04 50);
+  --ring: oklch(0.67 0.13 50);
+  --sidebar-primary: oklch(0.67 0.13 50);
+  --sidebar-accent: oklch(0.27 0.04 50);
+  --sidebar-ring: oklch(0.67 0.13 50);
+}
+
+[data-theme-preset="rose"] {
+  --primary: oklch(0.5 0.18 350);
+  --accent: oklch(0.95 0.02 350);
+  --ring: oklch(0.5 0.18 350);
+  --sidebar-primary: oklch(0.5 0.18 350);
+  --sidebar-accent: oklch(0.93 0.025 350);
+  --sidebar-ring: oklch(0.5 0.18 350);
+}
+
+.dark[data-theme-preset="rose"] {
+  --primary: oklch(0.7 0.16 350);
+  --accent: oklch(0.3 0.05 350);
+  --ring: oklch(0.7 0.16 350);
+  --sidebar-primary: oklch(0.7 0.16 350);
+  --sidebar-accent: oklch(0.27 0.05 350);
+  --sidebar-ring: oklch(0.7 0.16 350);
+}
+
+[data-theme-preset="high-contrast"] {
+  --foreground: oklch(0.1 0 0);
+  --card-foreground: oklch(0.1 0 0);
+  --popover-foreground: oklch(0.1 0 0);
+  --primary: oklch(0.4 0.09 200);
+  --secondary-foreground: oklch(0.1 0 0);
+  --muted-foreground: oklch(0.36 0 0);
+  --accent: oklch(0.93 0.03 200);
+  --accent-foreground: oklch(0.1 0 0);
+  --destructive: oklch(0.44 0.18 27);
+  --destructive-control-foreground: oklch(1 0 0);
+  --destructive-control-alpha: 100%;
+  --border: oklch(0.58 0 0);
+  --input: oklch(0.42 0 0);
+  --ring: oklch(0.4 0.09 200);
+  --sidebar-foreground: oklch(0.1 0 0);
+  --sidebar-primary: oklch(0.4 0.09 200);
+  --sidebar-accent: oklch(0.91 0.035 200);
+  --sidebar-accent-foreground: oklch(0.1 0 0);
+  --sidebar-border: oklch(0.58 0 0);
+  --sidebar-ring: oklch(0.4 0.09 200);
+  --status-ok-fg: oklch(0.4 0.11 150);
+  --status-ok-border: oklch(0.58 0.12 150);
+  --status-warn-fg: oklch(0.41 0.09 65);
+  --status-warn-border: oklch(0.6 0.12 75);
+  --status-danger-fg: oklch(0.43 0.18 27);
+  --status-danger-border: oklch(0.58 0.15 25);
+  --status-info-fg: oklch(0.41 0.15 255);
+  --status-info-border: oklch(0.58 0.12 250);
+  --status-pending-fg: oklch(0.41 0.17 300);
+  --status-pending-border: oklch(0.58 0.13 300);
+  --status-neutral-fg: oklch(0.36 0 0);
+  --status-neutral-border: oklch(0.58 0 0);
+}
+
+.dark[data-theme-preset="high-contrast"] {
+  --foreground: oklch(0.99 0 0);
+  --card-foreground: oklch(0.99 0 0);
+  --popover-foreground: oklch(0.99 0 0);
+  --primary: oklch(0.84 0.1 195);
+  --secondary-foreground: oklch(0.99 0 0);
+  --muted-foreground: oklch(0.86 0 0);
+  --accent: oklch(0.32 0.04 195);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.78 0.15 25);
+  --destructive-control-foreground: oklch(0.15 0 0);
+  --destructive-control-alpha: 100%;
+  --border: oklch(0.58 0 0);
+  --input: oklch(0.75 0 0);
+  --ring: oklch(0.84 0.1 195);
+  --sidebar-foreground: oklch(0.99 0 0);
+  --sidebar-primary: oklch(0.84 0.1 195);
+  --sidebar-accent: oklch(0.3 0.04 195);
+  --sidebar-accent-foreground: oklch(0.99 0 0);
+  --sidebar-border: oklch(0.58 0 0);
+  --sidebar-ring: oklch(0.84 0.1 195);
+  --status-ok-fg: oklch(0.86 0.14 150);
+  --status-ok-border: oklch(0.6 0.12 150);
+  --status-warn-fg: oklch(0.88 0.12 85);
+  --status-warn-border: oklch(0.62 0.11 80);
+  --status-danger-fg: oklch(0.84 0.11 25);
+  --status-danger-border: oklch(0.6 0.15 25);
+  --status-info-fg: oklch(0.85 0.09 250);
+  --status-info-border: oklch(0.6 0.12 250);
+  --status-pending-fg: oklch(0.85 0.1 300);
+  --status-pending-border: oklch(0.6 0.12 300);
+  --status-neutral-fg: oklch(0.86 0 0);
+  --status-neutral-border: oklch(0.58 0 0);
+}
+
+/* --- Shape and spacing: layout tokens (see the header). ---------------------- */
+
+:root {
+  --corner-xs: 0.125rem;
+  --corner-sm: calc(var(--radius) - 4px);
+  --corner-md: calc(var(--radius) - 2px);
+  --corner-lg: var(--radius);
+  --corner-xl: calc(var(--radius) + 4px);
+
+  --table-cell-h: 2.75rem;
+  --table-cell-px: 0.75rem;
+  --table-cell-py: 0.625rem;
+  --table-compact-cell-h: 2rem;
+  --table-compact-cell-px: 0.5rem;
+  --table-compact-cell-py: 0.25rem;
+  --list-gap: 0.25rem;
+  --list-item-py: 0.375rem;
+  --list-divided-item-py: 0.5rem;
+  --list-card-gap: 0.5rem;
+  --list-card-item-px: 1rem;
+  --list-card-item-py: 0.75rem;
+  --list-group-gap: 0.5rem;
+  --section-gap: 0.75rem;
+  --section-card-p: 1rem;
+  --empty-state-px: 1.5rem;
+  --empty-state-py: 2.5rem;
+  --empty-state-compact-py: 0.5rem;
+}
+
+/* `md` (0.5rem) is the default above; `none` is square everywhere. */
+[data-theme-radius="none"] {
+  --radius: 0rem;
+  --corner-xs: 0rem;
+  --corner-sm: 0rem;
+  --corner-md: 0rem;
+  --corner-xl: 0rem;
+}
+
+[data-theme-radius="sm"] {
+  --radius: 0.25rem;
+  --corner-xs: 0.0625rem;
+  --corner-sm: 0.125rem;
+  --corner-md: 0.1875rem;
+  --corner-xl: 0.375rem;
+}
+
+[data-theme-radius="lg"] {
+  --radius: 0.75rem;
+}
+
+[data-theme-density="compact"] {
+  --table-cell-h: 2rem;
+  --table-cell-px: 0.5rem;
+  --table-cell-py: 0.25rem;
+  --table-compact-cell-h: 1.75rem;
+  --table-compact-cell-py: 0.125rem;
+  --list-gap: 0.125rem;
+  --list-item-py: 0.25rem;
+  --list-divided-item-py: 0.25rem;
+  --list-card-gap: 0.25rem;
+  --list-card-item-px: 0.75rem;
+  --list-card-item-py: 0.5rem;
+  --list-group-gap: 0.25rem;
+  --section-gap: 0.5rem;
+  --section-card-p: 0.75rem;
+  --empty-state-px: 1rem;
+  --empty-state-py: 1.5rem;
+  --empty-state-compact-py: 0.25rem;
+}
+
+/* Wider card padding from md up, one token, so a screen's own p-* wins at every width. */
+@media (width >= 48rem) {
+  :root {
+    --section-card-p: 1.5rem;
+  }
+
+  [data-theme-density="compact"] {
+    --section-card-p: 1rem;
+  }
 }

@@ -7,7 +7,9 @@ import type { ReactElement } from "react";
 import { useMemo } from "react";
 
 // ui-deep-import: through the barrel Bun.build would merge this chunk with every lazy view's @/ui modules
-import { CommandPalette, commandGroupsFromIndex } from "@/ui/patterns/command-palette";
+import { commandGroupsFromIndex } from "@/ui/lib/command-groups";
+// ui-deep-import: as above
+import { CommandPalette } from "@/ui/patterns/command-palette";
 
 import type { PaletteEntry } from "./command-index.js";
 

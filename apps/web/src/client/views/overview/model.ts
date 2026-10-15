@@ -273,7 +273,7 @@ export interface TargetDrawerModel {
   /** Recent snapshot-backed check outcomes for this target. */
   readonly checks: readonly CheckSummary[];
   /** Deterministic `StatusTimeline` lanes built from `checks`. */
-  readonly checkLanes: readonly TimelineLane[];
+  readonly checkLanes: readonly TimelineLane<TargetStatus>[];
   /** Server-resolved Grafana link, or null when none is configured. */
   readonly grafana: {
     /** Validated dashboard UID. */

@@ -2,8 +2,8 @@
   "$comment": "Vendored @/ui manifest, checked by apps/web/scripts/ui-drift.ts (bun run ui:drift). Edit notes, files, excluded and localOnly by hand; let `bun run ui:drift --record` write the blob ids and the generated sections of VENDORED.md. See VENDORED.md for the sync procedure.",
   "upstream": {
     "repo": "https://github.com/garygentry/deck.git",
-    "commit": "d6a1595b056edc57a8225d938059125a2861fbf9",
-    "describe": "deck v0.3.2; the public squash of e2e2661, the commit the port was copied from, with identical library files",
+    "commit": "209c6359336e8a6d70223ed37efcf687421edabc",
+    "describe": "deck v0.5.0",
     "defaultRef": "main"
   },
   "docs": "apps/web/src/client/ui/VENDORED.md",
@@ -11,7 +11,8 @@
     "upstream": [
       "apps/web/src/ui/",
       "apps/web/src/styles/",
-      "apps/web/components.json"
+      "apps/web/components.json",
+      "packages/sdk/tailwind/theme.css"
     ],
     "local": [
       "apps/web/src/client/ui/",
@@ -19,33 +20,24 @@
     ]
   },
   "notes": {
-    "radix-scoped": "Radix comes from the scoped packages, not deck's `radix-ui` umbrella: `import { Dialog as DialogPrimitive } from \"radix-ui\"` becomes `import * as DialogPrimitive from \"@radix-ui/react-dialog\"` (`Slot` becomes `import * as Slot from \"@radix-ui/react-slot\"`), bodies unchanged. Through the umbrella, Bun.build puts every Radix package used anywhere on the initial route; the deps are pinned to the versions `radix-ui` 1.6.7 resolves, and `tests/ui-guardrails.test.ts` forbids the umbrella. Re-apply on every sync and after `shadcn add`.",
     "dropdown-checked": "`checked` is spread only when defined (`exactOptionalPropertyTypes`).",
-    "button-loading": "Pulse `loading` prop: spinner, `aria-busy`/`aria-disabled`/`data-loading`, clicks swallowed, never `disabled` so focus stays put.",
     "sidebar-text-entry": "The Ctrl/Cmd-B toggle returns early when `isTextEntryTarget(event.target)`, so the chord stays with a focused text field.",
     "style-nonce": "The Radix `Viewport` gets `{...styleNonceProps()}` (its `nonce`; `lib/style-nonce.ts`), because it renders its own `<style>` element that the strict CSP `style-src` blocks without the response's nonce (issue #2). Re-apply on every sync, and wire any newly vendored primitive whose Radix part takes a `nonce` prop.",
-    "app-css": "Pulse's Tailwind entry, kept in deck's file order with deck's base rules: `source(\"..\")` on the Tailwind import and an `@source not` for the workbench, `theme-pulse.css` instead of `hljs.css`, no `@fontsource` imports (the faces register from `styles/fonts.ts`), and pulse base rules (heading wrap, focus ring, inline monospace size, app-wide reduced motion).",
+    "app-css": "Pulse's Tailwind entry, kept in deck's file order with deck's base rules: `source(\"..\")` on the Tailwind import and an `@source not` for the workbench (no `@source` for deck's runtime modules, which pulse does not have), `theme-pulse.css` instead of `hljs.css`, the token utilities from the vendored `tailwind-theme.css` (deck imports `@deck/sdk/tailwind/theme.css`), no `@fontsource` imports (the faces register from `styles/fonts.ts`), and pulse base rules (heading wrap, focus ring, inline monospace size, app-wide reduced motion).",
     "icons-additions": "Pulse additions: a second `lucide-react` import block and a \"pulse additions\" section at the end of `ICONS` (the shell and views' icons deck lacks). The shell's icons moved to the pulse-only `icons-shell.ts` (spread into `ICONS`, which keeps its type and contents) and `FALLBACK_ICON` with them; evaluating `icons.ts` registers the set with `icon-registry.ts` (pulse-only), so it can load as a lazy chunk.",
     "components-json": "`tailwind.css` points at `src/client/styles/app.css`.",
-    "barrel-exports": "No `ConfigGate` exports. Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, the `kbd`/`radio-group`/`textarea` primitives, `CommandPalette` + `commandGroupsFromIndex`, the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"` and `\"./viz\"`, and the DataTable virtualization exports (`DATA_TABLE_VIRTUALIZE_DEFAULTS`, `DataTableHandle`, `DataTableScrollAlign`, `DataTableVirtualizeOptions`) and the TreeView ones (`TREE_VIEW_VIRTUALIZE_DEFAULTS`, `TreeViewVirtualizeOptions`).",
-    "data-table-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`, with `observeClientRect` from the pulse-only `lib/virtual.ts`; `data-table-viewport` scroll region, spacer rows, rows measured as they render with `rowHeight` as the estimate and minimum height, `aria-rowcount`/`aria-rowindex`, focused row kept rendered by row id; hysteresis: once virtualized it stays so until rows < `floor(threshold * 0.8)`) and a `ref` handle with `scrollToIndex`; a `focusable` prop (default `true`) drops the scroll region's tab stop on a wallboard. Below the threshold and with the defaults the output is deck's.",
+    "barrel-exports": "No `ConfigGate` or contributed-icon exports (`contributed-icons.ts` is not vendored). Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, `commandGroupsFromIndex` (+ `CommandGroupsOptions`, `CommandIndexEntry`, from the pulse-only `lib/command-groups.ts`), the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"`, the StatusTimeline layout helpers (`timelineHeight`, `timelineSegmentRect`, `TimelineLayoutOpts`, `TimelineRect`) for the timeline view's decorations, the pulse-only `TimeSeriesChart` (+ its types), and the TreeView virtualization exports (`TREE_VIEW_VIRTUALIZE_DEFAULTS`, `TreeViewVirtualizeOptions`).",
     "freshness-types": "Imports `FreshnessStamp`/`FreshnessState` from `lib/freshness.ts` (deck imports them from its server contract).",
     "console-prefix": "Console prefix `[deck]` becomes `[pulse]`.",
-    "icon-registry": "Resolves names through `lib/icon-registry.ts`: shell icons eager, the rest once the lazy icon chunk loads; an empty same-size svg until then, the fallback glyph if the load fails.",
-    "page-error-page-slot": "Optional `pageSlot` prop: when set, the fallback renders inside a `data-slot={pageSlot} data-state=\"error\"` root so a failed view keeps its `…-page` root and one `h1`; after Retry, focus moves to the page `h1` (or the `…-page` root) instead of dropping to `<body>`.",
+    "icon-registry": "Resolves names through `lib/icon-registry.ts`: shell icons eager, the rest once the lazy icon chunk loads; an empty same-size svg until then, the fallback glyph if the load fails. Deck's module-contributed SVG icons (`contributed-icons.ts`, v0.5.0) are not taken: pulse has no runtime modules.",
     "facet-default-open": "`defaultOpen ?? false`.",
     "segmented-key-shortcuts": "Optional `keyShortcuts`, set as `aria-keyshortcuts` on every option (the focusable radios).",
-    "disclosure-count-label": "The count pill is `aria-hidden` and the label carries a visually hidden `, N items` (optional `countLabel`), so the trigger is named \"Proposals, 3 items\" rather than \"Proposals3\".",
-    "filter-bar-wrap": "The result count's wrapper is `min-w-0`, not `shrink-0`, so a long count wraps at 320px.",
-    "tree-view-description": "`renderMeta` output is the treeitem's accessible description (`aria-describedby`); an optional `aria-describedby` prop describes the tree (keyboard help).",
-    "exact-optional": "Type-only `| undefined` widenings on optional props for `exactOptionalPropertyTypes` (`headingLevel`, `noun`, `role`, the `useShowMore` options, `TreeAccessors`).",
-    "status-badge-variant": "`fromMap` applies the entry's `variant` (caller props win); `StatusBadgeVariant` is derived from `StatusPresentation[\"variant\"]`.",
+    "exact-optional": "Type-only `| undefined` widenings on optional props for `exactOptionalPropertyTypes` (`headingLevel`, `noun`, `role` and `variant`, the `useShowMore` options, `TreeAccessors`, `CommandPalette`'s `search`/`onSearchChange`).",
     "text-entry-guard": "The `/` shortcut's guard is the shared `isTextEntryTarget` (adds contenteditable ancestors; a checkbox no longer blocks it) instead of a local `isEditable`.",
     "pulse-name": "The app name is Pulse (`APP_TITLE = \"Pulse\"`; the hook's doc comment).",
     "dom-text-entry": "Pulse `isTextEntryTarget` (text-like input, textarea, select, contenteditable; narrower than `isEditableTarget`, which also covers buttons and composite widgets).",
-    "status-variant": "Optional `StatusPresentation.variant` (badge shape per state, e.g. outline for suppressed).",
-    "tree-view-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`; at a visible-row threshold, default 300, the treeitems render flat in a `tree-view-viewport` scroll region with `aria-hidden` spacers, `aria-level`/`aria-setsize`/`aria-posinset` from the model, rows measured as they render, the focused row and the Tab stop kept rendered, keyboard moves over every visible row through `useListNavigation`'s `virtual` option; hysteresis as in `data-table.tsx`; below the threshold the output is deck's); `*` expands every sibling branch and printable keys move by label (type-ahead), both from the model; the row is `flex-wrap`, so a caller's meta can take a line of its own (`basis-full`) at narrow widths.",
-    "list-navigation-virtual": "Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones; optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead.",
+    "tree-view-virtualize": "Pulse `virtualize` prop (`@tanstack/react-virtual`; at a visible-row threshold, default 300, the treeitems render flat in a `tree-view-viewport` scroll region with `aria-hidden` spacers, `aria-level`/`aria-setsize`/`aria-posinset` from the model, rows measured as they render, the focused row and the Tab stop kept rendered, keyboard moves over every visible row through `useListNavigation`'s `virtual` option; hysteresis as in deck's `data-table.tsx`; below the threshold the output is deck's); `*` expands every sibling branch and printable keys move by label (type-ahead), both from the model; the row is `flex-wrap` and the meta wrapper is `contents` (deck: `inline-flex min-w-0`), so a caller's meta can take a line of its own (`basis-full`) at narrow widths.",
+    "list-navigation-virtual": "Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones (deck's `focusEdge` covers only Home/End); optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead.",
     "tree-row-position": "`VisibleTreeRow` carries `posInSet`/`setSize`.",
     "stat-tile-absent": "Optional `valueState: \"absent\"` (placeholder text such as \"not reported\" renders small and muted on the neutral tone, whatever `tone` says, so \"no data\" never reads as a headline number) with an optional screen-reader `absentDescription`; the root and the value carry `data-value-state`."
   },
@@ -62,17 +54,24 @@
     {
       "local": "apps/web/src/client/styles/app.css",
       "upstream": "apps/web/src/styles/app.css",
-      "upstreamBlob": "037777b6a765d67016786e7e7c669bd659311f21",
-      "localBlob": "f61056985d7b6dbbcc57cef29bd5a702ee2a2bf7",
+      "upstreamBlob": "cf539e939fb3d00078a4c77b1f9f58d15091f892",
+      "localBlob": "30cf9da8654bf1c36e39bce624ba46c48ada4a64",
       "notes": [
         "app-css"
       ]
     },
     {
+      "local": "apps/web/src/client/styles/tailwind-theme.css",
+      "upstream": "packages/sdk/tailwind/theme.css",
+      "upstreamBlob": "81390531a62055165c150ec46f6abb978c737b09",
+      "localBlob": "81390531a62055165c150ec46f6abb978c737b09",
+      "notes": []
+    },
+    {
       "local": "apps/web/src/client/styles/theme.css",
       "upstream": "apps/web/src/styles/theme.css",
-      "upstreamBlob": "474321cc4a51b1410d6faeb46fcbddc8ba575ea9",
-      "localBlob": "474321cc4a51b1410d6faeb46fcbddc8ba575ea9",
+      "upstreamBlob": "bdea071e94503717bbe86bc30cfd510f5845d7f9",
+      "localBlob": "bdea071e94503717bbe86bc30cfd510f5845d7f9",
       "notes": []
     },
     {
@@ -85,8 +84,8 @@
     {
       "local": "apps/web/src/client/ui/hooks/use-document-title.ts",
       "upstream": "apps/web/src/ui/hooks/use-document-title.ts",
-      "upstreamBlob": "3ab4cf38575c936bcc6ae665ccf804748a5b8968",
-      "localBlob": "65194f015eec56622cc2d690db53673509731e8c",
+      "upstreamBlob": "ae9931eb764ad5b1eb5a38a8f62d7572faf4a377",
+      "localBlob": "9e5492027f94a70294521eaf590d18c56c780251",
       "notes": [
         "pulse-name"
       ]
@@ -101,8 +100,8 @@
     {
       "local": "apps/web/src/client/ui/hooks/use-list-navigation.ts",
       "upstream": "apps/web/src/ui/hooks/use-list-navigation.ts",
-      "upstreamBlob": "f2d02eb0b3377ca796ed0f235c8a0187564d1501",
-      "localBlob": "178d2aea084ce09137aafbad2579157ae591fce4",
+      "upstreamBlob": "494a813b81a10d95ea1c7186c4916a4f07deb87c",
+      "localBlob": "7ac504ca4ad3cc828f51a1825c9326f98d93a353",
       "notes": [
         "list-navigation-virtual"
       ]
@@ -131,8 +130,8 @@
     {
       "local": "apps/web/src/client/ui/hooks/use-scroll-to-hash.ts",
       "upstream": "apps/web/src/ui/hooks/use-scroll-to-hash.ts",
-      "upstreamBlob": "2bfd76be2a8fcbf4d7b282c8a830e70002cf4f71",
-      "localBlob": "2bfd76be2a8fcbf4d7b282c8a830e70002cf4f71",
+      "upstreamBlob": "a8adb1fce728a4c397ce624023c719e5df15ad1a",
+      "localBlob": "a8adb1fce728a4c397ce624023c719e5df15ad1a",
       "notes": []
     },
     {
@@ -154,8 +153,8 @@
     {
       "local": "apps/web/src/client/ui/index.ts",
       "upstream": "apps/web/src/ui/index.ts",
-      "upstreamBlob": "ec4d73df984d87e7f1ff169dcd51eabce2037e36",
-      "localBlob": "6fc2a4e45390cbbc4c9d572a89b4a21d757379f7",
+      "upstreamBlob": "09e8e5526faa900e95736da02523ecb9b8469d17",
+      "localBlob": "f5f1afcf75755ba9d93c2813c43da6b24a65b8bf",
       "notes": [
         "barrel-exports"
       ]
@@ -163,8 +162,8 @@
     {
       "local": "apps/web/src/client/ui/lib/document-title.ts",
       "upstream": "apps/web/src/ui/lib/document-title.ts",
-      "upstreamBlob": "c2bfaa68e544a0cdd91c0f06cd1abcdc8a3cc980",
-      "localBlob": "ea312545608c43cb7146fd6b172573167b42bc33",
+      "upstreamBlob": "521c4848b81c53001bf39b6ed7ef29276da58fa2",
+      "localBlob": "1abb2afbab83896e4f0e70e5d81dc1e234d128f6",
       "notes": [
         "pulse-name"
       ]
@@ -179,8 +178,8 @@
     {
       "local": "apps/web/src/client/ui/lib/dom.ts",
       "upstream": "apps/web/src/ui/lib/dom.ts",
-      "upstreamBlob": "d26a4a67d3c0d91bc71bda397d1d7e69579bf74a",
-      "localBlob": "881319baed1f448cffd5aa550a48421fabeec5a8",
+      "upstreamBlob": "7e033857b2a936a0cb1ea3e20b583256a6e4a934",
+      "localBlob": "7ad09dbf7f04e0deeb6bdb981fc67f8a53676d9c",
       "notes": [
         "dom-text-entry"
       ]
@@ -209,8 +208,8 @@
     {
       "local": "apps/web/src/client/ui/lib/icons.ts",
       "upstream": "apps/web/src/ui/lib/icons.ts",
-      "upstreamBlob": "5dfe4101ebb8cc5777ca0c2863371c19658766b2",
-      "localBlob": "77fd99de0197bd44f7840524c338ba482d097658",
+      "upstreamBlob": "957cc03809be0eb6fb30b599c6384849291c6fa1",
+      "localBlob": "02c9a937377e2821abcfa90c93de636ff799f81b",
       "notes": [
         "icons-additions"
       ]
@@ -232,17 +231,15 @@
     {
       "local": "apps/web/src/client/ui/lib/status.ts",
       "upstream": "apps/web/src/ui/lib/status.ts",
-      "upstreamBlob": "a3add791cae434bbc009edc0b4991eac720d4161",
-      "localBlob": "91d84135f183fe0fa2000213050bce57055e903c",
-      "notes": [
-        "status-variant"
-      ]
+      "upstreamBlob": "5f88ef8b39618030604ea55ba02317e3da147881",
+      "localBlob": "5f88ef8b39618030604ea55ba02317e3da147881",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/lib/tone.ts",
       "upstream": "apps/web/src/ui/lib/tone.ts",
-      "upstreamBlob": "6c9dc5efb26f18d1328d41fd1be8a976bfd3360d",
-      "localBlob": "6c9dc5efb26f18d1328d41fd1be8a976bfd3360d",
+      "upstreamBlob": "7413a70e726fece48279a8053c823fc55785d795",
+      "localBlob": "7413a70e726fece48279a8053c823fc55785d795",
       "notes": []
     },
     {
@@ -263,6 +260,13 @@
       "notes": []
     },
     {
+      "local": "apps/web/src/client/ui/lib/virtual.ts",
+      "upstream": "apps/web/src/ui/lib/virtual.ts",
+      "upstreamBlob": "c1198384eb7142b9c26127b4a533d5da39cec03f",
+      "localBlob": "c1198384eb7142b9c26127b4a533d5da39cec03f",
+      "notes": []
+    },
+    {
       "local": "apps/web/src/client/ui/patterns/active-filters.tsx",
       "upstream": "apps/web/src/ui/patterns/active-filters.tsx",
       "upstreamBlob": "c2e2a99a61380a75f23cc26380bcca82baf02111",
@@ -279,8 +283,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/card-grid.tsx",
       "upstream": "apps/web/src/ui/patterns/card-grid.tsx",
-      "upstreamBlob": "0d24daec494d95285a6770102e6099fea4c72d27",
-      "localBlob": "0d24daec494d95285a6770102e6099fea4c72d27",
+      "upstreamBlob": "207c59487f653d6c820bc18031ddc635a76a5d4b",
+      "localBlob": "207c59487f653d6c820bc18031ddc635a76a5d4b",
       "notes": []
     },
     {
@@ -289,6 +293,15 @@
       "upstreamBlob": "972f4b0f0f573cf15f94dc372a4e05ddb3818e33",
       "localBlob": "972f4b0f0f573cf15f94dc372a4e05ddb3818e33",
       "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/command-palette.tsx",
+      "upstream": "apps/web/src/ui/patterns/command-palette.tsx",
+      "upstreamBlob": "6e66540b0f9472a760e733255dadf3d276eb0d3e",
+      "localBlob": "dd749adfc3a12567215d1b9ec72aa833788cc649",
+      "notes": [
+        "exact-optional"
+      ]
     },
     {
       "local": "apps/web/src/client/ui/patterns/comparison-grid.tsx",
@@ -302,26 +315,22 @@
     {
       "local": "apps/web/src/client/ui/patterns/data-table.tsx",
       "upstream": "apps/web/src/ui/patterns/data-table.tsx",
-      "upstreamBlob": "6b3bc40d7036dca3bc2108825e3a5827b55e0b6f",
-      "localBlob": "7986e94bd5402329faa5d1c8f4ace2a167072c01",
-      "notes": [
-        "data-table-virtualize"
-      ]
+      "upstreamBlob": "eeaab61e757853446a1f078a90aa69035c17a4ce",
+      "localBlob": "eeaab61e757853446a1f078a90aa69035c17a4ce",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/patterns/disclosure.tsx",
       "upstream": "apps/web/src/ui/patterns/disclosure.tsx",
-      "upstreamBlob": "1fe0d044725f5dbb6c9899e9bf695d0048c07b8c",
-      "localBlob": "8fa3e355aed05c10a9a9e06a21e9fed89241c969",
-      "notes": [
-        "disclosure-count-label"
-      ]
+      "upstreamBlob": "80a5801a4ca5db64dd042bd2f26891e0155ede3e",
+      "localBlob": "80a5801a4ca5db64dd042bd2f26891e0155ede3e",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/patterns/empty-state.tsx",
       "upstream": "apps/web/src/ui/patterns/empty-state.tsx",
-      "upstreamBlob": "5a8f94ceda17f22771848ae6b0fa1c8578765fdb",
-      "localBlob": "5a8f94ceda17f22771848ae6b0fa1c8578765fdb",
+      "upstreamBlob": "88ea4d7e7cffb2c54908bee9fd3801ebf66b0253",
+      "localBlob": "88ea4d7e7cffb2c54908bee9fd3801ebf66b0253",
       "notes": []
     },
     {
@@ -334,8 +343,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/external-link.tsx",
       "upstream": "apps/web/src/ui/patterns/external-link.tsx",
-      "upstreamBlob": "ad6217afb68d18cde3243c2f74f7e13931d4506c",
-      "localBlob": "ad6217afb68d18cde3243c2f74f7e13931d4506c",
+      "upstreamBlob": "7a7f415387e36f41b31dffc38398e719965c277f",
+      "localBlob": "7a7f415387e36f41b31dffc38398e719965c277f",
       "notes": []
     },
     {
@@ -350,17 +359,15 @@
     {
       "local": "apps/web/src/client/ui/patterns/filter-bar.tsx",
       "upstream": "apps/web/src/ui/patterns/filter-bar.tsx",
-      "upstreamBlob": "f2b51031da4353c96803c3e56f265a9882910fc9",
-      "localBlob": "12a180b57309d909a044af799995b4ce3e1aa3ba",
-      "notes": [
-        "filter-bar-wrap"
-      ]
+      "upstreamBlob": "355fce9dfb9faaff01fa77c4836968fdeb5db7e2",
+      "localBlob": "355fce9dfb9faaff01fa77c4836968fdeb5db7e2",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/patterns/fragment-boundary.tsx",
       "upstream": "apps/web/src/ui/patterns/fragment-boundary.tsx",
-      "upstreamBlob": "6dea6ad36c0b4a4e17bfc784293cd993ca84fa50",
-      "localBlob": "3f7b0e2109b4be5130f10f1cafd4f2a5ca2a23d2",
+      "upstreamBlob": "f0b6cce437c54b895552f58e317781462c57998b",
+      "localBlob": "419b13cdaaa9a7db9b26bc586933209739cd1a56",
       "notes": [
         "console-prefix"
       ]
@@ -368,8 +375,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/freshness-badge.tsx",
       "upstream": "apps/web/src/ui/patterns/freshness-badge.tsx",
-      "upstreamBlob": "2a51bbf3c1673d609544d22be3b3756db3e1708c",
-      "localBlob": "6266602718c37a1b8f85b5df01684b987679e251",
+      "upstreamBlob": "4c3f0f9f021c88fd65ba08ea8d8486938d86ad58",
+      "localBlob": "699967872c16968ea1b319c4ad9256cd3470687e",
       "notes": [
         "freshness-types"
       ]
@@ -384,7 +391,7 @@
     {
       "local": "apps/web/src/client/ui/patterns/icon.tsx",
       "upstream": "apps/web/src/ui/patterns/icon.tsx",
-      "upstreamBlob": "7cf34023f3bdacc9d121db83b7bdea114bbf9788",
+      "upstreamBlob": "a5f6d5a228d6f128e9a206f49f44240cb97871cf",
       "localBlob": "f2019e995b4b63ddc6d2acfa2043cc01d44cb8ee",
       "notes": [
         "console-prefix",
@@ -408,8 +415,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/list.tsx",
       "upstream": "apps/web/src/ui/patterns/list.tsx",
-      "upstreamBlob": "0325cdcc5f0533243eb098913dd63ce9f90fa90a",
-      "localBlob": "0325cdcc5f0533243eb098913dd63ce9f90fa90a",
+      "upstreamBlob": "b7c07f64a1f947599551b32bcdfb46f8f17dc141",
+      "localBlob": "b7c07f64a1f947599551b32bcdfb46f8f17dc141",
       "notes": []
     },
     {
@@ -436,11 +443,10 @@
     {
       "local": "apps/web/src/client/ui/patterns/page-error-boundary.tsx",
       "upstream": "apps/web/src/ui/patterns/page-error-boundary.tsx",
-      "upstreamBlob": "0cc2be6c7cbb8046736cfd464fdfc25dbc403649",
-      "localBlob": "8b095bb40e198246d4a0b8c6e42697d83147e9b1",
+      "upstreamBlob": "74ee3617b91952f5b7b632c6e993869fd55f617e",
+      "localBlob": "2dc07e8ee61c416ec9e5f23a686c0e031107dbd5",
       "notes": [
-        "console-prefix",
-        "page-error-page-slot"
+        "console-prefix"
       ]
     },
     {
@@ -481,8 +487,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/search-input.tsx",
       "upstream": "apps/web/src/ui/patterns/search-input.tsx",
-      "upstreamBlob": "0448a342f756a6263f949dde61829db2d536a3fe",
-      "localBlob": "df926cf982a4c87c8500d740e20caa3d54ce0a2a",
+      "upstreamBlob": "f6f8eaaebf206a60275ad32a9f1c5782fd8fcc42",
+      "localBlob": "8713f0a53b0563a672d9ebfc3b5d699296e51206",
       "notes": [
         "text-entry-guard"
       ]
@@ -490,8 +496,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/section.tsx",
       "upstream": "apps/web/src/ui/patterns/section.tsx",
-      "upstreamBlob": "e5aec4c6255d2c40c6fb468b2e12b16fdd39b1df",
-      "localBlob": "e5aec4c6255d2c40c6fb468b2e12b16fdd39b1df",
+      "upstreamBlob": "349f73b605314cbbac6fc2ccb05804b72a2a8348",
+      "localBlob": "349f73b605314cbbac6fc2ccb05804b72a2a8348",
       "notes": []
     },
     {
@@ -524,20 +530,18 @@
     {
       "local": "apps/web/src/client/ui/patterns/status-badge.tsx",
       "upstream": "apps/web/src/ui/patterns/status-badge.tsx",
-      "upstreamBlob": "3164b74566319ef44d0375509f9e65cada6049a2",
-      "localBlob": "5f85bd7b4bdf0860647d53126f1edca01aaa23cb",
+      "upstreamBlob": "b6222f2495ea6ceb0786af536cf8d5597c8f603c",
+      "localBlob": "f4561cba4edea12a5f84de133a49aa2c0c04741c",
       "notes": [
-        "exact-optional",
-        "status-badge-variant"
+        "exact-optional"
       ]
     },
     {
       "local": "apps/web/src/client/ui/patterns/tree-view.tsx",
       "upstream": "apps/web/src/ui/patterns/tree-view.tsx",
-      "upstreamBlob": "f48e6f83f263fc8ab07a5e2f962e89145b6d0666",
-      "localBlob": "cd960abbf6c1053c27aaf6dbe6b03f656c516c7a",
+      "upstreamBlob": "3fa2734fc392b9faf6d2eb7fa247e78c8ecd6e74",
+      "localBlob": "122d6e0ecff8026d2f3cafdb4dd83f450c4c77af",
       "notes": [
-        "tree-view-description",
         "tree-view-virtualize"
       ]
     },
@@ -551,11 +555,9 @@
     {
       "local": "apps/web/src/client/ui/primitives/alert-dialog.tsx",
       "upstream": "apps/web/src/ui/primitives/alert-dialog.tsx",
-      "upstreamBlob": "675b771504f069615032e307f0d6840f1c293ed3",
+      "upstreamBlob": "90c04fc80074cddcda03932ad721699a59256221",
       "localBlob": "90c04fc80074cddcda03932ad721699a59256221",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/alert.tsx",
@@ -567,30 +569,23 @@
     {
       "local": "apps/web/src/client/ui/primitives/badge.tsx",
       "upstream": "apps/web/src/ui/primitives/badge.tsx",
-      "upstreamBlob": "254848e33e466a327046c00d4e11e44b12fdacdb",
-      "localBlob": "7b24f527bef70967c6b89331f7b734a347433e38",
-      "notes": [
-        "radix-scoped"
-      ]
+      "upstreamBlob": "9afeee7bed9de4768e022281405235780c7a2b3b",
+      "localBlob": "9afeee7bed9de4768e022281405235780c7a2b3b",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/breadcrumb.tsx",
       "upstream": "apps/web/src/ui/primitives/breadcrumb.tsx",
-      "upstreamBlob": "be8611b083923cfda1d313498ef2890211f2e3cb",
+      "upstreamBlob": "6cc7446f088e648bd36d7580c700863ee66906e9",
       "localBlob": "6cc7446f088e648bd36d7580c700863ee66906e9",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/button.tsx",
       "upstream": "apps/web/src/ui/primitives/button.tsx",
-      "upstreamBlob": "4e402bd659df330858793d83c1a4cc1ab66a752f",
-      "localBlob": "36270d00993cfc1b25adf788af0730b1c6ed30b5",
-      "notes": [
-        "radix-scoped",
-        "button-loading"
-      ]
+      "upstreamBlob": "523bb66d8e98a278934f3d9089996bb7bd8c9053",
+      "localBlob": "523bb66d8e98a278934f3d9089996bb7bd8c9053",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/card.tsx",
@@ -602,20 +597,16 @@
     {
       "local": "apps/web/src/client/ui/primitives/checkbox.tsx",
       "upstream": "apps/web/src/ui/primitives/checkbox.tsx",
-      "upstreamBlob": "0bbc140c787f361c98ce6a3c251928f7c3a3e2bc",
-      "localBlob": "3a3ee1de9eed20a2eca5eb5040b167f92e3ef57a",
-      "notes": [
-        "radix-scoped"
-      ]
+      "upstreamBlob": "f5f9c8333c7a0933960031a084faeeb4f2493914",
+      "localBlob": "f5f9c8333c7a0933960031a084faeeb4f2493914",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/collapsible.tsx",
       "upstream": "apps/web/src/ui/primitives/collapsible.tsx",
-      "upstreamBlob": "63fc8eff3f9af9dbb4193c944d72c16f86e0e81c",
+      "upstreamBlob": "77f86bedad365cfe9d8fe4877628478e4e55d746",
       "localBlob": "77f86bedad365cfe9d8fe4877628478e4e55d746",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/command.tsx",
@@ -627,19 +618,16 @@
     {
       "local": "apps/web/src/client/ui/primitives/dialog.tsx",
       "upstream": "apps/web/src/ui/primitives/dialog.tsx",
-      "upstreamBlob": "4cbde93d1ebb8e7e3ad6452dfef29417752986f2",
+      "upstreamBlob": "0bfe2fc6d3a6189b3b32cc2a366dac9b2a07d120",
       "localBlob": "0bfe2fc6d3a6189b3b32cc2a366dac9b2a07d120",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/dropdown-menu.tsx",
       "upstream": "apps/web/src/ui/primitives/dropdown-menu.tsx",
-      "upstreamBlob": "df14f3b9217fa98a130f35d28ca88bd936f2c56c",
+      "upstreamBlob": "b5477bc2303244bb8d8157a32017fa3ab411e379",
       "localBlob": "a697d320634babe2a746acd377571891e450210d",
       "notes": [
-        "radix-scoped",
         "dropdown-checked"
       ]
     },
@@ -651,68 +639,71 @@
       "notes": []
     },
     {
+      "local": "apps/web/src/client/ui/primitives/kbd.tsx",
+      "upstream": "apps/web/src/ui/primitives/kbd.tsx",
+      "upstreamBlob": "14810be817e956971e0b285a551746f3efecf2c1",
+      "localBlob": "14810be817e956971e0b285a551746f3efecf2c1",
+      "notes": []
+    },
+    {
       "local": "apps/web/src/client/ui/primitives/label.tsx",
       "upstream": "apps/web/src/ui/primitives/label.tsx",
-      "upstreamBlob": "656d1505775dcc605b072421eff3b6faeeabcc08",
+      "upstreamBlob": "e706435876f71a56b5367ed01291e9386ffb1eba",
       "localBlob": "e706435876f71a56b5367ed01291e9386ffb1eba",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/popover.tsx",
       "upstream": "apps/web/src/ui/primitives/popover.tsx",
-      "upstreamBlob": "aab4a2cbf1a4e72339a1bf565cf91d4600b67c73",
+      "upstreamBlob": "3c2515d2534ab065f8c71b0d4c41ee3944191a1e",
       "localBlob": "3c2515d2534ab065f8c71b0d4c41ee3944191a1e",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/radio-group.tsx",
+      "upstream": "apps/web/src/ui/primitives/radio-group.tsx",
+      "upstreamBlob": "970bb13efbb5d6c13dc7bcd5baaed8395950fb95",
+      "localBlob": "970bb13efbb5d6c13dc7bcd5baaed8395950fb95",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/scroll-area.tsx",
       "upstream": "apps/web/src/ui/primitives/scroll-area.tsx",
-      "upstreamBlob": "022a663cb54cc2cf5aa3cb784780b0ff329c6789",
+      "upstreamBlob": "bfd63c9f461c789fac838010c1d0165c2b6246b9",
       "localBlob": "d2b06c0b5485b45ba623631ad05ba06ca68c13df",
       "notes": [
-        "radix-scoped",
         "style-nonce"
       ]
     },
     {
       "local": "apps/web/src/client/ui/primitives/select.tsx",
       "upstream": "apps/web/src/ui/primitives/select.tsx",
-      "upstreamBlob": "595fae3939a73f9587f3f4127a60f6963bfd3d38",
+      "upstreamBlob": "98dbcfdf0b8b531c38d6f3d915b4946ad98d0ce0",
       "localBlob": "a304e8154a6edd3c4316799513a82a6fd251f442",
       "notes": [
-        "radix-scoped",
         "style-nonce"
       ]
     },
     {
       "local": "apps/web/src/client/ui/primitives/separator.tsx",
       "upstream": "apps/web/src/ui/primitives/separator.tsx",
-      "upstreamBlob": "6fa10feab67f1394a41735cdf0fa480d58184854",
+      "upstreamBlob": "76dc24ecefb1e717c6a40335004f8c1abedba48a",
       "localBlob": "76dc24ecefb1e717c6a40335004f8c1abedba48a",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/sheet.tsx",
       "upstream": "apps/web/src/ui/primitives/sheet.tsx",
-      "upstreamBlob": "0d8e095c4b82f8692ba65bdfd6e579463ea0d173",
+      "upstreamBlob": "f60b57dc2b5cd5b79073971372265ce6c6d4888b",
       "localBlob": "f60b57dc2b5cd5b79073971372265ce6c6d4888b",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/sidebar.tsx",
       "upstream": "apps/web/src/ui/primitives/sidebar.tsx",
-      "upstreamBlob": "0e49a1b3649ca2fbd94c99266710e95e02fb8c88",
+      "upstreamBlob": "75da3ec621511dd1f650135c27722f66194ded41",
       "localBlob": "b7e689ece73cc0771631cd21b44c1467bdce79e7",
       "notes": [
-        "radix-scoped",
         "sidebar-text-entry"
       ]
     },
@@ -733,38 +724,72 @@
     {
       "local": "apps/web/src/client/ui/primitives/tabs.tsx",
       "upstream": "apps/web/src/ui/primitives/tabs.tsx",
-      "upstreamBlob": "2a52e081f133258751660f6279a61a9306683322",
+      "upstreamBlob": "73e62f1b56d5b8b9b70fece22c3d9184b2c0985a",
       "localBlob": "73e62f1b56d5b8b9b70fece22c3d9184b2c0985a",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/primitives/textarea.tsx",
+      "upstream": "apps/web/src/ui/primitives/textarea.tsx",
+      "upstreamBlob": "9d03e472f0529a515f5967b3c14fc38e446630ff",
+      "localBlob": "9d03e472f0529a515f5967b3c14fc38e446630ff",
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/toggle-group.tsx",
       "upstream": "apps/web/src/ui/primitives/toggle-group.tsx",
-      "upstreamBlob": "f70ebabc275e1db3bc9e3f5d50b06f306fe0e0c6",
+      "upstreamBlob": "ff6d8e9cd89eef3476ea19f2efc17a78eb54a07d",
       "localBlob": "ff6d8e9cd89eef3476ea19f2efc17a78eb54a07d",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/toggle.tsx",
       "upstream": "apps/web/src/ui/primitives/toggle.tsx",
-      "upstreamBlob": "51ba1695d75d659d86ad76fe94728857a771acfa",
+      "upstreamBlob": "0782e38b62ad713a001ab1262c0f156cd428d00c",
       "localBlob": "0782e38b62ad713a001ab1262c0f156cd428d00c",
-      "notes": [
-        "radix-scoped"
-      ]
+      "notes": []
     },
     {
       "local": "apps/web/src/client/ui/primitives/tooltip.tsx",
       "upstream": "apps/web/src/ui/primitives/tooltip.tsx",
-      "upstreamBlob": "5bcafd0a2c472a30c972db4131b40073b5571293",
-      "localBlob": "bbd47e4b473a912b088ba989a637179f3f1d5d7e",
-      "notes": [
-        "radix-scoped"
-      ]
+      "upstreamBlob": "6867b273b176b07342fab0b648a0d02761e1521f",
+      "localBlob": "6867b273b176b07342fab0b648a0d02761e1521f",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/viz/gauge.tsx",
+      "upstream": "apps/web/src/ui/viz/gauge.tsx",
+      "upstreamBlob": "3c3822f65d60c23310845433a32ec1e57407dc85",
+      "localBlob": "3c3822f65d60c23310845433a32ec1e57407dc85",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/viz/geometry.ts",
+      "upstream": "apps/web/src/ui/viz/geometry.ts",
+      "upstreamBlob": "e90b8f1ba99c0375fbc2bfd58cf1bee496388f73",
+      "localBlob": "e90b8f1ba99c0375fbc2bfd58cf1bee496388f73",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/viz/sparkline.tsx",
+      "upstream": "apps/web/src/ui/viz/sparkline.tsx",
+      "upstreamBlob": "fc8db0ef754fc54e8b001b6e493bbb36c3da7960",
+      "localBlob": "fc8db0ef754fc54e8b001b6e493bbb36c3da7960",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/viz/status-marks.ts",
+      "upstream": "apps/web/src/ui/viz/status-marks.ts",
+      "upstreamBlob": "afe562dd6b1f0b1e92a4752fcb6b5ed5dae5daea",
+      "localBlob": "afe562dd6b1f0b1e92a4752fcb6b5ed5dae5daea",
+      "notes": []
+    },
+    {
+      "local": "apps/web/src/client/ui/viz/status-timeline.tsx",
+      "upstream": "apps/web/src/ui/viz/status-timeline.tsx",
+      "upstreamBlob": "5c1d07c002407a7f3f19df2a7d0ff3a13c15c417",
+      "localBlob": "5c1d07c002407a7f3f19df2a7d0ff3a13c15c417",
+      "notes": []
     }
   ],
   "excluded": [
@@ -775,6 +800,22 @@
     {
       "upstream": "apps/web/src/styles/hljs.css",
       "reason": "deck's highlight.js token theme; pulse ships no syntax highlighting."
+    },
+    {
+      "upstream": "apps/web/src/ui/lib/contributed-icons.ts",
+      "reason": "deck's runtime-module SVG icons; pulse has no runtime modules, and `Icon` resolves through pulse's icon registry."
+    },
+    {
+      "upstream": "apps/web/src/ui/lib/highlight.ts",
+      "reason": "deck's highlight.js setup for its markdown renderer; pulse ships no syntax highlighting."
+    },
+    {
+      "upstream": "apps/web/src/ui/lib/markdown.ts",
+      "reason": "deck's markdown renderer (markdown-it + DOMPurify); pulse renders no markdown."
+    },
+    {
+      "upstream": "apps/web/src/ui/lib/markdown-it-task-lists.d.ts",
+      "reason": "types for deck's markdown renderer, which pulse does not vendor."
     }
   ],
   "localOnly": [
@@ -809,26 +850,6 @@
       "note": "`styleNonce()` / `styleNonceProps()` return the CSP style nonce (`get-nonce`, set by `main.tsx` from the shell) for primitives that render their own `<style>`; internal, not exported from the barrel"
     },
     {
-      "local": "apps/web/src/client/ui/lib/virtual.ts",
-      "source": "pulse",
-      "note": "`observeClientRect`, shared by the virtualized `DataTable` and `TreeView`"
-    },
-    {
-      "local": "apps/web/src/client/ui/primitives/radio-group.tsx",
-      "source": "shadcn/ui new-york v4 `radio-group`",
-      "note": "Built on `@radix-ui/react-radio-group`"
-    },
-    {
-      "local": "apps/web/src/client/ui/primitives/textarea.tsx",
-      "source": "shadcn/ui new-york v4 `textarea`",
-      "note": "None"
-    },
-    {
-      "local": "apps/web/src/client/ui/primitives/kbd.tsx",
-      "source": "shadcn/ui new-york v4 `kbd`",
-      "note": "`Kbd` and `KbdGroup`"
-    },
-    {
       "local": "apps/web/src/client/ui/hooks/use-disposable.ts",
       "source": "pulse",
       "note": "`useDisposable(create, dispose)`: a per-mount resource that survives StrictMode's development unmount-and-remount (recreated if it was disposed)"
@@ -839,14 +860,19 @@
       "note": "`TARGET_STATUS`, `ALERT_SEVERITY` (+ `alertSeverityOf`), `ALERT_STATE` (+ `alertStateOf`), `MUTATION_STATE` on `defineStatusMap`; the domain → `TargetStatus` maps in `src/client/status/target-status.ts` are unchanged"
     },
     {
-      "local": "apps/web/src/client/ui/viz/",
-      "source": "pulse (port of `src/client/viz/`)",
-      "note": "`Sparkline`, `StatusTimeline`, `Gauge`, lazy `TimeSeriesChart` (uPlot in `uplot-chart.tsx`, reached only by dynamic import). Colours from tone/chart tokens; suppressed is hatched/dashed on the neutral tone"
+      "local": "apps/web/src/client/ui/viz/time-series-chart.tsx",
+      "source": "pulse",
+      "note": "Lazy `TimeSeriesChart` (a Suspense wrapper; `status` takes a status-map entry, like the vendored charts). Colours from tone/chart tokens"
     },
     {
-      "local": "apps/web/src/client/ui/patterns/command-palette.tsx",
-      "source": "pulse (on the vendored `Command*` + `Dialog` primitives)",
-      "note": "Data-driven `CommandPalette` (`groups` of items with their own `onSelect`; selecting closes) and `commandGroupsFromIndex`, which maps command-index entries (structural `CommandIndexEntry`, no shell import) to groups. Optional controlled `search`/`onSearchChange` and `shouldFilter={false}` let a caller rank and cap its own results (the shell's command index); `commandGroupsFromIndex(…, { groupOrder: \"entries\" })` keeps a ranked list's best match first; `returnFocusTo` names the element focus returns to on close when a caller showed another dialog first. Opening puts the caret after any text already in the search field (a caller's buffered keys)"
+      "local": "apps/web/src/client/ui/viz/uplot-chart.tsx",
+      "source": "pulse",
+      "note": "The uPlot implementation behind `TimeSeriesChart`, reached only by dynamic import; a status series strokes with `--status-{tone}-fg`, dashed for an outline entry"
+    },
+    {
+      "local": "apps/web/src/client/ui/lib/command-groups.ts",
+      "source": "pulse",
+      "note": "`commandGroupsFromIndex`: maps command-index entries (structural `CommandIndexEntry`, no shell import) to `CommandPalette` groups keyed by kind; `{ groupOrder: \"entries\" }` keeps a ranked list's best match first"
     }
   ]
 }

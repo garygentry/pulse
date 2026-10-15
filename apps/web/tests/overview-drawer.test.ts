@@ -521,7 +521,7 @@ describeDom("TargetDrawer — exact attribution and server order", () => {
     const model = drawerModel(attributionSnapshot(), FIXTURE_IDS.okService);
     expect(model.checkLanes.map((lane) => lane.id)).toEqual(["alpha", "zeta"]);
     const root = await mountDrawer(model);
-    const svg = root.querySelector('[data-section="checks"] svg[role="img"]')!;
+    const svg = root.querySelector('[data-section="checks"] [data-slot="status-timeline"]')!;
     expect(svg.getAttribute("aria-label")).toBe("Recent check outcomes");
     expect(all(svg, "g[data-lane]").map((g) => g.getAttribute("data-lane"))).toEqual(["alpha", "zeta"]);
     expect(all(svg, 'g[data-lane="zeta"] rect').map((r) => r.getAttribute("data-status"))).toEqual(["critical"]);

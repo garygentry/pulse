@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/ui/lib/utils";
 import { Icon } from "@/ui/patterns/icon";
 import { VisuallyHidden } from "@/ui/patterns/visually-hidden";
@@ -10,11 +10,14 @@ export interface DisclosureProps {
   /**
    * Optional count shown after the label as a pill (e.g. hidden items), in tabular figures. The
    * pill is decorative: the trigger's accessible name gets a separated phrase instead, so it reads
-   * "Proposals, 3 items" rather than running the number into the label.
+   * exactly "Proposals, 3 items" rather than running the number into the label.
    */
   count?: number;
-  /** The spoken count phrase; default "1 item" / "N items". */
-  countLabel?: (count: number) => string;
+  /**
+   * The spoken count phrase: a string (e.g. "3 open", like `HealthPill.countLabel`) or a function
+   * of the count. Default "1 item" / "N items".
+   */
+  countLabel?: string | ((count: number) => string);
   children: ReactNode;
   defaultOpen?: boolean;
   /** Controlled open state (pair with `onOpenChange`). */
@@ -42,7 +45,7 @@ function defaultCountLabel(count: number): string {
 export function Disclosure({
   label,
   count,
-  countLabel = defaultCountLabel,
+  countLabel,
   children,
   defaultOpen = false,
   open: openProp,
@@ -56,6 +59,26 @@ export function Disclosure({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const lastFocusedInside = useRef<Element | null>(null);
+  const labelId = useId();
+  const countId = useId();
+
+  const countPhrase =
+    count === undefined
+      ? undefined
+      : typeof countLabel === "string"
+        ? countLabel
+        : (countLabel ?? defaultCountLabel)(count);
+  // With a count, a string label names the trigger exactly ("Waivers, 3 items"). Any other node
+  // keeps live browser naming (its descendants' aria-label/alt, minus aria-hidden text) via
+  // aria-labelledby: the label plus a visually hidden ", 3 items" (engines may put a space
+  // before the comma there).
+  const plainLabel = typeof label === "string" || typeof label === "number" ? String(label) : null;
+  const naming =
+    countPhrase === undefined
+      ? {}
+      : plainLabel !== null
+        ? { "aria-label": `${plainLabel}, ${countPhrase}` }
+        : { "aria-labelledby": `${labelId} ${countId}` };
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -88,16 +111,17 @@ export function Disclosure({
     >
       <CollapsibleTrigger
         ref={triggerRef}
+        {...naming}
         className="group inline-flex w-fit items-center gap-1.5 rounded-md py-1 pr-2 text-sm font-medium text-foreground outline-none hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <Icon
           name="chevron-right"
           className="text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
         />
-        <span>
-          {label}
-          {count !== undefined ? <VisuallyHidden>{`, ${countLabel(count)}`}</VisuallyHidden> : null}
-        </span>
+        <span id={labelId}>{label}</span>
+        {countPhrase !== undefined && plainLabel === null ? (
+          <VisuallyHidden id={countId}>{`, ${countPhrase}`}</VisuallyHidden>
+        ) : null}
         {count !== undefined ? (
           <span aria-hidden="true" className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
             {count}

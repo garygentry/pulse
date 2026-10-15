@@ -145,7 +145,7 @@ async function waitFor(pred: () => boolean, ms = 1000): Promise<void> {
 }
 
 /** The StatusTimeline root (EmptyState icons are also <svg>, so match the strip label). */
-const TIMELINE = 'svg[role="img"][aria-label^="Firing history"]';
+const TIMELINE = '[data-slot="status-timeline"][role="group"][aria-label^="Firing history"]';
 
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 40));
 
@@ -178,7 +178,8 @@ describeDom("History", (dom) => {
     expect(calls[0]!.url).toBe("/api/history/alerts?range=24h");
     const svg = container.querySelector(TIMELINE);
     expect(svg).not.toBeNull();
-    const labels = [...container.querySelectorAll("g[data-lane]")].map((g) => g.getAttribute("aria-label"));
+    // Lane names live in the timeline's screen-reader list (one item per lane).
+    const labels = [...container.querySelectorAll('[data-slot="status-timeline-text"] > li > span')].map((el) => el.textContent);
     expect(labels).toEqual(["HostDown (this alert)", "DiskAlmostFull", "HostDown (unmatched)"]);
     expect(container.querySelector('[data-history-note="unmatched"]')).not.toBeNull();
     unmount();

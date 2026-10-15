@@ -8,7 +8,7 @@
 // class name. rAF runs on microtasks for this file and flushes run inside act().
 
 import { afterAll, afterEach, beforeAll, beforeEach, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
-import { ALERT_SEVERITY } from "@/ui";
+import { ALERT_SEVERITY, TARGET_STATUS } from "@/ui";
 import { within } from "./rtl.js";
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -1166,7 +1166,7 @@ describeDom("timeline lanes — LaneTree, LaneEvidenceStatus and LaneDecorations
     // One plot block per LaneBlock, each with StatusTimeline + decorations + a named overlay.
     const plots = Array.from(c.querySelectorAll<HTMLElement>("[data-block]"));
     expect(plots.map((p) => p.getAttribute("data-block"))).toEqual(["hosts-0", "domains"]);
-    expect(plots[0]!.querySelector('svg[role="img"]')!.getAttribute("aria-label")).toBe("Hosts: status over the visible window");
+    expect(plots[0]!.querySelector('[data-slot="status-timeline"]')!.getAttribute("aria-label")).toBe("Hosts: status over the visible window");
     expect(plots[0]!.querySelector("[data-slot=plot-overlay]")!.getAttribute("aria-label")).toBe("Hosts — time cursor");
     expect(plots[0]!.querySelectorAll("[data-deco=partial]").length).toBe(3);
     expect(plots[0]!.querySelectorAll("[data-deco=selected]").length).toBe(1);
@@ -1361,7 +1361,7 @@ describeDom("timeline lanes — LaneTree, LaneEvidenceStatus and LaneDecorations
     ];
     const lanes = [0, 1, 2, 3].map((i) => ({ id: `l${i}`, label: `lane ${i}`, segments: [{ status: "ok" as const, start: 1000, end: 2000 }] }));
     const c = await mount(
-      el("div", null, el(StatusTimeline, { lanes, ...layout }), el(LaneDecorations, { marks, laneCount: 4, ...layout })),
+      el("div", null, el(StatusTimeline, { lanes, statusMap: TARGET_STATUS, formatTime: String, ...layout }), el(LaneDecorations, { marks, laneCount: 4, ...layout })),
     );
     const [base, deco] = Array.from(c.querySelectorAll("svg"));
     expect(deco!.getAttribute("data-slot")).toBe("lane-decorations");
@@ -1502,7 +1502,7 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
     const view = within(c);
     for (const severity of ["critical", "warning", "info", "unknown"] as const) {
       const name = `${severity === "unknown" ? "Unknown severity" : ALERT_SEVERITY[severity].label} alert intervals`;
-      const plot = view.getByRole("img", { name });
+      const plot = view.getByRole("group", { name });
       const bars = [...plot.querySelectorAll("rect[data-status]")];
       expect(bars.length).toBeGreaterThan(0);
       for (const bar of bars) {
@@ -1512,7 +1512,7 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
     }
     // The info track (a group named by its head) holds the info plot, and no neutral bar.
     const infoTrack = view.getAllByRole("group").find((g) => g.getAttribute("aria-labelledby") === "swim-head-info")!;
-    expect(within(infoTrack).getByRole("img", { name: "Info alert intervals" }).querySelector('rect[data-tone="info"]')).not.toBeNull();
+    expect(within(infoTrack).getByRole("group", { name: "Info alert intervals" }).querySelector('rect[data-tone="info"]')).not.toBeNull();
     expect(c.querySelector('[data-swim-track][data-severity="info"] rect[data-tone="neutral"]')).toBeNull();
   });
 
@@ -1539,8 +1539,8 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
 
     // The fixture's six overlapping criticals: 4 sub-lanes, two folded into the last one.
     const critical = tracks[0]!;
-    expect(critical.querySelectorAll('svg[role="img"] g[data-lane]').length).toBe(4);
-    expect(critical.querySelector('svg[role="img"]')!.getAttribute("aria-label")).toBe("Critical alert intervals");
+    expect(critical.querySelectorAll('[data-slot="status-timeline"] g[data-lane]').length).toBe(4);
+    expect(critical.querySelector('[data-slot="status-timeline"]')!.getAttribute("aria-label")).toBe("Critical alert intervals");
     expect(heads[0]!.querySelector("[data-slot=timeline-swim-overflow]")!.textContent).toBe("+2 overlapping");
     expect(heads[0]!.querySelector("[data-slot=timeline-swim-count]")!.textContent).toBe("6 intervals");
     expect(critical.querySelector("[data-deco=badge]")!.textContent).toBe("+2");

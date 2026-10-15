@@ -10,6 +10,7 @@ import type {
   RangeId,
   StatusInterval,
   TargetIdentity,
+  TargetStatus,
 } from "@pulse/web-data/wire";
 import type { TimelineLane, TimelineSegment } from "@/ui";
 import { INTERVAL_STATUS } from "../../../status/target-status.js";
@@ -74,7 +75,7 @@ export function isAlertOwnLane(alert: ActiveAlert, lane: AlertHistoryLane): bool
 // ---------------------------------------------------------------------------
 
 /** Map one wire StatusInterval to a viz TimelineSegment: ISO bounds → epoch ms, state → TargetStatus. */
-function toSegment(iv: StatusInterval): TimelineSegment {
+function toSegment(iv: StatusInterval): TimelineSegment<TargetStatus> {
   return {
     status: INTERVAL_STATUS[iv.state],
     start: Date.parse(iv.start),
@@ -130,7 +131,7 @@ function laneLabel(lane: AlertHistoryLane, own: boolean): string {
   return markers.length > 0 ? `${base} (${markers.join(", ")})` : base;
 }
 
-function toTimelineLane(lane: AlertHistoryLane, alert: ActiveAlert): TimelineLane {
+function toTimelineLane(lane: AlertHistoryLane, alert: ActiveAlert): TimelineLane<TargetStatus> {
   return {
     id: lane.id, // HashId — stable, never the AM fingerprint
     label: laneLabel(lane, isAlertOwnLane(alert, lane)),
@@ -140,7 +141,7 @@ function toTimelineLane(lane: AlertHistoryLane, alert: ActiveAlert): TimelineLan
 
 /** Order lanes own → matched → unmatched, stable within each group, including EVERY lane (no
  *  truncation). */
-export function buildLanes(payload: IntervalHistoryPayload, alert: ActiveAlert): readonly TimelineLane[] {
+export function buildLanes(payload: IntervalHistoryPayload, alert: ActiveAlert): readonly TimelineLane<TargetStatus>[] {
   const rank = (lane: AlertHistoryLane): number =>
     isAlertOwnLane(alert, lane) ? 0 : lane.attribution === "matched" ? 1 : 2;
   return payload.lanes
