@@ -23,6 +23,7 @@ import { Callout } from "@/ui/patterns/callout";
 import { Button } from "@/ui/primitives/button";
 
 import type { AppStore } from "../store/index.js";
+import { isSessionExpired } from "../store/session-expiry.js";
 import type { ConnectionState } from "../store/types.js";
 import type { EstateClock } from "../format.js";
 
@@ -37,12 +38,6 @@ export interface StaleDataWarningProps {
   reload?: () => void;
 }
 
-/** Whether any view's latest fetch failed because the auth proxy's sign-in session expired. */
-export function isSessionExpired(connection: ConnectionState): boolean {
-  const views: Readonly<Record<string, { readonly failure: { readonly code: string } | null } | undefined>> =
-    connection.views;
-  return Object.values(views).some((view) => view?.failure?.code === "SESSION_EXPIRED");
-}
 
 /** The three operator-facing source groups, each backed by its governing observation source id
  *  (08 §10). The keys/labels preserve the pre-migration `data-source` values and text; the state is

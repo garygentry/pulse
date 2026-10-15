@@ -21,6 +21,8 @@ import {
   type ErrorEnvelope,
 } from "@pulse/web-data/wire";
 
+import { isLoginPage, isRedirect } from "./proxy-answer.js";
+
 /**
  * Client copy of the shell marker names (`00-core-definitions.md §1.4`). MUST stay identical to
  * the copy in `src/server/assets.ts` — asserted deep-equal by a future test (`tests/assets.test.ts`).
@@ -217,27 +219,6 @@ function decodeObservation(header: string | null): CycleObservation | null {
 /** The bounded error result for transport code `code` at a real HTTP status (a gateway answer). */
 function gatewayError(code: ClientTransportErrorCode, httpStatus: number): ApiFetchErrorResult {
   return { status: "error", error: { code, message: CLIENT_TRANSPORT_MESSAGES[code] }, httpStatus };
-}
-
-/**
- * Whether `res` is a redirect. Requests use `redirect: "manual"`, so a browser hands back an
- * `opaqueredirect` response (status 0, no readable headers) for ANY redirect, same- or cross-origin,
- * and a non-browser fetch returns the raw 3xx. The Pulse API never redirects, so a redirect is an
- * auth proxy sending the browser to its login page.
- */
-function isRedirect(res: Response): boolean {
-  return res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400 && res.status !== 304);
-}
-
-/**
- * Whether a 2xx is a page rather than a Pulse API answer: an HTML body (a login page served in
- * place of the API), or a response a fetch implementation reached by following a redirect. Every
- * Pulse API 2xx is `application/json`.
- */
-function isLoginPage(res: Response): boolean {
-  if (res.redirected) return true;
-  const type = (res.headers.get("content-type") ?? "").toLowerCase();
-  return type.startsWith("text/html") || type.startsWith("application/xhtml+xml");
 }
 
 /** The `res.text()` outcome: the body text, or the transport failure that cut the stream off. */

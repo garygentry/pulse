@@ -3,6 +3,7 @@ import { MUTATION_REASONS } from "../../shared/mutations.js";
 import type { MutationReason, MutationSuccess, ProposalListBody, ProposalView } from "../../shared/mutations.js";
 // `@pulse/core/proposals` TYPES only (erased): the core barrel builds zod schemas at load.
 import type { ProposalState } from "@pulse/core/proposals";
+import { isLoginPage, isRedirect } from "../api/proxy-answer.js";
 
 /** A refusal or failure as seen by the client (REQ-UX-02). */
 export class MutationClientError extends Error {
@@ -36,22 +37,6 @@ function isSuccess(v: unknown): v is MutationSuccess<unknown> {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return o["outcome"] === "succeeded" && typeof o["requestId"] === "string" && "result" in o;
-}
-
-/**
- * Whether `res` is a redirect: requests use `redirect: "manual"`, so a browser returns an
- * `opaqueredirect` response for any redirect and a non-browser fetch the raw 3xx. The Pulse API
- * never redirects, so this is an auth proxy sending an expired session to its login page.
- */
-function isRedirect(res: Response): boolean {
-  return res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400);
-}
-
-/** Whether a 2xx is an HTML page (a login page) or was reached through a followed redirect. */
-function isLoginPage(res: Response): boolean {
-  if (res.redirected) return true;
-  const type = (res.headers.get("content-type") ?? "").toLowerCase();
-  return type.startsWith("text/html") || type.startsWith("application/xhtml+xml");
 }
 
 /**

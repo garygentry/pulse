@@ -5,7 +5,8 @@
 import { expect, test } from "bun:test";
 import type { ViewDeliveryState } from "@pulse/web-data/wire";
 
-import { StaleDataWarning, isSessionExpired } from "../src/client/shell/StaleDataCallout.js";
+import { StaleDataWarning } from "../src/client/shell/StaleDataCallout.js";
+import { isSessionExpired } from "../src/client/store/session-expiry.js";
 import type { ConnectionState } from "../src/client/store/types.js";
 import { describeUi, render, screen, userEvent } from "./rtl.js";
 
@@ -65,4 +66,7 @@ describeUi("StaleDataWarning — #64 session expiry", () => {
 test("isSessionExpired reads every view's latest failure", () => {
   expect(isSessionExpired(conn())).toBe(false);
   expect(isSessionExpired(conn({}, expiredEstate))).toBe(true);
+  for (const junk of [null, undefined, 1, "x", [], { views: null }, { views: { estate: { failure: "SESSION_EXPIRED" } } }]) {
+    expect(isSessionExpired(junk)).toBe(false);
+  }
 });

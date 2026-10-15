@@ -7,7 +7,9 @@ import type {
   EstatePayload,
   EstateTargetState,
 } from "@pulse/web-data/wire";
+import { CLIENT_TRANSPORT_MESSAGES } from "@pulse/web-data/wire";
 
+import { isSessionExpired } from "../../store/session-expiry.js";
 import type { EstateDeliveryState } from "./types.js";
 
 /**
@@ -158,9 +160,13 @@ function isTransportFailureCode(code: unknown): boolean {
 /**
  * The app-stale note for the current connection: when the estate refetch failed in transport, the
  * note names that problem ("The Pulse server could not be reached; showing the last delivered
- * estate."); otherwise the generic {@link APP_STALE_MESSAGE}.
+ * estate."). A session expiry on any view always names the expiry. Otherwise the generic
+ * {@link APP_STALE_MESSAGE}.
  */
 export function appStaleMessage(connection: unknown): string {
+  if (isSessionExpired(connection)) {
+    return `${CLIENT_TRANSPORT_MESSAGES.SESSION_EXPIRED.replace(/\.$/, "")}; showing the last delivered estate.`;
+  }
   const views = isRecord(connection) ? connection["views"] : undefined;
   const estate = isRecord(views) ? views["estate"] : undefined;
   const failure = isRecord(estate) ? estate["failure"] : undefined;
@@ -180,6 +186,8 @@ export function appStaleMessage(connection: unknown): string {
  */
 export function isEstateViewStale(connection: unknown): boolean {
   if (!isRecord(connection) || connection["phase"] !== "live") return true;
+  // A session expiry on any view (#64): nothing can be refreshed until the operator signs in again.
+  if (isSessionExpired(connection)) return true;
   const views = connection["views"];
   const estate = isRecord(views) ? views["estate"] : undefined;
   if (!isRecord(estate)) return true;
