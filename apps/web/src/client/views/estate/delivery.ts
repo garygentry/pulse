@@ -77,7 +77,13 @@ export function toDeliveryState(raw: unknown, payload: EstatePayload | null): Es
   if (adapted !== null) return adapted;
 
   const failure = raw["failure"];
-  if (isRecord(failure)) {
+  // A transport failure (Pulse unreachable or too slow) with a retained estate keeps that estate on
+  // screen: the phase branch below renders it, and readEstate marks it app-stale with the transport
+  // problem named, as engine/timeline and the shell's stale callout do. Only a first load with
+  // nothing to show falls through to the full error state.
+  const retainedThroughTransportFailure =
+    payload !== null && isRecord(failure) && isTransportFailureCode(failure["code"]);
+  if (isRecord(failure) && !retainedThroughTransportFailure) {
     const failureCode = failure["code"];
     const failureStatus = failure["status"];
     const failureMessage = failure["message"];
@@ -141,6 +147,28 @@ export function classifyAvailability<T>(
 /** The note a section carries when the payload says `current` but the app itself is not. */
 export const APP_STALE_MESSAGE = "Not refreshed from the Pulse server; showing the last delivered estate.";
 
+/** Client transport failure codes: the Pulse server was unreachable or did not answer in time. */
+const TRANSPORT_FAILURE_CODES: ReadonlySet<unknown> = new Set(["SERVER_UNREACHABLE", "SERVER_TIMEOUT"]);
+
+function isTransportFailureCode(code: unknown): boolean {
+  return TRANSPORT_FAILURE_CODES.has(code);
+}
+
+/**
+ * The app-stale note for the current connection: when the estate refetch failed in transport, the
+ * note names that problem ("The Pulse server could not be reached; showing the last delivered
+ * estate."); otherwise the generic {@link APP_STALE_MESSAGE}.
+ */
+export function appStaleMessage(connection: unknown): string {
+  const views = isRecord(connection) ? connection["views"] : undefined;
+  const estate = isRecord(views) ? views["estate"] : undefined;
+  const failure = isRecord(estate) ? estate["failure"] : undefined;
+  if (!isRecord(failure) || !isTransportFailureCode(failure["code"])) return APP_STALE_MESSAGE;
+  const message = failure["message"];
+  if (typeof message !== "string" || message === "") return APP_STALE_MESSAGE;
+  return `${message.replace(/\.$/, "")}; showing the last delivered estate.`;
+}
+
 /**
  * Whether the retained estate payload can no longer be trusted as current. Stale when the connection
  * is not `live` (the same signal as the shell's stale-data callout: the app server unreachable or
@@ -159,32 +187,32 @@ export function isEstateViewStale(connection: unknown): boolean {
   return failure !== null && failure !== undefined;
 }
 
-function downgrade(availability: DataAvailability): DataAvailability {
+function downgrade(availability: DataAvailability, message: string): DataAvailability {
   return availability.state === "current"
-    ? { ...availability, state: "stale", message: APP_STALE_MESSAGE }
+    ? { ...availability, state: "stale", message }
     : availability;
 }
 
 /** A live target with `current` evidence gets the stale copy; anything else, including a malformed
  *  entry the inventory renders as its own error row, passes through untouched. */
-function downgradeTarget(entry: EstateTargetState): EstateTargetState {
+function downgradeTarget(entry: EstateTargetState, message: string): EstateTargetState {
   const raw: unknown = entry;
   if (!isRecord(raw)) return entry;
   const availability = raw["availability"];
   if (!isRecord(availability) || availability["state"] !== "current") return entry;
-  return { ...entry, availability: downgrade(entry.availability) };
+  return { ...entry, availability: downgrade(entry.availability, message) };
 }
 
-function downgradeSection<T>(section: AvailabilitySection<T>): AvailabilitySection<T> {
+function downgradeSection<T>(section: AvailabilitySection<T>, message: string): AvailabilitySection<T> {
   const raw: unknown = section;
   if (!isRecord(raw) || !isRecord(raw["availability"])) return section;
   return section.availability.state === "current"
-    ? ({ ...section, availability: downgrade(section.availability) } as AvailabilitySection<T>)
+    ? ({ ...section, availability: downgrade(section.availability, message) } as AvailabilitySection<T>)
     : section;
 }
 
-/** One downgraded copy per payload object, so memoized consumers see a stable identity. */
-const appStaleCache = new WeakMap<EstatePayload, EstatePayload>();
+/** One downgraded copy per payload object and note, so memoized consumers see a stable identity. */
+const appStaleCache = new WeakMap<EstatePayload, Map<string, EstatePayload>>();
 
 /** A memoized getter: computes on first successful read, rethrows a failing read every time. */
 function lazy<T>(compute: () => T): PropertyDescriptor {
@@ -204,7 +232,7 @@ function lazy<T>(compute: () => T): PropertyDescriptor {
 
 /**
  * The payload as an app-stale view must render it: every `current` availability (each live target
- * and each artifact section) becomes `stale` with {@link APP_STALE_MESSAGE}, so every badge that
+ * and each artifact section) becomes `stale` with `message` (default {@link APP_STALE_MESSAGE}), so every badge that
  * already downgrades on non-current evidence (inventory coverage/live, coverage tab, entity page)
  * stops reading ok (I3). Non-current states keep their own, more specific state. The rendered
  * model itself is reused unchanged.
@@ -212,20 +240,27 @@ function lazy<T>(compute: () => T): PropertyDescriptor {
  * Each field is read lazily, where its consumer reads it, so a fault in one section still lands in
  * that region's error boundary rather than at the view root.
  */
-export function withAppStaleness(payload: EstatePayload): EstatePayload {
-  const cached = appStaleCache.get(payload);
+export function withAppStaleness(payload: EstatePayload, message: string = APP_STALE_MESSAGE): EstatePayload {
+  let byMessage = appStaleCache.get(payload);
+  if (byMessage === undefined) {
+    byMessage = new Map();
+    appStaleCache.set(payload, byMessage);
+  }
+  const cached = byMessage.get(message);
   if (cached !== undefined) return cached;
   const stale = Object.defineProperties({} as EstatePayload, {
     generatedAt: lazy(() => payload.generatedAt),
     estate: lazy(() => payload.estate),
     liveTargets: lazy(() => {
       const targets: unknown = payload.liveTargets;
-      return Array.isArray(targets) ? targets.map(downgradeTarget) : payload.liveTargets;
+      return Array.isArray(targets)
+        ? targets.map((t: EstateTargetState) => downgradeTarget(t, message))
+        : payload.liveTargets;
     }),
-    coverage: lazy(() => downgradeSection(payload.coverage)),
-    findings: lazy(() => downgradeSection(payload.findings)),
-    declaredVersusScraped: lazy(() => downgradeSection(payload.declaredVersusScraped)),
+    coverage: lazy(() => downgradeSection(payload.coverage, message)),
+    findings: lazy(() => downgradeSection(payload.findings, message)),
+    declaredVersusScraped: lazy(() => downgradeSection(payload.declaredVersusScraped, message)),
   });
-  appStaleCache.set(payload, stale);
+  byMessage.set(message, stale);
   return stale;
 }

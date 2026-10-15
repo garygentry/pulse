@@ -28,16 +28,21 @@ const currentBuild = await fetchDevBuildId();
 if (currentBuild !== null) console.log(currentBuild);
 ```
 
-### `apiFetch<T>(path, init?, fetchImpl?): Promise<T>`
+### `apiFetch<T>(path, options?, fetchImpl?): Promise<ApiFetchResult<T>>`
 
-Performs a same-origin JSON request with `Accept: application/json` and `cache: "no-store"` defaults. A non-2xx response throws `Error`; invalid JSON propagates `SyntaxError`.
+Performs a same-origin JSON GET with `Accept: application/json` and `cache: "no-store"`. It never throws or rejects; every outcome is a discriminated `ApiFetchResult<T>`:
+
+- `{ status: "ok", value, etag, identity, observation }`: a 200. Cycle routes (`/api/overview`, `/api/alerts`, `/api/estate`, `/api/engine`, `/api/timeline`) must carry a valid ETag, payload id and observation; other routes report them as `null`.
+- `{ status: "not-modified", etag, identity, observation }`: a valid 304 to a conditional cycle request (`options.etag` is sent as `If-None-Match`). An invalid 304 triggers one unconditional retry.
+- `{ status: "error", error, httpStatus }`: `error` is a validated server `ErrorEnvelope` at the real status, or a client transport code. `SERVER_UNREACHABLE` covers a network failure, a body cut off mid-read, or a proxy 502/503 without a Pulse envelope. `SERVER_TIMEOUT` covers `options.signal` aborted with `timeoutAbortReason()` or `AbortSignal.timeout()`, or a proxy 504. Any other abort is `REQUEST_CANCELLED`. A complete but invalid body, or an unknown or client-only code, is `INTERNAL_ERROR`. `httpStatus` is `0` when no response arrived.
+
+`apiFetch` has no deadline of its own. The live-state machine bounds every view GET, body download included, with `VIEW_FETCH_TIMEOUT_MS`.
 
 ```typescript
 import { apiFetch } from "./src/client/api/client.js";
-import type { OverviewSnapshot } from "./src/shared/snapshot.js";
 
-const snapshot = await apiFetch<OverviewSnapshot>("/api/overview");
-console.log(snapshot.generatedAt);
+const result = await apiFetch<unknown>("/api/overview");
+if (result.status === "error") console.log(result.error.code, result.httpStatus);
 ```
 
 ## Path Router
@@ -195,7 +200,7 @@ const live = startLiveState(store, {
 window.addEventListener("pagehide", () => live.stop(), { once: true });
 ```
 
-`LiveStateOptions` accepts `transport: "poll"`, optional `fetchImpl`, `intervalMs`, `staleMs`, `reload`, and `devBuildCheck`. The handle exposes idempotent `stop()` and shared single-fire `reloadOnce()`. `DEV_BUILD_CHECK_INTERVAL_MS` is `1000`.
+`LiveStateOptions` accepts `transport: "poll"`, optional `fetchImpl`, `intervalMs`, `staleMs`, `viewTimeoutMs` (the view GET deadline including body download, measured from the view's first outstanding request; default `VIEW_FETCH_TIMEOUT_MS`, 8s), `reload`, and `devBuildCheck`. The handle exposes idempotent `stop()` and shared single-fire `reloadOnce()`. `DEV_BUILD_CHECK_INTERVAL_MS` is `1000`.
 
 ## Lazy Chunk Styles
 

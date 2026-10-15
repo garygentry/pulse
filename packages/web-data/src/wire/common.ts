@@ -177,6 +177,24 @@ export const ERROR_MESSAGES: Readonly<Record<ApiErrorCode, string>> = {
   INTERNAL_ERROR: "An unexpected server error occurred.",
 };
 
+/**
+ * Client-side transport failure codes: synthesized by the browser API client when no usable HTTP
+ * response arrived, so they are NEVER sent by the server and are not part of `ApiErrorCode`. They
+ * keep "the Pulse server could not be reached / did not answer in time" distinct from a real 5xx
+ * (`INTERNAL_ERROR`), and mark a caller-cancelled request so it is never shown as a failure.
+ */
+export type ClientTransportErrorCode = "SERVER_UNREACHABLE" | "SERVER_TIMEOUT" | "REQUEST_CANCELLED";
+
+/** Every failure code a browser API call can resolve with: a server envelope code or a transport code. */
+export type ClientFetchErrorCode = ApiErrorCode | ClientTransportErrorCode;
+
+/** Exact operator-facing text for every client transport failure code. */
+export const CLIENT_TRANSPORT_MESSAGES: Readonly<Record<ClientTransportErrorCode, string>> = {
+  SERVER_UNREACHABLE: "The Pulse server could not be reached.",
+  SERVER_TIMEOUT: "The Pulse server did not respond in time.",
+  REQUEST_CANCELLED: "The request was cancelled.",
+};
+
 /** Exact default text for every bounded source-failure category. */
 export const SOURCE_ERROR_MESSAGES: Readonly<Record<SourceErrorKind, string>> = {
   timeout: "The upstream request exceeded its deadline.",
