@@ -10,8 +10,6 @@
 // ingress-endpoint selection, and the endpoint name comes from the renderer's own
 // `gatusEndpointName`, so a check and the rule that pages on it cannot drift apart.
 import { gatusEndpointName } from "@pulse/renderer";
-import { endpointAlertClearWindowSeconds } from "@pulse/core/endpoint-alert";
-
 import { GATUS_CHECKS, METRICS, RUNBOOK_SLUGS, runbookUrl } from "../constants.js";
 import type { EstateModel, Service } from "./estate.js";
 import type { AlertingFinding } from "./findings.js";
@@ -97,7 +95,7 @@ export function syntheticExpr(endpoint: string, group: string, timing: Synthetic
     ...C.nominalWindowOffsetsSeconds.map((offset) => formatDuration(F * I + offset)),
     formatDuration(C.slowWindowFactor * F * I),
   ];
-  const clearWindow = formatDuration(endpointAlertClearWindowSeconds(S));
+  const clearWindow = formatDuration(Math.ceil(C.clearWindowFactor * S) * I + I);
   const ids = `name=${promqlString(endpoint)},group=${promqlString(group)}`;
   const count = (success: "true" | "false", window: string): string =>
     `sum by (name, group) (increase(${METRICS.gatusResults}{${ids},success="${success}"}[${window}]))`;

@@ -18,7 +18,6 @@ import type {
   WebScrapeTarget,
 } from "@pulse/renderer";
 import type { TargetIdentity, TargetStatus } from "@pulse/web-data/wire";
-import { ENDPOINT_ALERT_TIMING, endpointAlertClearWindowSeconds } from "@pulse/core/endpoint-alert";
 
 import {
   Badge,
@@ -46,6 +45,7 @@ import { ProposalList } from "../../mutations/proposals/ProposalList.js";
 import { RegionErrorBoundary, safeCell, safeNavigate } from "./error-boundary.js";
 import { ProvenanceChip } from "./provenance-chip.js";
 import { alertAge, resolveAndJoin, toAttributedAlertRows } from "./entity-model.js";
+import { ENDPOINT_ALERT_TIMING, clearWindowSeconds } from "./endpoint-alert-timing.js";
 import type { AttributedAlertRow, EntityRouteTarget, JoinedEntity } from "./entity-model.js";
 import { statusLabel } from "./status.js";
 import { readEstate } from "./types.js";
@@ -424,7 +424,7 @@ function describeAlertRule(a: WebEndpointAlert): string {
   const T = ENDPOINT_ALERT_TIMING;
   const fails = a.failureThreshold ?? T.defaultFailureThreshold;
   const passes = a.successThreshold ?? T.defaultSuccessThreshold;
-  const clearMinutes = endpointAlertClearWindowSeconds(passes) / 60;
+  const clearMinutes = clearWindowSeconds(passes) / 60;
   return (
     `fires after ${checks(fails, "consecutive failed")}, ` +
     `resolves after ${checks(passes, "passing")} and no failure for ${clearMinutes} min`
