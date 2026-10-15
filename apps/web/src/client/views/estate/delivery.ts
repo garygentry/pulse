@@ -1,7 +1,12 @@
 // src/client/views/estate/delivery.ts — pure delivery-state adapter and per-artifact availability
 // classifier for the estate view. The renderers live in degrade.tsx.
 
-import type { AvailabilitySection, DataAvailability, EstatePayload } from "@pulse/web-data/wire";
+import type {
+  AvailabilitySection,
+  DataAvailability,
+  EstatePayload,
+  EstateTargetState,
+} from "@pulse/web-data/wire";
 
 import type { EstateDeliveryState } from "./types.js";
 
@@ -106,8 +111,8 @@ export function toDeliveryState(raw: unknown, payload: EstatePayload | null): Es
         ? { kind: "ready" }
         : { kind: "model-absent", guidance: DEFAULT_MODEL_ABSENT_GUIDANCE };
     case "stale":
-      // The whole payload still renders; readEstate downgrades its current sections to stale
-      // (withAppStaleness), so each section shows its own staleness and no badge stays ok.
+      // The whole payload still renders. While the app itself is stale, readEstate downgrades its
+      // current sections (withAppStaleness), so no badge stays ok.
       return { kind: "ready" };
     default:
       return fallback;
@@ -137,16 +142,21 @@ export function classifyAvailability<T>(
 export const APP_STALE_MESSAGE = "Not refreshed from the Pulse server; showing the last delivered estate.";
 
 /**
- * Whether the retained estate payload can no longer be trusted as current, mirroring the overview
- * (`overview/freshness.ts`): only a `live` connection with `current` estate delivery is fresh. Any
- * other combination (the app server unreachable past the stale window, no cycle observation yet, a
- * newer estate still being fetched) or an unrecognized shape is stale, failing closed.
+ * Whether the retained estate payload can no longer be trusted as current. Stale when the connection
+ * is not `live` (the same signal as the shell's stale-data callout: the app server unreachable or
+ * its cycle stalled past the stale window, or no cycle observation yet), or when estate delivery is
+ * not current AND its refetch actually failed. A non-current delivery with no failure is an
+ * in-flight refetch of a newer identity on a healthy connection; treating that as stale would flip
+ * every badge on each estate change. Unrecognized shapes fail closed to stale.
  */
 export function isEstateViewStale(connection: unknown): boolean {
   if (!isRecord(connection) || connection["phase"] !== "live") return true;
   const views = connection["views"];
   const estate = isRecord(views) ? views["estate"] : undefined;
-  return !isRecord(estate) || estate["phase"] !== "current";
+  if (!isRecord(estate)) return true;
+  if (estate["phase"] === "current") return false;
+  const failure = estate["failure"];
+  return failure !== null && failure !== undefined;
 }
 
 function downgrade(availability: DataAvailability): DataAvailability {
@@ -155,7 +165,19 @@ function downgrade(availability: DataAvailability): DataAvailability {
     : availability;
 }
 
+/** A live target with `current` evidence gets the stale copy; anything else, including a malformed
+ *  entry the inventory renders as its own error row, passes through untouched. */
+function downgradeTarget(entry: EstateTargetState): EstateTargetState {
+  const raw: unknown = entry;
+  if (!isRecord(raw)) return entry;
+  const availability = raw["availability"];
+  if (!isRecord(availability) || availability["state"] !== "current") return entry;
+  return { ...entry, availability: downgrade(entry.availability) };
+}
+
 function downgradeSection<T>(section: AvailabilitySection<T>): AvailabilitySection<T> {
+  const raw: unknown = section;
+  if (!isRecord(raw) || !isRecord(raw["availability"])) return section;
   return section.availability.state === "current"
     ? ({ ...section, availability: downgrade(section.availability) } as AvailabilitySection<T>)
     : section;
@@ -196,11 +218,10 @@ export function withAppStaleness(payload: EstatePayload): EstatePayload {
   const stale = Object.defineProperties({} as EstatePayload, {
     generatedAt: lazy(() => payload.generatedAt),
     estate: lazy(() => payload.estate),
-    liveTargets: lazy(() =>
-      payload.liveTargets.map((t) =>
-        t.availability.state === "current" ? { ...t, availability: downgrade(t.availability) } : t,
-      ),
-    ),
+    liveTargets: lazy(() => {
+      const targets: unknown = payload.liveTargets;
+      return Array.isArray(targets) ? targets.map(downgradeTarget) : payload.liveTargets;
+    }),
     coverage: lazy(() => downgradeSection(payload.coverage)),
     findings: lazy(() => downgradeSection(payload.findings)),
     declaredVersusScraped: lazy(() => downgradeSection(payload.declaredVersusScraped)),

@@ -338,15 +338,21 @@ describeDom("estate degrade rendering", (dom) => {
 
 // ── #26: app-level staleness ─────────────────────────────────────────────────
 
-const conn = (phase: unknown, estate: unknown): unknown => ({ phase, views: { estate: { phase: estate } } });
+const FAILED = { code: "INTERNAL_ERROR", status: 500, message: "boom" };
+const conn = (phase: unknown, estate: unknown, failure: unknown = null): unknown => ({
+  phase,
+  views: { estate: { phase: estate, failure } },
+});
 
-test("isEstateViewStale: fresh only for a live connection with current estate delivery; fails closed", () => {
+test("isEstateViewStale: stale when the connection is not live or the estate refetch failed; fails closed", () => {
   expect(isEstateViewStale(conn("live", "current"))).toBe(false);
+  // In-flight refetch of a newer identity on a healthy connection: not app-stale (no flicker).
+  expect(isEstateViewStale(conn("live", "stale"))).toBe(false);
+  expect(isEstateViewStale(conn("live", "initial"))).toBe(false);
+  expect(isEstateViewStale(conn("live", "stale", FAILED))).toBe(true);
   expect(isEstateViewStale(conn("stale", "current"))).toBe(true);
   expect(isEstateViewStale(conn("stale", "stale"))).toBe(true);
   expect(isEstateViewStale(conn("initial", "current"))).toBe(true);
-  expect(isEstateViewStale(conn("live", "stale"))).toBe(true);
-  expect(isEstateViewStale(conn("live", "initial"))).toBe(true);
   expect(isEstateViewStale({ phase: "live" })).toBe(true);
   expect(isEstateViewStale({ phase: "live", views: {} })).toBe(true);
   expect(isEstateViewStale(null)).toBe(true);
@@ -378,6 +384,23 @@ test("withAppStaleness: current evidence becomes stale with the app note; non-cu
   // Stable identity per payload so memoized consumers do not recompute every render.
   expect(withAppStaleness(payload)).toBe(stale);
   expect(stale.liveTargets).toBe(stale.liveTargets);
+});
+
+test("withAppStaleness passes malformed live entries through untouched instead of throwing", () => {
+  const good = makeLiveTarget({ target: { kind: "host", id: "a" } });
+  const missing = { ...makeLiveTarget({ target: { kind: "host", id: "b" } }), availability: null };
+  const payload = makeEstatePayloadFixture({
+    liveTargets: [good, missing, null, "junk"] as unknown as EstatePayload["liveTargets"],
+    coverage: { availability: null, value: null } as unknown as EstatePayload["coverage"],
+  });
+  const stale = withAppStaleness(payload);
+  const out = stale.liveTargets as readonly unknown[];
+  expect(out.length).toBe(4);
+  expect((out[0] as typeof good).availability.state).toBe("stale");
+  expect(out[1]).toBe(missing);
+  expect(out[2]).toBeNull();
+  expect(out[3]).toBe("junk");
+  expect(stale.coverage).toBe(payload.coverage);
 });
 
 test("withAppStaleness reads each section lazily, so one faulty section does not throw for the rest", () => {

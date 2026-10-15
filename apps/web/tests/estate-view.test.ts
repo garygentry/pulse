@@ -528,13 +528,35 @@ describeDom("estate view: app-level staleness", () => {
     }
   });
 
-  test("a live connection whose estate delivery is not current is still stale", async () => {
+  test("an in-flight estate refetch on a live connection does not flicker the badges", async () => {
     const { router } = makeRouter();
     const store = seed(makeEstatePayloadFixture(), "/estate");
-    setEstateConnection(store, { phase: "live", delivery: "stale" });
     const { container, unmount } = await renderWithStore(EstateView, { store, router });
     try {
-      expect(indicators(container).length).toBeGreaterThan(0);
+      const before = indicators(container).map((b) => `${b.getAttribute("data-status")}:${b.textContent}`);
+      expect(before.some((s) => s.startsWith("ok:"))).toBe(true);
+      // A newer estate identity was announced and is being fetched: delivery is `stale`, no failure.
+      setEstateConnection(store, { phase: "live", delivery: "stale" });
+      await tick();
+      expect(indicators(container).map((b) => `${b.getAttribute("data-status")}:${b.textContent}`)).toEqual(before);
+      expect(container.querySelector("[data-stale-message]") === null).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  test("a malformed live entry still renders as its own error row while app-stale", async () => {
+    const base = makeEstatePayloadFixture();
+    const malformed = { ...base.liveTargets[0]!, availability: null } as unknown as EstatePayload["liveTargets"][number];
+    const { router } = makeRouter();
+    const store = seed({ ...base, liveTargets: [...base.liveTargets, malformed] }, "/estate");
+    setEstateConnection(store, { phase: "stale", delivery: "stale" });
+    const { container, unmount } = await renderWithStore(EstateView, { store, router });
+    try {
+      expect(container.querySelector("[data-testid=estate-host-row]") !== null).toBe(true);
+      expect(container.querySelector("[data-testid=estate-error-row]")?.textContent).toContain(
+        "Malformed live target entry",
+      );
       expect(container.querySelector('[data-slot=status-badge][data-status="ok"]') === null).toBe(true);
     } finally {
       unmount();

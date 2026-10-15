@@ -55,9 +55,9 @@ export interface RegionErrorBoundaryProps {
 
 /**
  * Read the typed estate payload through the view's shared store seam. While the app itself is stale
- * (connection not `live`, or estate delivery not `current`), every `current` availability in the
- * retained payload is reported `stale` instead (`withAppStaleness`), so no estate surface badges ok
- * on data Pulse can no longer refresh (I3).
+ * (`isEstateViewStale`: connection not `live`, or a failed estate refetch), every `current`
+ * availability in the retained payload is reported `stale` instead (`withAppStaleness`), so no
+ * estate surface badges ok on data Pulse can no longer refresh (I3).
  */
 export function readEstate(store: AppStore): EstatePayload | null {
   const payload = store.estate.value;
