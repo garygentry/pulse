@@ -278,6 +278,23 @@ export const HYPERVISOR_ENDPOINT_RE =
   /^(?:https?:\/\/)?(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::[0-9]{1,5})?(?:\/[^?#\s]*)?$/;
 
 /**
+ * Say what is wrong with a rejected hypervisor endpoint WITHOUT echoing it: an endpoint may carry
+ * `user:password@` credentials, and finding text reaches render output, CI logs and the web app.
+ */
+function hypervisorEndpointProblem(endpoint: string): string {
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(endpoint);
+  const rest = scheme === null ? endpoint : endpoint.slice(scheme[0].length);
+  const authority = rest.split(/[/?#]/, 1)[0] ?? "";
+  if (authority.includes("@")) return "contains user:password@ credentials (put the token in `credential`)";
+  if (scheme !== null && !/^https?$/i.test(scheme[1]!)) return "uses a scheme other than http:// or https://";
+  if (/[?#]/.test(rest)) return "has a ?query or #fragment";
+  if (authority.length === 0) return "has no host";
+  if (!authority.startsWith("[") && (authority.match(/:/g) ?? []).length > 1) return "has an IPv6 address without [brackets]";
+  if (/:(?![0-9]{1,5}$)/.test(authority.replace(/^\[[^\]]*\]/, ""))) return "has a port that is not a number";
+  return "is not a DNS name, IPv4 address or bracketed IPv6 literal with an optional port and path";
+}
+
+/**
  * A `hypervisor-api` host's `api_endpoint` must have a shape the hypervisor scrape can reduce to a
  * bare host (`HYPERVISOR_ENDPOINT_RE`). Rejecting it here turns a silent, permanent `HostDown`
  * into a clear render-time error.
@@ -298,7 +315,7 @@ export function checkHypervisorEndpoint(
       `hosts[${i}].api_endpoint`,
       "error",
       FINDING_CODES.INVALID_HYPERVISOR_ENDPOINT,
-      `hypervisor-api host "${h?.name ?? "(unnamed)"}" has an api_endpoint ("${endpoint}") the hypervisor scrape cannot reduce to a host.`,
+      `hypervisor-api host "${h?.name ?? "(unnamed)"}" has an api_endpoint the hypervisor scrape cannot reduce to a host: it ${hypervisorEndpointProblem(endpoint)}.`,
       `Use [http(s)://]HOST[:PORT][/PATH] with HOST a DNS name, an IPv4 address or a bracketed IPv6 literal, and no user:password@, ?query or #fragment (e.g. "https://pve1:8006"). pve-exporter always connects to port 8006 (issue #74).`,
     );
   });

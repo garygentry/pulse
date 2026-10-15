@@ -355,6 +355,34 @@ describe("hypervisor-api endpoint shape (INVALID_HYPERVISOR_ENDPOINT, issue #74)
     }
   });
 
+  test("the finding never echoes the endpoint, so credentials in it cannot leak, and names the problem", () => {
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["https://admin:hunter2-SECRET@pve1:8006", "user:password@"],
+      ["https://root@pve1/api", "user:password@"],
+      ["ftp://pve1", "scheme"],
+      ["https://pve1:8006/?token=SECRET", "?query"],
+      ["fd00::5", "IPv6"],
+      ["pve1:abc", "port"],
+      ["https:///api", "no host"],
+    ];
+    for (const [bad, why] of cases) {
+      const [f] = run(checkHypervisorEndpoint, hv(bad));
+      const text = `${f!.message} ${f!.fix} ${f!.path}`;
+      expect(text, bad).not.toContain(bad);
+      expect(text).not.toContain("SECRET");
+      expect(text).not.toContain("hunter2");
+      expect(f!.message, bad).toContain(why);
+    }
+  });
+
+  test("end to end through loadAndValidate, the credential-bearing fixture never surfaces its password", () => {
+    const result = loadAndValidate(join(import.meta.dir, "fixtures", "broken-hypervisor-endpoint"));
+    expect(result.ok).toBe(false);
+    const text = JSON.stringify(result);
+    expect(text).toContain("invalid_hypervisor_endpoint");
+    expect(text).not.toContain("user:pw@");
+  });
+
   test("other classes are ignored", () => {
     const out = run(checkHypervisorEndpoint, {
       hosts: [{ name: "nas", collection_class: "nas-api", addresses: ["1"], api_endpoint: "https://u:p@nas", credential: "${N}" }],
