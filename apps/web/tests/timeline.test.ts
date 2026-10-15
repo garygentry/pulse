@@ -23,6 +23,7 @@ import {
   rebaseVm,
   rebaseVmalert,
   shiftInstant,
+  type AmSilencesResponse,
   type ScenarioBase,
   type Timeline,
   type VmalertRulesResponse,
@@ -35,13 +36,14 @@ async function readJson<T>(path: string): Promise<T> {
 }
 
 async function loadBase(scenario: string): Promise<ScenarioBase> {
-  const [vm, alertmanager, gatus, vmalert] = await Promise.all([
+  const [vm, alertmanager, silences, gatus, vmalert] = await Promise.all([
     readJson<VmQueryResponse>(resolve(FIXTURES_DIR, scenario, "vm.json")),
     readJson<AmAlertsResponse>(resolve(FIXTURES_DIR, scenario, "alertmanager.json")),
+    readJson<AmSilencesResponse>(resolve(FIXTURES_DIR, scenario, "silences.json")),
     readJson<GatusStatusesResponse>(resolve(FIXTURES_DIR, scenario, "gatus.json")),
     readJson<VmalertRulesResponse>(resolve(FIXTURES_DIR, scenario, "vmalert.json")),
   ]);
-  return { vm, alertmanager, gatus, vmalert };
+  return { vm, alertmanager, silences, gatus, vmalert };
 }
 
 async function loadTimeline(scenario: string): Promise<Timeline> {

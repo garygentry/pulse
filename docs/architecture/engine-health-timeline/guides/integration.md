@@ -13,7 +13,7 @@ bun run dev:web --mock degraded-mix    # engine verdict Degraded, failing rules 
 bun run dev:web --mock source-outage   # per-source degraded badges and staleness
 ```
 
-The mock engine does not serve `query_range`. Under `--mock`, every history region shows its "Metrics source unavailable." state. For working charts, use `--engine <vm>,<alertmanager>,<gatus>,<vmalert>`. For deterministic chart rendering during development, open the browser fixture pages instead (see [Testing](#testing)).
+The mock engine answers `query_range` and Gatus check history with synthetic data derived from the scenario (`apps/web/src/server/dev/history.ts`). For real charts, use `--engine <vm>,<alertmanager>,<gatus>,<vmalert>`. For deterministic chart rendering during development, open the browser fixture pages instead (see [Testing](#testing)).
 
 ## Route Integration
 
