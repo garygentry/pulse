@@ -48,7 +48,20 @@ is unchanged means the mount contract is stable and step 3 is a plain re-apply.
 
 ## 3. Re-apply via the idempotent runbook
 
-Adopt the reviewed tree with the same idempotent bring-up the bootstrap runbook documents:
+First rebuild the images Pulse builds on your host rather than pulling: `web` (the `web`
+profile) and the deep-health `prober` (the `deep-health` profile). `docker compose up` builds an
+image only when none exists, and the prober's pinned tag (`pulse/prober:1.0.0`) does not change
+between Pulse versions, so without a rebuild both keep running the code of the checkout they
+were first built from. Rebuild the profiles you run:
+
+```bash
+cd stack/compose && docker compose --profile web --profile deep-health build
+```
+
+If you build and pin your own web image tag instead (see
+[web overview](/web-overview/#build-the-d10-build-on-host-pattern)), re-run that `docker build`
+from the new checkout and update the pinned tag. Then adopt the reviewed tree with the same
+idempotent bring-up the bootstrap runbook documents:
 
 ```bash
 cd stack/compose && docker compose up --wait    # re-apply; safe on re-run
@@ -63,8 +76,8 @@ This is safe to re-run. The idempotency rests on two properties:
   metric history or dashboards.
 
 **Never `down -v`.** That flag destroys the durable volumes and with them all metric
-history and Grafana state. A plain `docker compose up --wait` is the only re-apply an
-upgrade needs — see [runtime posture](/runtime-posture/) for why the volumes are durable.
+history and Grafana state. Apart from rebuilding the locally built images above, a plain
+`docker compose up --wait` is the only re-apply an upgrade needs — see [runtime posture](/runtime-posture/) for why the volumes are durable.
 
 > **Boundary:** the *mechanics* of the idempotent re-apply — the exact commands, per-step
 > content-verification, and rollback — live in the [bootstrap runbook](/bootstrap/). This
@@ -76,6 +89,11 @@ upgrade needs — see [runtime posture](/runtime-posture/) for why the volumes a
 checkout, follow the three moves above, then work through the items below. The first item is
 **breaking**: skip it and Gatus checks stop paging. The full list of changes is in the
 repository's `CHANGELOG.md`.
+
+**Rebuild the web and prober images** before `docker compose up`, as step 3 describes
+(`docker compose --profile web --profile deep-health build`). Both changed in 0.2.0, and
+`up` alone keeps running the images built from your old checkout. A rebuilt web image reports
+`0.2.0` on `/healthz`, and open browser tabs reload themselves once onto the new build.
 
 The rendered estate model (`web-estate-model.json`) and the render tree's `formatVersion` are
 unchanged in 0.2.0, so the existing rendered files keep their mounts. One rendered file is new
@@ -108,9 +126,9 @@ provider never resolved alerts correctly and has been removed (PR #21). Each ser
   them.
 - **A missing mount is loud.** The always-loaded `pipeline-health` rule family now includes the
   **`SyntheticRulesNotLoaded`** warning (`absent(pulse:synthetic_checks_bound)`, `for: 10m`). It
-  fires about 15 minutes after the mount is dropped from a running stack. On a fresh stack that
-  has never mounted the file, it fires about 10–11 minutes after vmalert starts and keeps firing
-  until you add the mount. See
+  fires about 10–15 minutes after the mount goes missing: about 15 minutes after the mount is
+  dropped from a running stack, and about 10–11 minutes after vmalert starts on a fresh stack that
+  has never mounted the file. It keeps firing until you add the mount. See
   [detecting a missing `synthetic.yml` mount](/alerting/#detecting-a-missing-syntheticyml-mount)
   and the [pipeline-health runbook](/pipeline-health/).
 - **Alert identity changes at cutover.** `GatusCheckFailed` alerts carry new labels (`estate`,
@@ -121,8 +139,8 @@ provider never resolved alerts correctly and has been removed (PR #21). Each ser
   `type` and `send_on_resolved` are kept for compatibility but have no effect. Each Alertmanager
   receiver's `send_resolved` decides whether resolves are sent. `failure_threshold` and
   `success_threshold` are now capped at 60. Validation now rejects a host name, service name or
-  estate domain that contains `"`, `\` or a line break (`gatus_unsafe_name`), because Gatus fails
-  to start on them. Run `pulse validate` before you re-render.
+  estate domain that is rendered into a Gatus check and contains `"`, `\` or a line break
+  (`gatus_unsafe_name`), because Gatus fails to start on them. Run `pulse validate` before you re-render.
 
 ### 2. Write path: still dark unless you opt in
 
@@ -140,8 +158,8 @@ with a **Reload page** button. A write attempted in that state changes nothing. 
 
 ### 3. Host history, liveness and coverage in the web app
 
-These items fix what the web app reads. No query, alert rule, scrape config or model format
-changes, and nothing needs to be re-rendered for them.
+These items fix what the web app reads. They make no alert rule, scrape config or model format
+change, and nothing needs to be re-rendered for them.
 
 - **Host history now matches real data** (PR #71). The host drawer's liveness line and the
   timeline's CPU, memory, disk and load charts select on the post-relabel `job` and `instance`
@@ -196,11 +214,16 @@ showed as not live on the overview but paged nobody (PR #76). The details are in
   needs a downstream override of the job.
 - **Hypervisor endpoints are validated.** An `api_endpoint` must be
   `[http(s)://]HOST[:PORT][/PATH]`, where HOST is a DNS name, an IPv4 address or a bracketed IPv6
-  literal. User info (`user:pw@`), a query, a fragment, an unbracketed IPv6 literal or a
-  non-numeric port now fails with `invalid_hypervisor_endpoint`. Run `pulse validate` before you
+  literal. A scheme other than `http` or `https`, user info (`user:pw@`), a query, a fragment,
+  an unbracketed IPv6 literal or a non-numeric port now fails with
+  `invalid_hypervisor_endpoint`. Run `pulse validate` before you
   re-render.
-- **Liveness history for hosts with no scrape target.** The `estate.liveness` history query for
-  such a host now returns 422 `QUERY_NOT_APPLICABLE`.
+- **`estate.liveness` with no target returns 422.** The estate-wide `estate.liveness` history
+  query (no host or service target) now returns 422 `QUERY_NOT_APPLICABLE`. It had no UI
+  consumer, and its bare `up` selector mixed in profile-gated jobs that report down by design.
+  This is separate from the per-host change in PR #73, which already made the query return 422
+  `QUERY_NOT_APPLICABLE` for a host with no main scrape job (a probe-only host, or one missing its
+  main target).
 
 ### 5. Web app: security headers, kiosk and timeouts
 

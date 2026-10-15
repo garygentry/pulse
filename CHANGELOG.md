@@ -13,7 +13,8 @@ upgrade notes.
 The first tagged public release. It covers everything merged to `main` since the public
 repository's initial commit. Operators upgrading an earlier deployment should read
 [Upgrading to 0.2.0](docs/operator/upgrade-path.md#upgrading-to-020) first: the Gatus paging
-change below needs a new vmalert mount.
+change below needs a new vmalert mount, and the locally built `web` and `prober` images must be
+rebuilt (`docker compose --profile web --profile deep-health build`) before `docker compose up`.
 
 ### Breaking
 
@@ -31,8 +32,9 @@ change below needs a new vmalert mount.
   holds a `pulse:synthetic_checks_bound` recording rule, so vmalert needs `-remoteWrite.url`
   (already set in the committed compose file) or it fails at startup. (#53)
 - **New validation errors.** `failure_threshold` and `success_threshold` are capped at 60, and a
-  host name, service name or estate domain containing `"`, `\` or a line break is rejected
-  (`gatus_unsafe_name`), because Gatus fails to start on such a name. (#21)
+  host name, service name or estate domain that is rendered into a Gatus check and contains `"`,
+  `\` or a line break is rejected (`gatus_unsafe_name`), because Gatus fails to start on such a
+  name. (#21)
 - **`HostDown` covers every host class.** It now pages for `nas-api` and `hypervisor-api`
   hosts as well as `managed-linux` ones. A silence or inhibit rule that matches
   `alertname="HostDown"` without a `host` matcher now also mutes NAS and hypervisor hosts; add
@@ -44,8 +46,8 @@ change below needs a new vmalert mount.
   the bare PVE host as `?target=` (the exporter always talks to port 8006). An endpoint on another
   port needs a downstream override of the job. (#76)
 - **New validation error `invalid_hypervisor_endpoint`.** A hypervisor `api_endpoint` must be
-  `[http(s)://]HOST[:PORT][/PATH]`; user info, a query, a fragment, an unbracketed IPv6 literal
-  or a non-numeric port is rejected. (#76)
+  `[http(s)://]HOST[:PORT][/PATH]`; a scheme other than `http`/`https`, user info, a query, a
+  fragment, an unbracketed IPv6 literal or a non-numeric port is rejected. (#76)
 
 ### Added
 
@@ -62,8 +64,10 @@ change below needs a new vmalert mount.
   hypervisor as down. (#76)
 - **Kiosk tile wall.** `?kiosk=1` on the overview shows a read-only wall of compact host tiles,
   worst status first, under a one-line stat strip and alert ribbon. Pages are sized from the real
-  grid (columns × rows), each page stays up for at least 10 seconds, rotations resume where the
-  last visit stopped, and a host that newly turns critical brings the wall back to page 1. (#65)
+  grid (columns × rows), each page stays up for at least 10 seconds, and rotations resume where
+  the last visit stopped. A host that newly turns critical while it is not on the visible page
+  brings the wall back to page 1; a flap guard allows at most one such restart per host, and per
+  wall, in each full cycle. (#65)
 - **Content-Security-Policy and hardening headers** on every web response. See Security. (#38)
 - **Virtualized estate inventory tree** for large estates, with stacked rows on mobile. (#40)
 - **Session-expiry handling** behind a forward-auth proxy: an expired session shows "Session
@@ -120,8 +124,14 @@ change below needs a new vmalert mount.
 - **Stock hypervisor scraping was broken**: the rendered URL was passed to pve-exporter as
   `?target=`, which the pinned exporter answers with HTTP 500, so every hypervisor read as down.
   `instance` is unchanged. (#76)
-- The no-target `estate.liveness` history query returns 422 `QUERY_NOT_APPLICABLE` instead of
-  a query that mixed in profile-gated jobs. (#76)
+- The estate-wide `estate.liveness` history query (no target) returns 422
+  `QUERY_NOT_APPLICABLE` instead of a query that mixed in profile-gated jobs. (#76) A host with no
+  main scrape job (probe-only) already got the same 422 for its own liveness query. (#73)
+- **Web images reported version `0.0.0-dev`.** A web build now bakes `apps/web/package.json`'s
+  version unless `PULSE_BUILD_VERSION` (now also a Docker build arg, passed through by compose)
+  says otherwise, and `bun run build:bin` does the same for the CLI. The server's version-skew
+  reload key now combines that version with the client build id, so open tabs reload once after
+  any new image, including a rebuild at the same version. (#77)
 - Alert targets showed their kind prefix twice (`host:host:…`). (#22)
 - Virtualized tables mis-measured rows of varying height, so scrolling jumped and
   `scrollToIndex` missed. (#24)

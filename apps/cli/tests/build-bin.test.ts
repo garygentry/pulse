@@ -23,8 +23,11 @@ import { PULSE_VERSION } from "../src/version.js";
 import {
   BUILD_TARGETS,
   CHECKSUMS_FILENAME,
+  CLI_PACKAGE_JSON,
   VERSION_SENTINEL,
   computeSha256Sums,
+  readPackageVersion,
+  resolveVersionArg,
   renderVersionModule,
   runBuild,
   sha256File,
@@ -97,6 +100,42 @@ describe("version injection (renderVersionModule / writeVersionFile)", () => {
   test("the committed src/version.ts IS the regenerated sentinel form (never hand-edited)", () => {
     expect(PULSE_VERSION).toBe(VERSION_SENTINEL);
     expect(readFileSync(COMMITTED_VERSION_FILE, "utf8")).toBe(renderVersionModule(VERSION_SENTINEL));
+  });
+});
+
+describe("build version resolution", () => {
+  const argv = ["bun", "scripts/build-bin.ts"];
+
+  test("falls back to the package.json version when no arg or env is given", () => {
+    withTmp((dir) => {
+      const pkg = join(dir, "package.json");
+      writeFileSync(pkg, JSON.stringify({ name: "@pulse/cli", version: "4.5.6" }));
+      expect(resolveVersionArg(argv, {}, pkg)).toBe("4.5.6");
+      expect(resolveVersionArg(argv, { PULSE_BUILD_VERSION: "" }, pkg)).toBe("4.5.6");
+    });
+  });
+
+  test("an explicit arg, then PULSE_BUILD_VERSION, win over package.json", () => {
+    withTmp((dir) => {
+      const pkg = join(dir, "package.json");
+      writeFileSync(pkg, JSON.stringify({ version: "4.5.6" }));
+      expect(resolveVersionArg([...argv, "7.0.0"], { PULSE_BUILD_VERSION: "8.0.0" }, pkg)).toBe("7.0.0");
+      expect(resolveVersionArg(argv, { PULSE_BUILD_VERSION: "8.0.0" }, pkg)).toBe("8.0.0");
+    });
+  });
+
+  test("uses the sentinel when package.json is missing, malformed or has no version", () => {
+    withTmp((dir) => {
+      expect(resolveVersionArg(argv, {}, join(dir, "absent.json"))).toBe(VERSION_SENTINEL);
+      const bad = join(dir, "bad.json");
+      writeFileSync(bad, "{not json");
+      expect(readPackageVersion(bad)).toBeNull();
+      expect(resolveVersionArg(argv, {}, bad)).toBe(VERSION_SENTINEL);
+    });
+  });
+
+  test("the real apps/cli/package.json carries a version", () => {
+    expect(readPackageVersion(CLI_PACKAGE_JSON)).toMatch(/^\d+\.\d+\.\d+/);
   });
 });
 

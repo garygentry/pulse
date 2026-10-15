@@ -1,8 +1,8 @@
 // apps/cli/scripts/build-bin.ts — the compiled-binary build pipeline (01 §4, CON-03).
 //
 // Run via `bun run build:bin` (wired in apps/cli/package.json). It:
-//   1. regenerates apps/cli/src/version.ts from a version arg/env (default: the "0.0.0-dev"
-//      sentinel) — deterministically, `export const PULSE_VERSION = "<version>";` and nothing
+//   1. regenerates apps/cli/src/version.ts from a version arg/env (else apps/cli/package.json's
+//      `version`, else the "0.0.0-dev" sentinel) — deterministically, `export const PULSE_VERSION = "<version>";` and nothing
 //      clock/host/random (REQ-DET-01);
 //   2. builds the two musl-static single binaries via `bun build --compile`:
 //        pulse-linux-x64   (--target=bun-linux-x64-musl)
@@ -19,7 +19,7 @@
 // @pulse/agent-kit dependency edge is added to apps/cli/package.json (the committed graph stays
 // acyclic — the reverse edge exists only transiently in the rewritten source during a release).
 //
-// It does NOT cut the private GitHub release — that publish is a human-gated release action
+// It does NOT publish the GitHub release — that publish is a human-gated release action
 // (see scripts/README.md). This script stops at producing + checksumming the artifacts locally.
 
 import { createHash } from "node:crypto";
@@ -35,7 +35,7 @@ export const BUILD_TARGETS = [
   { target: "bun-linux-arm64-musl", outfile: "pulse-linux-arm64" },
 ] as const;
 
-/** The checksum manifest attached to the private release alongside the two binaries. */
+/** The checksum manifest attached to the GitHub release alongside the two binaries. */
 export const CHECKSUMS_FILENAME = "SHA256SUMS";
 
 const SCRIPTS_DIR = import.meta.dir;
@@ -220,13 +220,39 @@ export async function runBuild(opts: BuildOptions = {}): Promise<BuildResult> {
   }
 }
 
-/** Resolve the version to bake: first CLI arg, else `PULSE_BUILD_VERSION`, else the sentinel. */
-function resolveVersionArg(): string {
-  const arg = process.argv[2];
+/** apps/cli/package.json — the release version a build falls back to when none is passed. */
+export const CLI_PACKAGE_JSON = resolve(SCRIPTS_DIR, "../package.json");
+
+/**
+ * Read the `version` field of a package.json, or `null` when the file is missing, unparseable or
+ * has no non-empty string `version`. Never throws.
+ */
+export function readPackageVersion(packageJsonPath: string): string | null {
+  try {
+    const doc: unknown = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    if (typeof doc !== "object" || doc === null) return null;
+    const version = (doc as Record<string, unknown>)["version"];
+    return typeof version === "string" && version.length > 0 ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the version to bake: the first CLI arg, else `PULSE_BUILD_VERSION`, else
+ * apps/cli/package.json's `version` (so a plain `bun run build:bin` of a release checkout reports
+ * its release), else the sentinel.
+ */
+export function resolveVersionArg(
+  argv: readonly string[] = process.argv,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  packageJsonPath: string = CLI_PACKAGE_JSON,
+): string {
+  const arg = argv[2];
   if (arg !== undefined && arg.length > 0) return arg;
-  const env = process.env.PULSE_BUILD_VERSION;
-  if (env !== undefined && env.length > 0) return env;
-  return VERSION_SENTINEL;
+  const buildEnv = env["PULSE_BUILD_VERSION"];
+  if (buildEnv !== undefined && buildEnv.length > 0) return buildEnv;
+  return readPackageVersion(packageJsonPath) ?? VERSION_SENTINEL;
 }
 
 /**

@@ -70,10 +70,10 @@ Served by `GET /healthz`. Always `200` when the process can respond.
 ```jsonc
 {
   "status": "ok",                        // "ok" | "degraded" (any source down or model not loaded)
-  "version": "1.4.0",
+  "version": "0.2.0",
   "estateModel": {
     "loaded": true,
-    "formatVersion": 1,                  // null when not loaded
+    "formatVersion": 2,                  // null when not loaded
     "error": null                        // a short message when the model failed to load
   },
   "sources": { "metrics": {…}, "alerts": {…}, "checks": {…} }  // SourceHealth each

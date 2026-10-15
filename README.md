@@ -44,7 +44,7 @@ Everything estate-specific enters through exactly two seams — the rendered tre
 Pulse is a Bun monorepo; clone it and install once from the root.
 
 ```sh
-git clone git@github.com:garygentry/pulse.git
+git clone https://github.com/garygentry/pulse.git
 cd pulse
 bun install
 ```

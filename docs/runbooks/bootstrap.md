@@ -39,34 +39,50 @@ broken state.
 
 #### Step 1 — Fetch and checksum-verify the `pulse` binary
 
-The CLI ships as musl-static single binaries (`pulse-linux-x64` / `pulse-linux-arm64`) plus a
-`SHA256SUMS` file, attached to your private GitHub release. Fetch the binary for your
-architecture and verify its checksum before trusting it.
+Each Pulse release on GitHub (garygentry/pulse, Releases page) carries the CLI as two
+single-file binaries, `pulse-linux-x64` and `pulse-linux-arm64`, plus a `SHA256SUMS` file
+listing both. Download the binary for your architecture and `SHA256SUMS` from the release
+page, or with the GitHub CLI as below, and verify the checksum before trusting it.
+
+The binaries are built for **musl** (`bun-linux-*-musl` targets) and are dynamically linked
+against the musl loader, `libstdc++` and `libgcc`. They run as-is on Alpine with
+`apk add libstdc++` installed. On a glibc distribution (Debian, Ubuntu, Fedora) the shell
+reports `no such file or directory` when you run them; use the from-source alternative below
+instead.
 
 **Command**
 
 ```bash
-ARCH="x64"   # or arm64, to match your host
-# Point BASE at your private release; <git-host>/<org>/<tag> are yours to fill in.
-BASE="https://<git-host>/<org>/pulse/releases/download/<tag>"
-curl -fsSL -o pulse "$BASE/pulse-linux-${ARCH}"
-curl -fsSL -o SHA256SUMS "$BASE/SHA256SUMS"
+TAG="v0.2.0"   # the release you are installing
+ARCH="x64"     # or arm64, to match your host
+gh release download "$TAG" --repo garygentry/pulse \
+  --pattern "pulse-linux-${ARCH}" --pattern SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
-chmod +x ./pulse
+mv "pulse-linux-${ARCH}" pulse && chmod +x ./pulse
 export PULSE_BIN="$(pwd)/pulse"
 ```
 
+Keep the downloaded file name until `sha256sum` has run: `SHA256SUMS` lists
+`pulse-linux-x64` and `pulse-linux-arm64`, and `--ignore-missing` skips the architecture you
+did not download.
+
+**From source instead** (any host with Bun ≥ 1.3): check out the release tag and run the CLI
+through Bun, with no compiled binary:
+
+```bash
+gh repo clone garygentry/pulse -- --branch "$TAG" && cd pulse && bun install
+printf '#!/bin/sh\nexec bun run %s/apps/cli/src/index.ts "$@"\n' "$(pwd)" > pulse-cli
+chmod +x pulse-cli && export PULSE_BIN="$(pwd)/pulse-cli"
+```
+
 **Verify (content):** `sha256sum --ignore-missing -c SHA256SUMS` prints
-`pulse-linux-x64: OK` (or `…arm64: OK`) — read the `OK` line itself, not merely the exit
-code. Then `"$PULSE_BIN" --version` prints a semver and a `schemaMajors: [1]`, confirming the
-binary runs and speaks schema major 1.
+`pulse-linux-x64: OK` (or `pulse-linux-arm64: OK`). Read the `OK` line itself, not just the
+exit code. Then `"$PULSE_BIN" --version` prints `pulse 0.2.0` and
+`supported schema majors: 1`, which confirms the binary runs and speaks schema major 1. A
+from-source CLI prints `pulse 0.0.0-dev`, because only release builds bake the version in.
 
-**Rollback:** `rm -f ./pulse ./SHA256SUMS` — nothing else on the host was mutated.
-
-> **Release-asset names are unverified until release.** The asset filenames
-> (`pulse-linux-x64`, `pulse-linux-arm64`, `SHA256SUMS`) are read from
-> `apps/cli/scripts/build-bin.ts`. If the built asset names differ at release time, correct
-> the download URLs above before publishing this runbook to your operators.
+**Rollback:** `rm -f ./pulse ./SHA256SUMS ./pulse-linux-*`. Nothing else on the host was
+changed.
 
 #### Step 2 — Render the estate into a committed tree
 
