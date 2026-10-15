@@ -14,6 +14,7 @@ import {
   checkSecretLiterals,
   checkExactlyOneClass,
   checkNasApiCompleteness,
+  checkHypervisorEndpoint,
   checkTelegramOptions,
   checkHostLocalProbeHost,
   checkGatusNames,
@@ -311,6 +312,52 @@ describe("nas-api API-override completeness (INCOMPLETE_NAS_API, issue #4)", () 
       hosts: [
         { name: "hv", collection_class: "hypervisor-api", addresses: ["1"], api_endpoint: "x" },
       ],
+    });
+    expect(out).toHaveLength(0);
+  });
+});
+
+describe("hypervisor-api endpoint shape (INVALID_HYPERVISOR_ENDPOINT, issue #74)", () => {
+  const hv = (api_endpoint: string) => ({
+    hosts: [{ name: "pve1", collection_class: "hypervisor-api", addresses: ["10.0.0.5"], api_endpoint, credential: "${PVE}" }],
+  });
+
+  test("every shape the hypervisor scrape reduces to a bare host is accepted", () => {
+    for (const ok of [
+      "https://pve1:8006",
+      "https://pve1/api",
+      "https://pve1.example.com:8006/api2/json",
+      "http://10.0.0.5",
+      "pve1:8006",
+      "pve1",
+      "https://[fd00::5]:8006",
+    ]) {
+      expect(run(checkHypervisorEndpoint, hv(ok)), ok).toHaveLength(0);
+    }
+  });
+
+  test("a shape that would leave pve-exporter's ?target= unset is one clear error on api_endpoint", () => {
+    for (const bad of [
+      "https://user:pw@pve1:8006",
+      "fd00::5",
+      "https://pve1:8006/?node=a",
+      "https://pve1#frag",
+      "pve1:abc",
+      "ftp://pve1",
+      "https:///api",
+    ]) {
+      const out = run(checkHypervisorEndpoint, hv(bad));
+      expect(out, bad).toHaveLength(1);
+      expect(out[0]!.code).toBe(FINDING_CODES.INVALID_HYPERVISOR_ENDPOINT);
+      expect(out[0]!.severity).toBe("error");
+      expect(out[0]!.path).toContain("hosts[0].api_endpoint");
+      expect(out[0]!.fix).toContain("8006");
+    }
+  });
+
+  test("other classes are ignored", () => {
+    const out = run(checkHypervisorEndpoint, {
+      hosts: [{ name: "nas", collection_class: "nas-api", addresses: ["1"], api_endpoint: "https://u:p@nas", credential: "${N}" }],
     });
     expect(out).toHaveLength(0);
   });

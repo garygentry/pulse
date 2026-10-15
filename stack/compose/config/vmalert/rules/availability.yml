@@ -35,9 +35,13 @@ groups:
       # (source HypervisorExporterDown, target HostDown{job="hypervisor-api"}, equal: [estate]) holds
       # those pages back for the outage. Assumes ONE pve-exporter target (scrape.yml §2); several
       # exporters under one job would need per-target matching in the inhibition.
+      # `keep_firing_for: 2m` closes the recovery race: the exporter's own `up` can return to 1 up
+      # to a scrape interval (30s) before the hypervisor-api scrapes do, so without it the
+      # inhibition would lift while hypervisor HostDowns were still firing and page them all.
       - alert: HypervisorExporterDown
         expr: up{job="pve-exporter"} == 0
         for: 60s
+        keep_firing_for: 2m
         labels:
           severity: warning
         annotations:

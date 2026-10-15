@@ -53,12 +53,15 @@ scrape job at all (Gatus checks them as `host:<name>`).
 Every hypervisor-api scrape goes through the one pve-exporter, which is passed the bare PVE host
 as `?target=` (the scrape job strips the scheme, port and path from the rendered endpoint; the
 exporter always talks to port 8006). While pve-exporter itself is down, every hypervisor reads
-`up == 0` for the exporter's fault. `HypervisorExporterDown` (warning, `for: 60s`) fires before any
+`up == 0` for the exporter's fault. `HypervisorExporterDown` (warning, `for: 60s`,
+`keep_firing_for: 2m`) fires before any
 hypervisor `HostDown` can (`for: 90s`), and an Alertmanager inhibit rule (source
 `HypervisorExporterDown`, target `HostDown{job="hypervisor-api"}`, equal on `estate`) holds the
 hypervisor pages back for the outage. They are inhibited, not resolved: `HypervisorExporterDown`
 is the signal, and a hypervisor that is still down when the exporter returns pages without a new
-90s wait. The rule ships in both the bootstrap Alertmanager config and every config `alerting`
+90s wait. Because the exporter's own `up` can recover a scrape interval before the hypervisor
+scrapes do, `HypervisorExporterDown` keeps firing for 2m after it clears, so the inhibition does
+not lift onto stale hypervisor `HostDown`s. The rule ships in both the bootstrap Alertmanager config and every config `alerting`
 generates.
 
 > **Upgrade note (issue #74): NAS and hypervisor hosts now raise `HostDown`.**
@@ -81,8 +84,13 @@ generates.
 >   needs a downstream override of this job. A downstream relabel that adds `__param_module`
 >   (`&module=`) keeps working as before.
 > - The new `HypervisorExporterDown` warning inhibits hypervisor `HostDown` pages while
->   pve-exporter is down (above). It overlaps with `AncillaryDown` for the same exporter, which
->   still fires after 5m.
+>   pve-exporter is down (above). `AncillaryDown` no longer covers pve-exporter, so an exporter
+>   outage raises this one warning. A route or silence that matched
+>   `alertname="AncillaryDown",job="pve-exporter"` should match `HypervisorExporterDown` instead.
+> - A hypervisor `api_endpoint` must now be `[http(s)://]HOST[:PORT][/PATH]` (HOST a DNS name,
+>   IPv4 address or bracketed IPv6 literal; no `user:pw@`, `?query` or `#fragment`). Any other
+>   shape fails rendering with `invalid_hypervisor_endpoint`, instead of a hypervisor that scrapes
+>   as down for good.
 >
 > The expected-DOWN fictional NAS and hypervisor targets in a demo estate now raise `HostDown`,
 > as the fictional managed hosts already did.

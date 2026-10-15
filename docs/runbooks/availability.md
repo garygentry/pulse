@@ -25,8 +25,10 @@ expression is a separate critical rule covered by the [deep-health runbook](/dee
   resolved) by `HypervisorExporterDown`.
 - **HypervisorExporterDown** (warning) — `up{job="pve-exporter"} == 0` for **60s**. Every
   hypervisor-api scrape goes through pve-exporter, so hypervisor liveness is unknown. Restore the
-  exporter (`docker compose up -d pve-exporter` in `stack/compose`); see also `AncillaryDown` in the
-  [engine runbook](/engine/).
+  exporter (`docker compose up -d pve-exporter` in `stack/compose`). It keeps firing for 2m after
+  the exporter recovers (`keep_firing_for`), so the hypervisor scrapes catch up before the
+  `HostDown` inhibition lifts. It is the only alert for a pve-exporter outage (`AncillaryDown` no
+  longer covers it).
 - **DeepHealthProbeFailed** (warning) — `pulse_deep_health_up == 0` for **2m**: the probe ran and
   failed (unreachable, malformed, or errored). Mapped `pulse_deep_health` values are stale meanwhile.
 - **DeepHealthProbeStale** (warning) — `time() - pulse_deep_health_last_scrape_seconds > 300`: no

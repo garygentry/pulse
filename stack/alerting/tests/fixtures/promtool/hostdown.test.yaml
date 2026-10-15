@@ -143,3 +143,35 @@ tests:
               runbook_url: "https://runbooks.pulse.local/availability"
               summary: "Host pve-alpha is DOWN (critical)"
               description: "No successful metric scrape from host pve-alpha (job hypervisor-api) for at least 90s (three consecutive missed 30s scrapes). The host or its collection endpoint is unreachable, or the host is down. Missing data is treated as failure, never as healthy."
+
+  # 4. Recovery race (keep_firing_for: 2m): pve-exporter is down t=90..150s and back from t=180s.
+  #    HypervisorExporterDown keeps firing for 2m after its expression clears, so the inhibition
+  #    still holds while the hypervisor-api scrapes (up to 30s behind) clear HostDown.
+  - interval: 30s
+    input_series:
+      - series: 'up{job="pve-exporter", instance="pve-exporter:9221", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 2m30s
+        alertname: HypervisorExporterDown
+        exp_alerts: &exporter_down
+          - exp_labels:
+              severity: warning
+              job: pve-exporter
+              instance: "pve-exporter:9221"
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "pve-exporter is DOWN; hypervisor liveness is unknown (warning)"
+              description: "The pve-exporter relay (pve-exporter:9221) has been unreachable for 60s. Every hypervisor-api scrape goes through it, so hypervisor liveness is unknown and HostDown pages for hypervisors are inhibited (held, not resolved) until it recovers. Restore the exporter; this alert is the signal for the outage."
+      # exporter `up` is 1 again from t=180s: still firing one and two evaluations later
+      - eval_time: 3m30s
+        alertname: HypervisorExporterDown
+        exp_alerts: *exporter_down
+      - eval_time: 4m
+        alertname: HypervisorExporterDown
+        exp_alerts: *exporter_down
+      # past keep_firing_for → resolved
+      - eval_time: 5m30s
+        alertname: HypervisorExporterDown
+        exp_alerts: []

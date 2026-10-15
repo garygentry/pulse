@@ -265,6 +265,45 @@ export function checkNasApiCompleteness(
   });
 }
 
+// ── hypervisor-api endpoint shape (issue #74) ─────────────────────────────────
+
+/**
+ * The `api_endpoint` shapes a hypervisor-api host may use: an optional `http://` or `https://`
+ * scheme, a DNS name, IPv4 address or bracketed IPv6 literal, an optional numeric port and an
+ * optional path. No userinfo, query or fragment. The scrape job (stack/compose/config/
+ * victoriametrics/scrape.yml §1c) reduces exactly these to the bare host it passes pve-exporter
+ * as `?target=`; any other shape leaves that parameter unset and the host scrapes as down for good.
+ */
+export const HYPERVISOR_ENDPOINT_RE =
+  /^(?:https?:\/\/)?(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::[0-9]{1,5})?(?:\/[^?#\s]*)?$/;
+
+/**
+ * A `hypervisor-api` host's `api_endpoint` must have a shape the hypervisor scrape can reduce to a
+ * bare host (`HYPERVISOR_ENDPOINT_RE`). Rejecting it here turns a silent, permanent `HostDown`
+ * into a clear render-time error.
+ */
+export function checkHypervisorEndpoint(
+  merged: MergedInventory,
+  prov: ProvenanceIndex,
+  collector: FindingCollector,
+): void {
+  (merged.hosts ?? []).forEach((h, i) => {
+    if (h?.collection_class !== "hypervisor-api") return;
+    const endpoint = (h as { api_endpoint?: unknown }).api_endpoint;
+    if (typeof endpoint !== "string" || endpoint.length === 0) return; // the shape layer reports it
+    if (HYPERVISOR_ENDPOINT_RE.test(endpoint)) return;
+    pushFinding(
+      collector,
+      prov,
+      `hosts[${i}].api_endpoint`,
+      "error",
+      FINDING_CODES.INVALID_HYPERVISOR_ENDPOINT,
+      `hypervisor-api host "${h?.name ?? "(unnamed)"}" has an api_endpoint ("${endpoint}") the hypervisor scrape cannot reduce to a host.`,
+      `Use [http(s)://]HOST[:PORT][/PATH] with HOST a DNS name, an IPv4 address or a bracketed IPv6 literal, and no user:password@, ?query or #fragment (e.g. "https://pve1:8006"). pve-exporter always connects to port 8006 (issue #74).`,
+    );
+  });
+}
+
 // ── §3.4 Telegram channel requires options.chat_id (issue #2, REQ-CHAN-01) ───
 
 /** A chat_id is present iff it is a non-empty string or a finite number (Telegram int64 or `@name`). */

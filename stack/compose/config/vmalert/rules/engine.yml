@@ -24,8 +24,10 @@ groups:
       # unless a more specific critical condition also fires. Enumerates only ALWAYS-ON scraped
       # ancillary jobs to avoid false positives — grafana has no scrape job, and the prober is
       # profile-gated OFF by default (DOWN-by-design), so both are excluded (§6 WARNING).
+      # pve-exporter is excluded too: its outage is HypervisorExporterDown (availability.yml,
+      # issue #74), so one exporter outage raises one warning.
       - alert: AncillaryDown
-        expr: up{job=~"gatus|engine-cadvisor|pve-exporter"} == 0
+        expr: up{job=~"gatus|engine-cadvisor"} == 0
         for: 5m
         labels:
           severity: warning

@@ -68,7 +68,7 @@ The five collection classes are fixed for v1:
 | Collection class | Required class fields |
 |------------------|-----------------------|
 | `managed-linux`  | `exporter_ports` |
-| `hypervisor-api` | `api_endpoint`, `credential` (secret reference) |
+| `hypervisor-api` | `api_endpoint` (`[http(s)://]HOST[:PORT][/PATH]`, see below), `credential` (secret reference) |
 | `nas-api`        | *(none required)* — direct `node_exporter` scrape; `api_endpoint` + `credential` are **optional**, both-or-neither, for the opt-in API-exporter override (issue #4) |
 | `probe-only`     | `probe` (kind, target, optional expect) |
 | `excluded`       | `suppressed` (class + rationale) |
@@ -88,6 +88,11 @@ semantic problem at once:
 - **Secret literals** — Channel credentials, `hypervisor-api` host credentials, and a `nas-api`
   host credential *when present* must be references, not literals (`secret_literal`).
 - **Collection-class backstop** — Every host declares exactly one valid class (`invalid_enum`).
+- **Hypervisor endpoint shape** — A `hypervisor-api` host's `api_endpoint` must be
+  `[http(s)://]HOST[:PORT][/PATH]`, with HOST a DNS name, an IPv4 address or a bracketed IPv6
+  literal, and no userinfo, query or fragment. The hypervisor scrape reduces it to the bare host
+  pve-exporter takes as `?target=`, and pve-exporter always connects to port 8006, so a port in the
+  endpoint is not used. Any other shape is `invalid_hypervisor_endpoint` (issue #74).
 - **nas-api completeness** — A `nas-api` host's optional `api_endpoint` and `credential` are
   both-or-neither: declaring exactly one is `incomplete_nas_api` (issue #4).
 - **Cross-references** — `service.host` resolves against declared hosts (`unresolved_host`);
