@@ -17,8 +17,8 @@ import { DRAWER_EMPTY_CLASS } from "./classes.js";
 
 /** Accessible name of the retry control. */
 export const RETRY_LIVENESS_HISTORY_LABEL = "Retry liveness history";
-/** Copy when a validated series holds no finite sample. */
-export const LIVENESS_HISTORY_UNAVAILABLE_TEXT = "Liveness history unavailable";
+/** Copy when the range holds no finite sample: zero series (#67) or a series of only gaps. */
+export const LIVENESS_NO_SAMPLES_TEXT = "No liveness samples in the last hour";
 /** Copy for a target the estate does not collect metrics for (no liveness to fetch). */
 export const LIVENESS_NOT_COLLECTED_TEXT = "Not collected — this host has no metrics collection";
 /** Annotation when the server marks the history payload stale. */
@@ -108,7 +108,10 @@ export function LivenessSparkline(props: {
       {hasFinite ? (
         <Sparkline samples={samples} min={0} max={1} ariaLabel={`One-hour liveness for ${targetName(target)}`} />
       ) : (
-        <p data-slot="drawer-empty" className={DRAWER_EMPTY_CLASS}>{LIVENESS_HISTORY_UNAVAILABLE_TEXT}</p>
+        <p data-slot="drawer-empty" className={`flex items-center gap-1.5 ${DRAWER_EMPTY_CLASS}`}>
+          <Icon name="circle-dashed" size={14} />
+          {LIVENESS_NO_SAMPLES_TEXT}
+        </p>
       )}
       <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
         <span data-unit={payload.unit}>

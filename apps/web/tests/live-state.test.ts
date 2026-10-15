@@ -25,6 +25,8 @@ import {
   VIEW_FETCH_TIMEOUT_MS,
 } from "../src/shared/constants.js";
 import { readEstate } from "../src/client/views/estate/types.js";
+import { isSessionExpired } from "../src/client/store/session-expiry.js";
+import { deriveOverviewSurfaceState } from "../src/client/views/overview/freshness.js";
 import {
   DEV_BUILD_CHECK_INTERVAL_MS,
   startLiveState,
@@ -364,6 +366,60 @@ describe("poll transport", () => {
     expect(store.estate.value as unknown).toEqual({ marker: "estate" });
     expect(server.count("/api/estate")).toBe(2);
     live.stop();
+  });
+
+  test("#64: a session expiry makes every retained view stale at once, and any Pulse answer clears it", async () => {
+    let active: ViewId = "engine";
+    const { store, server, sched, live } = harness({
+      transport: "poll", intervalMs: 5_000, staleMs: 1_000_000, activeView: () => active,
+    });
+    const estatePayload = {
+      generatedAt: "2026-09-17T00:00:00.000Z",
+      coverage: { value: [], availability: { state: "current", message: null } },
+    };
+    server.script("/api/overview", () => ok200({ marker: "ov" }, { etag: hash("a"), payloadId: hash("b"), obs: observation(GEN_A, 1) }));
+    server.script("/api/engine", () => ok200({ engine: 1 }, { etag: hash("c"), payloadId: hash("d"), obs: observation(GEN_A, 1) }));
+    await sched.advance(0);
+    active = "estate";
+    server.script(
+      "/api/estate",
+      () => ok200(estatePayload, { etag: hash("e"), payloadId: hash("f"), obs: observation(GEN_A, 1) }),
+      () => new Response("<html>Unauthorized</html>", { status: 401, headers: { "content-type": "text/html" } }),
+    );
+    await sched.advance(5_000);
+    let conn = store.connection.value;
+    expect(conn.views.estate.phase).toBe("current");
+    expect(isEstateViewStale(conn)).toBe(false);
+    expect(deriveOverviewSurfaceState(store).status).toBe("ready");
+
+    // Same identity, nothing in flight: the next GET meets the proxy's 401. Every retained view is
+    // stale immediately, long before the (1 000 s) stale window.
+    await sched.advance(5_000);
+    conn = store.connection.value;
+    expect(conn.phase).toBe("live");
+    expect(conn.views.estate.failure?.code).toBe("SESSION_EXPIRED");
+    expect(isSessionExpired(conn)).toBe(true);
+    expect(conn.views.estate.phase).toBe("stale");
+    expect(conn.views.overview.phase).toBe("stale");
+    expect(conn.views.engine.phase).toBe("stale");
+    expect(deriveOverviewSurfaceState(store).status).toBe("stale");
+    expect(isEstateViewStale(conn)).toBe(true);
+    const shown = readEstate(store) as unknown as EstatePayload;
+    expect(shown.coverage.availability.state).toBe("stale");
+    expect(shown.coverage.availability.message).toBe(
+      "Your session has expired. Reload the page to sign in again; showing the last delivered estate.",
+    );
+
+    // Signed in again: the overview answers. Estate is not refetched, but its expiry clears too.
+    active = "overview";
+    server.script("/api/overview", () => ok200({ marker: "ov" }, { etag: hash("a"), payloadId: hash("b"), obs: observation(GEN_A, 2) }));
+    await sched.advance(5_000);
+    live.stop();
+    conn = store.connection.value;
+    expect(isSessionExpired(conn)).toBe(false);
+    expect(conn.views.estate.failure).toBeNull();
+    expect(conn.views.estate.phase).toBe("current");
+    expect(conn.views.overview.phase).toBe("current");
   });
 
   test("never opens an EventSource even when a factory is available", async () => {
@@ -1317,6 +1373,40 @@ describe("#57 view GET deadline", () => {
     expect(shown.coverage.availability.state).toBe("stale");
     expect(shown.coverage.availability.message).toBe(
       "The Pulse server could not be reached; showing the last delivered estate.",
+    );
+  });
+
+  test("#64: an auth proxy's login page keeps a retained estate visible as stale with SESSION_EXPIRED", async () => {
+    FakeEventSource.reset();
+    const { store, server, live } = harness({
+      transport: "sse", eventSourceFactory: esFactory, activeView: () => "estate",
+      intervalMs: 1_000_000, staleMs: 1_000_000,
+    });
+    const payload = {
+      generatedAt: "2026-09-17T00:00:00.000Z",
+      coverage: { value: [], availability: { state: "current", message: null } },
+    };
+    server.script("/api/estate", () => ok200(payload, { etag: hash("a"), payloadId: hash("e"), obs: observation(GEN_A, 5) }));
+    server.script(
+      "/api/estate",
+      () => new Response("<!doctype html><title>Sign in</title>", { status: 200, headers: { "content-type": "text/html" } }),
+    );
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("e") });
+    await flush();
+    FakeEventSource.last().emitTick(observation(GEN_A, 6), { ...identitiesAll(hash("b")), estate: hash("7") });
+    await flush();
+    live.stop();
+    const conn = store.connection.value;
+    expect(conn.views.estate.failure).toEqual({
+      code: "SESSION_EXPIRED",
+      status: 200,
+      message: "Your session has expired. Reload the page to sign in again.",
+    });
+    expect(toDeliveryState(conn.views.estate, store.estate.value)).toEqual({ kind: "ready" });
+    const shown = readEstate(store) as unknown as EstatePayload;
+    expect(shown.coverage.availability.state).toBe("stale");
+    expect(shown.coverage.availability.message).toBe(
+      "Your session has expired. Reload the page to sign in again; showing the last delivered estate.",
     );
   });
 

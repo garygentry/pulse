@@ -324,7 +324,7 @@ export type TargetHistoryState =
       readonly status: "ready";
       /** Canonical drilldown id the payload is attributed to. */
       readonly targetId: string;
-      /** Validated payload with exactly one series for `targetId`; null samples remain null. */
+      /** Validated payload with zero (no samples in range) or one series for `targetId`; null samples remain null. */
       readonly payload: HistoryPayload;
       /** Controller clock time (ms) at which the payload was received; governs `HISTORY_TTL_MS`. */
       readonly receivedAt: number;

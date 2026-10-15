@@ -148,6 +148,14 @@ describe("validateTargetLivenessPayload", () => {
     expect(Object.isFrozen(out)).toBe(true);
   });
 
+  test("#67: accepts a zero-series payload (no samples in range) as a frozen empty series list", () => {
+    const source = { ...payloadFor(HOST_A), series: [] };
+    const out = validateTargetLivenessPayload(json(source), identity);
+    expect(out).not.toBeNull();
+    expect(out?.series).toEqual([]);
+    expect(Object.isFrozen(out?.series)).toBe(true);
+  });
+
   const invalid: readonly [string, (p: Record<string, unknown>) => unknown][] = [
     ["non-object", () => "nope"],
     ["null", () => null],
@@ -166,7 +174,6 @@ describe("validateTargetLivenessPayload", () => {
     ["zero step", (p) => ({ ...p, effectiveStepSeconds: 0 })],
     ["non-finite step", (p) => ({ ...p, effectiveStepSeconds: Number.POSITIVE_INFINITY })],
     ["string stale", (p) => ({ ...p, stale: "false" })],
-    ["missing series (zero)", (p) => ({ ...p, series: [] })],
     ["extra series (two)", (p) => ({ ...p, series: [...(p.series as unknown[]), ...(p.series as unknown[])] })],
     ["series not an array", (p) => ({ ...p, series: {} })],
     ["series extra key", (p) => ({ ...p, series: [{ labels: {}, points: [], extra: true }] })],
@@ -274,6 +281,20 @@ describe("createHistoryController", () => {
     void controller.load(HOST_A);
     expect(controller.state()).toEqual({ status: "loading", targetId: HOST_A.drilldownId });
     expect(seen).toEqual([{ status: "loading", targetId: HOST_A.drilldownId }]);
+    controller.dispose();
+  });
+
+  test("#67: a 200 with zero series is ready (empty range), not an error, and is cached", async () => {
+    const t = deferredFetch();
+    const controller = createHistoryController({ fetch: t.fetch, now: fakeClock(5_000).now });
+    const pending = controller.load(HOST_A);
+    t.calls[0]?.resolve(ok({ ...(json(payloadFor(HOST_A)) as object), series: [] }));
+    const state = await pending;
+    expect(state.status).toBe("ready");
+    if (state.status !== "ready") throw new Error("unreachable");
+    expect(state.payload.series).toEqual([]);
+    expect(await controller.load(HOST_A)).toBe(state);
+    expect(t.calls).toHaveLength(1);
     controller.dispose();
   });
 
@@ -563,11 +584,6 @@ describe("createHistoryController", () => {
         "unexpected 304 not-modified",
         "INTERNAL_ERROR",
         (c) => c.resolve({ status: "not-modified", etag: "e", identity: "i", observation: null }),
-      ],
-      [
-        "missing series",
-        "INTERNAL_ERROR",
-        (c) => c.resolve(ok({ ...(json(payloadFor(HOST_A)) as object), series: [] })),
       ],
       [
         "extra series",

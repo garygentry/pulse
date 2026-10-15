@@ -302,7 +302,9 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
   }
 
   function computeViews(): Record<ViewId, ViewDeliveryState> {
-    const stale = isStale();
+    // A session expiry (#64) makes every retained view stale at once: no view can be refreshed
+    // until the operator signs in again, whatever the stale window says.
+    const stale = isStale() || VIEW_IDS.some((v) => failures[v]?.code === "SESSION_EXPIRED");
     const out = {} as Record<ViewId, ViewDeliveryState>;
     for (const v of VIEW_IDS) {
       const acc = accepted[v];
@@ -516,6 +518,11 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
       return;
     }
     failures[view] = null;
+    // Any Pulse answer proves the sign-in session valid again: clear SESSION_EXPIRED on every other
+    // view too, since inactive views are not refetched and would otherwise keep the expiry showing.
+    for (const v of VIEW_IDS) {
+      if (failures[v]?.code === "SESSION_EXPIRED") failures[v] = null;
+    }
     const obs = result.observation;
     // While SSE is authoritative, a view GET must NOT switch generation: a mismatch triggers a
     // serialized stream reconnect/resync instead (§7).
