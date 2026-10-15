@@ -1,14 +1,25 @@
-// apps/web/tests/overview-navigation.test.ts — spatial roving controller over synthetic rectangles
-// (03-grid-navigation-and-motion.md §7, 08-testing-strategy.md §4.2). Every item stubs
-// `getBoundingClientRect`, and `ResizeObserver` is replaced per test by a controllable fake (or
-// removed) so geometry caching is deterministic. Elements/events use the ambient lib.dom globals that
-// describeDom installs, as in a11y-roving.test.ts.
+// apps/web/tests/overview-navigation.test.ts — spatial grid navigation (`useSpatialGrid`, on
+// `useListNavigation`) over synthetic rectangles (03-grid-navigation-and-motion.md §7,
+// 08-testing-strategy.md §4.2). Every item stubs `getBoundingClientRect`, and `ResizeObserver` is
+// replaced per test by a controllable fake (or removed) so geometry caching is deterministic. The
+// grid DOM is built by hand; a harness component mounts the hook on it (`control`), re-renders it as
+// the grid would after a membership change (`refresh`) and unmounts it (`release`). Elements/events
+// use the ambient lib.dom globals that describeDom installs.
 
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 
-import { createSpatialGridController } from "../src/client/views/overview/grid/navigation.js";
-import type { SpatialGridController } from "../src/client/views/overview/model.js";
+import type { SpatialGridHandle } from "../src/client/views/overview/grid/navigation.js";
 import { describeDom } from "./dom.js";
+
+/** The hook mounted on a hand-built grid, with the old controller's test surface. */
+interface SpatialGridController {
+  activeId(): string | null;
+  focus(id: string): void;
+  /** Re-render the grid's component (as a membership or layout change does). */
+  refresh(): void;
+  /** Unmount it. Idempotent. */
+  release(): void;
+}
 
 const SELECTOR = "[data-overview-target]";
 
@@ -46,6 +57,15 @@ describeDom("overview spatial grid navigation", () => {
   let savedObserver: unknown;
   let controllers: SpatialGridController[] = [];
   let hosts: HTMLElement[] = [];
+
+  let render!: typeof import("./react-render.js").render;
+  let h!: typeof import("react").createElement;
+  let useSpatialGrid!: typeof import("../src/client/views/overview/grid/navigation.js").useSpatialGrid;
+  beforeAll(async () => {
+    ({ render } = await import("./react-render.js"));
+    ({ createElement: h } = await import("react"));
+    ({ useSpatialGrid } = await import("../src/client/views/overview/grid/navigation.js"));
+  });
 
   beforeEach(() => {
     savedObserver = observerGlobal().ResizeObserver;
@@ -97,7 +117,33 @@ describeDom("overview spatial grid navigation", () => {
   }
 
   function control(grid: HTMLElement, onActivate: (id: string) => void = () => {}): SpatialGridController {
-    const c = createSpatialGridController(grid, { itemSelector: SELECTOR, onActivate });
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const gridRef = { current: grid };
+    const handle: { current: SpatialGridHandle | null } = { current: null };
+    function Harness(_props: { readonly tick: number }): null {
+      handle.current = useSpatialGrid(gridRef, { itemSelector: SELECTOR, onActivate });
+      return null;
+    }
+    let tick = 0;
+    const draw = (): void => render(h(Harness, { tick: tick++ }), root as unknown as Element);
+    draw();
+    let released = false;
+    const c: SpatialGridController = {
+      activeId: () => (released ? null : handle.current!.activeId()),
+      focus: (id) => {
+        if (!released) handle.current!.focus(id);
+      },
+      refresh: () => {
+        if (!released) draw();
+      },
+      release: () => {
+        if (released) return;
+        released = true;
+        render(null, root as unknown as Element);
+        root.remove();
+      },
+    };
     controllers.push(c);
     return c;
   }
@@ -192,6 +238,20 @@ describeDom("overview spatial grid navigation", () => {
     move(grid, c, "ArrowRight", items[2]!);
   });
 
+  test("the off-axis weight is 0.25: a nearer candidate 70px off-axis beats one 100px straight ahead", () => {
+    // From the origin center, A is straight right at primary 100 (score 100). B is at primary 80,
+    // secondary 70: score 80 + 70·w, which is 97.5 at w = 0.25 but ≥ 101 for any w ≥ 0.3, where A
+    // would win. A comes first in DOM order, so only the weight can pick B.
+    const { grid, items } = build([
+      { x: 0, y: 100 },
+      { x: 100, y: 100 },
+      { x: 80, y: 170 },
+    ]);
+    const c = control(grid);
+    items[0]!.focus();
+    move(grid, c, "ArrowRight", items[2]!);
+  });
+
   test("secondary-axis distance breaks an equal weighted score", () => {
     // From origin center: A has primary 110, secondary 40 → score 120; B has primary 115, secondary 20
     // → score 120. Scores tie, so the smaller secondary (B) wins even though A is nearer on-axis and
@@ -234,13 +294,13 @@ describeDom("overview spatial grid navigation", () => {
     move(grid, c, "ArrowLeft", items[6]!);
     move(grid, c, "ArrowDown", items[6]!);
 
-    // The shared primitive would have moved t8 → t0 (wrap) or clamped linearly; spatial layer holds.
+    // A linear list would have moved t8 → t0 (wrap) or clamped in DOM order; the spatial layer holds.
     c.focus("t8");
     move(grid, c, "ArrowDown", items[8]!);
     move(grid, c, "ArrowRight", items[8]!);
   });
 
-  test("Home/End are left to the shared primitive's first/last behavior", () => {
+  test("Home/End move to the first/last target in DOM order", () => {
     const { grid, items } = build(GRID_3X3);
     const c = control(grid);
     c.focus("t4");
@@ -447,7 +507,7 @@ describeDom("overview spatial grid navigation", () => {
   test("release() detaches listeners and the observer, restores tabindex, and is idempotent", () => {
     const activated: string[] = [];
     const { grid, items } = build(GRID_3X3);
-    const c = createSpatialGridController(grid, { itemSelector: SELECTOR, onActivate: (id) => activated.push(id) });
+    const c = control(grid, (id) => activated.push(id));
     const observer = FakeResizeObserver.instances[0]!;
     c.focus("t4");
 
