@@ -45,6 +45,7 @@ import { ProposalList } from "../../mutations/proposals/ProposalList.js";
 import { RegionErrorBoundary, safeCell, safeNavigate } from "./error-boundary.js";
 import { ProvenanceChip } from "./provenance-chip.js";
 import { alertAge, resolveAndJoin, toAttributedAlertRows } from "./entity-model.js";
+import { ENDPOINT_ALERT_TIMING, clearWindowSeconds } from "./endpoint-alert-timing.js";
 import type { AttributedAlertRow, EntityRouteTarget, JoinedEntity } from "./entity-model.js";
 import { statusLabel } from "./status.js";
 import { readEstate } from "./types.js";
@@ -416,15 +417,43 @@ function ArtifactList(props: {
   );
 }
 
-/** Summarize one declared endpoint-alert config (a config, not a runtime alert instance). */
-function describeEndpointAlert(a: WebEndpointAlert): string {
-  const parts: string[] = [];
-  if (a.enabled !== undefined) parts.push(a.enabled ? "enabled" : "disabled");
-  if (a.failureThreshold !== undefined) parts.push(`fails after ${a.failureThreshold}`);
-  if (a.successThreshold !== undefined) parts.push(`recovers after ${a.successThreshold}`);
-  if (a.sendOnResolved !== undefined) parts.push(a.sendOnResolved ? "notifies on resolve" : "silent on resolve");
-  if (a.description !== undefined) parts.push(a.description);
-  return parts.length > 0 ? `${a.type} — ${parts.join(", ")}` : a.type;
+const checks = (n: number, word: string): string => `${n} ${word} check${n === 1 ? "" : "s"}`;
+
+/** Describe the `GatusCheckFailed` rule one enabled, rendered binding produces (alerting.md). */
+function describeAlertRule(a: WebEndpointAlert): string {
+  const T = ENDPOINT_ALERT_TIMING;
+  const fails = a.failureThreshold ?? T.defaultFailureThreshold;
+  const passes = a.successThreshold ?? T.defaultSuccessThreshold;
+  const clearMinutes = clearWindowSeconds(passes) / 60;
+  return (
+    `fires after ${checks(fails, "consecutive failed")}, ` +
+    `resolves after ${checks(passes, "passing")} and no failure for ${clearMinutes} min`
+  );
+}
+
+/**
+ * Summarize one declared endpoint-alert binding as the vmalert `GatusCheckFailed` rule it renders
+ * (a config, not a runtime alert instance; docs/operator/alerting.md). `type` and `sendOnResolved`
+ * have no effect since the Gatus push provider was retired (resolve notifications follow each
+ * Alertmanager receiver's `send_resolved`), so neither is shown. A binding on a service without a
+ * Gatus check (no ingress URL, or suppressed) is inert, and only the first enabled binding renders
+ * a rule; later enabled ones are ignored.
+ */
+function describeEndpointAlert(
+  a: WebEndpointAlert,
+  i: number,
+  all: readonly WebEndpointAlert[],
+  hasGatusCheck: boolean,
+): string {
+  const rule =
+    a.enabled === false
+      ? "disabled, no alert rule"
+      : !hasGatusCheck
+        ? "inert, no Gatus check (needs an ingress URL and must not be suppressed)"
+        : all.findIndex((b) => b.enabled !== false) !== i
+          ? "ignored, only the first enabled binding pages"
+          : describeAlertRule(a);
+  return a.description !== undefined ? `${a.description} — ${rule}` : rule.charAt(0).toUpperCase() + rule.slice(1);
 }
 
 function MonitoringArtifacts(props: { readonly joined: JoinedEntity }): ReactElement {
@@ -456,7 +485,9 @@ function MonitoringArtifacts(props: { readonly joined: JoinedEntity }): ReactEle
           />
           <ArtifactList
             title="Declared endpoint alerts"
-            items={d.service.alerts.map(describeEndpointAlert)}
+            items={d.service.alerts.map((a, i, all) =>
+              describeEndpointAlert(a, i, all, d.service.gatusEndpoints.length > 0),
+            )}
             testid="estate-entity-declared-alerts"
           />
         </>

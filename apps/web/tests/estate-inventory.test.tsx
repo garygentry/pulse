@@ -9,7 +9,7 @@ import type {
   WebEstateHostV2,
   WebEstateServiceV2,
 } from "@pulse/renderer";
-import type { AvailabilitySection, DataAvailability, EstatePayload } from "@pulse/web-data/wire";
+import type { AvailabilitySection, DataAvailability, EstatePayload, EstateTargetState } from "@pulse/web-data/wire";
 
 import {
   buildTreeRows,
@@ -25,6 +25,7 @@ import {
   absentSection,
   currentAvailability,
   makeEstatePayloadFixture,
+  makeLiveTarget,
   presentSection,
 } from "./factories/estate-payload.js";
 
@@ -296,6 +297,28 @@ describeUi("estate: inventory tree", () => {
     }
   });
 
+  test("the live badge names each live state once, never 'Live Live …' (#41)", () => {
+    const base = makeEstatePayloadFixture();
+    const withHostA = (target: EstateTargetState | null): EstatePayload["liveTargets"] => [
+      ...base.liveTargets.filter((t) => t.target.id !== "host:hostA-managed"),
+      ...(target === null ? [] : [target]),
+    ];
+    const at = (state: DataAvailability["state"]): EstateTargetState =>
+      makeLiveTarget({ availability: currentAvailability({ state }) });
+    const cases: [EstatePayload["liveTargets"], string][] = [
+      [withHostA(at("current")), "Live OK"],
+      [withHostA(at("stale")), "Live state is stale"],
+      [withHostA(at("unavailable")), "Live state unavailable"],
+      [withHostA(at("not-configured")), "Live state not configured"],
+      [withHostA(null), "Live state not configured"],
+    ];
+    for (const [liveTargets, label] of cases) {
+      const view = render(<Inventory {...propsFrom(base, { liveTargets })} />);
+      expect(indicator(hookOf(item("hostA-managed")), "live").textContent).toBe(label);
+      view.unmount();
+    }
+  });
+
   test("click / Enter deep-link to the entity routes; Enter on a group toggles it", async () => {
     const user = userEvent.setup();
     const { router, calls } = makeRouter();
@@ -446,6 +469,16 @@ describeUi("estate: inventory tree", () => {
     expect(screen.getByTestId("estate-error-row").textContent).toContain("Malformed live target entry");
     expect(hostRows().length).toBe(base.estate.hosts.length);
     expect(item("hostA-managed")).not.toBeNull();
+  });
+
+  test("a null or non-object live target becomes an inline error row, not a crashed region", () => {
+    const base = makeEstatePayloadFixture();
+    const junk = [null, 42, "x"] as unknown as EstatePayload["liveTargets"];
+    render(<Inventory {...propsFrom(base, { liveTargets: [...base.liveTargets, ...junk] })} />);
+    const errors = screen.getAllByTestId("estate-error-row");
+    expect(errors.length).toBe(3);
+    for (const row of errors) expect(row.textContent).toContain("Malformed live target entry");
+    expect(indicator(hookOf(item("hostA-managed")), "live").textContent).toBe("Live OK");
   });
 
   test("a malformed host becomes an inline error row while siblings render", () => {

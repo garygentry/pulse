@@ -336,7 +336,9 @@ describeUi("estate entity page", () => {
 
     const svc = renderPage(seed(makeEstatePayloadFixture(), ...serviceRoute("hostA-managed", "grafana")));
     expect(within(byTestId("estate-entity-gatus")!).getByRole("listitem").textContent).toContain("hostA-managed/grafana");
-    expect(textOf("estate-entity-declared-alerts")).toContain("gatus");
+    expect(within(byTestId("estate-entity-declared-alerts")!).getByRole("listitem").textContent).toBe(
+      "grafana health — fires after 3 consecutive failed checks, resolves after 2 passing checks and no failure for 4 min",
+    );
     expect(textOf("estate-entity-rendered-artifacts")).toContain("gatus/grafana.yml");
     svc.unmount();
 
@@ -345,6 +347,57 @@ describeUi("estate entity page", () => {
     const gatus = byTestId("estate-entity-gatus")!;
     expect(gatus.textContent).toContain("None declared.");
     expect(within(gatus).queryByRole("list") === null).toBe(true);
+  });
+
+  test("declared endpoint alerts describe the GatusCheckFailed rule, not the retired push provider (#30)", () => {
+    const payload = makeEstatePayloadFixture();
+    const services = payload.estate.services.map((svc) =>
+      svc.name !== "grafana"
+        ? svc
+        : {
+            ...svc,
+            alerts: [
+              { type: "custom", enabled: false, description: "off", sendOnResolved: true },
+              { type: "custom", sendOnResolved: false },
+              { type: "custom", failureThreshold: 1, successThreshold: 5, description: "second" },
+            ],
+          },
+    );
+    renderPage(seed({ ...payload, estate: { ...payload.estate, services } }, ...serviceRoute("hostA-managed", "grafana")));
+    const items = within(byTestId("estate-entity-declared-alerts")!)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(items).toEqual([
+      "off — disabled, no alert rule",
+      "Fires after 3 consecutive failed checks, resolves after 2 passing checks and no failure for 4 min",
+      "second — ignored, only the first enabled binding pages",
+    ]);
+    expect(textOf("estate-entity-declared-alerts")).not.toMatch(/on resolve|custom/);
+  });
+
+  test("a binding on a service with no Gatus check reads inert, not as a live rule (#30)", () => {
+    const payload = makeEstatePayloadFixture();
+    const services = payload.estate.services.map((svc) =>
+      svc.name !== "loki"
+        ? svc
+        : { ...svc, alerts: [{ type: "custom", failureThreshold: 1, successThreshold: 1, description: "no check" }] },
+    );
+    expect(services.find((svc) => svc.name === "loki")!.gatusEndpoints).toEqual([]);
+    renderPage(seed({ ...payload, estate: { ...payload.estate, services } }, ...serviceRoute("hostA-managed", "loki")));
+    expect(within(byTestId("estate-entity-declared-alerts")!).getByRole("listitem").textContent).toBe(
+      "no check — inert, no Gatus check (needs an ingress URL and must not be suppressed)",
+    );
+  });
+
+  test("an S = 1 binding states the 3-minute clear window the stack renders", () => {
+    const payload = makeEstatePayloadFixture();
+    const services = payload.estate.services.map((svc) =>
+      svc.name !== "grafana" ? svc : { ...svc, alerts: [{ type: "custom", failureThreshold: 1, successThreshold: 1 }] },
+    );
+    renderPage(seed({ ...payload, estate: { ...payload.estate, services } }, ...serviceRoute("hostA-managed", "grafana")));
+    expect(within(byTestId("estate-entity-declared-alerts")!).getByRole("listitem").textContent).toBe(
+      "Fires after 1 consecutive failed check, resolves after 1 passing check and no failure for 3 min",
+    );
   });
 
   test("attributed alerts: a card List, one row per fingerprint, severity unknown, no age, deep-link", async () => {
