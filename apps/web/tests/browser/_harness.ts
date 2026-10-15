@@ -107,12 +107,54 @@ export function chromiumAvailable(): boolean {
   }
 }
 
-let sharedBrowserOnce: Promise<Browser> | null = null;
+/** The slice of a Playwright `Browser` the shared-browser cache relies on. */
+export interface RelaunchableBrowser {
+  isConnected(): boolean;
+  on(event: "disconnected", listener: () => void): unknown;
+}
+
+/**
+ * A process-wide browser cache: every call returns the same launch until that browser disconnects
+ * (Chromium crashed or was killed — e.g. by the OOM killer on a loaded host), then the next call
+ * launches a fresh one. Without the relaunch, one mid-run crash failed EVERY later browser file
+ * with "Target page, context or browser has been closed" (seen as timeline-grayscale, estate and
+ * overview-grayscale "flakes"); now only the file that was running when it died is affected.
+ */
+export function createSharedBrowser<B extends RelaunchableBrowser>(
+  launch: () => Promise<B>,
+  onRelaunch: () => void = () => undefined,
+): () => Promise<B> {
+  let current: Promise<B> | null = null;
+  let lost = false;
+  return () => {
+    if (current !== null) return current;
+    if (lost) onRelaunch();
+    const pending = launch().then((browser) => {
+      browser.on("disconnected", () => {
+        if (current === pending) {
+          current = null;
+          lost = true;
+        }
+      });
+      if (!browser.isConnected() && current === pending) {
+        current = null;
+        lost = true;
+      }
+      return browser;
+    });
+    // A failed launch is not cached either: the next call tries again.
+    pending.catch(() => {
+      if (current === pending) current = null;
+    });
+    current = pending;
+    return pending;
+  };
+}
 
 /**
  * The ONE headless Chromium shared by every browser-backed suite in a `bun test` process. Suites own
  * and close their contexts/pages but NEVER close this browser; Chromium exits with the process (its
- * control pipe closes).
+ * control pipe closes). If it dies anyway, the next call relaunches it (see createSharedBrowser).
  *
  * Why shared: under bun 1.3.9 each additional Chromium launched in one process — especially after
  * large pipe replies (axe results, screenshots) — raises the odds that a later reply is never
@@ -120,10 +162,10 @@ let sharedBrowserOnce: Promise<Browser> | null = null;
  * per-file launch/close rounds wedged a plain `bun test`; one browser carries the whole suite.
  * `playwright-core` is imported lazily so merely LOADING a browser file stays cheap.
  */
-export function sharedBrowser(): Promise<Browser> {
-  sharedBrowserOnce ??= import("playwright-core").then(({ chromium }) => chromium.launch({ headless: true }));
-  return sharedBrowserOnce;
-}
+export const sharedBrowser: () => Promise<Browser> = createSharedBrowser(
+  () => import("playwright-core").then(({ chromium }) => chromium.launch({ headless: true })),
+  () => process.stderr.write("[browser harness] the shared Chromium disconnected; relaunching it\n"),
+);
 
 /** Printed at most once per `bun test` process, however many browser files load (REQ-OBS-03). */
 let skipPrinted = false;

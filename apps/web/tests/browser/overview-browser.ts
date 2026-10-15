@@ -80,6 +80,13 @@ export interface OpenOverviewOptions extends OverviewFixtureQuery {
   readonly viewport?: { readonly width: number; readonly height: number };
   readonly reducedMotion?: "reduce" | "no-preference";
   readonly hasTouch?: boolean;
+  /**
+   * Install Playwright's fake clock PAUSED before the first navigation, so the page's timers,
+   * `requestAnimationFrame` and `performance.now()` move only when the test calls
+   * `page.clock.runFor()`. Timing assertions (kiosk paging) then measure page time, not host load.
+   * Readiness is pumped in small fake steps until the fixture reports ready.
+   */
+  readonly pausedClock?: boolean;
 }
 
 /** One opened page with its own context; `close()` is idempotent and never throws. */
@@ -165,6 +172,36 @@ export function buildOverviewProductionFixture(theme: FixtureTheme): Promise<Fix
   });
 }
 
+/** Fake epoch a `pausedClock` page starts at (any fixed instant). */
+const PAUSED_CLOCK_START = Date.UTC(2026, 0, 1);
+/** Fake time advanced per readiness pump: one animation frame. */
+const PUMP_STEP_MS = 16;
+
+/** Resolve once the page has drained the macrotasks already queued (React's scheduler posts its
+ *  render through a MessageChannel, which the fake clock does not control). */
+export function drainTasks(page: Page): Promise<void> {
+  return page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(null);
+      }),
+  );
+}
+
+/** Readiness under a paused clock: the fixture polls with `setTimeout(0)`/rAF, so advance fake time
+ *  one frame at a time (bounded by real time) until it reports ready. */
+async function pumpUntilReady(page: Page, label: string, timeout = OVERVIEW_READY_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (await page.evaluate(() => window.__PULSE_OVERVIEW_READY__ === true)) return;
+    if (Date.now() > deadline) throw new Error(`overview fixture not ready after ${timeout}ms of pumping a paused clock (${label})`);
+    await page.clock.runFor(PUMP_STEP_MS);
+    await drainTasks(page);
+  }
+}
+
 /**
  * Wait for `window.__PULSE_OVERVIEW_READY__` with a bounded timeout. On timeout, throws an error naming
  * the fixture label (mode/theme) plus the current metrics, surface and rendered host/service counts.
@@ -208,9 +245,14 @@ export async function openOverviewPage(
     await context.close().catch(() => undefined);
   };
   try {
+    if (options.pausedClock === true) {
+      await context.clock.install({ time: PAUSED_CLOCK_START });
+      await context.clock.pauseAt(PAUSED_CLOCK_START + 1_000);
+    }
     const page = await context.newPage();
     await page.goto(fixture.url + queryString(options), { waitUntil: "load" });
-    await waitForOverviewReady(page, label);
+    if (options.pausedClock === true) await pumpUntilReady(page, label);
+    else await waitForOverviewReady(page, label);
     return { page, context, label, close };
   } catch (error) {
     await close();
