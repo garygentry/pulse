@@ -2,7 +2,8 @@
 //
 // Given a loaded scenario, produces a `fetch`-shaped function the server runtime uses as its
 // `deps.fetchImpl` seam. Routes requests by base URL origin + fixed path to the four source
-// bodies from the scenario's current fold (`applyTimeline`); Gatus bodies are re-stamped to the
+// bodies from the scenario's current fold (`applyTimeline`), plus Alertmanager silences and the
+// history reads (`query_range`, Gatus check history) derived from it (`./history.ts`); Gatus bodies are re-stamped to the
 // current wall clock (`freshenGatus`) so a frozen fixture stays under the 300s staleness rule
 // (spec 05 §2.3–§2.4), and VM/Alertmanager/vmalert timestamps are shifted from the fixture anchor
 // onto the scenario start (`rebaseAlertmanager`/`rebaseVmalert`/`rebaseVm`) so alert ages read as
@@ -13,11 +14,13 @@ import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { FetchLike } from "../sources/types.js";
+import { mockEndpointHistory, mockRangeBody, parseRangeWindow } from "./history.js";
 import { DEFAULT_SCENARIO_DIR, SCENARIO_FILES, loadScenario } from "./scenario.js";
 import {
   applyTimeline,
   freshenGatus,
   rebaseAlertmanager,
+  rebaseSilences,
   rebaseVm,
   rebaseVmalert,
   type MockSource,
@@ -57,6 +60,18 @@ export const MOCK_PATHS: Record<MockSource, string> = {
   gatus: "/api/v1/endpoints/statuses",
   vmalert: "/api/v1/rules",
 };
+
+/** The further read paths a source serves beside its {@link MOCK_PATHS} one: Alertmanager silences
+ *  (GitHub #32), and the two history reads (VM range queries, Gatus per-endpoint check history),
+ *  all derived from the same scenario fold and subject to the same outages. */
+export const MOCK_EXTRA_PATHS = {
+  silences: "/api/v2/silences",
+  queryRange: "/api/v1/query_range",
+  /** `{key}` is one percent-encoded Gatus endpoint key. */
+  endpointHistory: "/api/v1/endpoints/{key}/statuses",
+} as const;
+
+const ENDPOINT_HISTORY_PATH = /^\/api\/v1\/endpoints\/([^/]+)\/statuses$/;
 
 /** The scenarios this member ships (REQ-MOCK-03). `listScenarios()` must return a superset. */
 export const SCENARIO_NAMES = ["all-green", "degraded-mix", "source-outage"] as const;
@@ -127,7 +142,14 @@ export async function createMockEngine(opts: MockEngineOptions): Promise<MockEng
 
     const source = ORIGIN_TO_SOURCE.get(url.origin);
     if (source === undefined) return notFound();
-    if (normalizePath(url.pathname) !== MOCK_PATHS[source]) return notFound();
+    const path = normalizePath(url.pathname);
+    const endpointKey = source === "gatus" ? ENDPOINT_HISTORY_PATH.exec(path)?.[1] : undefined;
+    const known =
+      path === MOCK_PATHS[source]
+      || (source === "alertmanager" && path === MOCK_EXTRA_PATHS.silences)
+      || (source === "vm" && path === MOCK_EXTRA_PATHS.queryRange)
+      || endpointKey !== undefined;
+    if (!known) return notFound();
 
     const current = state();
     if (current.outages.has(source)) {
@@ -137,19 +159,37 @@ export async function createMockEngine(opts: MockEngineOptions): Promise<MockEng
     }
 
     let body: unknown;
-    switch (source) {
-      case "vm":
-        body = rebaseVm(current.vm, startedAt);
-        break;
-      case "alertmanager":
-        body = rebaseAlertmanager(current.alertmanager, startedAt);
-        break;
-      case "gatus":
-        body = freshenGatus(current.gatus, now());
-        break;
-      case "vmalert":
-        body = rebaseVmalert(current.vmalert, startedAt);
-        break;
+    if (source === "alertmanager" && path === MOCK_EXTRA_PATHS.silences) {
+      body = rebaseSilences(current.silences, startedAt);
+    } else if (source === "vm" && path === MOCK_EXTRA_PATHS.queryRange) {
+      const window = parseRangeWindow(url.searchParams);
+      if (window === null) return badRequest("bad query_range start/end/step");
+      const alertmanager = rebaseAlertmanager(current.alertmanager, startedAt);
+      body = mockRangeBody(url.searchParams.get("query") ?? "", window, { vm: current.vm, alertmanager }, now());
+    } else if (endpointKey !== undefined) {
+      let key: string;
+      try {
+        key = decodeURIComponent(endpointKey);
+      } catch {
+        return notFound();
+      }
+      body = mockEndpointHistory(freshenGatus(current.gatus, now()), key);
+      if (body === null) return notFound();
+    } else {
+      switch (source) {
+        case "vm":
+          body = rebaseVm(current.vm, startedAt);
+          break;
+        case "alertmanager":
+          body = rebaseAlertmanager(current.alertmanager, startedAt);
+          break;
+        case "gatus":
+          body = freshenGatus(current.gatus, now());
+          break;
+        case "vmalert":
+          body = rebaseVmalert(current.vmalert, startedAt);
+          break;
+      }
     }
     return new Response(JSON.stringify(body), {
       status: 200,
@@ -199,6 +239,14 @@ export async function listScenarios(dir?: string): Promise<string[]> {
 
 function normalizePath(pathname: string): string {
   return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+function badRequest(error: string): Response {
+  return new Response(JSON.stringify({ status: "error", errorType: "bad_data", error }), {
+    status: 400,
+    statusText: "Bad Request",
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function notFound(): Response {

@@ -9,8 +9,9 @@
 //   - data: the dev server serves the pinned `degraded-mix` mock scenario with its WALL CLOCK frozen
 //     at FROZEN_NOW (serve.ts + freeze-clock.ts), so snapshots, source health and Gatus results are
 //     byte-stable; `--clock` sits 15 min earlier, so the scenario timeline has fully played out;
-//   - history: the mock engine serves no range queries, so every `/api/history/**` request is
-//     answered here with a series generated from (query, target, range) alone — charts render;
+//   - history: every `/api/history/**` request is answered here with a series generated from
+//     (query, target, range) alone, so charts never depend on the history service's wall-clock
+//     window (the mock engine's own history is derived from the scenario, not pinned);
 //   - browser clock: `page.clock.setFixedTime(FROZEN_NOW)`, so relative ages ("34m") never drift;
 //   - timers: `setTimeout` callbacks scheduled ≥ HOLD_TIMERS_MS out never fire (the overview poll
 //     chain, kiosk paging), so those never change the page mid-capture. `setInterval` (history

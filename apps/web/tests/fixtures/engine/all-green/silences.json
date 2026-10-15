@@ -1,0 +1,14 @@
+[
+  {
+    "id": "9a2d7c41-6b3e-4f08-a5d9-1e8c3b7f0d62",
+    "matchers": [
+      { "name": "alertname", "value": "BackupJobFailed", "isRegex": false, "isEqual": true }
+    ],
+    "createdBy": "oncall",
+    "comment": "backup target migration",
+    "startsAt": "2025-12-31T01:00:00.000Z",
+    "endsAt": "2025-12-31T03:00:00.000Z",
+    "updatedAt": "2025-12-31T03:00:00.000Z",
+    "status": { "state": "expired" }
+  }
+]
