@@ -197,7 +197,7 @@ describe("a failed manifest publish restores the previous shell (#29)", () => {
       // A new inline script (new CSP hash) is copied over index.html, then the manifest rename
       // fails: a directory squats on manifest.json.tmp, so writeFileSync throws EISDIR.
       writeFileSync(join(root, "src", "main.ts"), mainSource(21));
-      writeFileSync(shell, originalShell.replace("</head>", "<script>window.__rev = 21;</script></head>"));
+      writeFileSync(shell, originalShell.replace("</head>", "<script>var pulseRev = 21;</script></head>"));
       const squatter = join(outdir, `${MANIFEST_FILENAME}.tmp`);
       mkdirSync(squatter);
       try {
