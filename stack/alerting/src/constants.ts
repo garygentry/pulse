@@ -1,6 +1,8 @@
 // stack/alerting/src/constants.ts
 // Stable names and windows referenced across 02–06 (00-core-definitions.md §6).
 
+import { ENDPOINT_ALERT_TIMING } from "@pulse/core/endpoint-alert";
+
 /** AM receivers the transform emits (04). */
 export const RECEIVERS = {
   /** Root fallback receiver; an unmatched alert lands here (REQ-ROUTE-04). */
@@ -97,12 +99,12 @@ export const METRICS = {
  *      vmalert writes on resolve.
  *  The threshold defaults are the retired Gatus provider's `default-alert` values. */
 export const GATUS_CHECKS = {
-  /** Gatus's default endpoint interval (the renderer emits none). */
-  checkIntervalSeconds: 60,
+  /** Gatus's default endpoint interval (the renderer emits none). Shared with the web via core. */
+  checkIntervalSeconds: ENDPOINT_ALERT_TIMING.checkIntervalSeconds,
   /** Failed checks needed to fire when a binding omits `failureThreshold`. */
-  defaultFailureThreshold: 3,
+  defaultFailureThreshold: ENDPOINT_ALERT_TIMING.defaultFailureThreshold,
   /** Passing checks needed to resolve when a binding omits `successThreshold`. */
-  defaultSuccessThreshold: 2,
+  defaultSuccessThreshold: ENDPOINT_ALERT_TIMING.defaultSuccessThreshold,
   /** The nominal fire windows are F·I plus each offset. Two windows one scrape interval (30s)
    *  apart: whatever the scrape and check phases, one of them holds exactly the F failures and not
    *  the passes on either side when an evaluation lands (phase sweep: 750/750 exactly-F outages
@@ -113,7 +115,7 @@ export const GATUS_CHECKS = {
   slowWindowFactor: 4,
   /** The clear window holds this many times S checks (rounded up) plus one interval, so S passes
    *  still fit in it when checks run somewhat slower than nominal (default 2 → 4m). */
-  clearWindowFactor: 1.5,
+  clearWindowFactor: ENDPOINT_ALERT_TIMING.clearWindowFactor,
   /** The rule group's evaluation interval, pinned in the rendered group (`interval:`). 30s — half
    *  the check cadence — so an evaluation always lands while the nominal windows hold exactly the
    *  F failures. (vmalert's `-rule.resendDelay=1m` in stack/compose keeps the alert's Alertmanager

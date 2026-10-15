@@ -15,6 +15,10 @@
     "./proposals/sign": {
       "types": "./dist/proposals/sign.d.ts",
       "import": "./dist/proposals/sign.js"
+    },
+    "./endpoint-alert": {
+      "types": "./dist/endpoint-alert/index.d.ts",
+      "import": "./dist/endpoint-alert/index.js"
     }
   },
   "main": "./dist/index.js",
