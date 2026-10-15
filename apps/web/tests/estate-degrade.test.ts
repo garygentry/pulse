@@ -100,6 +100,7 @@ test("#57 toDeliveryState: a transport failure keeps a retained estate, errors o
   for (const [code, message] of [
     ["SERVER_UNREACHABLE", "The Pulse server could not be reached."],
     ["SERVER_TIMEOUT", "The Pulse server did not respond in time."],
+    ["SESSION_EXPIRED", "Your session has expired. Reload the page to sign in again."],
   ] as const) {
     const delivery = { phase: "stale" as const, identity: "h", failure: { code, status: 0, message } };
     expect(toDeliveryState(delivery, PAYLOAD)).toEqual({ kind: "ready" });
@@ -120,6 +121,9 @@ test("#57 appStaleMessage names a transport failure, else the generic note", () 
   expect(appStaleMessage(conn({ code: "SERVER_TIMEOUT", status: 0, message: "The Pulse server did not respond in time." }))).toBe(
     "The Pulse server did not respond in time; showing the last delivered estate.",
   );
+  expect(
+    appStaleMessage(conn({ code: "SESSION_EXPIRED", status: 401, message: "Your session has expired. Reload the page to sign in again." })),
+  ).toBe("Your session has expired. Reload the page to sign in again; showing the last delivered estate.");
   expect(appStaleMessage(conn({ code: "INTERNAL_ERROR", status: 500, message: "boom" }))).toBe(APP_STALE_MESSAGE);
   expect(appStaleMessage(conn(null))).toBe(APP_STALE_MESSAGE);
   expect(appStaleMessage(null)).toBe(APP_STALE_MESSAGE);

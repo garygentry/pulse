@@ -178,12 +178,14 @@ export const ERROR_MESSAGES: Readonly<Record<ApiErrorCode, string>> = {
 };
 
 /**
- * Client-side transport failure codes: synthesized by the browser API client when no usable HTTP
+ * Client-side transport failure codes: synthesized by the browser API client when no usable Pulse
  * response arrived, so they are NEVER sent by the server and are not part of `ApiErrorCode`. They
  * keep "the Pulse server could not be reached / did not answer in time" distinct from a real 5xx
- * (`INTERNAL_ERROR`), and mark a caller-cancelled request so it is never shown as a failure.
+ * (`INTERNAL_ERROR`), mark a caller-cancelled request so it is never shown as a failure, and name
+ * an auth proxy that answered in Pulse's place because the sign-in session expired
+ * (`SESSION_EXPIRED`: a redirect, a 2xx HTML login page, or a 401/403 without a Pulse envelope).
  */
-export type ClientTransportErrorCode = "SERVER_UNREACHABLE" | "SERVER_TIMEOUT" | "REQUEST_CANCELLED";
+export type ClientTransportErrorCode = "SERVER_UNREACHABLE" | "SERVER_TIMEOUT" | "REQUEST_CANCELLED" | "SESSION_EXPIRED";
 
 /** Every failure code a browser API call can resolve with: a server envelope code or a transport code. */
 export type ClientFetchErrorCode = ApiErrorCode | ClientTransportErrorCode;
@@ -193,6 +195,7 @@ export const CLIENT_TRANSPORT_MESSAGES: Readonly<Record<ClientTransportErrorCode
   SERVER_UNREACHABLE: "The Pulse server could not be reached.",
   SERVER_TIMEOUT: "The Pulse server did not respond in time.",
   REQUEST_CANCELLED: "The request was cancelled.",
+  SESSION_EXPIRED: "Your session has expired. Reload the page to sign in again.",
 };
 
 /** Exact default text for every bounded source-failure category. */

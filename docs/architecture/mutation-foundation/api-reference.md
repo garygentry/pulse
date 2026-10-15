@@ -608,7 +608,7 @@ export function MyAction(p: { store: AppStore }) {
 #### `postMutation<R>(path: `/api/mutations/${string}`, body: unknown, idempotencyKey: string, fetchImpl?): Promise<MutationSuccess<R>>`
 
 **Throws:** `MutationClientError`, with fields:
-- `reason`: a `MutationReason`, `"network"` or `"malformed-response"`;
+- `reason`: a `MutationReason`, `"network"`, `"malformed-response"` or `"session-expired"`. The request is sent with `redirect: "manual"`, and `"session-expired"` means an auth proxy answered instead of Pulse: a redirect, a 2xx HTML page, or a 401/403 without a Pulse refusal `details.reason`. Pulse's own 403 refusals, such as `untrusted-identity`, keep their reason;
 - `status`;
 - `requestId`;
 - `fields`.
