@@ -15,10 +15,16 @@ import {
   renderDelivery,
 } from "../src/client/views/estate/degrade.js";
 import {
+  APP_STALE_MESSAGE,
   DEFAULT_MODEL_ABSENT_GUIDANCE,
   classifyAvailability,
+  isEstateViewStale,
   toDeliveryState,
+  withAppStaleness,
 } from "../src/client/views/estate/delivery.js";
+import { createAppStore } from "../src/client/store/index.js";
+import { readEstate } from "../src/client/views/estate/types.js";
+import { makeEstatePayloadFixture, makeLiveTarget, setEstateConnection } from "./factories/estate-payload.js";
 import type { DeliveryRetry } from "../src/client/views/estate/degrade.js";
 import type { EstateDeliveryState } from "../src/client/views/estate/types.js";
 import { describeDom } from "./dom.js";
@@ -328,4 +334,97 @@ describeDom("estate degrade rendering", (dom) => {
     expect(note.querySelector("time")).toBeNull();
     unmount();
   });
+});
+
+// ── #26: app-level staleness ─────────────────────────────────────────────────
+
+const FAILED = { code: "INTERNAL_ERROR", status: 500, message: "boom" };
+const conn = (phase: unknown, estate: unknown, failure: unknown = null): unknown => ({
+  phase,
+  views: { estate: { phase: estate, failure } },
+});
+
+test("isEstateViewStale: stale when the connection is not live or the estate refetch failed; fails closed", () => {
+  expect(isEstateViewStale(conn("live", "current"))).toBe(false);
+  // In-flight refetch of a newer identity on a healthy connection: not app-stale (no flicker).
+  expect(isEstateViewStale(conn("live", "stale"))).toBe(false);
+  expect(isEstateViewStale(conn("live", "initial"))).toBe(false);
+  expect(isEstateViewStale(conn("live", "stale", FAILED))).toBe(true);
+  expect(isEstateViewStale(conn("stale", "current"))).toBe(true);
+  expect(isEstateViewStale(conn("stale", "stale"))).toBe(true);
+  expect(isEstateViewStale(conn("initial", "current"))).toBe(true);
+  expect(isEstateViewStale({ phase: "live" })).toBe(true);
+  expect(isEstateViewStale({ phase: "live", views: {} })).toBe(true);
+  expect(isEstateViewStale(null)).toBe(true);
+  expect(isEstateViewStale("live")).toBe(true);
+});
+
+test("withAppStaleness: current evidence becomes stale with the app note; non-current keeps its state", () => {
+  const payload = makeEstatePayloadFixture({
+    liveTargets: [
+      makeLiveTarget({ target: { kind: "host", id: "a" } }),
+      makeLiveTarget({ target: { kind: "host", id: "b" }, availability: availability("unavailable", { message: "vm down" }) }),
+    ],
+    findings: { availability: availability("not-configured"), value: null },
+  });
+  const stale = withAppStaleness(payload);
+  expect(stale.liveTargets.map((t) => [t.availability.state, t.availability.message])).toEqual([
+    ["stale", APP_STALE_MESSAGE],
+    ["unavailable", "vm down"],
+  ]);
+  expect(stale.coverage.availability.state).toBe("stale");
+  expect(stale.coverage.availability.message).toBe(APP_STALE_MESSAGE);
+  expect(stale.coverage.value).toBe(payload.coverage.value);
+  expect(stale.declaredVersusScraped.availability.state).toBe("stale");
+  expect(stale.findings).toBe(payload.findings);
+  // The rendered model and timestamps pass through; the input is never mutated.
+  expect(stale.estate).toBe(payload.estate);
+  expect(stale.generatedAt).toBe(payload.generatedAt);
+  expect(payload.coverage.availability.state).toBe("current");
+  // Stable identity per payload so memoized consumers do not recompute every render.
+  expect(withAppStaleness(payload)).toBe(stale);
+  expect(stale.liveTargets).toBe(stale.liveTargets);
+});
+
+test("withAppStaleness passes malformed live entries through untouched instead of throwing", () => {
+  const good = makeLiveTarget({ target: { kind: "host", id: "a" } });
+  const missing = { ...makeLiveTarget({ target: { kind: "host", id: "b" } }), availability: null };
+  const payload = makeEstatePayloadFixture({
+    liveTargets: [good, missing, null, "junk"] as unknown as EstatePayload["liveTargets"],
+    coverage: { availability: null, value: null } as unknown as EstatePayload["coverage"],
+  });
+  const stale = withAppStaleness(payload);
+  const out = stale.liveTargets as readonly unknown[];
+  expect(out.length).toBe(4);
+  expect((out[0] as typeof good).availability.state).toBe("stale");
+  expect(out[1]).toBe(missing);
+  expect(out[2]).toBeNull();
+  expect(out[3]).toBe("junk");
+  expect(stale.coverage).toBe(payload.coverage);
+});
+
+test("withAppStaleness reads each section lazily, so one faulty section does not throw for the rest", () => {
+  const payload = makeEstatePayloadFixture();
+  Object.defineProperty(payload, "coverage", {
+    get(): never {
+      throw new Error("bad coverage");
+    },
+  });
+  const stale = withAppStaleness(payload);
+  expect(stale.estate).toBe(payload.estate);
+  expect(stale.findings.availability.state).toBe("stale");
+  expect(() => stale.coverage).toThrow("bad coverage");
+});
+
+test("readEstate applies app staleness from the store's connection", () => {
+  const store = createAppStore({ storage: null, initialQuery: {} });
+  expect(readEstate(store)).toBeNull();
+  const payload = makeEstatePayloadFixture();
+  store.estate.value = payload;
+  expect(readEstate(store)?.coverage.availability.state).toBe("stale"); // initial connection
+  setEstateConnection(store);
+  expect(readEstate(store)).toBe(payload);
+  setEstateConnection(store, { phase: "stale", delivery: "stale" });
+  expect(readEstate(store)?.liveTargets[0]?.availability.state).toBe("stale");
+  expect(readEstate(store)?.estate).toBe(payload.estate);
 });
