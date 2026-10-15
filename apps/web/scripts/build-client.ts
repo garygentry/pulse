@@ -643,10 +643,12 @@ function snapshotDir(dir: string): Set<string> {
  * name is absent from `snapshot`, except `index.html` and MANIFEST_FILENAME (owned by the previous
  * build). Returns any unlink error messages.
  *
- * Deletion is keyed on names, not mtimes (#29). Every output name carries a content hash, so a
- * name already on disk before the build holds the same bytes. Bun rewrites unchanged outputs on
- * every clean:false build, which gives the stable-name fonts and chunks that the previous manifest
- * still references a new mtime; an mtime check deleted them and brought the #8 404s back.
+ * Deletion is keyed on names, not mtimes (#29). Every JS/CSS/asset name carries a content hash,
+ * so a name already on disk before the build holds the same bytes. A `.map` keeps its JS file's
+ * name but its bytes can differ (it embeds source paths); keeping the rewritten one is harmless,
+ * as maps are debug-only. Bun rewrites unchanged outputs on every clean:false build, which gives
+ * the stable-name fonts and chunks that the previous manifest still references a new mtime; an
+ * mtime check deleted them and brought the #8 404s back.
  */
 function rollbackDir(dir: string, snapshot: ReadonlySet<string>): string[] {
   if (!existsSync(dir)) return [];

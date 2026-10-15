@@ -181,3 +181,39 @@ describe("a late build failure rolls back to the previous build (#29)", () => {
     BUILD_TIMEOUT_MS,
   );
 });
+
+describe("a failed manifest publish restores the previous shell (#29)", () => {
+  test(
+    "index.html is put back byte-exact; the previous manifest and its files stay consistent",
+    () => {
+      const shell = join(root, "src", "index.html");
+      const originalShell = readFileSync(shell, "utf8");
+      writeFileSync(join(root, "src", "main.ts"), mainSource(20));
+      const previous = build(true);
+      const previousShell = readFileSync(join(outdir, "index.html"), "utf8");
+      const previousManifest = readFileSync(join(outdir, MANIFEST_FILENAME), "utf8");
+      const previousFiles = new Set(readdirSync(outdir));
+
+      // A new inline script (new CSP hash) is copied over index.html, then the manifest rename
+      // fails: a directory squats on manifest.json.tmp, so writeFileSync throws EISDIR.
+      writeFileSync(join(root, "src", "main.ts"), mainSource(21));
+      writeFileSync(shell, originalShell.replace("</head>", "<script>window.__rev = 21;</script></head>"));
+      const squatter = join(outdir, `${MANIFEST_FILENAME}.tmp`);
+      mkdirSync(squatter);
+      try {
+        const failed = runBuild(false);
+        expect(failed.exitCode).not.toBe(0);
+        expect(failed.stderr).toContain("manifest publish failed");
+      } finally {
+        rmSync(squatter, { recursive: true, force: true });
+        writeFileSync(shell, originalShell);
+      }
+
+      expect(readFileSync(join(outdir, "index.html"), "utf8")).toBe(previousShell);
+      expect(readFileSync(join(outdir, MANIFEST_FILENAME), "utf8")).toBe(previousManifest);
+      expectCompleteOutput(previous);
+      expect(new Set(readdirSync(outdir))).toEqual(previousFiles);
+    },
+    BUILD_TIMEOUT_MS,
+  );
+});

@@ -366,8 +366,9 @@ suffix keeps them out of `bun test`, which collects `*.spec.*`.
     through the dev composition root. It spawns `entry.ts` with `--preload freeze-clock.ts`, a
     test-only preload that freezes the server's wall clock. `--clock` sits 15 minutes before the
     frozen instant, so the scenario timeline has fully played out.
-  - **History:** the mock engine serves no range queries, so `visual-kit.ts` answers
-    `/api/history/**` with series generated from the query, target and range alone.
+  - **History:** `visual-kit.ts` answers `/api/history/**` with series generated from the query,
+    target and range alone. The mock engine also serves history derived from the scenario, but
+    the history service's window follows the wall clock, so the suite stubs it to stay pinned.
   - **Browser clock:** frozen at the same instant (`page.clock.setFixedTime`).
   - **Timers:** `setTimeout` callbacks 4 s or more out are held, so the overview poll chain and
     kiosk paging never fire mid-capture. `setInterval` refreshes and the SSE stream still run.
