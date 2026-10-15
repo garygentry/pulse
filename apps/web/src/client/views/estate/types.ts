@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import type { EstatePayload } from "@pulse/web-data/wire";
 
 import type { AppStore } from "../../store/index.js";
-import { isEstateViewStale, withAppStaleness } from "./delivery.js";
+import { appStaleMessage, isEstateViewStale, withAppStaleness } from "./delivery.js";
 
 // ── §7 URL-state param vocabulary ────────────────────────────────────────────
 
@@ -62,7 +62,8 @@ export interface RegionErrorBoundaryProps {
 export function readEstate(store: AppStore): EstatePayload | null {
   const payload = store.estate.value;
   if (payload === null) return null;
-  return isEstateViewStale(store.connection.value) ? withAppStaleness(payload) : payload;
+  const connection = store.connection.value;
+  return isEstateViewStale(connection) ? withAppStaleness(payload, appStaleMessage(connection)) : payload;
 }
 
 // ── §7 Landing query helpers ─────────────────────────────────────────────────

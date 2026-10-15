@@ -17,10 +17,10 @@ import { DEV_BUILD_ID_PATH } from "../src/client/api/client.js";
 import { overviewSnapshot } from "./factories/wire.js";
 import { createAppStore, type AppStore } from "../src/client/store/index.js";
 import { isEstateViewStale, toDeliveryState } from "../src/client/views/estate/delivery.js";
+import type { EstatePayload } from "@pulse/web-data/wire";
 import {
   POLL_INTERVAL_MS,
   POLL_STALE_MS,
-  REFRESH_INTERVAL_MS,
   SOURCE_TIMEOUT_MS,
   VIEW_FETCH_TIMEOUT_MS,
 } from "../src/shared/constants.js";
@@ -1131,11 +1131,8 @@ function hangingServer(): { server: Server; fetchImpl: typeof fetch; hang(path: 
 }
 
 describe("#57 view GET deadline", () => {
-  test("the deadline sits above the source timeout and strictly below the tick/poll cadence", () => {
-    // At or above the tick cadence, every SSE tick would supersede the hung request before its
-    // deadline fired, so a hung view GET would never record a failure.
-    expect(VIEW_FETCH_TIMEOUT_MS).toBeLessThan(REFRESH_INTERVAL_MS);
-    expect(VIEW_FETCH_TIMEOUT_MS).toBeLessThan(POLL_INTERVAL_MS);
+  test("the deadline sits above the source timeout and inside the poll cadence and stale window", () => {
+    expect(VIEW_FETCH_TIMEOUT_MS).toBeLessThan(POLL_INTERVAL_MS); // a hung poll never delays the next
     expect(VIEW_FETCH_TIMEOUT_MS).toBeLessThan(POLL_STALE_MS);
     expect(VIEW_FETCH_TIMEOUT_MS).toBeGreaterThan(SOURCE_TIMEOUT_MS);
   });
@@ -1172,12 +1169,123 @@ describe("#57 view GET deadline", () => {
     });
     expect(conn.phase).toBe("live"); // the SSE connection itself is healthy
     expect(isEstateViewStale(conn)).toBe(true); // so badges can no longer stay ok on the old estate
-    expect(toDeliveryState(conn.views.estate, store.estate.value)).toEqual({
-      kind: "error",
-      message: "The Pulse server did not respond in time.",
-      retryable: true,
-    });
+    // The retained estate stays on screen (not replaced by the error state), app-stale with the
+    // transport problem named in every downgraded note.
+    expect(toDeliveryState(conn.views.estate, store.estate.value)).toEqual({ kind: "ready" });
     live.stop();
+  });
+
+  test("ticks faster than the deadline cannot postpone it: measured from the first outstanding request", async () => {
+    FakeEventSource.reset();
+    const store = createAppStore({ storage: null, initialQuery: {} });
+    const sched = new Scheduler();
+    const { server, fetchImpl, hang } = hangingServer();
+    const live = startLiveState(store, {
+      transport: "sse", eventSourceFactory: esFactory, fetchImpl,
+      setTimer: sched.setTimer, clearTimer: sched.clearTimer, now: sched.nowFn,
+      activeView: () => "estate", intervalMs: 1_000_000, staleMs: 1_000_000, reload: () => {},
+    });
+    server.script("/api/estate", () => ok200({ e: 1 }, { etag: hash("a"), payloadId: hash("e"), obs: observation(GEN_A, 5) }));
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("e") });
+    await flush();
+    for (let i = 0; i < 10; i++) hang("/api/estate");
+
+    // Uneven/overrunning cycles: ticks every 3s, each re-requesting the still-behind estate.
+    let seq = 6;
+    const tick = (): void => FakeEventSource.last().emitTick(observation(GEN_A, seq++), { ...identitiesAll(hash("b")), estate: hash("7") });
+    tick();
+    await flush();
+    for (let t = 3_000; t < VIEW_FETCH_TIMEOUT_MS; t += 3_000) {
+      await sched.advance(3_000);
+      tick();
+      await flush();
+      expect(store.connection.value.views.estate.failure).toBeNull();
+    }
+    await sched.advance(VIEW_FETCH_TIMEOUT_MS - 6_000); // exactly VIEW_FETCH_TIMEOUT_MS after the first
+    expect(store.connection.value.views.estate.failure?.code).toBe("SERVER_TIMEOUT");
+    expect(server.count("/api/estate")).toBe(4); // initial + three superseding requests
+    live.stop();
+    expect(sched.pendingCount()).toBe(0); // stop() clears every armed deadline
+  });
+
+  test("a superseded request the server answers restarts the window at the newest request", async () => {
+    FakeEventSource.reset();
+    const store = createAppStore({ storage: null, initialQuery: {} });
+    const sched = new Scheduler();
+    const pending: Array<{ path: string; resolve: (r: Response) => void; signal: AbortSignal | null }> = [];
+    const gatedFetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const path = url.split("?", 1)[0] ?? url;
+      const signal = init?.signal ?? null;
+      return new Promise<Response>((resolve, reject) => {
+        pending.push({ path, resolve, signal });
+        signal?.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
+      });
+    }) as unknown as typeof fetch;
+    const live = startLiveState(store, {
+      transport: "sse", eventSourceFactory: esFactory, fetchImpl: gatedFetch,
+      setTimer: sched.setTimer, clearTimer: sched.clearTimer, now: sched.nowFn,
+      activeView: () => "estate", intervalMs: 1_000_000, staleMs: 1_000_000, reload: () => {},
+    });
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("1") });
+    await flush();
+    await sched.advance(6_000);
+    FakeEventSource.last().emitTick(observation(GEN_A, 6), { ...identitiesAll(hash("b")), estate: hash("2") });
+    await flush();
+    const estateCalls = pending.filter((p) => p.path === "/api/estate");
+    expect(estateCalls.length).toBe(2);
+    // The older request is answered (late, superseded): the server is responsive.
+    estateCalls[0]?.resolve(ok200({ e: 1 }, { etag: hash("a"), payloadId: hash("1"), obs: observation(GEN_A, 5) }));
+    await flush();
+    await sched.advance(VIEW_FETCH_TIMEOUT_MS - 6_000); // the first request's window would end here
+    expect(store.connection.value.views.estate.failure).toBeNull();
+    expect(estateCalls[1]?.signal?.aborted).toBe(false);
+    await sched.advance(6_000); // the newest request's own full window ends here
+    expect(store.connection.value.views.estate.failure?.code).toBe("SERVER_TIMEOUT");
+    live.stop();
+  });
+
+  test("a failure whose code alone changes is republished (connectionEquals compares code)", async () => {
+    const { store, server, sched, live } = harness({
+      transport: "poll", intervalMs: 5_000, staleMs: 1_000_000, activeView: () => "estate",
+    });
+    const err = (code: string) => () => new Response(JSON.stringify({ code, message: "same text" }), { status: 500 });
+    server.script("/api/overview", () => ok200({ o: 1 }, { etag: hash("a"), payloadId: hash("b"), obs: observation(GEN_A, 1) }));
+    server.script("/api/estate", err("INTERNAL_ERROR"), err("CYCLE_BUILD_FAILED"));
+    await sched.advance(0);
+    expect(store.connection.value.views.estate.failure?.code).toBe("INTERNAL_ERROR");
+    await sched.advance(5_000);
+    live.stop();
+    expect(store.connection.value.views.estate.failure?.code).toBe("CYCLE_BUILD_FAILED");
+  });
+
+  test("a transport failure with a retained estate keeps it, app-stale with the problem named", async () => {
+    FakeEventSource.reset();
+    const { store, server, live } = harness({
+      transport: "sse", eventSourceFactory: esFactory, activeView: () => "estate",
+      intervalMs: 1_000_000, staleMs: 1_000_000,
+    });
+    const payload = {
+      generatedAt: "2026-09-17T00:00:00.000Z",
+      coverage: { value: [], availability: { state: "current", message: null } },
+    };
+    server.script("/api/estate", () => ok200(payload, { etag: hash("a"), payloadId: hash("e"), obs: observation(GEN_A, 5) }));
+    server.script("/api/estate", () => {
+      throw new TypeError("Failed to fetch");
+    });
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("e") });
+    await flush();
+    FakeEventSource.last().emitTick(observation(GEN_A, 6), { ...identitiesAll(hash("b")), estate: hash("7") });
+    await flush();
+    live.stop();
+    const conn = store.connection.value;
+    expect(conn.views.estate.failure?.code).toBe("SERVER_UNREACHABLE");
+    expect(toDeliveryState(conn.views.estate, store.estate.value)).toEqual({ kind: "ready" });
+    const shown = readEstate(store) as unknown as EstatePayload;
+    expect(shown.coverage.availability.state).toBe("stale");
+    expect(shown.coverage.availability.message).toBe(
+      "The Pulse server could not be reached; showing the last delivered estate.",
+    );
   });
 
   test("a hung GET under polling times out, records a failure, and the poll loop keeps running", async () => {

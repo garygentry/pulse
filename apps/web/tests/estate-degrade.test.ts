@@ -17,6 +17,7 @@ import {
 import {
   APP_STALE_MESSAGE,
   DEFAULT_MODEL_ABSENT_GUIDANCE,
+  appStaleMessage,
   classifyAvailability,
   isEstateViewStale,
   toDeliveryState,
@@ -93,6 +94,35 @@ test("toDeliveryState: store failure code preserves not-ready/model-absent/error
       null,
     ),
   ).toEqual({ kind: "error", message: "safe failure", retryable: true });
+});
+
+test("#57 toDeliveryState: a transport failure keeps a retained estate, errors only without one", () => {
+  for (const [code, message] of [
+    ["SERVER_UNREACHABLE", "The Pulse server could not be reached."],
+    ["SERVER_TIMEOUT", "The Pulse server did not respond in time."],
+  ] as const) {
+    const delivery = { phase: "stale" as const, identity: "h", failure: { code, status: 0, message } };
+    expect(toDeliveryState(delivery, PAYLOAD)).toEqual({ kind: "ready" });
+    expect(toDeliveryState({ ...delivery, phase: "initial" as const, identity: null }, null)).toEqual({
+      kind: "error",
+      message,
+      retryable: true,
+    });
+  }
+  // A real server error still replaces the page even with a retained payload.
+  expect(
+    toDeliveryState({ phase: "stale", identity: "h", failure: { code: "INTERNAL_ERROR", status: 500, message: "boom" } }, PAYLOAD),
+  ).toEqual({ kind: "error", message: "boom", retryable: true });
+});
+
+test("#57 appStaleMessage names a transport failure, else the generic note", () => {
+  const conn = (failure: unknown): unknown => ({ phase: "live", views: { estate: { phase: "stale", identity: "h", failure } } });
+  expect(appStaleMessage(conn({ code: "SERVER_TIMEOUT", status: 0, message: "The Pulse server did not respond in time." }))).toBe(
+    "The Pulse server did not respond in time; showing the last delivered estate.",
+  );
+  expect(appStaleMessage(conn({ code: "INTERNAL_ERROR", status: 500, message: "boom" }))).toBe(APP_STALE_MESSAGE);
+  expect(appStaleMessage(conn(null))).toBe(APP_STALE_MESSAGE);
+  expect(appStaleMessage(null)).toBe(APP_STALE_MESSAGE);
 });
 
 test("toDeliveryState: status 503 → not-ready; other >= 400 → error with the status in the message", () => {

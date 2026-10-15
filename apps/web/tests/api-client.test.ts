@@ -231,13 +231,36 @@ describe("apiFetch — error responses and bounded failure", () => {
 
   test("a malformed error body falls back to a bounded INTERNAL_ERROR envelope with the real status", async () => {
     const { fetchImpl } = queuedFetch([
-      new Response("<html>gateway</html>", { status: 502 }),
+      new Response("<html>oops</html>", { status: 500 }),
     ]);
     const result = await apiFetch("/api/alerts", undefined, fetchImpl);
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
     expect(result.error.code).toBe("INTERNAL_ERROR");
-    expect(result.httpStatus).toBe(502);
+    expect(result.httpStatus).toBe(500);
+  });
+
+  test("#57: a proxy 502/503 without a Pulse envelope is SERVER_UNREACHABLE, a 504 SERVER_TIMEOUT", async () => {
+    const cases: Array<[number, "SERVER_UNREACHABLE" | "SERVER_TIMEOUT"]> = [[502, "SERVER_UNREACHABLE"], [503, "SERVER_UNREACHABLE"], [504, "SERVER_TIMEOUT"]];
+    for (const [status, code] of cases) {
+      const { fetchImpl } = queuedFetch([
+        new Response(`<html>${status} Bad Gateway</html>`, { status, headers: { "content-type": "text/html" } }),
+      ]);
+      const result = await apiFetch("/api/estate", undefined, fetchImpl);
+      if (result.status !== "error") throw new Error("unreachable");
+      expect(result.error.code).toBe(code);
+      expect(result.httpStatus).toBe(status);
+    }
+  });
+
+  test("#57: a client-only or unknown code in an error body is rejected as INTERNAL_ERROR", async () => {
+    for (const code of ["REQUEST_CANCELLED", "SERVER_TIMEOUT", "MADE_UP"]) {
+      const { fetchImpl } = queuedFetch([new Response(JSON.stringify({ code, message: "x" }), { status: 500 })]);
+      const result = await apiFetch("/api/estate", undefined, fetchImpl);
+      if (result.status !== "error") throw new Error("unreachable");
+      expect(result.error.code).toBe("INTERNAL_ERROR");
+      expect(result.httpStatus).toBe(500);
+    }
   });
 
   test("#57: a network failure resolves to SERVER_UNREACHABLE httpStatus 0, not a server error", async () => {
@@ -270,7 +293,46 @@ const hangingFetch = ((_input: RequestInfo | URL, init?: RequestInit): Promise<R
     signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
   })) as unknown as typeof fetch;
 
+/** A response whose body sends a prefix, then errors with `cause` (a dropped connection). */
+function droppingBody(cause: unknown): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(c) {
+      c.enqueue(new TextEncoder().encode('{"partial":'));
+      queueMicrotask(() => c.error(cause));
+    },
+  });
+}
+
 describe("apiFetch — #57 transport failure classification", () => {
+  test("a connection dropped mid-body after a 200 is SERVER_UNREACHABLE, not INTERNAL_ERROR", async () => {
+    const fetchImpl = (async () =>
+      new Response(droppingBody(new TypeError("network connection lost")), {
+        status: 200, headers: cycleHeaders({ etag: HASH_A, payloadId: HASH_B }),
+      })) as unknown as typeof fetch;
+    const result = await apiFetch("/api/estate", undefined, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("SERVER_UNREACHABLE");
+    expect(result.httpStatus).toBe(0);
+  });
+
+  test("a deadline while reading a 500 error body is SERVER_TIMEOUT", async () => {
+    const controller = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('{"code":'));
+        controller.signal.addEventListener("abort", () => c.error(controller.signal.reason), { once: true });
+      },
+    });
+    const fetchImpl = (async () => new Response(body, { status: 500 })) as unknown as typeof fetch;
+    const pending = apiFetch("/api/estate", { signal: controller.signal }, fetchImpl);
+    await Promise.resolve();
+    controller.abort(timeoutAbortReason());
+    const result = await pending;
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("SERVER_TIMEOUT");
+    expect(result.httpStatus).toBe(0);
+  });
+
   test("an abort carrying the timeout reason resolves SERVER_TIMEOUT", async () => {
     const controller = new AbortController();
     const pending = apiFetch("/api/estate", { signal: controller.signal }, hangingFetch);

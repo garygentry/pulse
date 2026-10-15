@@ -21,6 +21,7 @@
 import { batch } from "@preact/signals-core";
 
 import {
+  CLIENT_TRANSPORT_MESSAGES,
   validateLiveTick,
   validateOverviewSnapshotV2,
   type CycleObservation,
@@ -66,6 +67,11 @@ const VIEW_REFRESHERS = new WeakMap<AppStore, (view: ViewId) => void>();
 /** Ask the active live-state machine to refresh one view. A store not yet started is a no-op. */
 export function refetchView(store: AppStore, view: ViewId): void {
   VIEW_REFRESHERS.get(store)?.(view);
+}
+
+/** Whether `code` is a client transport code (no usable response arrived). */
+function isTransportCode(code: string): boolean {
+  return Object.prototype.hasOwnProperty.call(CLIENT_TRANSPORT_MESSAGES, code);
 }
 
 /** The SSE endpoint. */
@@ -220,6 +226,15 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
     timeline: null,
   };
 
+  // When the oldest still-unanswered request for each view started. A newer request (tick, route
+  // change, retry) supersedes an in-flight one but inherits this start, so the view GET deadline is
+  // measured from the first outstanding request and supersession can never postpone it (#57).
+  const pendingSince: Record<ViewId, number | null> = { overview: null, alerts: null, estate: null, engine: null, timeline: null };
+  // When the newest request for each view started (the window restarts there once the server answers
+  // an older, superseded request: it is responsive, only the newest request is outstanding).
+  const latestStart: Record<ViewId, number> = { overview: 0, alerts: 0, estate: 0, engine: 0, timeline: 0 };
+  const deadlineTimers = new Set<ReturnType<typeof setTimeout>>();
+
   const controllers = new Set<AbortController>();
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -253,6 +268,8 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
       clearTimer(devTimer);
       devTimer = null;
     }
+    for (const t of deadlineTimers) clearTimer(t);
+    deadlineTimers.clear();
   }
 
   function abortControllers(): void {
@@ -421,20 +438,57 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
       signal: controller.signal,
       ...(etag !== null ? { etag } : {}),
     };
-    // Bounded deadline: a hung GET is aborted with a timeout reason, so apiFetch resolves
-    // SERVER_TIMEOUT and the view records a failure instead of waiting forever (a hung estate GET
-    // under a live SSE stream would otherwise keep a stale estate looking current, #57).
-    const deadline = setTimer(() => controller.abort(timeoutAbortReason()), viewTimeoutMs);
+    // Bounded deadline (#57): a view GET still unanswered (including its body download)
+    // `viewTimeoutMs` after the view's FIRST outstanding request started is aborted and recorded as
+    // SERVER_TIMEOUT, instead of waiting forever while a live SSE stream keeps a stale view looking
+    // current. The local flag, not the abort reason, marks the expiry.
+    const startedAt = now();
+    latestStart[view] = startedAt;
+    if (pendingSince[view] === null) pendingSince[view] = startedAt;
+    let timedOut = false;
+    let deadline: ReturnType<typeof setTimeout> | null = null;
+    const arm = (): void => {
+      const elapsed = now() - (pendingSince[view] ?? startedAt);
+      if (elapsed < viewTimeoutMs) {
+        const t = setTimer(() => {
+          deadlineTimers.delete(t);
+          arm(); // re-check: the window may have restarted since this timer was set
+        }, viewTimeoutMs - elapsed);
+        deadline = t;
+        deadlineTimers.add(t);
+        return;
+      }
+      deadline = null;
+      timedOut = true;
+      controller.abort(timeoutAbortReason());
+    };
+    arm();
     let result: ApiFetchResult<unknown>;
     try {
       result = await apiFetch<unknown>(VIEW_PATH[view], options, fetchImpl);
     } finally {
-      clearTimer(deadline);
+      if (deadline !== null) {
+        clearTimer(deadline);
+        deadlineTimers.delete(deadline);
+      }
       controllers.delete(controller);
     }
-    // Reject a superseded callback: stop(), an epoch bump (generation reset / takeover / reconnect),
-    // or a newer request for this same view (token supersession).
-    if (stopped || reloaded || myEpoch !== epoch || myToken !== requestTokens[view]) return;
+    const superseded = stopped || reloaded || myEpoch !== epoch || myToken !== requestTokens[view];
+    if (superseded) {
+      // A superseded request the server actually answered proves it responsive: restart the window
+      // at the newest request's start rather than this older one's.
+      if (!(result.status === "error" && isTransportCode(result.error.code)) && pendingSince[view] !== null) {
+        pendingSince[view] = latestStart[view];
+      }
+      // Reject a superseded callback: stop(), an epoch bump (generation reset / takeover /
+      // reconnect), or a newer request for this same view (token supersession).
+      return;
+    }
+    if (timedOut && result.status === "error" && result.httpStatus === 0 && isTransportCode(result.error.code)) {
+      result = { status: "error", error: { code: "SERVER_TIMEOUT", message: CLIENT_TRANSPORT_MESSAGES.SERVER_TIMEOUT }, httpStatus: 0 };
+    }
+    // The latest request answered (or hit its deadline): the next request starts a fresh window.
+    if (!(result.status === "error" && result.error.code === "REQUEST_CANCELLED")) pendingSince[view] = null;
     onViewResult(view, result);
   }
 
@@ -751,6 +805,7 @@ function connectionEquals(a: ConnectionState, b: ConnectionState): boolean {
     if (
       av.phase !== bv.phase ||
       av.identity !== bv.identity ||
+      av.failure?.code !== bv.failure?.code ||
       av.failure?.status !== bv.failure?.status ||
       av.failure?.message !== bv.failure?.message
     ) return false;

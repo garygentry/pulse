@@ -89,8 +89,11 @@ export function timeoutAbortReason(): DOMException {
  * here as `status:"error"`; never an uncaught throw. When no usable HTTP response arrived the error
  * carries a client transport code at `httpStatus` 0: `SERVER_UNREACHABLE` (network failure),
  * `SERVER_TIMEOUT` (the caller's deadline aborted it), or `REQUEST_CANCELLED` (the caller aborted
- * it for any other reason; never an operator-facing failure). A response that arrived but could not
- * be decoded or validated is a bounded `INTERNAL_ERROR`.
+ * it for any other reason; never an operator-facing failure). A body stream cut off mid-read is
+ * classified the same way. A 502/503 without a Pulse error envelope (a reverse proxy reporting
+ * Pulse down) is `SERVER_UNREACHABLE` and a 504 `SERVER_TIMEOUT`, at the real status. A complete
+ * response that is not valid JSON, or carries an unknown or client-only code, is a bounded
+ * `INTERNAL_ERROR`.
  */
 export type ApiFetchResult<T> =
   | {
@@ -208,29 +211,83 @@ function decodeObservation(header: string | null): CycleObservation | null {
   return validateCycleObservation(parsed);
 }
 
-/** Read and validate a JSON error body into a bounded `ErrorEnvelope` (falls back to INTERNAL_ERROR). */
-async function readErrorEnvelope(res: Response): Promise<ErrorEnvelope> {
-  let body: unknown;
+/** The bounded error result for transport code `code` at a real HTTP status (a gateway answer). */
+function gatewayError(code: ClientTransportErrorCode, httpStatus: number): ApiFetchErrorResult {
+  return { status: "error", error: { code, message: CLIENT_TRANSPORT_MESSAGES[code] }, httpStatus };
+}
+
+/** The `res.text()` outcome: the body text, or the transport failure that cut the stream off. */
+type BodyText = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly error: ApiFetchErrorResult };
+
+/**
+ * Read a response body as text, separating transport from content: a stream that fails mid-read
+ * (connection drop, or the caller's abort/deadline) is a transport failure classified like a failed
+ * `fetch`, never a malformed body. Parsing happens afterwards, so only a complete body that is not
+ * valid JSON counts as a protocol (`INTERNAL_ERROR`) failure.
+ */
+async function readBodyText(res: Response, signal: AbortSignal | undefined): Promise<BodyText> {
   try {
-    body = await res.json();
+    return { ok: true, text: await res.text() };
   } catch {
-    return internalErrorEnvelope();
+    return { ok: false, error: transportError(signal) };
   }
-  if (!isRecord(body) || typeof body.code !== "string" || body.code === "" || typeof body.message !== "string") {
-    return internalErrorEnvelope();
+}
+
+/** Parse JSON text, or `PARSE_FAILED` when it is not valid JSON. */
+const PARSE_FAILED = Symbol("parse-failed");
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return PARSE_FAILED;
   }
-  const envelope: ErrorEnvelope = { code: body.code as ApiErrorCode, message: body.message };
+}
+
+/** Whether `code` is a code the Pulse server can send (client-only transport codes are not). */
+function isServerErrorCode(code: string): code is ApiErrorCode {
+  return Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, code);
+}
+
+/**
+ * Validate a parsed error body as a Pulse `ErrorEnvelope`: a known server `ApiErrorCode` and a
+ * string message. Returns null for anything else (HTML from a proxy, an unknown code, or a
+ * client-only transport code a server must never send).
+ */
+function toErrorEnvelope(body: unknown): ErrorEnvelope | null {
+  if (!isRecord(body) || typeof body.code !== "string" || !isServerErrorCode(body.code) || typeof body.message !== "string") {
+    return null;
+  }
+  const envelope: ErrorEnvelope = { code: body.code, message: body.message };
   return isRecord(body.details)
     ? { ...envelope, details: body.details as Readonly<Record<string, string | number | boolean | null>> }
     : envelope;
 }
 
 /**
- * A failed 2xx body read: an abort (deadline or cancellation) that interrupted the stream is a
- * transport failure, never a "server error"; otherwise the body was malformed (`INTERNAL_ERROR`).
+ * Classify a non-2xx (non-304) response. A valid Pulse envelope keeps its server code and status.
+ * Without one, a 502/503 is a reverse proxy reporting that Pulse is down (`SERVER_UNREACHABLE`) and
+ * a 504 that it did not answer in time (`SERVER_TIMEOUT`); Pulse itself only answers 503 with a
+ * `NOT_READY` envelope. Any other status without an envelope is a bounded `INTERNAL_ERROR`.
  */
-function bodyReadError(httpStatus: number, signal: AbortSignal | undefined): ApiFetchErrorResult {
-  return signal?.aborted === true ? transportError(signal) : internalError(httpStatus);
+async function readErrorResult(res: Response, signal: AbortSignal | undefined): Promise<ApiFetchErrorResult> {
+  const body = await readBodyText(res, signal);
+  const envelope = body.ok ? toErrorEnvelope(parseJson(body.text)) : null;
+  if (envelope !== null) return { status: "error", error: envelope, httpStatus: res.status };
+  if (res.status === 502 || res.status === 503) return gatewayError("SERVER_UNREACHABLE", res.status);
+  if (res.status === 504) return gatewayError("SERVER_TIMEOUT", res.status);
+  if (!body.ok) return body.error; // the error body itself was cut off: a transport failure
+  return internalError(res.status);
+}
+
+/** Read a 2xx JSON body: transport failure while streaming, or `INTERNAL_ERROR` for invalid JSON. */
+async function readOkJson<T>(
+  res: Response,
+  signal: AbortSignal | undefined,
+): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: ApiFetchErrorResult }> {
+  const body = await readBodyText(res, signal);
+  if (!body.ok) return body;
+  const value = parseJson(body.text);
+  return value === PARSE_FAILED ? { ok: false, error: internalError(res.status) } : { ok: true, value: value as T };
 }
 
 /**
@@ -276,7 +333,7 @@ async function requestOnce<T>(
 
   // Non-2xx (and not 304) — validated error envelope.
   if (!res.ok) {
-    return { status: "error", error: await readErrorEnvelope(res), httpStatus: res.status };
+    return readErrorResult(res, options?.signal);
   }
 
   // 200 on a cycle route — validate ETag/payload-id/observation BEFORE touching the body.
@@ -285,23 +342,15 @@ async function requestOnce<T>(
     const identity = validateHashId(res.headers.get("x-pulse-payload-id"));
     const observation = decodeObservation(res.headers.get("x-pulse-observation"));
     if (etag === null || identity === null || observation === null) return internalError(res.status);
-    let value: T;
-    try {
-      value = (await res.json()) as T;
-    } catch {
-      return bodyReadError(res.status, options?.signal);
-    }
-    return { status: "ok", value, etag, identity, observation };
+    const read = await readOkJson<T>(res, options?.signal);
+    if (!read.ok) return read.error;
+    return { status: "ok", value: read.value, etag, identity, observation };
   }
 
   // 200 on a non-cycle route (session/history) — null cycle metadata by route contract.
-  let value: T;
-  try {
-    value = (await res.json()) as T;
-  } catch {
-    return bodyReadError(res.status, options?.signal);
-  }
-  return { status: "ok", value, etag: null, identity: null, observation: null };
+  const read = await readOkJson<T>(res, options?.signal);
+  if (!read.ok) return read.error;
+  return { status: "ok", value: read.value, etag: null, identity: null, observation: null };
 }
 
 /**
