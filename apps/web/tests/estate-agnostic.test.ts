@@ -106,8 +106,9 @@ async function renderGrid(snapshot: OverviewSnapshot): Promise<HTMLElement> {
 describe("estate-agnostic: alt-estate (SC-8, §9.1)", () => {
   // Observed liveness series so every host/service is affirmatively alive AND its deep-link resolves.
   const series: LiveSeries[] = [
-    { name: "up", labels: { host: "builder", instance: "builder" }, value: 1 }, // managed-linux
-    { name: "up", labels: { host: "hv1", instance: "hv1" }, value: 1 }, // hypervisor-api
+    // Each host's liveness is `up` of its main scrape job (the HostDown series, issue #72).
+    { name: "up", labels: { job: "managed-linux", host: "builder", instance: "builder" }, value: 1 },
+    { name: "up", labels: { job: "hypervisor-api", host: "hv1", instance: "hv1" }, value: 1 },
     { name: "pulse_deep_health_up", labels: { host: "builder", service: "ci" }, value: 1 }, // deep-health svc
   ];
 

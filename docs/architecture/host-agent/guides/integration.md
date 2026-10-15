@@ -158,8 +158,11 @@ the `PULSE_*` constants or parsing the JSON, never a hard-coded literal:
   deep-health identifies it under `host` (the central prober self-labels). A cross-family join is a
   label rename, authored deliberately.
 - **Container health is not service liveness.** `container_*` is workload telemetry; a service's
-  liveness-of-function is `pulse_deep_health_up`, a host's is `pulse_agent_up`. Do not key a
-  service-liveness rule off `container_*`.
+  liveness-of-function is `pulse_deep_health_up`. Do not key a service-liveness rule off
+  `container_*`.
+- **Host liveness is `up` of the main scrape job, not the heartbeat.** `HostDown` and the web app
+  read `up{job="managed-linux"}`. `pulse_agent_up` is the agent heartbeat: it only ever reports 1
+  and is absent when the agent is down, so it cannot show a host down.
 - **Missing backup data is not a healthy backup.** Alert on `pulse_backup_freshness_up == 0` and on
   a stale `_age_seconds`, not on presence alone.
 

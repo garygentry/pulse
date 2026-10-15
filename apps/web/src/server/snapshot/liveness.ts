@@ -9,13 +9,10 @@
 import type { CollectionClass } from "@pulse/core";
 import type { WebEstateHost, WebEstateService } from "@pulse/renderer";
 
-import type { LiveSeries, RawCheckStatus } from "../sources/types.js";
-import type { SourceData, BuildConfig } from "./build.js";
+import { hostLivenessJob, isHostLivenessSample } from "@pulse/web-data/wire";
 
-/** True iff any series with `name` carries `host=<host>` and value `1` (§5.1). */
-function hasLive(series: LiveSeries[], name: string, host: string): boolean {
-  return series.some((s) => s.name === name && s.labels.host === host && s.value === 1);
-}
+import type { RawCheckStatus } from "../sources/types.js";
+import type { SourceData, BuildConfig } from "./build.js";
 
 /** True when `iso` is within `staleSeconds` of `now`. `iso===""`/unparseable ⇒ not fresh (§5.3). */
 export function isFresh(iso: string, now: Date, staleSeconds: number): boolean {
@@ -48,16 +45,12 @@ export function evaluateHostLiveness(
   cfg: BuildConfig,
 ): boolean | null {
   const cls: CollectionClass = host.collectionClass;
-  if (cls === "managed-linux") {
+  if (hostLivenessJob(cls) !== null) {
+    // `up` of the host's main scrape job only — the HostDown series (@pulse/web-data/wire
+    // host-liveness). An auxiliary exporter's `up` or the agent heartbeat (`pulse_agent_up`,
+    // which only ever reports 1) is never host liveness (issue #72).
     if (!data.liveness.health.ok) return null;
-    return (
-      hasLive(data.liveness.series, "pulse_agent_up", host.name) ||
-      hasLive(data.liveness.series, "up", host.name) // fallback (§5.2)
-    );
-  }
-  if (cls === "hypervisor-api" || cls === "nas-api") {
-    if (!data.liveness.health.ok) return null;
-    return hasLive(data.liveness.series, "up", host.name); // relabel-through caveat (§5.2)
+    return data.liveness.series.some((s) => isHostLivenessSample(cls, host.name, s.name, s.labels, s.value));
   }
   if (cls === "probe-only") {
     if (!data.checks.health.ok) return null;

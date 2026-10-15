@@ -52,7 +52,8 @@ couple the contract to exporter releases.
 | `container_*` | instance, name | Upstream cAdvisor per-container metrics, present only on hosts that opt into cAdvisor. Referenced as a family, not enumerated. Host/workload telemetry only. |
 
 > **Container health is NOT a service liveness signal.** A service's liveness-of-function is
-> the deep-health family; a host's liveness is the heartbeat (`pulse_agent_up`). The
+> the deep-health family; a host's liveness is `up` of its main scrape job (`managed-linux`, the
+> series `HostDown` reads), and `pulse_agent_up` is the agent heartbeat. The
 > `container_*` family is host/workload telemetry only (CPU, memory, restarts) and MUST NOT be
 > read as a "service is up" signal (REQ-CONT-03). `alerting` MUST NOT key a service-liveness or
 > service-health rule off a `container_*` series; `dashboards` MAY show it as workload
@@ -76,7 +77,7 @@ time; `version` and `component="agent"` are self-emitted, baked at image build t
 
 | Series | Labels | Description |
 |---|---|---|
-| `pulse_agent_up` | host | `1` while the per-host agent is alive. An explicit per-host liveness signal, distinct from node_exporter's `up` (REQ-HB-01). |
+| `pulse_agent_up` | host | `1` while the per-host agent is alive; absent (never `0`) when it is not. The agent heartbeat, distinct from node_exporter's `up` (REQ-HB-01). It is the agent's own health, not host liveness: `HostDown` and the web app read `up{job="managed-linux"}` for that. |
 | `pulse_agent_build_info` | host, version, component | Always `1`; carries the agent build `version` (REQ-HB-02). `component` is the fixed value `"agent"`. |
 
 ### Family: command (`pulse_`, Pulse-owned)

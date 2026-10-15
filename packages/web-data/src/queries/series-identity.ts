@@ -41,17 +41,11 @@ export const ESTATE_SCRAPE_INSTANCE_SOURCE: Readonly<Record<string, ScrapeInstan
 });
 
 /**
- * The scrape job whose `up` is a host's liveness, by collection class. It matches the HostDown
- * rule (`up{job="managed-linux"} == 0`, stack/compose/config/vmalert/rules/availability.yml): an
- * auxiliary exporter on the same host (cadvisor, process-exporter, heartbeat, …) has its own job
- * so its failure never reads as the host being down. probe-only and excluded hosts have no VM
- * liveness job.
+ * The scrape job whose `up` is a host's liveness, by collection class, and its helpers. Defined in
+ * the browser-safe `wire/host-liveness.ts` (so the client drawer shares it) and re-exported here
+ * for the server query modules. It matches the HostDown rule.
  */
-export const HOST_LIVENESS_JOB: Readonly<Record<string, string>> = Object.freeze({
-  "managed-linux": "managed-linux",
-  "nas-api": "nas-api",
-  "hypervisor-api": "hypervisor-api",
-});
+export { HOST_LIVENESS_JOB, hostLivenessJob, isHostLivenessSample } from "../wire/host-liveness.js";
 
 /**
  * The scrape jobs that scrape node_exporter directly (managed-linux :9100, and nas-api, which

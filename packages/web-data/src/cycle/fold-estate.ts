@@ -34,6 +34,7 @@ import type {
   WebFindingsArtifact,
 } from "@pulse/renderer";
 import type { FoldInputs } from "./records.js";
+import { hostLivenessJob, isHostLivenessSample } from "../wire/host-liveness.js";
 import { DEFAULT_GATUS_STALE_SECONDS, effectiveData, sourceAvailability } from "./records.js";
 import { candidateFromAlertLabels, resolveCandidate } from "./target-match.js";
 import { ENGINE_SCRAPE_JOBS, scrapeInstanceSource, scrapeSeriesIdentity } from "../queries/series-identity.js";
@@ -50,13 +51,6 @@ const DEADMANS_SWITCH_ALERTNAME = "DeadMansSwitch" as const;
 // ---------------------------------------------------------------------------
 // Liveness helpers (mirroring the overview affirmative-liveness matrix)
 // ---------------------------------------------------------------------------
-
-/** True iff any sample with `projection` carries `host=<host>` and value `1`. */
-function hasLive(series: readonly MetricSample[], projection: string, host: string): boolean {
-  return series.some(
-    (s) => s.projection === projection && s.metric["host"] === host && s.value === 1,
-  );
-}
 
 /** True when `iso` parses and is within `staleSeconds` of `now`; unparseable is never fresh. */
 function isFresh(iso: string, now: Date, staleSeconds: number): boolean {
@@ -100,15 +94,11 @@ interface EstateContext {
 /** Affirmative liveness for a host (null when the governing source is not current, or no signal). */
 function evaluateHostLiveness(host: WebEstateHostV2, ctx: EstateContext): boolean | null {
   const cls: CollectionClass = host.collectionClass;
-  if (cls === "managed-linux") {
+  if (hostLivenessJob(cls) !== null) {
+    // `up` of the host's main scrape job only — the HostDown series (wire/host-liveness.ts). An
+    // auxiliary exporter's `up` or the agent heartbeat (`pulse_agent_up`) is never host liveness.
     if (!ctx.metricsOk) return null;
-    return (
-      hasLive(ctx.liveSeries, "pulse_agent_up", host.name) || hasLive(ctx.liveSeries, "up", host.name)
-    );
-  }
-  if (cls === "hypervisor-api" || cls === "nas-api") {
-    if (!ctx.metricsOk) return null;
-    return hasLive(ctx.liveSeries, "up", host.name);
+    return ctx.liveSeries.some((s) => isHostLivenessSample(cls, host.name, s.projection, s.metric, s.value));
   }
   if (cls === "probe-only") {
     if (!ctx.checksOk) return null;
@@ -332,15 +322,25 @@ function scrapeKey(job: string, instance: string): string {
 }
 
 /**
+ * A rendered `address:port` in the form {@link scrapeUrlAddress} produces. DNS names are
+ * case-insensitive and `new URL().hostname` is always lowercase, so the host part is lowercased
+ * (the port is digits) or a mixed-case rendered address would never match its own scrape URL.
+ */
+function normalizeRenderedAddress(address: string): string {
+  return address.toLowerCase();
+}
+
+/**
  * The `host:port` a sanitized scrape URL connects to (default port by scheme), or null when there
- * is no URL or it does not parse.
+ * is no URL or it does not parse. The host part is lowercase (WHATWG URL parsing lowercases it).
  */
 function scrapeUrlAddress(scrapeUrl: string | null): string | null {
   if (scrapeUrl === null) return null;
   try {
     const url = new URL(scrapeUrl);
     const port = url.port !== "" ? url.port : url.protocol === "https:" ? "443" : url.protocol === "http:" ? "80" : "";
-    return port === "" ? url.hostname : `${url.hostname}:${port}`;
+    const host = url.hostname.toLowerCase();
+    return port === "" ? host : `${host}:${port}`;
   } catch {
     return null;
   }
@@ -380,7 +380,7 @@ function buildDeclaredVersusScraped(
       declaredRows.set(rowKey, {
         job: identity.job,
         instance: identity.instance,
-        address: scrapeInstanceSource(target.job) === "host" ? target.instance : null,
+        address: scrapeInstanceSource(target.job) === "host" ? normalizeRenderedAddress(target.instance) : null,
         rendered: target.instance,
         drilldownId: host.drilldownId,
       });

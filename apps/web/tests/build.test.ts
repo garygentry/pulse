@@ -163,6 +163,32 @@ describe("roll-up", () => {
   });
 });
 
+// ── Host liveness = up of the main scrape job (issue #72) ───────────────────────────────────────
+
+describe("host liveness reads only the main job's up, the HostDown series (issue #72)", () => {
+  const m = model({ hosts: [host({ name: "h1" })], services: [] });
+  const aux = (job: string, value: number): LiveSeries => ({ name: "up", labels: { job, host: "h1", instance: "h1" }, value });
+  const heartbeat: LiveSeries = { name: "pulse_agent_up", labels: { job: "managed-linux-heartbeat", host: "h1", instance: "h1" }, value: 1 };
+
+  test("node_exporter down while cadvisor and the heartbeat are up is not live", () => {
+    const series = [{ ...upSeries("h1"), value: 0 }, aux("cadvisor", 1), aux("managed-linux-heartbeat", 1), heartbeat];
+    const snap = buildSnapshot(m, sd({ series }), NOW, CFG);
+    expect(snap.hosts[0]!.live).toBe(false);
+    expect(snap.hosts[0]!.status).toBe("unknown");
+  });
+
+  test("the agent heartbeat alone is not host liveness", () => {
+    const snap = buildSnapshot(m, sd({ series: [heartbeat] }), NOW, CFG);
+    expect(snap.hosts[0]!.live).toBe(false);
+  });
+
+  test("the main job up is liveness even when an auxiliary exporter is down", () => {
+    const snap = buildSnapshot(m, sd({ series: [upSeries("h1"), aux("cadvisor", 0)] }), NOW, CFG);
+    expect(snap.hosts[0]!.live).toBe(true);
+    expect(snap.hosts[0]!.status).toBe("ok");
+  });
+});
+
 // ── Matching (§4) ────────────────────────────────────────────────────────────────────────────────
 
 describe("matching", () => {
