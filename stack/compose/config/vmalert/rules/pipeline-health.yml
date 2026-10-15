@@ -65,3 +65,25 @@ groups:
             ({{ $value | printf "%.0f" }} in window). The alert write-back path is backlogged;
             self-monitoring and recording series may be incomplete.
           runbook_url: "https://runbooks.pulse.local/pipeline-health"
+
+      # Issue #23: the rendered synthetic-check rules (rendered/vmalert/rules/synthetic.yml, the ONLY
+      # path by which Gatus checks page — issue #1) are not loaded. The alerting transform always
+      # renders the recording rule `pulse:synthetic_checks_bound` into that file, even for an estate
+      # with no `alerts:` binding, so its absence means the file was never mounted into vmalert (or
+      # predates this marker and was never re-rendered). Without this rule a missing mount is silent:
+      # every Gatus check stays green in the Gatus UI and nothing pages. The series is written back
+      # through vmalert remote-write, so a persistent write failure (AlertRemoteWriteBacklog) can
+      # also raise this; `for: 10m` rides out a vmalert/VictoriaMetrics restart.
+      - alert: SyntheticRulesNotLoaded
+        expr: absent(pulse:synthetic_checks_bound)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Synthetic-check (Gatus) rules are not loaded in vmalert (warning)"
+          description: >-
+            vmalert has not evaluated the synthetic-check marker pulse:synthetic_checks_bound for 10m,
+            so rendered/vmalert/rules/synthetic.yml is not mounted (or is stale). Gatus checks with an
+            alerts: binding CANNOT page until it is: re-run the alerting transform and mount
+            synthetic.yml into /etc/vmalert/rules/ (mount it even when no service has a binding).
+          runbook_url: "https://runbooks.pulse.local/pipeline-health"

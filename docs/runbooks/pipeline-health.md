@@ -1,6 +1,6 @@
 ---
 title: Pipeline health
-description: Triage and remediate the pipeline-health alert family — AlertRuleEvalErrors, AlertNotificationsFailing, AlertNotificationLatencyHigh, and AlertRemoteWriteBacklog — which distinguish a running-but-degraded alert path from a healthy one.
+description: Triage and remediate the pipeline-health alert family — AlertRuleEvalErrors, AlertNotificationsFailing, AlertNotificationLatencyHigh, AlertRemoteWriteBacklog, and SyntheticRulesNotLoaded — which distinguish a running-but-degraded alert path from a healthy one.
 slug: pipeline-health
 ---
 
@@ -24,6 +24,10 @@ built from the vmalert/Alertmanager self-monitoring series.
   is degraded though the router is up.
 - **AlertRemoteWriteBacklog** (warning) — `increase(vmalert_remotewrite_packets_dropped_total[10m]) > 0`:
   ALERTS/recording series are not being persisted; self-monitoring and downstream views lag.
+- **SyntheticRulesNotLoaded** (warning) — `absent(pulse:synthetic_checks_bound)` for 10m: vmalert has
+  not loaded the rendered `synthetic.yml`, so **no Gatus check can page**. The alerting transform
+  always writes this marker into `synthetic.yml`, so its absence means the file is not mounted or
+  was rendered before the marker existed.
 
 ## Triage
 
@@ -93,6 +97,41 @@ docker compose up -d --wait vmalert victoriametrics
 re-queried, confirming the degraded condition has cleared.
 
 **Rollback:** `git checkout` any rule/config you edited and re-up to the last-good state.
+
+#### Step 3 — Mount the rendered synthetic rules (SyntheticRulesNotLoaded)
+
+Re-render the alerting outputs so `synthetic.yml` carries the marker, then make sure your compose
+override mounts it into vmalert's rule directory, as the [rollout session](/rollout-session/) does:
+
+```yaml
+services:
+  vmalert:
+    volumes:
+      - ./config/vmalert/rules:/etc/vmalert/rules:ro
+      - <rendered>/vmalert/rules/synthetic.yml:/etc/vmalert/rules/rendered-synthetic.yml:ro
+```
+
+**Command**
+
+```bash
+bun run alerting:render <estateDir> <renderedDir>
+grep -c 'record: pulse:synthetic_checks_bound' <renderedDir>/vmalert/rules/synthetic.yml   # 1
+cd stack/compose && docker compose up -d --wait vmalert
+```
+
+**Verify (content):** vmalert lists the marker group, and one `GatusCheckFailed` rule for each bound
+check:
+
+```bash
+docker compose run --rm --entrypoint sh alertmanager -c \
+  "wget -qO- http://vmalert:8880/api/v1/rules" | grep -o 'synthetic-checks-loaded\|GatusCheckFailed' | sort | uniq -c
+```
+
+The alert resolves on vmalert's next evaluation once the marker series is back. See
+[alerting](/alerting/#detecting-a-missing-syntheticyml-mount) for what this check can and can't
+tell you.
+
+**Rollback:** remove the added volume line and re-up vmalert. Gatus paging then stops again.
 
 ## Where to go next
 

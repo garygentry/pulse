@@ -16,6 +16,8 @@ import type { AlertingFinding } from "./findings.js";
 import { serializeRuleGroups, type AlertRuleYaml } from "./rules-yaml.js";
 
 const GROUP = "synthetic-checks";
+/** The group holding the mount marker (issue #23) — emitted even when no check is bound. */
+const MARKER_GROUP = "synthetic-checks-loaded";
 const ALERT = "GatusCheckFailed"; // kept from the retired provider so routing/silences/UI carry over
 /** Runbook link shared by every synthetic-check rule. */
 const SYNTHETIC_RUNBOOK = runbookUrl(RUNBOOK_SLUGS.synthetic);
@@ -123,7 +125,12 @@ export function syntheticExpr(endpoint: string, group: string, timing: Synthetic
  *
  * @param estate   - The validated estate model.
  * @param findings - Accumulator for the advisory (`inconsistency`) findings; never an error.
- * @returns Byte-deterministic vmalert rule YAML (`groups: []` when nothing is selected).
+ * The output always ends with the `synthetic-checks-loaded` group: one recording rule,
+ * `pulse:synthetic_checks_bound = vector(<rule count>)`, the mount marker the static
+ * `SyntheticRulesNotLoaded` rule watches (issue #23). With nothing selected that group is all
+ * the file holds.
+ *
+ * @returns Byte-deterministic vmalert rule YAML.
  */
 export function buildSyntheticRules(estate: EstateModel, findings: AlertingFinding[]): string {
   // Ignored-field advisories cover every binding, rendered or not: the field is inert either way.
@@ -199,5 +206,13 @@ export function buildSyntheticRules(estate: EstateModel, findings: AlertingFindi
   }
   // Pin the evaluation interval: the nominal fire windows rely on two evaluations per check.
   const interval = formatDuration(GATUS_CHECKS.evaluationIntervalSeconds);
-  return serializeRuleGroups([{ name: GROUP, interval, rules }]);
+  // The mount marker (issue #23), rendered unconditionally — even with zero bindings — so the
+  // file is never empty and its presence in vmalert is observable: the static
+  // `SyntheticRulesNotLoaded` rule (pipeline-health.yml) fires on `absent()` of this series, i.e.
+  // when synthetic.yml was never mounted. Its value is the number of GatusCheckFailed rules here.
+  const marker = { record: METRICS.syntheticChecksBound, expr: `vector(${rules.length})` };
+  return serializeRuleGroups([
+    { name: GROUP, interval, rules },
+    { name: MARKER_GROUP, interval, rules: [marker] },
+  ]);
 }

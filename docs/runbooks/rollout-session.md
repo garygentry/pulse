@@ -105,7 +105,8 @@ amtool check-config examples/reference/rendered/alertmanager/alertmanager.yml
 confirm it prints `SUCCESS` and lists the parsed receivers — including `pulse-deadman` and
 the estate's channel receivers. The sibling rule files also appear:
 `ls examples/reference/rendered/vmalert/rules/` lists `deep-health.yml`, `backup.yml`, and
-`synthetic.yml` (the Gatus-check `GatusCheckFailed` rules).
+`synthetic.yml` (the Gatus-check `GatusCheckFailed` rules, plus the `pulse:synthetic_checks_bound`
+mount marker the transform always writes).
 
 **Rollback:** `git checkout -- examples/reference/rendered/alertmanager/alertmanager.yml
 examples/reference/rendered/vmalert/rules/` restores the prior transform outputs. The
@@ -186,10 +187,15 @@ docker compose run --rm --entrypoint sh alertmanager -c \
 # vmalert loaded the rendered rules — the backup family is live:
 docker compose run --rm --entrypoint sh alertmanager -c \
   "wget -qO- http://vmalert:8880/api/v1/rules | grep -o 'BackupNoData'"
+
+# …and so is synthetic.yml — its mount marker group is loaded:
+docker compose run --rm --entrypoint sh alertmanager -c \
+  "wget -qO- http://vmalert:8880/api/v1/rules | grep -o 'synthetic-checks-loaded'"
 ```
 
-`pulse-deadman` and `BackupNoData` appearing in the responses proves the override wired both
-artifacts into the running engine — state, not the `up --wait` exit code.
+`pulse-deadman`, `BackupNoData` and `synthetic-checks-loaded` appearing in the responses proves the
+override wired the artifacts into the running engine — state, not the `up --wait` exit code. Without
+the `synthetic.yml` mount, `SyntheticRulesNotLoaded` fires after 10 minutes.
 
 **Rollback:** `rm stack/compose/docker-compose.override.yml && cd stack/compose && docker
 compose up --wait` (or remove just these two `services:` blocks if the file also carries your

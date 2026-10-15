@@ -1,1 +1,6 @@
-groups: []
+groups:
+  - interval: 30s
+    name: synthetic-checks-loaded
+    rules:
+      - expr: vector(0)
+        record: pulse:synthetic_checks_bound

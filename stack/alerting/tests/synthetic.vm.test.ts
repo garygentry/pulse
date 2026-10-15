@@ -454,6 +454,20 @@ d("rendered synthetic.yml loads in the pinned vmalert (-dryRun, Tier B)", () => 
     expect(res.exitCode, res.stdout + res.stderr).toBe(0);
   }, 120_000);
 
+  test("a marker-only synthetic.yml (no alerts: binding) passes vmalert -dryRun (issue #23)", () => {
+    const input = loadFixtureInput("multi-service");
+    const unbound = {
+      ...input,
+      estate: { ...input.estate, services: input.estate.services.map(({ alerts: _a, ...s }) => s) },
+    };
+    const yaml = buildAlertingConfig(unbound).syntheticRules;
+    expect(yaml).not.toContain("GatusCheckFailed");
+    expect(yaml).toContain("pulse:synthetic_checks_bound");
+    writeFileSync(join(dir, "synthetic-unbound.yml"), yaml, { mode: 0o644 });
+    const res = dryRun("synthetic-unbound.yml");
+    expect(res.exitCode, res.stdout + res.stderr).toBe(0);
+  }, 120_000);
+
   test("sanity: vmalert -dryRun rejects a malformed rule file", () => {
     writeFileSync(join(dir, "bad.yml"), "groups:\n  - name: x\n    interval: soon\n    rules: []\n", {
       mode: 0o644,

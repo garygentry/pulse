@@ -70,6 +70,11 @@ export const METRICS = {
    *  job. The synthetic-check rule family pages on it (issue #1). Gatus v5.13.1 exposes no
    *  per-endpoint success gauge, so the rules work from `increase()` over this counter. */
   gatusResults: "gatus_results_total",
+  /** The mount marker (issue #23): a recording rule ALWAYS rendered into synthetic.yml (value = the
+   *  number of GatusCheckFailed rules in the file, possibly 0). The static pipeline-health rule
+   *  `SyntheticRulesNotLoaded` fires on its absence, so a deployment that never mounted the file
+   *  into vmalert is loud instead of silently losing Gatus paging. */
+  syntheticChecksBound: "pulse:synthetic_checks_bound",
 } as const;
 
 /** Synthetic-check (Gatus) rule timing (issue #1) — the ONE place the check cadence, the binding
