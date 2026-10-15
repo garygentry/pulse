@@ -17,7 +17,7 @@
 //     refresh, `useNow`) and the SSE stream still run; they re-render the same frozen data, and
 //     `toHaveScreenshot` waits for two identical consecutive captures;
 //   - rendering: animations disabled, caret hidden, reduced motion, `document.fonts.ready` awaited,
-//     timezone and locale pinned, and the build-id-bearing app version masked.
+//     timezone and locale pinned, and the build-id-bearing app version pinned to a fixed box and masked.
 
 import { expect, type Locator, type Page, type Route } from "@playwright/test";
 
@@ -121,6 +121,32 @@ function volatile(page: Page): Locator[] {
   return [page.getByRole("article", { name: /^Pulse web app/ }).getByText(/\+[0-9a-f]{6,}|nobuild/)];
 }
 
+/** Marks a volatile element for {@link PIN_VOLATILE}. */
+const VOLATILE_ATTR = "data-visual-volatile";
+
+/** Style that gives every marked volatile element a box its text cannot size: the full
+ *  width its container lays out (a grid track, independent of the content) and exactly one line,
+ *  clipped. A mask drawn over an inline, proportional-font `+<buildId>` would track the bundle hash
+ *  in width — and in line count where it wraps — moving the mask edge and the layout below it, so
+ *  every client change churned the baselines (GitHub #56). */
+const PIN_VOLATILE = `
+  [${VOLATILE_ATTR}] {
+    display: block !important; width: auto !important; height: 1.25rem !important;
+    overflow: hidden !important; white-space: nowrap !important;
+  }
+`;
+
+/** Mark every element `volatile()` matches (React leaves attributes it does not own alone), pin
+ *  its box with {@link PIN_VOLATILE}, and return the locators to mask. */
+async function markVolatile(page: Page): Promise<Locator[]> {
+  const locators = volatile(page);
+  for (const locator of locators) {
+    await locator.evaluateAll((els, attr) => els.forEach((el) => el.setAttribute(attr, "")), VOLATILE_ATTR);
+  }
+  await page.addStyleTag({ content: PIN_VOLATILE });
+  return locators;
+}
+
 /** Await web fonts, then compare against the committed baseline `name`. */
 export async function snap(
   page: Page,
@@ -128,11 +154,12 @@ export async function snap(
   opts: { fullPage?: boolean; target?: Locator; timeout?: number } = {},
 ): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
+  const mask = await markVolatile(page); // before the height settles: pinning can reflow the page
   await stableHeight(page.locator("main").first());
   const options = {
     animations: "disabled",
     caret: "hide",
-    mask: volatile(page),
+    mask,
     ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
   } as const;
   if (opts.target !== undefined) {

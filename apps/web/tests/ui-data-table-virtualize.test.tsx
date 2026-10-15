@@ -42,6 +42,13 @@ const VIEWPORT_HEIGHT = 360;
 const TALL_ROW_HEIGHT = 56;
 /** The estimate for a row not yet measured: theme.css's compact cell height (no stylesheet in jsdom). */
 const COMPACT_ESTIMATE = 32;
+/**
+ * Budget for the tests that walk the keyboard across the window (dozens of `userEvent.tab()` presses,
+ * each a React commit over the virtualized rows). They wait on nothing — no timers, no wall clock —
+ * so their run time is pure CPU: ~1 s on CI, but several seconds on a loaded 2-core host, where
+ * bun's 5 s default timed them out. The budget scales that CPU bound; it hides no race.
+ */
+const KEYBOARD_WALK_TIMEOUT_MS = 30_000;
 /** The stubbed height of the table header (0 unless a test sets it). */
 let theadHeight = 0;
 
@@ -543,7 +550,7 @@ describeUi("@/ui DataTable virtualize", () => {
         expect(document.activeElement).toHaveAttribute("data-row-link", `host-${i}`);
       }
       expect(viewport().querySelectorAll(ROW_LINK_SELECTOR).length).toBeLessThan(40);
-    });
+    }, KEYBOARD_WALK_TIMEOUT_MS);
 
     it("Tab walks every control of rows with several, at overscan 0", async () => {
       const columns: ColumnDef<Host>[] = [
@@ -570,7 +577,7 @@ describeUi("@/ui DataTable virtualize", () => {
         await userEvent.tab();
         expect(document.activeElement).toHaveAttribute("data-row-link", `host-${i + 1}`);
       }
-    });
+    }, KEYBOARD_WALK_TIMEOUT_MS);
 
     it("pins the nearest row with a link, past rows without one", async () => {
       const ref = createRef<DataTableHandle>();
@@ -905,7 +912,7 @@ describeUi("@/ui DataTable virtualize", () => {
       // The focused row is fully inside the viewport.
       expect(top).toBeGreaterThanOrEqual(viewport().scrollTop);
       expect(top + bodyRowHeight(focused)).toBeLessThanOrEqual(viewport().scrollTop + VIEWPORT_HEIGHT);
-    });
+    }, KEYBOARD_WALK_TIMEOUT_MS);
   });
 
   it("focusable={false} drops the scroll region's tab stop, plain and virtualized", () => {

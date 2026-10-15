@@ -296,6 +296,17 @@ export function run(argv: string[], env: Record<string, string> = {}): Ran {
   };
 }
 
+/** {@link run} without blocking the event loop, so independent commands can run concurrently. */
+export async function runAsync(argv: string[], env: Record<string, string> = {}): Promise<Ran> {
+  const p = Bun.spawn(argv, { env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(p.stdout).text(),
+    new Response(p.stderr).text(),
+    p.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+}
+
 /** True iff the Docker DAEMON is reachable (not merely the CLI). */
 export function dockerDaemonReachable(): boolean {
   try { return run(["docker", "version"]).exitCode === 0; }
