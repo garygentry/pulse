@@ -6,12 +6,13 @@
 // payload surfaces only when delivery is `ready` (I3). Path prefixes select the entity route kind;
 // entity names come from `route.params` and are never parsed from the path tail by EntityPage.
 
-import type { ReactElement, ReactNode } from "react";
+import type { FocusEvent, ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { EstatePayload } from "@pulse/web-data/wire";
 
 import type { ViewProps } from "../../../shared/registry.js";
 import { routeKey } from "../../router.js";
+import { isKiosk } from "../../shell/kiosk.js";
 import type { AppStore } from "../../store/index.js";
 import { refetchView } from "../../store/live-state.js";
 import type { PathRouter } from "../../router.js";
@@ -49,6 +50,12 @@ const TAB_REGION: Readonly<Record<EstateTabId, string>> = {
   coverage: "coverage explorer",
   findings: "findings",
 };
+
+/** Radix moves tab focus without scrolling, so bring the focused tab into the list's own scroll
+ *  area (the list scrolls at phone widths rather than overflowing the page). */
+function revealTab(event: FocusEvent<HTMLElement>): void {
+  event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+}
 
 /** Write the full landing query (01 §6); `navigate` carries kiosk/rotate itself. */
 function navigateQuery(router: PathRouter, next: EstateQuery, replace: boolean): void {
@@ -97,9 +104,14 @@ function Landing({ store, router, payload }: LandingProps): ReactElement {
       {/* Manual activation: arrows move focus, Enter/Space/click select (each selection is a navigation). */}
       <Tabs value={query.tab} onValueChange={onTabChange} activationMode="manual" className="min-w-0 gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <TabsList aria-label="Estate sections">
+          {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). The bar is
+              hidden so a classic scrollbar can't squeeze the fixed-height tabs; a clipped tab shows the overflow. */}
+          <TabsList
+            aria-label="Estate sections"
+            className="max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+          >
             {TAB_ITEMS.map((item) => (
-              <TabsTrigger key={item.id} value={item.id}>
+              <TabsTrigger key={item.id} value={item.id} onFocus={revealTab}>
                 <Icon name={item.icon} />
                 {item.label}
               </TabsTrigger>
@@ -158,7 +170,7 @@ export default function EstateView(props: ViewProps): ReactElement {
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}
     >
-      <EstateViewBody store={props.store} router={props.router} />
+      <EstateViewBody store={props.store} router={props.router} rotation={props.rotation ?? null} />
     </PageErrorBoundary>
   );
 }
@@ -170,8 +182,10 @@ function logViewFault(error: unknown): void {
 
 function EstateViewBody(props: ViewProps): ReactElement {
   useSignals();
-  const { store, router } = props;
+  const { store, router, rotation } = props;
   const route = store.route.value;
+  // Kiosk: the query flag OR an active rotation context (the engine view's rule).
+  const kiosk = isKiosk(route.query) || (rotation !== undefined && rotation !== null);
   const payload = readEstate(store);
 
   // The single delivery adapter site. Fetch causes are published alongside the estate payload.
@@ -179,7 +193,15 @@ function EstateViewBody(props: ViewProps): ReactElement {
   const target = entityTarget(route);
 
   return (
-    <div data-slot="estate-page" data-testid="estate-view" className="h-full min-w-0">
+    <div
+      data-slot="estate-page"
+      data-testid="estate-view"
+      // Kiosk drops the shell's outlet padding, so the page brings its own wallboard gutter (#58), as
+      // the overview, alerts, engine and timeline pages do. This root wraps every estate render (the
+      // landing, its loading/error states, the entity pages), so all of them keep the gutter.
+      className={kiosk ? "h-full min-w-0 p-4" : "h-full min-w-0"}
+      data-kiosk={kiosk ? "1" : "0"}
+    >
       {/* Entity pages carry their own frame and h1; the landing and delivery states share "Estate". */}
       {delivery.kind === "ready" && payload !== null && target !== null ? (
         <EntityPage store={store} router={router} target={target} />

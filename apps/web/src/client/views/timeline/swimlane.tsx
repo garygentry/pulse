@@ -25,7 +25,7 @@ import type { SeverityRow, SwimInterval, SwimSeverity } from "./swimlane-pack.js
 import type { LaneTree as LaneTreeModel } from "./model.js";
 import { LaneDecorations } from "./decorations.js";
 import type { DecorationMark } from "./decorations.js";
-import { DEFAULT_ROW_PX, LANE_GAP_PX, MIN_PLOT_WIDTH_PX, isoOf } from "./lanes-model.js";
+import { DEFAULT_ROW_PX, LANE_GAP_PX, MIN_PLOT_WIDTH_PX, isoOf, memoSecondsFormatter } from "./lanes-model.js";
 import { LANES_GRID_CLASS, PLOT_BLOCK_CLASS, PLOT_COL_CLASS } from "./lanes.js";
 import { SWIMLANE_READOUT_ORDER, SWIM_ROW_TEXT, swimIntervalHref, swimIntervalText } from "./swimlane-model.js";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -130,6 +130,7 @@ function SwimRows(p: SwimRowsProps): ReactElement {
   const { tree, axis, readouts, clock, interactive } = p.props;
   const view = axis.view.value;
   const rows = useMemo(() => buildSeverityRows(payload, tree, view), [payload, tree, view.start, view.end]);
+  const formatTime = useMemo(() => memoSecondsFormatter(clock), [clock]);
   const active = useSignal<Readonly<Partial<Record<SwimSeverity, number>>>>({});
   const plotColRef = useRef<HTMLDivElement>(null);
   const stackRef = useRef<HTMLDivElement>(null);
@@ -312,7 +313,7 @@ function SwimRows(p: SwimRowsProps): ReactElement {
                     className="block max-w-none"
                     lanes={lanes}
                     statusMap={ALERT_SEVERITY}
-                    formatTime={(s) => clock.format(isoOf(s))}
+                    formatTime={formatTime}
                     domainStart={view.start}
                     domainEnd={view.end}
                     width={plotWidth}

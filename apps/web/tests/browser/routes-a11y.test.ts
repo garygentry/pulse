@@ -37,9 +37,16 @@ const ROUTES: readonly { path: string; nav: string }[] = [
 ];
 
 /** The wallboards checked for a kiosk side gutter, and the least gutter they keep (the wallboard
- *  `p-4` is 20px; 16px is the desk outlet's). /estate is not listed yet: its kiosk page has the
- *  same gap, a follow-up outside #48. */
-const KIOSK_ROUTES = ["/overview", "/alerts", "/timeline", "/engine"] as const;
+ *  `p-4` is 20px; 16px is the desk outlet's). The estate entity pages share the estate page root. */
+const KIOSK_ROUTES = [
+  "/overview",
+  "/alerts",
+  "/timeline",
+  "/engine",
+  "/estate",
+  "/estate/host/harbor-hv-01",
+  "/estate/service/harbor-web-01/portal-web",
+] as const;
 const KIOSK_GUTTER_PX = 16;
 
 const MODES = [
@@ -130,7 +137,7 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
   }
 
   // Kiosk drops the shell's outlet padding (full-bleed page fit), so each wallboard page brings its
-  // own side gutter. A view that forgets it sits flush at x=0 (GitHub #48: the alerts wallboard).
+  // own side gutter. A view that forgets it sits flush at x=0 (GitHub #48: alerts; #58: estate).
   test("kiosk: every wallboard page keeps a side gutter at 1920px", async () => {
     const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
     contexts.push(context);
@@ -138,6 +145,8 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
     const flush: string[] = [];
     for (const path of KIOSK_ROUTES) {
       await visit(page, `${path}?kiosk=1`);
+      // An entity route measures its rendered entity page, not a loading or not-found stand-in.
+      if (path.startsWith("/estate/")) await page.waitForSelector('[data-testid="estate-entity"]', { timeout: 30_000 });
       const edges = await page.evaluate(() => {
         const root = document.querySelector<HTMLElement>('main [data-slot$="-page"]')!;
         const r = root.getBoundingClientRect();
@@ -172,6 +181,80 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
     expect(standIns.error).toBeGreaterThanOrEqual(KIOSK_GUTTER_PX);
     expect(standIns.page).toBe(0); // a page root brings its own gutter; the outlet adds none
     expect(flush, flush.join("\n")).toEqual([]);
+  }, 120_000);
+
+  // No page-level horizontal scroll at phone widths, kiosk or not: a tab list too wide for the
+  // viewport scrolls inside itself (the estate and alerts tabs overflowed the page before).
+  test("phone widths: the tabbed pages keep scrollWidth within the viewport", async () => {
+    const cases = [
+      { width: 320, path: "/estate" },
+      { width: 320, path: "/estate?kiosk=1" },
+      { width: 375, path: "/estate?kiosk=1" },
+      { width: 320, path: "/alerts?kiosk=1" },
+    ] as const;
+    const overflow: string[] = [];
+    for (const { width, path } of cases) {
+      const context = await browser.newContext({ viewport: { width, height: 800 } });
+      contexts.push(context);
+      const page = await context.newPage();
+      await visit(page, path);
+      await page.waitForSelector('main [role="tablist"]', { timeout: 30_000 });
+      const { scroll, client } = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      if (scroll > client) overflow.push(`${path} at ${width}px: scrollWidth ${scroll} > clientWidth ${client}`);
+      // Arrow focus to the last tab scrolls it into the list's view (Radix focuses without scrolling).
+      const tabs = page.locator('main [role="tablist"]').first().getByRole("tab");
+      await tabs.first().focus();
+      await page.keyboard.press("End");
+      await page.waitForFunction(() => {
+        const list = document.querySelector('main [role="tablist"]')!.getBoundingClientRect();
+        const tab = document.activeElement!.getBoundingClientRect();
+        return document.activeElement!.getAttribute("role") === "tab" && tab.right <= list.right + 0.5;
+      }, undefined, { timeout: 5_000 });
+    }
+    expect(overflow, overflow.join("\n")).toEqual([]);
+  }, 120_000);
+
+  // Headless Chromium hides scrollbars by default, which hides what a classic (always-visible)
+  // scrollbar does to the scrollable tab list: a stray vertical bar from the triggers' invisible
+  // underline, and a horizontal bar squeezing the fixed-height tabs. Launch with scrollbars shown.
+  test("classic scrollbars: the tab list grows no scrollbar and its tabs keep their height", async () => {
+    const { chromium } = await import("playwright-core");
+    const visible = await chromium.launch({ headless: true, ignoreDefaultArgs: ["--hide-scrollbars"] });
+    try {
+      const problems: string[] = [];
+      for (const { width, path } of [
+        { width: 1280, path: "/estate" },
+        { width: 1280, path: "/alerts" },
+        { width: 768, path: "/estate?kiosk=1" },
+        { width: 320, path: "/estate" },
+        { width: 320, path: "/alerts?kiosk=1" },
+      ] as const) {
+        const page = await (await visible.newContext({ viewport: { width, height: 800 } })).newPage();
+        await visit(page, path);
+        await page.waitForSelector('main [role="tablist"]', { timeout: 30_000 });
+        const m = await page.evaluate(() => {
+          const list = document.querySelector<HTMLElement>('main [role="tablist"]')!;
+          const tabs = [...list.querySelectorAll<HTMLElement>('[role="tab"]')].map((t) => t.getBoundingClientRect().height);
+          return {
+            barX: list.offsetHeight - list.clientHeight - 2 * list.clientTop,
+            barY: list.offsetWidth - list.clientWidth - 2 * list.clientLeft,
+            minTab: Math.min(...tabs),
+            // The list's own box less its padding: a horizontal bar would sit inside this.
+            listInner: list.offsetHeight - parseFloat(getComputedStyle(list).paddingTop) * 2,
+          };
+        });
+        if (m.barX !== 0 || m.barY !== 0) problems.push(`${path} at ${width}px: tab list scrollbar ${JSON.stringify(m)}`);
+        // Each tab fills the list's box (h-[calc(100%-1px)]), not the sliver a horizontal bar leaves.
+        if (m.minTab < m.listInner - 1.5) problems.push(`${path} at ${width}px: tabs squeezed ${JSON.stringify(m)}`);
+        await page.context().close();
+      }
+      expect(problems, problems.join("\n")).toEqual([]);
+    } finally {
+      await visible.close();
+    }
   }, 120_000);
 
   test("keyboard: the skip link leads to <main>, and the nav routes by keyboard", async () => {

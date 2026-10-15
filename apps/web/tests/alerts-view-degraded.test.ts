@@ -10,6 +10,10 @@ import type { ReactElement } from "react";
 import { describeDom } from "./dom.js";
 import { FIXTURE_LAST_GOOD_AT, makeAlertsPayload } from "./alerts-fixtures.js";
 import { isolateDomGlobals } from "./alerts-dom-isolation.js";
+import { TZ_FALLBACK_MARKER, createEstateClock } from "../src/client/format.js";
+
+const CLOCK = createEstateClock({ name: "", timezone: "Asia/Kathmandu", tzFallback: false });
+const UTC_FALLBACK = createEstateClock({ name: "", timezone: "UTC", tzFallback: true });
 
 isolateDomGlobals();
 
@@ -35,34 +39,37 @@ function avail(
 describe("formatLastGood", () => {
   test("null and unparseable input return 'time unknown' without throwing", async () => {
     const { formatLastGood } = await loadDegraded();
-    expect(() => formatLastGood(null)).not.toThrow();
-    expect(formatLastGood(null)).toBe("time unknown");
-    expect(() => formatLastGood("not-a-date")).not.toThrow();
-    expect(formatLastGood("not-a-date")).toBe("time unknown");
+    expect(() => formatLastGood(null, CLOCK)).not.toThrow();
+    expect(formatLastGood(null, CLOCK)).toBe("time unknown");
+    expect(() => formatLastGood("not-a-date", CLOCK)).not.toThrow();
+    expect(formatLastGood("not-a-date", CLOCK)).toBe("time unknown");
   });
 
-  test("a valid ISO string returns a local HH:MM", async () => {
+  test("#51: a valid ISO string reads in the estate zone (the estate clock), not the browser's", async () => {
     const { formatLastGood } = await loadDegraded();
-    const out = formatLastGood(FIXTURE_LAST_GOOD_AT);
-    expect(out).toMatch(/\d{1,2}:\d{2}/);
-    expect(out).toBe(
-      new Date(Date.parse(FIXTURE_LAST_GOOD_AT)).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    );
+    const out = formatLastGood(FIXTURE_LAST_GOOD_AT, CLOCK);
+    expect(out).toBe(CLOCK.format(FIXTURE_LAST_GOOD_AT));
+    expect(out).toMatch(/ GMT\+5:45$/);
+  });
+
+  test("#51: a UTC fallback clock surfaces the TZ fallback marker", async () => {
+    const { formatLastGood } = await loadDegraded();
+    expect(formatLastGood(FIXTURE_LAST_GOOD_AT, UTC_FALLBACK)).toBe(`${UTC_FALLBACK.format(FIXTURE_LAST_GOOD_AT)} (${TZ_FALLBACK_MARKER})`);
   });
 });
 
 describe("sourceStatusHeadline / sourceStatusViews", () => {
   test("is total over AvailabilityState and names the source + last-good time", async () => {
     const { formatLastGood, sourceStatusHeadline } = await loadDegraded();
-    const at = formatLastGood(FIXTURE_LAST_GOOD_AT);
+    const at = formatLastGood(FIXTURE_LAST_GOOD_AT, CLOCK);
     const mk = (state: DataAvailability["state"]) =>
-      sourceStatusHeadline({
-        label: "Alertmanager",
-        availability: avail("alertmanager-alerts", state, FIXTURE_LAST_GOOD_AT, null),
-      });
+      sourceStatusHeadline(
+        {
+          label: "Alertmanager",
+          availability: avail("alertmanager-alerts", state, FIXTURE_LAST_GOOD_AT, null),
+        },
+        CLOCK,
+      );
     expect(mk("stale")).toBe(`Alertmanager data is stale — last updated ${at}`);
     expect(mk("unavailable")).toBe(`Alertmanager unreachable — showing data as of ${at}`);
     expect(mk("not-configured")).toBe("Alertmanager is not configured");
@@ -98,7 +105,7 @@ describeDom("SourceStatus / SourceStatusBanners", (dom) => {
   async function mountBanners(payload: AlertsPayload): Promise<HTMLElement> {
     const { createElement: h } = await import("react");
     const { SourceStatusBanners } = await loadDegraded();
-    const { container } = await dom.mount(h(SourceStatusBanners, { payload }) as unknown as ReactElement);
+    const { container } = await dom.mount(h(SourceStatusBanners, { payload, clock: CLOCK }) as unknown as ReactElement);
     return container;
   }
 
@@ -119,7 +126,7 @@ describeDom("SourceStatus / SourceStatusBanners", (dom) => {
   test("SourceStatus returns null for a current source", async () => {
     const { SourceStatus } = await loadDegraded();
     const p = makeAlertsPayload({ scenario: "mixed" });
-    expect(SourceStatus({ source: { label: "vmalert", availability: p.vmalert } })).toBeNull();
+    expect(SourceStatus({ source: { label: "vmalert", availability: p.vmalert }, clock: CLOCK })).toBeNull();
   });
 
   test("a non-current source renders a source-named unknown Callout (role=status, icon + headline + detail)", async () => {
@@ -147,7 +154,7 @@ describeDom("SourceStatus / SourceStatusBanners", (dom) => {
     const c = await mountBanners(makeAlertsPayload({ scenario: "stale" }));
     const [b] = banners(c);
     expect(b?.getAttribute("data-availability")).toBe("stale");
-    expect(b?.textContent).toContain(formatLastGood(FIXTURE_LAST_GOOD_AT));
+    expect(b?.textContent).toContain(formatLastGood(FIXTURE_LAST_GOOD_AT, CLOCK));
     expect(b?.textContent).toContain("stale");
   });
 

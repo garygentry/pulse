@@ -5,12 +5,15 @@ import type { ReactElement } from "react";
 
 import { Callout, TARGET_STATUS } from "@/ui";
 import type { AlertsPayload } from "@pulse/web-data/wire";
+import type { EstateClock } from "../../format.js";
 import { sourceStatusHeadline, sourceStatusViews } from "./degraded-model.js";
 import type { SourceStatusView } from "./degraded-model.js";
 
 /** Props for {@link SourceStatus} — a single source. */
 export interface SourceStatusProps {
   readonly source: SourceStatusView;
+  /** The estate clock for the last-good time. */
+  readonly clock: EstateClock;
 }
 
 /**
@@ -18,7 +21,7 @@ export interface SourceStatusProps {
  * source-named Callout (icon + text, never colour alone) with the unknown status presentation.
  * A polite status region, not a live alert.
  */
-export function SourceStatus({ source }: SourceStatusProps): ReactElement | null {
+export function SourceStatus({ source, clock }: SourceStatusProps): ReactElement | null {
   const { availability } = source;
   if (availability.state === "current") return null; // healthy → no indicator (partial render)
 
@@ -30,7 +33,7 @@ export function SourceStatus({ source }: SourceStatusProps): ReactElement | null
       role="status"
       tone={TARGET_STATUS.unknown.tone}
       icon={TARGET_STATUS.unknown.icon}
-      title={sourceStatusHeadline(source)}
+      title={sourceStatusHeadline(source, clock)}
       data-status="unknown"
       data-availability={availability.state}
       data-source={availability.source}
@@ -42,11 +45,11 @@ export function SourceStatus({ source }: SourceStatusProps): ReactElement | null
 
 /** The notice group `view.tsx` mounts above the facets. Each source renders independently; a
  *  `current` source contributes nothing, so the group collapses (`empty:hidden`) when both are healthy. */
-export function SourceStatusBanners({ payload }: { readonly payload: AlertsPayload }): ReactElement {
+export function SourceStatusBanners({ payload, clock }: { readonly payload: AlertsPayload; readonly clock: EstateClock }): ReactElement {
   return (
     <div data-source-status-group="" className="grid gap-2 empty:hidden">
       {sourceStatusViews(payload).map((s) => (
-        <SourceStatus key={s.availability.source} source={s} />
+        <SourceStatus key={s.availability.source} source={s} clock={clock} />
       ))}
     </div>
   );

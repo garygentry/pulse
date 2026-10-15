@@ -70,6 +70,10 @@ function formatRelative(isoUtc: string, nowMs: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** The estate to format with before the first snapshot arrives: UTC, flagged as the fallback, so a
+ *  time is never printed without a zone. */
+export const FALLBACK_ESTATE: OverviewSnapshot["estate"] = { name: "", timezone: "UTC", tzFallback: true };
+
 /** Build an `EstateClock` from a snapshot's estate block.
  *  @param estate - `snapshot.estate` (`{ name; timezone; tzFallback }`). */
 export function createEstateClock(estate: OverviewSnapshot["estate"]): EstateClock {
