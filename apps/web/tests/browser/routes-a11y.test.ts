@@ -36,6 +36,12 @@ const ROUTES: readonly { path: string; nav: string }[] = [
   { path: "/engine", nav: "Engine" },
 ];
 
+/** The wallboards checked for a kiosk side gutter, and the least gutter they keep (the wallboard
+ *  `p-4` is 20px; 16px is the desk outlet's). /estate is not listed yet: its kiosk page has the
+ *  same gap, a follow-up outside #48. */
+const KIOSK_ROUTES = ["/overview", "/alerts", "/timeline", "/engine"] as const;
+const KIOSK_GUTTER_PX = 16;
+
 const MODES = [
   { theme: "light", density: "desk" },
   { theme: "dark", density: "desk" },
@@ -122,6 +128,51 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
       expect(failures, failures.join("\n")).toEqual([]);
     }, 300_000);
   }
+
+  // Kiosk drops the shell's outlet padding (full-bleed page fit), so each wallboard page brings its
+  // own side gutter. A view that forgets it sits flush at x=0 (GitHub #48: the alerts wallboard).
+  test("kiosk: every wallboard page keeps a side gutter at 1920px", async () => {
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    contexts.push(context);
+    const page = await context.newPage();
+    const flush: string[] = [];
+    for (const path of KIOSK_ROUTES) {
+      await visit(page, `${path}?kiosk=1`);
+      const edges = await page.evaluate(() => {
+        const root = document.querySelector<HTMLElement>('main [data-slot$="-page"]')!;
+        const r = root.getBoundingClientRect();
+        const cs = getComputedStyle(root);
+        return {
+          left: r.left + parseFloat(cs.paddingLeft),
+          right: document.documentElement.clientWidth - (r.right - parseFloat(cs.paddingRight)),
+        };
+      });
+      if (edges.left < KIOSK_GUTTER_PX || edges.right < KIOSK_GUTTER_PX) flush.push(`${path}: ${JSON.stringify(edges)}`);
+    }
+    // What the kiosk outlet renders in place of a page root (the view chunk's loading/error state, a
+    // page error fallback) gets the same gutter from <main>.
+    const standIns = await page.evaluate(() => {
+      const main = document.querySelector("main")!;
+      const probe = (attrs: Record<string, string>): number => {
+        const el = document.createElement("div");
+        for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+        el.textContent = "probe";
+        main.append(el);
+        const left = parseFloat(getComputedStyle(el).paddingLeft);
+        el.remove();
+        return left;
+      };
+      return {
+        loading: probe({ "data-slot": "loading-state" }),
+        error: probe({ "data-slot": "alerts-page", "data-state": "error" }),
+        page: probe({ "data-slot": "alerts-page" }),
+      };
+    });
+    expect(standIns.loading).toBeGreaterThanOrEqual(KIOSK_GUTTER_PX);
+    expect(standIns.error).toBeGreaterThanOrEqual(KIOSK_GUTTER_PX);
+    expect(standIns.page).toBe(0); // a page root brings its own gutter; the outlet adds none
+    expect(flush, flush.join("\n")).toEqual([]);
+  }, 120_000);
 
   test("keyboard: the skip link leads to <main>, and the nav routes by keyboard", async () => {
     const page = await open(MODES[0]);

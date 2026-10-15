@@ -11,7 +11,6 @@ import type {
   HealthState,
   RuleState,
   ScrapeJobState,
-  StatusInterval,
   TargetStatus,
 } from "@pulse/web-data/wire";
 
@@ -82,12 +81,6 @@ export const SEVERITY_STATUS: Readonly<Record<string, TargetStatus>> = {
 export function severityToStatus(severity: string): TargetStatus {
   return Object.hasOwn(SEVERITY_STATUS, severity) ? (SEVERITY_STATUS[severity] ?? "unknown") : "unknown";
 }
-
-/** History StatusInterval.state → timeline segment status. */
-export const INTERVAL_STATUS: Readonly<Record<StatusInterval["state"], TargetStatus>> = {
-  firing: "critical",
-  failed: "warning",
-};
 
 /** Rule health → status, total over the closed `RuleState.health` union. */
 export const RULE_HEALTH_STATUS: Readonly<Record<RuleState["health"], TargetStatus>> = {

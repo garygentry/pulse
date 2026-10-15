@@ -4,6 +4,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  buildIdText,
   hideShell,
   open,
   prepare,
@@ -24,6 +25,9 @@ test.describe("engine visual baselines", () => {
       await settled(root);
       // Every trend chart has drawn (five curated engine series, fed by visual-kit's history route).
       await expect(root.locator("canvas")).toHaveCount(5);
+      // The build id must be found to be pinned and masked: a selector or format change that
+      // matched nothing would silently bring back the per-build churn (GitHub #56).
+      await expect(buildIdText(page)).toHaveCount(1);
       await hideShell(page);
       await snap(page, `engine-${width}-${theme}.png`);
     });

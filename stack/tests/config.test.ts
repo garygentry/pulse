@@ -18,7 +18,7 @@
 
 /// <reference path="./bun-test.d.ts" />
 
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -35,14 +35,45 @@ import {
   PROFILE,
   RENDERED_MOUNTS,
   REPO_ROOT,
-  run,
+  runAsync,
   smokeComposeArgs,
 } from "./harness.js";
-import type { ComposeConfig, ComposeService, RenderedManifest } from "./harness.js";
+import type { ComposeConfig, ComposeService, Ran, RenderedManifest } from "./harness.js";
 
 /* ===========================================================================================
  * Parse helpers — a STATIC compose parse (no daemon; 06 §2)
  * ========================================================================================= */
+
+/**
+ * Every Compose invocation this file asserts on, run ONCE and CONCURRENTLY before the tests.
+ * Each test used to spawn `docker compose config` synchronously inside its own 5 s budget; one
+ * parse takes ~0.1 s idle, but the Docker CLI's start-up is what a loaded host slows down, and a
+ * test spawning two of them timed out (the compose-parse flake). The parse is a pure function of
+ * the committed tree, so sharing it changes no assertion. The hook's budget is generous on purpose:
+ * it bounds process start-up under load, it is not a sleep, and the idle cost stays ~0.1 s.
+ */
+const SMOKE_PROJECT = createSmokeProjectName("config");
+const COMPOSE_RUN_BUDGET_MS = 60_000;
+let parsed:
+  | { readonly config: Ran; readonly allProfiles: Ran; readonly services: Ran; readonly smoke: Ran }
+  | undefined;
+
+beforeAll(async () => {
+  const configArgs = ["docker", "compose", "-f", COMPOSE_FILE, "config", "--format", "json"];
+  const [config, allProfiles, services, smoke] = await Promise.all([
+    runAsync(configArgs, FIXTURE_ENV),
+    runAsync(configArgs, { ...FIXTURE_ENV, COMPOSE_PROFILES: `${PROFILE.web},${PROFILE.deepHealth}` }),
+    runAsync(["docker", "compose", "-f", COMPOSE_FILE, "config", "--services"], FIXTURE_ENV),
+    runAsync(smokeComposeArgs(SMOKE_PROJECT, COMPOSE_FILE, "config", "--format", "json"), FIXTURE_ENV),
+  ]);
+  parsed = { config, allProfiles, services, smoke };
+}, COMPOSE_RUN_BUDGET_MS);
+
+/** The shared run of `key`; throws (RED) if the hook never produced it (e.g. the CLI is absent). */
+function composeRun(key: keyof NonNullable<typeof parsed>): Ran {
+  if (parsed === undefined) throw new Error("the Compose runs did not complete (see the beforeAll failure)");
+  return parsed[key];
+}
 
 /**
  * Parse-validate the merged tree WITHOUT touching the daemon (default profile only).
@@ -51,10 +82,7 @@ import type { ComposeConfig, ComposeService, RenderedManifest } from "./harness.
  * turns into a thrown, legible failure (06 §4.1/§4.2). It never self-skips (see file header).
  */
 function composeConfig(): ComposeConfig {
-  const res = run(
-    ["docker", "compose", "-f", COMPOSE_FILE, "config", "--format", "json"],
-    FIXTURE_ENV,
-  );
+  const res = composeRun("config");
   if (res.exitCode !== 0) {
     throw new Error(
       "docker compose config failed (malformed tree, or Docker CLI absent — this hermetic " +
@@ -70,10 +98,7 @@ function composeConfig(): ComposeConfig {
  * omitted from the default-profile output). Still no daemon.
  */
 function composeConfigAllProfiles(): ComposeConfig {
-  const res = run(["docker", "compose", "-f", COMPOSE_FILE, "config", "--format", "json"], {
-    ...FIXTURE_ENV,
-    COMPOSE_PROFILES: `${PROFILE.web},${PROFILE.deepHealth}`,
-  });
+  const res = composeRun("allProfiles");
   if (res.exitCode !== 0) {
     throw new Error(`docker compose config (all profiles) failed:\n${res.stderr}`);
   }
@@ -122,7 +147,7 @@ test("the tree parses and names the project `pulse` (REQ-COMPOSE-01/02)", () => 
 });
 
 test("Docker smoke projects override `pulse` with unique test-only identities (issue #24)", () => {
-  const first = createSmokeProjectName("config");
+  const first = SMOKE_PROJECT;
   const second = createSmokeProjectName("config");
   expect(/^pulse-test-config-\d+-[0-9a-f-]{36}$/.test(first)).toBe(true);
   expect(second).not.toBe(first);
@@ -136,10 +161,7 @@ test("Docker smoke projects override `pulse` with unique test-only identities (i
   expect(refusedProduction).toBe(true);
 
   // Static Compose parse: `-p` must scope the project and every named resource without a daemon.
-  const overridden = run(
-    smokeComposeArgs(first, COMPOSE_FILE, "config", "--format", "json"),
-    FIXTURE_ENV,
-  );
+  const overridden = composeRun("smoke");
   expect(overridden.exitCode, overridden.stderr).toBe(0);
   const parsed = JSON.parse(overridden.stdout) as ComposeConfig;
   expect(parsed.name).toBe(first);
@@ -400,8 +422,10 @@ test("every default-profile service declares a healthcheck with test + retries (
 
 test("default profile == DEFAULT_PROFILE_SERVICES; web/deep-health are gated", () => {
   // `--services` under NO active profile lists exactly the default-profile set (sorted).
-  const listed = run(["docker", "compose", "-f", COMPOSE_FILE, "config", "--services"], FIXTURE_ENV)
-    .stdout.trim()
+  const services = composeRun("services");
+  expect(services.exitCode, services.stderr).toBe(0);
+  const listed = services.stdout
+    .trim()
     .split("\n")
     .filter(Boolean)
     .sort();

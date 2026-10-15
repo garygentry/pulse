@@ -296,6 +296,26 @@ export function run(argv: string[], env: Record<string, string> = {}): Ran {
   };
 }
 
+/**
+ * {@link run} without blocking the event loop, so independent commands can run concurrently.
+ * Never throws: a command that cannot be spawned (e.g. no `docker` on PATH) comes back as exit
+ * 127 with the spawn error as stderr, so each caller's own exit-code check fails it by name.
+ */
+export async function runAsync(argv: string[], env: Record<string, string> = {}): Promise<Ran> {
+  let p: ReturnType<typeof Bun.spawn<"ignore", "pipe", "pipe">>;
+  try {
+    p = Bun.spawn(argv, { env: { ...process.env, ...env }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  } catch (error) {
+    return { exitCode: 127, stdout: "", stderr: `cannot run ${argv[0]}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(p.stdout).text(),
+    new Response(p.stderr).text(),
+    p.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+}
+
 /** True iff the Docker DAEMON is reachable (not merely the CLI). */
 export function dockerDaemonReachable(): boolean {
   try { return run(["docker", "version"]).exitCode === 0; }

@@ -24,6 +24,7 @@ import {
 import type { DataTableHandle, IconName } from "@/ui";
 import type { ViewProps } from "../../../shared/registry.js";
 import { routeKey } from "../../router.js";
+import { isKiosk } from "../../shell/kiosk.js";
 
 import { facetValues, firingRows, readAlerts } from "./model.js";
 import { FACET_DELIMITER, QUERY_KEYS, TARGET_ALIAS_KEY, decodeTriageRoute, encodeTriageState } from "./url-state.js";
@@ -82,12 +83,12 @@ export default function AlertsView(props: ViewProps): ReactElement {
       message="Reload to try again — other views are unaffected."
       onError={logViewFault}
     >
-      <AlertsViewBody store={props.store} router={props.router} />
+      <AlertsViewBody store={props.store} router={props.router} rotation={props.rotation ?? null} />
     </PageErrorBoundary>
   );
 }
 
-function AlertsViewBody({ store, router }: ViewProps): ReactElement {
+function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
   useSignals();
   // Route is a signal so back/forward + navigate re-render the view.
   const route = useSignal(router.current());
@@ -98,6 +99,9 @@ function AlertsViewBody({ store, router }: ViewProps): ReactElement {
     route.value = router.current(); // resync in case it changed between first render and effect
     return off;
   }, [router]);
+
+  // Kiosk: the query flag OR an active rotation context (the engine view's rule).
+  const kiosk = isKiosk(route.value.query) || (rotation !== undefined && rotation !== null);
 
   // Single store read — zero upstream fan-out. Signals auto-track.
   const payload = readAlerts(store);
@@ -230,7 +234,13 @@ function AlertsViewBody({ store, router }: ViewProps): ReactElement {
   }
 
   return (
-    <div data-slot="alerts-page" className="grid min-w-0 gap-4">
+    <div
+      data-slot="alerts-page"
+      // Kiosk drops the shell's outlet padding, so the page brings its own wallboard gutter (#48),
+      // as the overview, engine and timeline pages do.
+      className={kiosk ? "grid min-w-0 gap-4 p-4" : "grid min-w-0 gap-4"}
+      data-kiosk={kiosk ? "1" : "0"}
+    >
       <PageHeader title="Alerts" />
       {/* Controlled by the URL: a tab change navigates, and the route re-selects the tab. */}
       <Tabs value={tab} onValueChange={onTabChange} className="min-w-0 gap-4">

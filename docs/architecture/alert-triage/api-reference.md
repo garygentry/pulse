@@ -377,7 +377,6 @@ interface SeverityTaxonomy {
 
 const SEVERITY_TAXONOMY: SeverityTaxonomy;
 const SEVERITY_STATUS: Readonly<Record<string, TargetStatus>>;
-const INTERVAL_STATUS: Readonly<Record<StatusInterval["state"], TargetStatus>>;
 const DEFAULT_HISTORY_RANGE: RangeId;
 function severityToStatus(severity: string): TargetStatus;
 ```

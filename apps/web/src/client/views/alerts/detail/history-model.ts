@@ -10,10 +10,9 @@ import type {
   RangeId,
   StatusInterval,
   TargetIdentity,
-  TargetStatus,
 } from "@pulse/web-data/wire";
-import type { TimelineLane, TimelineSegment } from "@/ui";
-import { INTERVAL_STATUS } from "../../../status/target-status.js";
+import { alertIntervalStatusOf } from "@/ui";
+import type { AlertIntervalStatus, AlertSeverity, TimelineLane, TimelineSegment } from "@/ui";
 
 /** Discriminated union — the ONLY history states the strip renders. No throws. */
 export type HistoryViewState =
@@ -74,10 +73,11 @@ export function isAlertOwnLane(alert: ActiveAlert, lane: AlertHistoryLane): bool
 // Lanes → StatusTimeline mapping
 // ---------------------------------------------------------------------------
 
-/** Map one wire StatusInterval to a viz TimelineSegment: ISO bounds → epoch ms, state → TargetStatus. */
-function toSegment(iv: StatusInterval): TimelineSegment<TargetStatus> {
+/** Map one wire StatusInterval to a viz TimelineSegment: ISO bounds → epoch ms; a firing interval
+ *  takes its lane's severity (the timeline swimlane's colouring), a failed one its own state. */
+function toSegment(iv: StatusInterval, severity: AlertSeverity): TimelineSegment<AlertIntervalStatus> {
   return {
-    status: INTERVAL_STATUS[iv.state],
+    status: alertIntervalStatusOf(iv.state, severity),
     start: Date.parse(iv.start),
     end: Date.parse(iv.end),
   };
@@ -131,17 +131,17 @@ function laneLabel(lane: AlertHistoryLane, own: boolean): string {
   return markers.length > 0 ? `${base} (${markers.join(", ")})` : base;
 }
 
-function toTimelineLane(lane: AlertHistoryLane, alert: ActiveAlert): TimelineLane<TargetStatus> {
+function toTimelineLane(lane: AlertHistoryLane, alert: ActiveAlert): TimelineLane<AlertIntervalStatus> {
   return {
     id: lane.id, // HashId — stable, never the AM fingerprint
     label: laneLabel(lane, isAlertOwnLane(alert, lane)),
-    segments: lane.intervals.map(toSegment),
+    segments: lane.intervals.map((iv) => toSegment(iv, lane.severity)),
   };
 }
 
 /** Order lanes own → matched → unmatched, stable within each group, including EVERY lane (no
  *  truncation). */
-export function buildLanes(payload: IntervalHistoryPayload, alert: ActiveAlert): readonly TimelineLane<TargetStatus>[] {
+export function buildLanes(payload: IntervalHistoryPayload, alert: ActiveAlert): readonly TimelineLane<AlertIntervalStatus>[] {
   const rank = (lane: AlertHistoryLane): number =>
     isAlertOwnLane(alert, lane) ? 0 : lane.attribution === "matched" ? 1 : 2;
   return payload.lanes

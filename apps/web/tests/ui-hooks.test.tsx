@@ -422,32 +422,36 @@ describeUi("@/ui hooks", () => {
 
   describe("useScrollToHash", () => {
     const scrollIntoView = mock();
-    // Stub the frame globals (and scrollIntoView) per test; restore them by hand.
+    // Stub the frame globals and scrollIntoView per test, restoring each OWN property exactly (put it
+    // back, or delete the one the stub added). scrollIntoView is stubbed on the target element's own
+    // prototype — the most derived one — so no other suite's leftover stub on a prototype between it
+    // and Element (e.g. an own `HTMLElement.prototype.scrollIntoView`) can shadow the spy: that made
+    // these tests fail with "not called" depending on which files ran first.
     const g = globalThis as Record<string, unknown>;
-    let saved: { scrollIntoView: unknown; raf: unknown; caf: unknown } | null = null;
+    let restore: (() => void)[] = [];
+
+    function stubOwn(target: object, name: string, value: unknown): void {
+      const own = Object.getOwnPropertyDescriptor(target, name);
+      Object.defineProperty(target, name, { configurable: true, writable: true, value });
+      restore.push(() => {
+        if (own !== undefined) Object.defineProperty(target, name, own);
+        else delete (target as Record<string, unknown>)[name];
+      });
+    }
 
     beforeEach(() => {
       scrollIntoView.mockClear();
-      saved = {
-        scrollIntoView: Element.prototype.scrollIntoView,
-        raf: g["requestAnimationFrame"],
-        caf: g["cancelAnimationFrame"],
-      };
-      Element.prototype.scrollIntoView = scrollIntoView;
-      g["requestAnimationFrame"] = (cb: FrameRequestCallback): number => {
+      stubOwn(Object.getPrototypeOf(document.createElement("section")) as object, "scrollIntoView", scrollIntoView);
+      stubOwn(g, "requestAnimationFrame", (cb: FrameRequestCallback): number => {
         cb(0);
         return 1;
-      };
-      g["cancelAnimationFrame"] = (): void => {};
+      });
+      stubOwn(g, "cancelAnimationFrame", (): void => {});
     });
 
     afterEach(() => {
-      if (saved !== null) {
-        Element.prototype.scrollIntoView = saved.scrollIntoView as Element["scrollIntoView"];
-        g["requestAnimationFrame"] = saved.raf;
-        g["cancelAnimationFrame"] = saved.caf;
-        saved = null;
-      }
+      while (restore.length > 0) restore.pop()!();
+      restore = [];
       window.history.replaceState(null, "", "/");
     });
 
