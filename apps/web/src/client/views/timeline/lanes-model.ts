@@ -425,3 +425,25 @@ export function isoOf(sec: number): string {
   const d = new Date(Math.round(sec * 1000));
   return Number.isFinite(d.getTime()) ? d.toISOString() : "";
 }
+
+/** Entries a {@link memoSecondsFormatter} cache holds before it starts over (bounds a long live session). */
+export const SECONDS_FORMAT_CACHE_MAX = 2048;
+
+/**
+ * `clock.format(isoOf(sec))`, memoised per second value. StatusTimeline's screen-reader list formats
+ * every visible interval's start and end on every render, and a zoom, brush or live tick re-renders
+ * every lane. Interval boundaries do not move between those renders (only the two domain edges do),
+ * so nearly every call becomes a cache hit instead of an `Intl` format (#51). Create one per clock.
+ */
+export function memoSecondsFormatter(clock: EstateClock): (sec: number) => string {
+  const cache = new Map<number, string>();
+  return (sec: number): string => {
+    let text = cache.get(sec);
+    if (text === undefined) {
+      if (cache.size >= SECONDS_FORMAT_CACHE_MAX) cache.clear();
+      text = clock.format(isoOf(sec));
+      cache.set(sec, text);
+    }
+    return text;
+  };
+}

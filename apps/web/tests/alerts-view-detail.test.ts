@@ -12,6 +12,8 @@ import { createAppStore } from "../src/client/store/index.js";
 import type { AppStore } from "../src/client/store/index.js";
 import type { SessionState } from "../src/client/store/types.js";
 import { describeDom } from "./dom.js";
+import { makeHierarchySnapshot } from "./timeline-fixtures.js";
+import { TZ_FALLBACK_MARKER } from "../src/client/format.js";
 import { act } from "./react-render.js";
 import { installUiStubs } from "./rtl.js";
 import { detailDialog, detailSection, dialogTitle, eventually } from "./alerts-dom-helpers.js";
@@ -68,6 +70,7 @@ describeDom("DetailPane", (dom) => {
     readonly payload?: AlertsPayload | null;
     readonly onClose?: () => void;
     readonly onSelect?: (fp: string) => void;
+    readonly store?: AppStore;
   }
 
   async function mountPane(opts: MountOpts): Promise<{ container: HTMLElement; dialog: HTMLElement | null }> {
@@ -77,7 +80,7 @@ describeDom("DetailPane", (dom) => {
     await act(async () => {
       m = await dom.mount(
         h(DetailPane, {
-          store: seededStore(),
+          store: opts.store ?? seededStore(),
           payload: opts.payload === undefined ? payload : opts.payload,
           selected: opts.selected,
           onClose: opts.onClose ?? (() => {}),
@@ -281,6 +284,28 @@ describeDom("DetailPane", (dom) => {
     expect(esc.defaultPrevented).toBe(true);
     expect(closes()).toBe(2);
   }, 60_000);
+
+  test("#51: the history strip formats its times with the estate clock (UTC, flagged, before a snapshot)", async () => {
+    const timesIn = async (store: AppStore): Promise<string[]> => {
+      const { dialog } = await mountPane({ selected: FIXTURE_FINGERPRINTS.hostDown, store });
+      let items: string[] = [];
+      await eventually(() => {
+        items = [...dialog!.querySelectorAll('[data-section="history"] [data-slot="status-timeline-text"] li li')].map((li) => li.textContent ?? "");
+        if (items.length === 0) throw new Error("history strip not rendered");
+      });
+      for (const u of mounted.splice(0)) u();
+      return items;
+    };
+    const estate = seededStore();
+    estate.snapshot.value = makeHierarchySnapshot({ hosts: 1, servicesPerHost: 0, timezone: "Asia/Kathmandu" });
+    for (const item of await timesIn(estate)) expect(item).toMatch(/:\d{2} GMT\+5:45 to .*:\d{2} GMT\+5:45$/);
+    for (const item of await timesIn(seededStore())) expect(item).toMatch(/:\d{2} UTC to .*:\d{2} UTC$/);
+    // Before a snapshot the zone is the UTC fallback, and the strip says so.
+    const { dialog } = await mountPane({ selected: FIXTURE_FINGERPRINTS.hostDown, store: seededStore() });
+    await eventually(() => {
+      if (dialog!.querySelector('[data-history-note="tz-fallback"]')?.textContent !== TZ_FALLBACK_MARKER) throw new Error("no TZ fallback marker");
+    });
+  });
 });
 
 test("DetailPane never navigates directly (no router import)", async () => {

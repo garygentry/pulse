@@ -5,7 +5,7 @@
 // header and its per-domain DNS-check rows, 09 §3) and summarises results for the row labels. Every upstream label renders as a JSX
 // text child (REQ-SEC-02). The cursor signal is never read during render (REQ-PERF-05).
 import type { ReactElement, HTMLAttributes, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TargetStatus } from "@pulse/web-data/wire";
 import { Button, Icon, Section, StatusBadge, StatusTimeline, TARGET_STATUS } from "@/ui";
 import type { StatusBadgeMapProps, TimelineLane } from "@/ui";
@@ -33,6 +33,7 @@ import {
   isExpandable,
   isExpanded,
   isoOf,
+  memoSecondsFormatter,
   laneAccessibleLabel,
   rowAccessibleName,
   rowTitle,
@@ -416,6 +417,7 @@ function PlotBlock(p: PlotBlockProps): ReactElement {
   const { block, blockIndex, views, view, width, rowPx } = p;
   const { readouts, clock, evidence } = p.props;
   const laneHeight = rowPx - LANE_GAP_PX;
+  const formatTime = useMemo(() => memoSecondsFormatter(clock), [clock]);
 
   useEffect(() => {
     const formatSec = (s: number): string => clock.format(isoOf(s));
@@ -442,7 +444,7 @@ function PlotBlock(p: PlotBlockProps): ReactElement {
         className="block max-w-none"
         lanes={lanes}
         statusMap={TARGET_STATUS}
-        formatTime={(s) => clock.format(isoOf(s))}
+        formatTime={formatTime}
         domainStart={view.start}
         domainEnd={view.end}
         width={width}

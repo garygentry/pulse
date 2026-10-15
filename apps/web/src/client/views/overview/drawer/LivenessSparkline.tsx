@@ -11,7 +11,7 @@ import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import type { HistorySeries } from "@pulse/web-data/wire";
-import { Button, Skeleton, Sparkline, type SparklineSample } from "@/ui";
+import { Button, Icon, Skeleton, Sparkline, type SparklineSample } from "@/ui";
 import type { HistoryController, OverviewTarget, TargetHistoryState } from "../model.js";
 import { DRAWER_EMPTY_CLASS } from "./classes.js";
 
@@ -19,12 +19,22 @@ import { DRAWER_EMPTY_CLASS } from "./classes.js";
 export const RETRY_LIVENESS_HISTORY_LABEL = "Retry liveness history";
 /** Copy when a validated series holds no finite sample. */
 export const LIVENESS_HISTORY_UNAVAILABLE_TEXT = "Liveness history unavailable";
+/** Copy for a target the estate does not collect metrics for (no liveness to fetch). */
+export const LIVENESS_NOT_COLLECTED_TEXT = "Not collected — this host has no metrics collection";
 /** Annotation when the server marks the history payload stale. */
 export const LIVENESS_HISTORY_STALE_TEXT = "Stale history";
 
 /** Preserve timestamp order and explicit null discontinuities for the shared SVG Sparkline. */
 export function toSparklineSamples(series: HistorySeries): readonly SparklineSample[] {
   return series.points.map(([at, value]) => ({ at, value }));
+}
+
+/**
+ * Whether the liveness query applies to the target. An `excluded` host has no scrape targets, so
+ * the server answers QUERY_NOT_APPLICABLE; the drawer says "Not collected" instead of fetching.
+ */
+export function livenessApplies(target: OverviewTarget): boolean {
+  return !(target.kind === "host" && target.host.collectionClass === "excluded");
 }
 
 // Same wording as TargetDrawer's title; kept local so the two modules do not import each other.
@@ -44,7 +54,10 @@ export function LivenessSparkline(props: {
   const targetRef = useRef(target);
   targetRef.current = target;
 
+  const applies = livenessApplies(target);
+
   useEffect(() => {
+    if (!applies) return undefined; // nothing to fetch: no request, no subscription
     const unsubscribe = controller.subscribe(setState);
     setState(controller.state());
     void controller.load(targetRef.current);
@@ -52,7 +65,16 @@ export function LivenessSparkline(props: {
       unsubscribe();
       controller.cancel();
     };
-  }, [controller, targetId]);
+  }, [controller, targetId, applies]);
+
+  if (!applies) {
+    return (
+      <p data-slot="drawer-liveness" data-history-state="not-collected" className={`flex items-center gap-1.5 ${DRAWER_EMPTY_CLASS}`}>
+        <Icon name="circle-slash" size={14} />
+        {LIVENESS_NOT_COLLECTED_TEXT}
+      </p>
+    );
+  }
 
   // Idle before the effect, or a state still attributed to the previous target, reads as loading.
   const current = state.status !== "idle" && state.targetId === targetId ? state : null;

@@ -6,7 +6,7 @@
 import type { ReactElement } from "react";
 
 import type { CheckSummary, TargetStatus } from "@pulse/web-data/wire";
-import { Section, StatusTimeline, TARGET_STATUS, type TimelineLane } from "@/ui";
+import { ScrollRegion, Section, StatusTimeline, TARGET_STATUS, type TimelineLane } from "@/ui";
 import type { EstateClock } from "../../../format.js";
 import { formatInstant } from "../stats/format.js";
 import { DRAWER_EMPTY_CLASS, DRAWER_LIST_CLASS, DRAWER_ROW_CLASS } from "./classes.js";
@@ -69,7 +69,7 @@ export function CheckHistory(props: {
       ) : (
         <>
           {domain !== null ? (
-            <div data-slot="drawer-timeline" className="min-w-0 overflow-x-auto">
+            <ScrollRegion label="Recent checks chart" className="min-w-0">
               <StatusTimeline
                 lanes={props.lanes}
                 statusMap={TARGET_STATUS}
@@ -78,7 +78,7 @@ export function CheckHistory(props: {
                 domainEnd={domain.end}
                 ariaLabel={CHECK_TIMELINE_LABEL}
               />
-            </div>
+            </ScrollRegion>
           ) : null}
           <ul className={DRAWER_LIST_CLASS}>
             {props.checks.map((check, i) => <CheckRow key={`${check.endpoint}:${i}`} check={check} clock={props.clock} />)}

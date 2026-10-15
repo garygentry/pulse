@@ -9,12 +9,12 @@
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import { batch, useComputed, useSignal, useSignalEffect } from "@preact/signals-react";
-import { HISTORY_TTL_MS, type EndpointHistoryPayload, type OverviewSnapshotV2, type RangeId, type TimelineDomain, type TimelinePayload } from "@pulse/web-data/wire";
+import { HISTORY_TTL_MS, type EndpointHistoryPayload, type RangeId, type TimelineDomain, type TimelinePayload } from "@pulse/web-data/wire";
 
 import { EmptyState, LoadingState, PageErrorBoundary, PageHeader, Callout, Section, StatusBadge, TARGET_STATUS, useDisposable } from "@/ui";
 import { announce } from "../../a11y/index.js";
 import { isKiosk } from "../../shell/kiosk.js";
-import { createEstateClock } from "../../format.js";
+import { FALLBACK_ESTATE, createEstateClock } from "../../format.js";
 import type { EstateClock } from "../../format.js";
 import type { ViewProps } from "../../../shared/registry.js";
 import { routeKey } from "../../router.js";
@@ -103,9 +103,6 @@ function nowSeconds(): number {
 function sameWindow(a: TimeWindow | null, b: TimeWindow | null): boolean {
   return a === b || (a !== null && b !== null && a.start === b.start && a.end === b.end);
 }
-
-/** Fallback estate used when no snapshot is held (00 §3.3): UTC, with the fallback marker shown. */
-const FALLBACK_ESTATE: OverviewSnapshotV2["estate"] = { name: "", timezone: "UTC", tzFallback: true };
 
 /** The (always empty) expansion set used in kiosk, so block identity stays stable. */
 const NO_EXPANSION: ReadonlySet<TargetKey> = new Set();

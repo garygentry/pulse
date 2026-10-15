@@ -236,6 +236,8 @@ export {
 // Pulse: TimeSeriesChart is a Suspense wrapper whose uPlot implementation loads through a dynamic
 // import. Never re-export a value from ./viz/uplot-chart here.
 export { TimeSeriesChart, type TimeSeriesChartProps, type TimeSeriesSeries } from "./viz/time-series-chart";
+// Pulse: a horizontal scroller that is a named, focusable region only while its content overflows.
+export { ScrollRegion, type ScrollRegionProps } from "./patterns/scroll-region";
 
 // Pulse status maps (TARGET_STATUS, ALERT_SEVERITY, ALERT_STATE, MUTATION_STATE)
 export * from "./status";

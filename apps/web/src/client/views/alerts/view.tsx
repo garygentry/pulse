@@ -34,6 +34,7 @@ import { TAB_QUERY_KEY, tabFromQuery } from "./view-model.js";
 import type { TriageTabId } from "./view-model.js";
 import { FacetBar } from "./facet-bar.js";
 import { SourceStatusBanners } from "./degraded.js";
+import { useEstateClock } from "./estate-clock.js";
 import { TriageTable } from "./table/TriageTable.js";
 import { TriageKeyboardHints, installTriageKeyboard } from "./keyboard.js";
 import { DetailPane } from "./detail/DetailPane.js";
@@ -105,6 +106,7 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
 
   // Single store read — zero upstream fan-out. Signals auto-track.
   const payload = readAlerts(store);
+  const clock = useEstateClock(store);
 
   const activeTab = useComputed(() => tabFromQuery(route.value.query));
   // decodeTriageRoute also accepts the overview deep links (/alerts/:fingerprint, ?target=<id>).
@@ -211,7 +213,7 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
   } else {
     panel = (
       <>
-        <SourceStatusBanners payload={payload} />
+        <SourceStatusBanners payload={payload} clock={clock} />
         <FacetBar
           values={facetValues(payload)}
           selection={url.value.facets}
