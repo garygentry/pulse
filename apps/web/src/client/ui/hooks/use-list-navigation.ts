@@ -20,7 +20,8 @@ export interface UseListNavigationOptions {
    * count describes (a spatial grid whose rows wrap per group), pass `move` instead: it returns the
    * index a move intent (`move-left`/`-right`/`-previous`/`-next`/`-first`/`-last`) lands on from
    * `index` (-1 when no item has focus), `index` itself to stay put and still claim the key, or
-   * `null` to leave the key alone.
+   * `null` to leave the key alone. `move` and `virtual` are mutually exclusive: with both set,
+   * `move` decides and `virtual` is not consulted for moves.
    */
   grid?:
     | { columns: number | (() => number) }

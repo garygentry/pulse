@@ -4,7 +4,7 @@
 // replaced per test by a controllable fake (or removed) so geometry caching is deterministic. The
 // grid DOM is built by hand; a harness component mounts the hook on it (`control`), re-renders it as
 // the grid would after a membership change (`refresh`) and unmounts it (`release`). Elements/events
-// use the ambient lib.dom globals that describeDom installs, as in a11y-roving.test.ts.
+// use the ambient lib.dom globals that describeDom installs.
 
 import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 
@@ -232,6 +232,20 @@ describeDom("overview spatial grid navigation", () => {
       { x: 0, y: 0 },
       { x: 0, y: 60 },
       { x: 400, y: 300 },
+    ]);
+    const c = control(grid);
+    items[0]!.focus();
+    move(grid, c, "ArrowRight", items[2]!);
+  });
+
+  test("the off-axis weight is 0.25: a nearer candidate 70px off-axis beats one 100px straight ahead", () => {
+    // From the origin center, A is straight right at primary 100 (score 100). B is at primary 80,
+    // secondary 70: score 80 + 70·w, which is 97.5 at w = 0.25 but ≥ 101 for any w ≥ 0.3, where A
+    // would win. A comes first in DOM order, so only the weight can pick B.
+    const { grid, items } = build([
+      { x: 0, y: 100 },
+      { x: 100, y: 100 },
+      { x: 80, y: 170 },
     ]);
     const c = control(grid);
     items[0]!.focus();

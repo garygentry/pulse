@@ -1238,7 +1238,6 @@ describe("tokens: every token utility and var(--…) resolves to a defined theme
 const LIST_NAV_INFRA = new Set([
   "src/client/ui/hooks/use-list-navigation.ts",
   "src/client/ui/lib/list-navigation.ts",
-  "src/client/a11y/roving-tabindex.ts",
 ]);
 
 /** Bespoke list keyboards that predate the rule. Only shrinks; a stale entry fails. Empty since #37
