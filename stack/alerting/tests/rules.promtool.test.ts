@@ -2,7 +2,8 @@
 // Tier B (Docker-gated, hermetic — 06 §3): drives `promtool test rules` over deterministic fixtures
 // that inject synthetic series and assert each rule's firing state, severity/identity labels, and
 // `for`/NoData timing. Covers all SIX static families (availability, capacity, engine,
-// pipeline-health, churn, deadman — 06 §11.3) plus the rendered deep-health functional family.
+// pipeline-health, churn, deadman — 06 §11.3) plus the rendered deep-health functional family and the
+// synthetic.yml mount marker watched by SyntheticRulesNotLoaded (issue #23).
 // The rendered synthetic-check (Gatus) family is NOT tested here: its logic rides on MetricsQL
 // increase() semantics promtool does not share — see synthetic.vm.test.ts (issue #1).
 //
@@ -45,7 +46,30 @@ function assembleWorkspace(): string {
   const out = buildAlertingConfig(loadFixtureInput("multi-service")); // (b) rendered families
   writeFileSync(join(workspace, "deep-health.yml"), out.deepHealthRules);
   writeFileSync(join(workspace, "backup.yml"), out.backupRules);
+  // Issue #23: synthetic.yml as rendered for the fixture (bound checks + marker) and for the same
+  // estate with every alerts: binding stripped (marker only) — each loaded beside the static
+  // pipeline-health family, where SyntheticRulesNotLoaded must stay silent.
+  const fixture = loadFixtureInput("multi-service");
+  const unbound = {
+    ...fixture,
+    estate: {
+      ...fixture.estate,
+      services: fixture.estate.services.map(({ alerts: _alerts, ...s }) => s),
+    },
+  };
+  const syntheticFiles: Record<string, string> = {
+    "synthetic.yml": out.syntheticRules,
+    "synthetic-unbound.yml": buildAlertingConfig(unbound).syntheticRules,
+  };
   cpSync(PROMTOOL_FIXTURE_DIR, workspace, { recursive: true }); // (c) promtool test YAMLs
+  const loadedTemplate = readFileSync(join(workspace, "synthetic-mount-loaded.test.yaml"), "utf8");
+  for (const [file, rules] of Object.entries(syntheticFiles)) {
+    writeFileSync(join(workspace, file), rules);
+    writeFileSync(
+      join(workspace, `${file.replace(/\.yml$/, "")}-mount-loaded.test.yaml`),
+      loadedTemplate.replace("SYNTHETIC_FILE", file),
+    );
+  }
   // `mkdtempSync` yields a 0700 dir the pinned image's non-root user cannot traverse when mounted;
   // widen it so `promtool` (running as `nobody`) can read the mounted rule/test files.
   chmodSync(workspace, 0o755);
@@ -79,6 +103,10 @@ d("promtool rule unit tests (Tier B)", () => {
     "churn.test.yaml",
     "deadman.test.yaml",
     "canary.test.yaml",
+    // Issue #23: the missing-mount detector fires without synthetic.yml, and stays silent with it.
+    "synthetic-mount.test.yaml",
+    "synthetic-mount-loaded.test.yaml",
+    "synthetic-unbound-mount-loaded.test.yaml",
   ]) {
     test(`promtool test rules ${file}`, () => {
       const res = promtoolTest(workspace, file);

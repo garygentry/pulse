@@ -67,7 +67,10 @@ instead the alerting transform renders a `GatusCheckFailed` vmalert rule per bou
 endpoint `name` the rule selects comes from the renderer's exported `gatusEndpointName`, so the two
 cannot drift. The binding is inert (and warns, `inert_alert_binding`) on a service that renders no
 endpoint (no `ingress_url` / suppressed). No stack-core edit is needed; the rendered rule file is
-mounted into vmalert like the other rendered rule families.
+mounted into vmalert like the other rendered rule families. The file always ends with a
+`synthetic-checks-loaded` group recording `pulse:synthetic_checks_bound` (the bound-check count,
+possibly 0); the static `SyntheticRulesNotLoaded` rule in `pipeline-health.yml` fires on its
+absence, so an unmounted file is loud (issue #23).
 
 ## Filling a reserved slot
 
