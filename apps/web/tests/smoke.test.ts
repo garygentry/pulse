@@ -466,7 +466,9 @@ describe("smoke:web (in-process) — normal composition, every M1 route (10 §8)
     // host-target curated series each serve a bounded 200 payload; the checks route rejects an
     // unknown endpoint with a safe TARGET_NOT_FOUND 404 — the sanitized fixture declares no Gatus
     // endpoints, so that is the representative outcome for that route here.
-    expect((await get(rt, "/api/history/estate/estate.liveness")).status).toBe(200);
+    expect((await get(rt, "/api/history/estate/alerts.firing")).status).toBe(200);
+    // Liveness is per host or service; there is no estate-wide liveness series (#74).
+    expect((await get(rt, "/api/history/estate/estate.liveness")).status).toBe(422);
 
     const estate = (await (await get(rt, "/api/estate")).json()) as {
       liveTargets: readonly { target: { kind: string; id: string } | null }[];
