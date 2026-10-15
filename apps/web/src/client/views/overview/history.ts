@@ -235,13 +235,25 @@ export function historyErrorMessage(code: HistoryErrorCode): string {
   return code === "INTERNAL_ERROR" ? HISTORY_UNAVAILABLE_MESSAGE : ERROR_MESSAGES[code];
 }
 
+/** Failures a retry cannot fix: the same request would fail the same way, so no retry control. */
+const NON_RETRYABLE: ReadonlySet<HistoryErrorCode> = new Set<HistoryErrorCode>([
+  "QUERY_NOT_APPLICABLE",
+  "TARGET_NOT_FOUND",
+  "INVALID_REQUEST",
+]);
+
+/** Whether the drawer offers a retry for a history failure. */
+export function historyErrorRetryable(code: HistoryErrorCode): boolean {
+  return !NON_RETRYABLE.has(code);
+}
+
 function errorState(targetId: string, code: HistoryErrorCode): TargetHistoryState {
   return Object.freeze({
     status: "error",
     targetId,
     code,
     message: historyErrorMessage(code),
-    retryable: true,
+    retryable: historyErrorRetryable(code),
   });
 }
 

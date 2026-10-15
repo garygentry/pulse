@@ -508,7 +508,7 @@ describe("createHistoryController", () => {
     controller.dispose();
   });
 
-  describe("case 9: error mapping is bounded, retryable, and never cached", () => {
+  describe("case 9: error mapping is bounded, retryable unless a retry cannot help, and never cached", () => {
     const passthrough: readonly HistoryErrorCode[] = [
       "INVALID_REQUEST",
       "QUERY_NOT_FOUND",
@@ -597,7 +597,8 @@ describe("createHistoryController", () => {
         if (state.status !== "error") throw new Error("unreachable");
         expect(state.targetId).toBe(HOST_A.drilldownId);
         expect(state.code).toBe(code);
-        expect(state.retryable).toBe(true);
+        // #51: a request the server rejects as not applicable / unknown / invalid fails the same way again.
+        expect(state.retryable).toBe(!["QUERY_NOT_APPLICABLE", "TARGET_NOT_FOUND", "INVALID_REQUEST"].includes(code));
         expect(state.message.length).toBeGreaterThan(0);
         expect(state.message.length).toBeLessThanOrEqual(120);
         expect(state.message).not.toContain("server text");

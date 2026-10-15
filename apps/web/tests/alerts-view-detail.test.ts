@@ -13,6 +13,7 @@ import type { AppStore } from "../src/client/store/index.js";
 import type { SessionState } from "../src/client/store/types.js";
 import { describeDom } from "./dom.js";
 import { makeHierarchySnapshot } from "./timeline-fixtures.js";
+import { TZ_FALLBACK_MARKER } from "../src/client/format.js";
 import { act } from "./react-render.js";
 import { installUiStubs } from "./rtl.js";
 import { detailDialog, detailSection, dialogTitle, eventually } from "./alerts-dom-helpers.js";
@@ -299,6 +300,11 @@ describeDom("DetailPane", (dom) => {
     estate.snapshot.value = makeHierarchySnapshot({ hosts: 1, servicesPerHost: 0, timezone: "Asia/Kathmandu" });
     for (const item of await timesIn(estate)) expect(item).toMatch(/:\d{2} GMT\+5:45 to .*:\d{2} GMT\+5:45$/);
     for (const item of await timesIn(seededStore())) expect(item).toMatch(/:\d{2} UTC to .*:\d{2} UTC$/);
+    // Before a snapshot the zone is the UTC fallback, and the strip says so.
+    const { dialog } = await mountPane({ selected: FIXTURE_FINGERPRINTS.hostDown, store: seededStore() });
+    await eventually(() => {
+      if (dialog!.querySelector('[data-history-note="tz-fallback"]')?.textContent !== TZ_FALLBACK_MARKER) throw new Error("no TZ fallback marker");
+    });
   });
 });
 

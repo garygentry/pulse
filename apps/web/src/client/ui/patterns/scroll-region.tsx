@@ -1,7 +1,7 @@
 // Pulse-only pattern (not in deck). A horizontal scroller for fixed-width content (a StatusTimeline SVG in a narrow pane). While its
 // content overflows it is a labelled, focusable region, so a keyboard user can reach it and scroll
 // it with the arrow keys (DataTable's scroll-region convention); while everything fits it is a plain
-// box and adds no tab stop (#51).
+// box and adds no tab stop (#51). A focused region keeps its tab stop until blur.
 import type { ReactElement, ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
@@ -24,6 +24,10 @@ function overflowsX(el: HTMLElement): boolean {
 export function ScrollRegion({ label, className, children }: ScrollRegionProps): ReactElement {
   const ref = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
+  // While it holds focus it stays a tab stop even if it stops overflowing (a widened pane), so focus
+  // never falls to <body>; it drops out of the tab order on blur.
+  const [focused, setFocused] = useState(false);
+  const reachable = overflowing || focused;
 
   // Re-measure after every commit (the content may have changed width) …
   useLayoutEffect(() => {
@@ -47,7 +51,13 @@ export function ScrollRegion({ label, className, children }: ScrollRegionProps):
       ref={ref}
       data-slot="scroll-region"
       data-overflowing={String(overflowing)}
-      {...(overflowing ? { role: "region", "aria-label": label, tabIndex: 0 } : {})}
+      {...(reachable ? { role: "region", "aria-label": label, tabIndex: 0 } : {})}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) setFocused(true);
+      }}
+      onBlur={(e) => {
+        if (e.target === e.currentTarget) setFocused(false);
+      }}
       className={cn(
         // An outline, not a ring: an inset box-shadow would paint under the chart.
         "max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",

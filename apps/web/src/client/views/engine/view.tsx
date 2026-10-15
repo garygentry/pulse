@@ -12,7 +12,7 @@ import type { EnginePayload, OverviewSnapshotV2 } from "@pulse/web-data/wire";
 
 import { Callout, EmptyState, ExternalLink, FragmentBoundary, Icon, LoadingState, PageErrorBoundary, PageHeader } from "@/ui";
 import { isKiosk } from "../../shell/kiosk.js";
-import { createEstateClock, TZ_FALLBACK_MARKER } from "../../format.js";
+import { FALLBACK_ESTATE, createEstateClock, TZ_FALLBACK_MARKER } from "../../format.js";
 import type { EstateClock } from "../../format.js";
 import type { ViewProps } from "../../../shared/registry.js";
 import { useNotCurrent } from "../_shared/timeseries/history/freshness.js";
@@ -59,9 +59,6 @@ export default function EngineView(props: ViewProps): ReactElement {
     </PageErrorBoundary>
   );
 }
-
-/** Fallback estate used when no snapshot is held (00 §3.3): UTC, with the fallback marker shown. */
-const FALLBACK_ESTATE: OverviewSnapshotV2["estate"] = { name: "", timezone: "UTC", tzFallback: true };
 
 /**
  * The estate clock for the view (00 §3.3). A time is never printed without a zone.

@@ -258,6 +258,37 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
+  test("a retry that runs before the far row renders tries again on the next frame, then focuses it", async () => {
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
+    const originalRaf = globalThis.requestAnimationFrame;
+    const frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    }) as typeof requestAnimationFrame;
+    const hn = await setup(many);
+    try {
+      hn.selectedIndex.value = 3999;
+      press("j"); // → 4000, not rendered: scroll there, first retry held
+      expect(frames).toHaveLength(1);
+      // The first frame fires before the table re-windows: the row is not there yet.
+      expect(rendered(hn)).not.toContain("virtual-4000");
+      frames.shift()!(0);
+      expect(focusedFp()).toBeNull();
+      expect(frames).toHaveLength(1); // it asked for another frame instead of giving up
+      await eventually(() => expect(rendered(hn)).toContain("virtual-4000"));
+      frames.shift()!(0);
+      expect(focusedFp()).toBe("virtual-4000");
+      expect(hn.scrolls).toEqual([4000]); // one scroll, retried focus only
+    } finally {
+      if (originalRaf === undefined) delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
+      else globalThis.requestAnimationFrame = originalRaf;
+      hn.dispose();
+      hn.unmount();
+      restoreViewport();
+    }
+  });
+
   test("k from an unset cursor lands on row 0", async () => {
     const hn = await setup();
     try {

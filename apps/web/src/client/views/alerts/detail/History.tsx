@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { announce } from "../../../a11y/index.js";
 import { ALERT_INTERVAL, EmptyState, ScrollRegion, Section, Skeleton, StatusTimeline } from "@/ui";
 import type { ActiveAlert, RangeId } from "@pulse/web-data/wire";
+import { TZ_FALLBACK_MARKER } from "../../../format.js";
 import type { EstateClock } from "../../../format.js";
 import { DEFAULT_HISTORY_RANGE } from "../taxonomy.js";
 import { fetchAlertHistory } from "./history-client.js";
@@ -117,6 +118,11 @@ function HistoryBody(props: HistoryProps): ReactElement {
               ariaLabel={`Firing history for ${props.alert.name} over the last ${range}`}
             />
           </ScrollRegion>
+          {props.clock.tzFallback ? (
+            <p className="text-sm text-status-warn-fg" data-history-note="tz-fallback">
+              {TZ_FALLBACK_MARKER}
+            </p>
+          ) : null}
           {hasUnmatched ? (
             <p className="text-sm text-muted-foreground" data-history-note="unmatched">
               Some lanes could not be attributed to a rendered target (shown, labeled “unmatched”).

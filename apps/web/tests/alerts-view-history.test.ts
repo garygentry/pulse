@@ -395,4 +395,12 @@ describeDom("History", (dom) => {
       else delete (proto as { clientWidth?: number }).clientWidth;
     }
   });
+
+  test("#51: no TZ fallback marker for a configured estate zone", async () => {
+    stubFetch(() => Promise.resolve(makeHistoryPayload({ kind: "unmatched" })));
+    const { container, unmount } = await mountHistory(hostDown);
+    await waitFor(() => stateOf(container) === "ready");
+    expect(container.querySelector('[data-history-note="tz-fallback"]')).toBeNull();
+    unmount();
+  });
 });
