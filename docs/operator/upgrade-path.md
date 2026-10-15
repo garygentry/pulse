@@ -91,8 +91,9 @@ checkout, follow the three moves above, then work through the items below. The f
 repository's `CHANGELOG.md`.
 
 **Rebuild the web and prober images** before `docker compose up`, as step 3 describes
-(`docker compose --profile web --profile deep-health build`). Both changed in 0.2.0, and
-`up` alone keeps running the images built from your old checkout. A rebuilt web image reports
+(`docker compose --profile web --profile deep-health build`). The web app changed in 0.2.0
+(the prober did not, but rebuilding it is harmless and keeps both images on the same
+checkout), and `up` alone keeps running the images built from your old checkout. A rebuilt web image reports
 `0.2.0` on `/healthz`, and open browser tabs reload themselves once onto the new build.
 
 The rendered estate model (`web-estate-model.json`) and the render tree's `formatVersion` are

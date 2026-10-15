@@ -50,7 +50,8 @@ binaries plus a `SHA256SUMS` file listing all of them:
   for them.
 
 Download the binary for your host and `SHA256SUMS` from the release page, or with the GitHub
-CLI as below, and verify the checksum before trusting it.
+CLI as below (`gh` needs `gh auth login` or a `GH_TOKEN` even for a public repository; the
+release page needs neither), and verify the checksum before trusting it.
 
 **Command**
 

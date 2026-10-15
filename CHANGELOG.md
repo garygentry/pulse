@@ -13,8 +13,9 @@ upgrade notes.
 The first tagged public release. It covers everything merged to `main` since the public
 repository's initial commit. Operators upgrading an earlier deployment should read
 [Upgrading to 0.2.0](docs/operator/upgrade-path.md#upgrading-to-020) first: the Gatus paging
-change below needs a new vmalert mount, and the locally built `web` and `prober` images must be
-rebuilt (`docker compose --profile web --profile deep-health build`) before `docker compose up`.
+change below needs a new vmalert mount, and the locally built `web` image must be rebuilt
+(`docker compose --profile web --profile deep-health build`, which also rebuilds the unchanged
+`prober`) before `docker compose up`.
 
 ### Breaking
 
