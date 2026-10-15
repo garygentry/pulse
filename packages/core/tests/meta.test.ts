@@ -103,6 +103,7 @@ describe("FINDING_CODES coverage (anti-rot guard, 07 §4)", () => {
     "broken-min (shape)": () => codesFromLoad("broken-min"),
     "broken-semantic (semantic)": () => codesFromLoad("broken-semantic"),
     "broken-nas-api (incomplete_nas_api)": () => codesFromLoad("broken-nas-api"),
+    "broken-hypervisor-endpoint (invalid_hypervisor_endpoint)": () => codesFromLoad("broken-hypervisor-endpoint"),
     "broken-telegram (missing_chat_id)": () => codesFromLoad("broken-telegram"),
     "broken-command-signal (duplicate_command_signal/backup_command_host)": () =>
       codesFromLoad("broken-command-signal"),

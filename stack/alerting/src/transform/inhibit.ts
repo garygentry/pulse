@@ -18,6 +18,37 @@ import type { AlertingFinding } from "./findings.js";
 const CHURN_ALERTNAMES = ["ContainerRestarting", "ContainerChurn"] as const;
 const CHURN_MATCHER = `alertname=~"${CHURN_ALERTNAMES.join("|")}"`;
 
+/**
+ * The product-static hypervisor-relay inhibition (issue #74). Every hypervisor-api scrape goes
+ * through the one pve-exporter, so while it is down every hypervisor's `up` is 0 for the exporter's
+ * fault. `HypervisorExporterDown` (availability.yml, `for: 60s`) fires before `HostDown` (`for: 90s`)
+ * and holds the hypervisor `HostDown` pages back, inhibited rather than resolved, for the outage.
+ * Equal on `estate` only: with one exporter per stack, one exporter down affects every hypervisor.
+ * Mirrored in stack/compose/config/alertmanager/alertmanager.bootstrap.yml.
+ */
+export const HYPERVISOR_EXPORTER_INHIBIT: Readonly<AmInhibitRule> = Object.freeze({
+  source_matchers: ['alertname="HypervisorExporterDown"'],
+  target_matchers: ['alertname="HostDown"', 'job="hypervisor-api"'],
+  equal: ["estate"],
+});
+
+/**
+ * The product-static inhibit rules every generated config carries, independent of the estate,
+ * as fresh mutable copies. Merged after the estate-derived rules by `buildAlertmanagerConfig`
+ * (routing.ts) via `withProductStaticInhibits`.
+ */
+export function productStaticInhibitRules(): AmInhibitRule[] {
+  const r = HYPERVISOR_EXPORTER_INHIBIT;
+  return [{ source_matchers: [...r.source_matchers], target_matchers: [...r.target_matchers], equal: [...(r.equal ?? [])] }];
+}
+
+/** Estate-derived rules plus the product-static ones, in the same stable order buildInhibitRules uses. */
+export function withProductStaticInhibits(rules: readonly AmInhibitRule[]): AmInhibitRule[] {
+  return [...rules, ...productStaticInhibitRules()].sort((a, b) =>
+    ruleSortKey(a) < ruleSortKey(b) ? -1 : ruleSortKey(a) > ruleSortKey(b) ? 1 : 0,
+  );
+}
+
 /** Identity labels an inhibit rule may share between source and target (the `equal` set). */
 const IDENTITY_LABELS = ["estate", "host", "service"] as const;
 

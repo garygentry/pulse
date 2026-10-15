@@ -349,16 +349,10 @@ describe("bindCuratedQuery success and pinned PromQL", () => {
     ],
   });
 
-  test("estate liveness binds with a null target and pinned query", () => {
+  test("estate liveness without a target is not applicable: there is no estate-wide liveness series (#74)", () => {
     const r = bindCuratedQuery("estate.liveness", null, null, model);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.query.target).toBeNull();
-      expect(r.query.unit).toBe("state");
-      expect(r.query.range).toBe("1h");
-      expect(r.query.effectiveStepSeconds).toBe(30);
-      expect(r.query.promql).toBe("min(up or pulse_agent_up or pulse_deep_health_up) or vector(0/0)");
-    }
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("QUERY_NOT_APPLICABLE");
   });
 
   test("estate liveness is target-applicable for canonical host and service identities", () => {
@@ -503,7 +497,9 @@ describe("bindCuratedQuery success and pinned PromQL", () => {
       QUERY_IDS.map((id) => {
         const def = QUERY_CATALOG[id];
         const target =
-          def.targetKind === "estate" ? null
+          // estate.liveness is catalogued as estate-kind but binds only for a host or service (#74).
+          id === "estate.liveness" ? HOST_TARGET
+          : def.targetKind === "estate" ? null
           : def.targetKind === "host" ? HOST_TARGET
           : def.targetKind === "service" ? { kind: "service", id: id === "service.backup-age" ? "svc:web01/db" : "svc:web01/dh" } as const
           : { kind: "endpoint", id: "web01/dh" } as const;

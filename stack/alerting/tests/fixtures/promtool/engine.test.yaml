@@ -24,11 +24,14 @@ tests:
               runbook_url: "https://runbooks.pulse.local/engine"
               summary: "Alert-path component victoriametrics is DOWN (critical)"
               description: "Engine component victoriametrics (vm:8428) — required to evaluate or deliver alerts — has been unreachable for 2m. The alerting pipeline is compromised. NOTE: vmalert evaluates this rule, so it detects victoriametrics/alertmanager loss; loss of vmalert or victoriametrics ITSELF is caught externally by DeadMansSwitch (deadman.yml, 04-alertmanager-config.md), which stops arriving when evaluation stops."
-  # AncillaryDown (warning): engine-cadvisor scrape fails ≥ 5m
+  # AncillaryDown (warning): engine-cadvisor scrape fails ≥ 5m. pve-exporter down for the same
+  # window does NOT raise it: that outage is HypervisorExporterDown alone (issue #74).
   - interval: 30s
     input_series:
       - series: 'up{job="engine-cadvisor", instance="cadvisor:8080", estate="fixture-estate"}'
         values: "0+0x14" # down for the whole window (7m)
+      - series: 'up{job="pve-exporter", instance="pve-exporter:9221", estate="fixture-estate"}'
+        values: "0+0x14"
     alert_rule_test:
       - eval_time: 6m
         alertname: AncillaryDown

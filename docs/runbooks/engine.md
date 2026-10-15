@@ -17,9 +17,10 @@ stack-core scrape jobs.
 
 - **AlertPathDown** (critical) — `up{job=~"victoriametrics|vmalert|alertmanager"} == 0` for **2m**.
   A core alert-path component is down and the pipeline is compromised.
-- **AncillaryDown** (warning) — `up{job=~"gatus|engine-cadvisor|pve-exporter"} == 0` for **5m**. A
-  non-critical component (synthetic checks, engine cadvisor, PVE exporter) is down; investigate at
-  leisure. Grafana and the profile-gated prober are deliberately excluded.
+- **AncillaryDown** (warning) — `up{job=~"gatus|engine-cadvisor"} == 0` for **5m**. A
+  non-critical component (synthetic checks, engine cadvisor) is down; investigate at leisure.
+  Grafana and the profile-gated prober are deliberately excluded. A pve-exporter outage raises
+  `HypervisorExporterDown` instead (see the [availability runbook](/availability/)).
 
 > **A blind spot by design.** vmalert evaluates this rule, so it detects loss of *VictoriaMetrics*
 > or *Alertmanager*. Loss of *vmalert itself* (or VictoriaMetrics, which it reads from) cannot be
@@ -36,7 +37,7 @@ cd stack/compose
 docker compose ps                       # find the unhealthy/exited service
 # Confirm the scrape target the rule keys on:
 docker compose run --rm --entrypoint sh alertmanager -c \
-  "wget -qO- 'http://victoriametrics:8428/api/v1/query?query=up%7Bjob%3D~%22victoriametrics%7Cvmalert%7Calertmanager%7Cgatus%7Cengine-cadvisor%7Cpve-exporter%22%7D'"
+  "wget -qO- 'http://victoriametrics:8428/api/v1/query?query=up%7Bjob%3D~%22victoriametrics%7Cvmalert%7Calertmanager%7Cgatus%7Cengine-cadvisor%22%7D'"
 ```
 
 The `up` vector shows a `0` for each down job. Then read the failed component's logs:

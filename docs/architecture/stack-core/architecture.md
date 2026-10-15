@@ -105,7 +105,11 @@ downstream transform, not consumed.**
 The `hypervisor-api` class is scraped through a relabel-through, not directly. The rendered
 target is the estate's *API* endpoint (a Proxmox host), which VictoriaMetrics must **not**
 connect to directly. Instead the API job rewrites the scrape so VM connects to `pve-exporter`
-and passes the real endpoint as a `?target=` query parameter:
+and passes the endpoint's bare host as a `?target=` query parameter. pve-exporter builds
+`https://<target>:8006` itself and rejects a URL-shaped target, so the job strips the scheme, port
+and path, and a port in the endpoint is not used (issue #74). The supported `api_endpoint` shape
+is `[http(s)://]HOST[:PORT][/PATH]`; core validation rejects anything else
+(`invalid_hypervisor_endpoint`):
 
 (The `nas-api` class does **not** use this pattern: a NAS runs `node_exporter` directly, so
 `nas-api` is a direct node scrape like `managed-linux` — issue #4. The operator "NAS collector"
@@ -113,10 +117,11 @@ guide covers the opt-in TrueNAS-API-exporter override.)
 
 ```yaml
 # hypervisor-api job, relabel_configs (paraphrased):
-- source_labels: [__address__]        # (1) rendered PVE endpoint → ?target=
-  target_label: __param_target
-- source_labels: [__param_target]     # (2) keep a readable instance = the real host
+- source_labels: [__address__]        # (1) instance = the rendered endpoint, verbatim
   target_label: instance
+- source_labels: [__address__]        # (2) ?target= = the bare host (scheme/port/path stripped)
+  regex: '(?:[A-Za-z][A-Za-z0-9+.-]*://)?(\[[^\]]+\]|[^/:\[\]]+)(?::[0-9]+)?(?:/.*)?'
+  target_label: __param_target
 - target_label: __address__           # (3) VM actually scrapes the exporter
   replacement: pve-exporter:9221
 ```

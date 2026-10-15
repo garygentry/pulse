@@ -16,6 +16,7 @@ import {
   checkSecretLiterals,
   checkExactlyOneClass,
   checkNasApiCompleteness,
+  checkHypervisorEndpoint,
   checkTelegramOptions,
   checkCommandSignals,
   checkBackupCommandHost,
@@ -52,6 +53,7 @@ export function validateAndNormalize(
   checkSecretLiterals(merged, prov, collector); // REQ-SECR-01 / REQ-SEC-02
   checkExactlyOneClass(merged, prov, collector); // REQ-HOST-02 backstop
   checkNasApiCompleteness(merged, prov, collector); // issue #4: nas-api api-override both-or-neither
+  checkHypervisorEndpoint(merged, prov, collector); // issue #74: api_endpoint reducible to a bare host
   checkTelegramOptions(merged, prov, collector); // issue #2: telegram requires options.chat_id
   checkCommandSignals(merged, prov, collector); // issue #3: unique command-signal names per host
   checkBackupCommandHost(merged, prov, collector); // issue #3: backup command → managed-linux host

@@ -1,6 +1,13 @@
 global:
   resolve_timeout: 5m
-inhibit_rules: []
+inhibit_rules:
+  - equal:
+      - estate
+    source_matchers:
+      - alertname="HypervisorExporterDown"
+    target_matchers:
+      - alertname="HostDown"
+      - job="hypervisor-api"
 receivers:
   - name: hook-sink
     webhook_configs:
