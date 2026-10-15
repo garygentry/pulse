@@ -66,6 +66,16 @@ function bodyOffset(tr: Element): number {
 const bodyHeight = (root: Element): number =>
   Array.from(root.querySelectorAll("tbody > tr")).reduce((sum, tr) => sum + bodyRowHeight(tr), 0);
 
+/**
+ * Restore `proto[name]` exactly as it was: put back its own property, or delete the one a stub
+ * added, so the inherited method shows through again. (Assigning the saved method back would leave
+ * an own property behind that shadows a later suite's stub of the inherited method.)
+ */
+function restoreOwn(proto: object, name: string, own: PropertyDescriptor | undefined): void {
+  if (own !== undefined) Object.defineProperty(proto, name, own);
+  else delete (proto as Record<string, unknown>)[name];
+}
+
 describeUi("@/ui DataTable virtualize", () => {
   const undo: (() => void)[] = [];
 
@@ -117,6 +127,7 @@ describeUi("@/ui DataTable virtualize", () => {
       win.ResizeObserver = realObserver;
     });
     const getRect = proto.getBoundingClientRect;
+    const ownGetRect = Object.getOwnPropertyDescriptor(proto, "getBoundingClientRect");
     proto.getBoundingClientRect = function (this: HTMLElement) {
       const rect = getRect.call(this);
       const header = this.tagName === "THEAD" && theadHeight > 0;
@@ -126,10 +137,10 @@ describeUi("@/ui DataTable virtualize", () => {
       return { x, y, top, left, right, width, height, bottom: top + height, toJSON: () => ({}) } as DOMRect;
     };
     undo.push(() => {
-      proto.getBoundingClientRect = getRect;
+      restoreOwn(proto, "getBoundingClientRect", ownGetRect);
     });
     // jsdom has no Element#scrollTo: set the (clamped) scrollTop, as a browser does.
-    const scrollTo = proto.scrollTo;
+    const ownScrollTo = Object.getOwnPropertyDescriptor(proto, "scrollTo");
     proto.scrollTo = function (this: HTMLElement, ...args: unknown[]) {
       const before = this.scrollTop;
       const [first, second] = args;
@@ -145,8 +156,7 @@ describeUi("@/ui DataTable virtualize", () => {
       setTimeout(() => this.dispatchEvent(new view.Event("scroll")), 0);
     } as HTMLElement["scrollTo"];
     undo.push(() => {
-      if (scrollTo === undefined) delete (proto as Partial<HTMLElement>).scrollTo;
-      else proto.scrollTo = scrollTo;
+      restoreOwn(proto, "scrollTo", ownScrollTo);
     });
   });
 
@@ -329,16 +339,15 @@ describeUi("@/ui DataTable virtualize", () => {
       // The happy-dom window is installed per file in beforeAll, so the prototype is read per test.
       const protoOf = () => (globalThis as unknown as { HTMLElement: { prototype: HTMLElement } }).HTMLElement.prototype;
       let proto: HTMLElement;
-      let original: HTMLElement["scrollIntoView"] | undefined;
+      let original: PropertyDescriptor | undefined;
       beforeEach(() => {
         proto = protoOf();
         intoView.mockClear();
-        original = proto.scrollIntoView;
+        original = Object.getOwnPropertyDescriptor(proto, "scrollIntoView");
         proto.scrollIntoView = intoView as HTMLElement["scrollIntoView"];
       });
       afterEach(() => {
-        if (original === undefined) delete (proto as Partial<HTMLElement>).scrollIntoView;
-        else proto.scrollIntoView = original;
+        restoreOwn(proto, "scrollIntoView", original);
       });
 
       it("scrollToIndex scrolls the row into the page instead of the root", async () => {
