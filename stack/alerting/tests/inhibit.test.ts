@@ -6,11 +6,18 @@
 // of AlertingFindingCode owned by item 006 (06 §11.3).
 /// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { parse } from "yaml";
 import {
   buildInhibitRules,
   matcherReferencesDeadman,
+  productStaticInhibitRules,
   targetAdmitsAlertname,
+  withProductStaticInhibits,
 } from "../src/transform/inhibit.js";
+import { buildAlertmanagerConfig } from "../src/transform/routing.js";
+import { REPO_ROOT, STATIC_RULES_DIR } from "./paths.js";
 import type {
   EstateModel,
   Host,
@@ -240,5 +247,72 @@ describe("buildInhibitRules — in-place marks & determinism", () => {
     const a = buildInhibitRules(model, []).rules.map((r) => r.target_matchers.join(","));
     const b = buildInhibitRules(model, []).rules.map((r) => r.target_matchers.join(","));
     expect(a).toEqual(b);
+  });
+});
+
+// ── Hypervisor-relay inhibition (issue #74) ───────────────────────────────────────────────────────
+// A dead pve-exporter fails every hypervisor-api scrape at once. HostDown must not resolve those
+// pages (that would close a real outage and a flap would restart every pending window), so the
+// rule layer fires HypervisorExporterDown first and Alertmanager inhibits the hypervisor HostDowns.
+
+describe("hypervisor-relay inhibition (issue #74)", () => {
+  const rules = (parse(readFileSync(join(STATIC_RULES_DIR, "availability.yml"), "utf8")) as {
+    groups: Array<{ rules: Array<{ alert?: string; expr?: string; for?: string; labels?: Record<string, string> }> }>;
+  }).groups.flatMap((g) => g.rules);
+  const rule = (name: string) => rules.find((r) => r.alert === name)!;
+  const seconds = (d: string): number => {
+    const m = /^(\d+)(s|m)$/.exec(d)!;
+    return Number(m[1]) * (m[2] === "m" ? 60 : 1);
+  };
+
+  test("the static rule inhibits only hypervisor HostDown, on HypervisorExporterDown, per estate", () => {
+    expect(productStaticInhibitRules()).toEqual([
+      {
+        source_matchers: ['alertname="HypervisorExporterDown"'],
+        target_matchers: ['alertname="HostDown"', 'job="hypervisor-api"'],
+        equal: ["estate"],
+      },
+    ]);
+    const [r] = productStaticInhibitRules();
+    expect(targetAdmitsAlertname(r!.target_matchers, "HostDown")).toBe(true);
+    for (const other of [...PROTECTED.filter((n) => n !== "HostDown"), "DeadMansSwitch", "HypervisorExporterDown"]) {
+      expect(targetAdmitsAlertname(r!.target_matchers, other), other).toBe(false);
+    }
+    expect(r!.target_matchers.some(matcherReferencesDeadman)).toBe(false);
+  });
+
+  test("its source alert exists, watches pve-exporter, and fires before HostDown can", () => {
+    const source = rule("HypervisorExporterDown");
+    expect(source.expr?.trim()).toBe('up{job="pve-exporter"} == 0');
+    expect(source.labels?.severity).toBe("warning");
+    expect(seconds(source.for!)).toBeLessThan(seconds(rule("HostDown").for!));
+    // HostDown's own series carry job="hypervisor-api", the label the target matcher keys on, and
+    // the rule no longer drops them itself (dropping would RESOLVE an already-firing page).
+    expect(rule("HostDown").expr).toContain("hypervisor-api");
+    expect(rule("HostDown").expr).not.toContain("pve-exporter");
+  });
+
+  test("every generated Alertmanager config carries it, alongside estate-derived rules", () => {
+    const estate = makeModel({
+      channels: [{ name: "primary", kind: "chat", credential: { kind: "env", raw: "${SLACK_TOKEN}", varName: "SLACK_TOKEN" }, provenance: PROV }],
+    } as Partial<EstateModel>);
+    const routing = {
+      route: { receiver: "primary", routes: [{ continue: false, match: { severity: "critical" }, receiver: "primary" }] },
+      receivers: [{ name: "primary", config: { slack_configs: [{ api_url: "${SLACK_TOKEN}" }] } }],
+    };
+    const config = buildAlertmanagerConfig({ estate, routing } as never, []);
+    expect(config).not.toBeNull();
+    const want = JSON.stringify(productStaticInhibitRules()[0]);
+    expect(config!.inhibit_rules.some((r) => JSON.stringify(r) === want)).toBe(true);
+    const merged = withProductStaticInhibits([{ source_matchers: ['host="a"'], target_matchers: ['host="a"'] }]);
+    expect(merged.length).toBe(2);
+    expect(merged.some((r) => JSON.stringify(r) === want)).toBe(true);
+  });
+
+  test("the bootstrap Alertmanager config carries the same rule", () => {
+    const bootstrap = parse(readFileSync(join(REPO_ROOT, "stack/compose/config/alertmanager/alertmanager.bootstrap.yml"), "utf8")) as {
+      inhibit_rules?: unknown[];
+    };
+    expect(bootstrap.inhibit_rules).toEqual(productStaticInhibitRules());
   });
 });

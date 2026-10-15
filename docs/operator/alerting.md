@@ -48,9 +48,18 @@ the rule and that table in step:
 Every `HostDown` alert carries the host name in `host`, plus the `job` and `collection_class` labels,
 so route or silence on those, not on `instance`. Auxiliary exporters on a host (cadvisor,
 process-exporter, the heartbeat, custom exporters) never raise it, and probe-only hosts have no
-scrape job at all (Gatus checks them as `host:<name>`). While pve-exporter itself is down, every hypervisor scrape
-fails with it; that case raises `AncillaryDown` for the exporter and `HostDown` stays silent for
-the hypervisors.
+scrape job at all (Gatus checks them as `host:<name>`).
+
+Every hypervisor-api scrape goes through the one pve-exporter, which is passed the bare PVE host
+as `?target=` (the scrape job strips the scheme, port and path from the rendered endpoint; the
+exporter always talks to port 8006). While pve-exporter itself is down, every hypervisor reads
+`up == 0` for the exporter's fault. `HypervisorExporterDown` (warning, `for: 60s`) fires before any
+hypervisor `HostDown` can (`for: 90s`), and an Alertmanager inhibit rule (source
+`HypervisorExporterDown`, target `HostDown{job="hypervisor-api"}`, equal on `estate`) holds the
+hypervisor pages back for the outage. They are inhibited, not resolved: `HypervisorExporterDown`
+is the signal, and a hypervisor that is still down when the exporter returns pages without a new
+90s wait. The rule ships in both the bootstrap Alertmanager config and every config `alerting`
+generates.
 
 > **Upgrade note (issue #74): NAS and hypervisor hosts now raise `HostDown`.**
 > Before this release `HostDown` covered `managed-linux` hosts only, so a dead NAS or hypervisor
@@ -64,6 +73,16 @@ the hypervisors.
 >   old scope.
 > - A route that sends `HostDown` somewhere specific now receives NAS and hypervisor pages too.
 >   Split it on `collection_class` if those belong elsewhere.
+>
+> - The stock hypervisor scrape was broken: it passed the rendered URL (`https://pve1:8006`,
+>   `https://pve1/api`) to pve-exporter as `?target=`, which the pinned exporter answers with
+>   HTTP 500, so every hypervisor read as down. The `hypervisor-api` job now passes the bare host.
+>   `instance` is unchanged (still the rendered endpoint). An endpoint on a port other than 8006
+>   needs a downstream override of this job. A downstream relabel that adds `__param_module`
+>   (`&module=`) keeps working as before.
+> - The new `HypervisorExporterDown` warning inhibits hypervisor `HostDown` pages while
+>   pve-exporter is down (above). It overlaps with `AncillaryDown` for the same exporter, which
+>   still fires after 5m.
 >
 > The expected-DOWN fictional NAS and hypervisor targets in a demo estate now raise `HostDown`,
 > as the fictional managed hosts already did.

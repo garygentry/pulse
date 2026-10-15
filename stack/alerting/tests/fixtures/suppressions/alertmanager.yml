@@ -2,6 +2,13 @@ global:
   resolve_timeout: 5m
 inhibit_rules:
   - equal:
+      - estate
+    source_matchers:
+      - alertname="HypervisorExporterDown"
+    target_matchers:
+      - alertname="HostDown"
+      - job="hypervisor-api"
+  - equal:
       - service
     source_matchers:
       - service="quiet-db"

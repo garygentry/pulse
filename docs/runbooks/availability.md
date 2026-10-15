@@ -1,6 +1,6 @@
 ---
 title: Availability
-description: Triage and remediate the availability alert family — HostDown, DeepHealthProbeFailed, and DeepHealthProbeStale — the host-reachability and deep-health-probe signals where missing data is always treated as failure, never as healthy.
+description: Triage and remediate the availability alert family — HostDown, HypervisorExporterDown, DeepHealthProbeFailed, and DeepHealthProbeStale — the host-reachability and deep-health-probe signals where missing data is always treated as failure, never as healthy.
 slug: availability
 ---
 
@@ -21,8 +21,12 @@ expression is a separate critical rule covered by the [deep-health runbook](/dee
   (three consecutive missed 30s scrapes). The main job is `managed-linux` (node_exporter),
   `nas-api` (node_exporter on the NAS) or `hypervisor-api` (the PVE API through pve-exporter); the
   alert's `job` and `collection_class` labels say which. Keys on `up == 0`, not `pulse_agent_up`.
-  While pve-exporter itself is down, hypervisor hosts do not raise `HostDown`; that case is
-  `AncillaryDown` in the [engine runbook](/engine/).
+  While pve-exporter itself is down, hypervisor `HostDown` pages are inhibited (held, not
+  resolved) by `HypervisorExporterDown`.
+- **HypervisorExporterDown** (warning) — `up{job="pve-exporter"} == 0` for **60s**. Every
+  hypervisor-api scrape goes through pve-exporter, so hypervisor liveness is unknown. Restore the
+  exporter (`docker compose up -d pve-exporter` in `stack/compose`); see also `AncillaryDown` in the
+  [engine runbook](/engine/).
 - **DeepHealthProbeFailed** (warning) — `pulse_deep_health_up == 0` for **2m**: the probe ran and
   failed (unreachable, malformed, or errored). Mapped `pulse_deep_health` values are stale meanwhile.
 - **DeepHealthProbeStale** (warning) — `time() - pulse_deep_health_last_scrape_seconds > 300`: no
@@ -47,7 +51,8 @@ For a NAS or hypervisor host, use the alert's `job` (`nas-api` or `hypervisor-ap
 # From the engine host (or your jump host):
 ping -c 3 HOST
 curl -sS --max-time 5 http://HOST:9100/metrics | head -n 3   # node_exporter (managed-linux, nas-api)
-curl -sSk --max-time 5 https://HOST:8006/ -o /dev/null -w '%{http_code}\n'   # PVE API (hypervisor-api)
+# hypervisor-api: INSTANCE is the alert's `instance` label (the rendered PVE API endpoint)
+curl -sSk --max-time 5 INSTANCE -o /dev/null -w '%{http_code}\n'
 ```
 
 If `node_exporter` answers but the scrape failed, the fault is network/firewall between engine and

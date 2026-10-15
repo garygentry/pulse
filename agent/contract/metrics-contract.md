@@ -52,8 +52,9 @@ couple the contract to exporter releases.
 | `container_*` | instance, name | Upstream cAdvisor per-container metrics, present only on hosts that opt into cAdvisor. Referenced as a family, not enumerated. Host/workload telemetry only. |
 
 > **Container health is NOT a service liveness signal.** A service's liveness-of-function is
-> the deep-health family; a host's liveness is `up` of its main scrape job (`managed-linux`, the
-> series `HostDown` reads), and `pulse_agent_up` is the agent heartbeat. The
+> the deep-health family; a host's liveness is `up` of its main scrape job for its collection
+> class (`managed-linux` for an agent-managed host; `nas-api` and `hypervisor-api` for the
+> others; the series `HostDown` reads), and `pulse_agent_up` is the agent heartbeat. The
 > `container_*` family is host/workload telemetry only (CPU, memory, restarts) and MUST NOT be
 > read as a "service is up" signal (REQ-CONT-03). `alerting` MUST NOT key a service-liveness or
 > service-health rule off a `container_*` series; `dashboards` MAY show it as workload

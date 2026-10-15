@@ -3,6 +3,13 @@ global:
 inhibit_rules:
   - equal:
       - estate
+    source_matchers:
+      - alertname="HypervisorExporterDown"
+    target_matchers:
+      - alertname="HostDown"
+      - job="hypervisor-api"
+  - equal:
+      - estate
       - host
     source_matchers:
       - host="churn-host"
