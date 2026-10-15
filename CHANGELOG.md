@@ -82,6 +82,13 @@ rebuilt (`docker compose --profile web --profile deep-health build`) before `doc
 
 ### Changed
 
+- **CLI release binaries.** `bun run build:bin` produces four assets plus `SHA256SUMS`:
+  `pulse-linux-x64` and `pulse-linux-arm64` are now glibc builds (`bun-linux-x64` /
+  `bun-linux-arm64`) that run as-is on Debian, Ubuntu and similar hosts, and
+  `pulse-linux-x64-musl` / `pulse-linux-arm64-musl` are the musl builds, which need `libstdc++`
+  and `libgcc` (Alpine: `apk add libstdc++`). The previous musl-only binaries did not run on
+  glibc hosts. The bootstrap runbook downloads and verifies them with `gh release download`.
+  (#77)
 - **Host liveness means the host's main scrape job everywhere.** The overview grid, kiosk tiles,
   estate inventory, liveness history and the server snapshot treat a host as live only when `up`
   of its main job (`managed-linux`, `nas-api` or `hypervisor-api`) is 1, the same series

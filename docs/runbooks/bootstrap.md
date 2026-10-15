@@ -39,22 +39,24 @@ broken state.
 
 #### Step 1 — Fetch and checksum-verify the `pulse` binary
 
-Each Pulse release on GitHub (garygentry/pulse, Releases page) carries the CLI as two
-single-file binaries, `pulse-linux-x64` and `pulse-linux-arm64`, plus a `SHA256SUMS` file
-listing both. Download the binary for your architecture and `SHA256SUMS` from the release
-page, or with the GitHub CLI as below, and verify the checksum before trusting it.
+Each Pulse release on GitHub (garygentry/pulse, Releases page) carries the CLI as single-file
+binaries plus a `SHA256SUMS` file listing all of them:
 
-The binaries are built for **musl** (`bun-linux-*-musl` targets) and are dynamically linked
-against the musl loader, `libstdc++` and `libgcc`. They run as-is on Alpine with
-`apk add libstdc++` installed. On a glibc distribution (Debian, Ubuntu, Fedora) the shell
-reports `no such file or directory` when you run them; use the from-source alternative below
-instead.
+- `pulse-linux-x64` and `pulse-linux-arm64`: for glibc distributions (Debian, Ubuntu, Fedora
+  and most others). Use these by default.
+- `pulse-linux-x64-musl` and `pulse-linux-arm64-musl`: for musl distributions (Alpine). They
+  are dynamically linked against the musl loader, `libstdc++` and `libgcc`, so run
+  `apk add libstdc++` first. On a glibc host the shell reports `no such file or directory`
+  for them.
+
+Download the binary for your host and `SHA256SUMS` from the release page, or with the GitHub
+CLI as below, and verify the checksum before trusting it.
 
 **Command**
 
 ```bash
 TAG="v0.2.0"   # the release you are installing
-ARCH="x64"     # or arm64, to match your host
+ARCH="x64"     # or arm64; on Alpine use x64-musl or arm64-musl
 gh release download "$TAG" --repo garygentry/pulse \
   --pattern "pulse-linux-${ARCH}" --pattern SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
@@ -62,9 +64,8 @@ mv "pulse-linux-${ARCH}" pulse && chmod +x ./pulse
 export PULSE_BIN="$(pwd)/pulse"
 ```
 
-Keep the downloaded file name until `sha256sum` has run: `SHA256SUMS` lists
-`pulse-linux-x64` and `pulse-linux-arm64`, and `--ignore-missing` skips the architecture you
-did not download.
+Keep the downloaded file name until `sha256sum` has run: `SHA256SUMS` lists every asset by
+name, and `--ignore-missing` skips the ones you did not download.
 
 **From source instead** (any host with Bun ≥ 1.3): check out the release tag and run the CLI
 through Bun, with no compiled binary:
@@ -76,7 +77,7 @@ chmod +x pulse-cli && export PULSE_BIN="$(pwd)/pulse-cli"
 ```
 
 **Verify (content):** `sha256sum --ignore-missing -c SHA256SUMS` prints
-`pulse-linux-x64: OK` (or `pulse-linux-arm64: OK`). Read the `OK` line itself, not just the
+`pulse-linux-${ARCH}: OK` (for example `pulse-linux-x64: OK`). Read the `OK` line itself, not just the
 exit code. Then `"$PULSE_BIN" --version` prints `pulse 0.2.0` and
 `supported schema majors: 1`, which confirms the binary runs and speaks schema major 1. A
 from-source CLI prints `pulse 0.0.0-dev`, because only release builds bake the version in.

@@ -3,13 +3,14 @@
 // Covers, per the acceptance criteria:
 //   • version injection is deterministic and restores the "0.0.0-dev" sentinel (REQ-DET-01);
 //   • the committed src/version.ts is exactly the regenerated sentinel form (never hand-edited);
-//   • SHA256SUMS is emitted over exactly the two arch binaries, in coreutils `sha256sum` format;
+//   • SHA256SUMS is emitted over exactly the built binaries, in coreutils `sha256sum` format;
 //   • an x64 `bun build --compile` binary is runnable and prints PULSE_VERSION + the bundled
 //     core's supported schema majors on `--version` (REQ-CLI-06);
-//   • `runBuild` produces both musl-static arch artifacts (correct ELF machine) + SHA256SUMS.
+//   • `runBuild` produces the glibc default artifacts plus the musl variants (correct ELF machine
+//     and interpreter) + SHA256SUMS, and the glibc x64 artifact runs on a glibc x64 host.
 //
-// A musl binary cannot execute on a glibc build host, so the *runnable* --version check builds
-// the host-native target; the release *artifacts* (musl) are asserted by their ELF machine byte.
+// A musl binary cannot execute on a glibc build host, so the musl artifacts are asserted by their
+// ELF machine byte and PT_INTERP path.
 
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -63,6 +64,28 @@ function elfMachine(path: string): { isElf: boolean; machine: number } {
   const buf = readFileSync(path);
   const isElf = buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46;
   return { isElf, machine: buf.readUInt16LE(18) };
+}
+
+/** The PT_INTERP path of a 64-bit little-endian ELF (the dynamic loader), or `null` if none. */
+function elfInterpreter(path: string): string | null {
+  const buf = readFileSync(path);
+  const phoff = Number(buf.readBigUInt64LE(32));
+  const phentsize = buf.readUInt16LE(54);
+  const phnum = buf.readUInt16LE(56);
+  for (let i = 0; i < phnum; i++) {
+    const at = phoff + i * phentsize;
+    if (buf.readUInt32LE(at) !== 3) continue; // PT_INTERP
+    const offset = Number(buf.readBigUInt64LE(at + 8));
+    const size = Number(buf.readBigUInt64LE(at + 32));
+    return buf.subarray(offset, offset + size).toString("utf8").replace(/\0+$/, "");
+  }
+  return null;
+}
+
+/** True when the ELF's dynamic loader exists on this host, so the binary can be executed here. */
+function elfInterpreterExists(path: string): boolean {
+  const interp = elfInterpreter(path);
+  return interp !== null && existsSync(interp);
 }
 
 describe("version injection (renderVersionModule / writeVersionFile)", () => {
@@ -140,10 +163,18 @@ describe("build version resolution", () => {
 });
 
 describe("SHA256SUMS emission (computeSha256Sums)", () => {
-  test("covers exactly the two arch binaries in coreutils `sha256sum` format", () => {
+  test("the build matrix: glibc defaults first, then the musl variants", () => {
+    expect(BUILD_TARGETS.map((t) => [t.outfile, t.target])).toEqual([
+      ["pulse-linux-x64", "bun-linux-x64"],
+      ["pulse-linux-arm64", "bun-linux-arm64"],
+      ["pulse-linux-x64-musl", "bun-linux-x64-musl"],
+      ["pulse-linux-arm64-musl", "bun-linux-arm64-musl"],
+    ]);
+  });
+
+  test("covers exactly the given binaries in coreutils `sha256sum` format", () => {
     withTmp((dir) => {
-      const names = BUILD_TARGETS.map((t) => t.outfile);
-      expect(names).toEqual(["pulse-linux-x64", "pulse-linux-arm64"]);
+      const names = ["pulse-linux-x64", "pulse-linux-arm64"];
 
       const x64Bytes = Buffer.from("x64-binary-bytes");
       const armBytes = Buffer.from("arm64-binary-bytes");
@@ -202,28 +233,38 @@ describe("compiled binary --version (REQ-CLI-06)", () => {
   );
 });
 
-describe("runBuild — musl artifacts + checksums (CON-03)", () => {
+describe("runBuild — glibc + musl artifacts and checksums (CON-03)", () => {
   test(
-    "produces both musl-static arch binaries (correct ELF machine) and a SHA256SUMS over them",
+    "produces the glibc defaults and musl variants (correct ELF machine + interpreter) and a SHA256SUMS over them",
     async () => {
       await withTmpAsync(async (dir) => {
-        const result = await runBuild({ version: VERSION_SENTINEL, outDir: dir });
+        const result = await runBuild({ version: "9.8.7", outDir: dir });
 
-        // Both v1 targets attempted, in BUILD_TARGETS order; every one built here.
-        expect(result.targets.map((t) => t.outfile)).toEqual(["pulse-linux-x64", "pulse-linux-arm64"]);
-        const x64 = result.targets.find((t) => t.outfile === "pulse-linux-x64")!;
-        expect(x64.ok).toBe(true);
+        // Every target attempted, in BUILD_TARGETS order; the host-arch ones must build here.
+        expect(result.targets.map((t) => t.outfile)).toEqual(BUILD_TARGETS.map((t) => t.outfile));
+        for (const name of ["pulse-linux-x64", "pulse-linux-x64-musl"]) {
+          expect(result.targets.find((t) => t.outfile === name)!.ok).toBe(true);
+        }
 
-        // The x64 artifact is a real x86-64 ELF; when arm64 cross-compiles, it is an AArch64 ELF.
-        const x64Elf = elfMachine(join(dir, "pulse-linux-x64"));
-        expect(x64Elf.isElf).toBe(true);
-        expect(x64Elf.machine).toBe(62); // EM_X86_64
+        const expectElf = (name: string, machine: number, musl: boolean): void => {
+          const elf = elfMachine(join(dir, name));
+          expect(elf.isElf).toBe(true);
+          expect(elf.machine).toBe(machine);
+          const interp = elfInterpreter(join(dir, name));
+          if (musl) expect(interp).toMatch(/ld-musl-/);
+          else expect(interp).toMatch(/ld-linux-/);
+        };
+        expectElf("pulse-linux-x64", 62, false); // EM_X86_64, glibc loader
+        expectElf("pulse-linux-x64-musl", 62, true);
+        for (const [name, musl] of [["pulse-linux-arm64", false], ["pulse-linux-arm64-musl", true]] as const) {
+          if (result.targets.find((t) => t.outfile === name)!.ok) expectElf(name, 183, musl); // EM_AARCH64
+        }
 
-        const arm = result.targets.find((t) => t.outfile === "pulse-linux-arm64")!;
-        if (arm.ok) {
-          const armElf = elfMachine(join(dir, "pulse-linux-arm64"));
-          expect(armElf.isElf).toBe(true);
-          expect(armElf.machine).toBe(183); // EM_AARCH64
+        // The glibc x64 default asset runs as-is on a glibc x64 host and reports the baked version.
+        if (process.arch === "x64" && process.platform === "linux" && elfInterpreterExists(join(dir, "pulse-linux-x64"))) {
+          const run = Bun.spawnSync([join(dir, "pulse-linux-x64"), "--version"], { stdout: "pipe", stderr: "pipe" });
+          expect(run.exitCode).toBe(0);
+          expect(run.stdout.toString()).toContain("pulse 9.8.7");
         }
 
         // SHA256SUMS covers exactly the built binaries and verifies against their bytes.

@@ -4,9 +4,11 @@
 //   1. regenerates apps/cli/src/version.ts from a version arg/env (else apps/cli/package.json's
 //      `version`, else the "0.0.0-dev" sentinel) — deterministically, `export const PULSE_VERSION = "<version>";` and nothing
 //      clock/host/random (REQ-DET-01);
-//   2. builds the two musl-static single binaries via `bun build --compile`:
-//        pulse-linux-x64   (--target=bun-linux-x64-musl)
-//        pulse-linux-arm64 (--target=bun-linux-arm64-musl)
+//   2. builds four single-file binaries via `bun build --compile`:
+//        pulse-linux-x64        (--target=bun-linux-x64, glibc — the default asset)
+//        pulse-linux-arm64      (--target=bun-linux-arm64, glibc — the default asset)
+//        pulse-linux-x64-musl   (--target=bun-linux-x64-musl; needs libstdc++ + libgcc)
+//        pulse-linux-arm64-musl (--target=bun-linux-arm64-musl; needs libstdc++ + libgcc)
 //      into a gitignored dist/build location (never the repo tree). `--compile` bundles
 //      @pulse/core + @pulse/renderer, so the supported schema majors travel with the binary;
 //   3. emits SHA256SUMS over the produced binaries (the deploy-toolkit handoff contract);
@@ -29,13 +31,19 @@ import { basename, resolve } from "node:path";
 /** The committed version sentinel a local (non-release) build carries. */
 export const VERSION_SENTINEL = "0.0.0-dev";
 
-/** The v1 build matrix: exactly the two Linux musl arch targets (macOS/Windows are out of scope). */
+/**
+ * The build matrix: glibc binaries are the default assets (estate hosts are typically
+ * Debian/Ubuntu); the musl variants are dynamically linked against the musl loader, libstdc++ and
+ * libgcc (Alpine: `apk add libstdc++`). macOS/Windows are out of scope.
+ */
 export const BUILD_TARGETS = [
-  { target: "bun-linux-x64-musl", outfile: "pulse-linux-x64" },
-  { target: "bun-linux-arm64-musl", outfile: "pulse-linux-arm64" },
+  { target: "bun-linux-x64", outfile: "pulse-linux-x64" },
+  { target: "bun-linux-arm64", outfile: "pulse-linux-arm64" },
+  { target: "bun-linux-x64-musl", outfile: "pulse-linux-x64-musl" },
+  { target: "bun-linux-arm64-musl", outfile: "pulse-linux-arm64-musl" },
 ] as const;
 
-/** The checksum manifest attached to the GitHub release alongside the two binaries. */
+/** The checksum manifest attached to the GitHub release alongside the binaries. */
 export const CHECKSUMS_FILENAME = "SHA256SUMS";
 
 const SCRIPTS_DIR = import.meta.dir;
@@ -257,7 +265,7 @@ export function resolveVersionArg(
 
 /**
  * CLI entry: run the build, print a human summary to stderr, and exit non-zero if any target
- * failed or nothing built — a release requires BOTH arch binaries. (Artifacts + SHA256SUMS are
+ * failed or nothing built — a release requires every binary in BUILD_TARGETS. (Artifacts + SHA256SUMS are
  * still written for whatever succeeded, so a partial local build is inspectable.)
  */
 async function main(): Promise<void> {
@@ -276,7 +284,7 @@ async function main(): Promise<void> {
 
   const allBuilt = result.targets.every((t) => t.ok);
   if (!allBuilt) {
-    log("build:bin: not all targets built — a release requires both arch binaries (see scripts/README.md).");
+    log("build:bin: not all targets built — a release requires every target (see scripts/README.md).");
     process.exit(1);
   }
 }
