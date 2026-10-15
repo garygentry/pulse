@@ -116,14 +116,14 @@ The table is the `@/ui` `DataTable` with its opt-in `virtualize` prop, using the
 
 Keyboard navigation is `useTriageKeyboard` (`keyboard.ts`), which the view calls once:
 
-1. Moves go through `useListNavigation` (vim keys: `J`/`K` and the arrows step, `Home`/`End` and `gg`/`G` jump) with its `virtual` option, so they run over the whole filtered row range rather than the rendered window. The `selectedIndex` signal is the cursor; a stale cursor is clamped on the next move.
+1. Moves go through `useListNavigation` (vim keys: `J`/`K` and the arrows step, `Home`/`End` and `gg`/`G` jump) with its `virtual` option, so they run over the whole filtered row range rather than the rendered window. Letters work from anywhere on the tab; the arrows and `Home`/`End` only while focus is in the table (the hook's `acceptKey`), never Shift-modified, so elsewhere they still scroll the page. The `selectedIndex` signal is the cursor; it follows focus (a row reached by Tab or a click), a stale cursor is clamped on the next move, and a move clamped at an end brings focus back to that row.
 2. The move finds the row-open button by fingerprint rather than rendered index.
-3. If virtualization has removed the row from the DOM, it calls the `DataTable` handle's `scrollToIndex` to render the row and retries on the next animation frame (a few frames at most; a retry yields when the cursor has moved on).
+3. If virtualization has removed the row from the DOM, it calls the `DataTable` handle's `scrollToIndex` to render the row and retries on the next animation frame (a few frames at most; a retry yields when the cursor has moved on). When the handle's promise settles it tries once more, but only while focus is lost or still in the table, and not after a scroll reported as cancelled.
 4. The focused button receives the sole `aria-current="true"` marker.
 5. `Enter` opens the selected alert unless focus is already on an interactive control (the shared shortcut registry, never `preventDefault`, so native activation of the focused button wins).
 6. `Escape` closes an open detail sheet (the shared shortcut registry).
 
-Moves and `Enter` are inactive outside the Firing tab so they do not conflict with tab navigation, and moves are inactive while focus is inside a dialog (the detail sheet). As with every `useListNavigation` list, keys pressed on a form control or a button other than a row's name button are left to that control.
+Moves (the `g` prefix included) and `Enter` are inactive outside the Firing tab so they do not conflict with tab navigation, and moves are inactive while focus is inside a dialog (the detail sheet). As with every `useListNavigation` list, keys pressed on a form control or a button other than a row's name button are left to that control.
 
 ## Detail Composition
 

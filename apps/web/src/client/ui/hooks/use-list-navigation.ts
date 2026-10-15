@@ -47,7 +47,7 @@ export interface UseListNavigationOptions {
    * A virtualized list renders only some of its items, so moves (↑/↓, Home/End, …) are worked out
    * over the whole list instead of `getItems()`: `count()` is the number of items, `activeIndex()`
    * the focused one's index among them (-1 for none), and `focus(index)` renders that item if it
-   * must and focuses it. The other intents still act on the focused element in `getItems()`.
+   * must and focuses it (called for every move, also one clamped at an end). The other intents still act on the focused element in `getItems()`.
    */
   virtual?: {
     count: () => number;
@@ -76,6 +76,12 @@ export interface UseListNavigationOptions {
    * `tabindex` attributes it set are removed.
    */
   rovingTabIndex?: { initialIndex?: () => number };
+  /**
+   * Called with each key the hook would act on and what it means; return `false` to leave that
+   * key alone (not consumed, a pending `g` disarmed). For a page-level list that claims some keys
+   * only in some places, e.g. arrows only while focus is in the list, letters anywhere.
+   */
+  acceptKey?: (event: KeyboardEvent, intent: ListNavIntent) => boolean;
   /** Turn the listener off without unmounting. Default `true`. */
   enabled?: boolean;
 }
@@ -209,12 +215,13 @@ export function useListNavigation(options: UseListNavigationOptions): void {
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey;
-      const intent = typing
+      const resolved = typing
         ? "none"
         : resolveListIntent(event, config, {
             origin,
             gPending: gPendingRef.current,
           });
+      const intent = resolved !== "none" && opts.acceptKey?.(event, resolved) === false ? "none" : resolved;
       gPendingRef.current = nextGPending(intent);
 
       const index = indexOfActive(items, from);
@@ -300,7 +307,9 @@ function moveTo(intent: ListNavIntent, opts: UseListNavigationOptions, items: Ar
     const from = opts.virtual.activeIndex();
     const to = nextListIndex(from, intent, opts.virtual.count(), columns);
     if (to < 0) return false;
-    if (to !== from) opts.virtual.focus(to);
+    // Also when the move is clamped (to === from): focus comes back to the active item, as
+    // `item.focus()` does for a rendered list.
+    opts.virtual.focus(to);
     return true;
   }
   const next = nextListIndex(index, intent, items.length, columns);

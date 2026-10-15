@@ -262,14 +262,16 @@ rendered window, and the 70vh scroll region uses `overscroll-contain`, so on a p
 reaches its end does not scroll the page; swipe outside the tree to scroll the page.
 
 **List keyboards beyond the rendered rows.** Pulse's `useListNavigation` (divergence notes in
-`ui/VENDORED.json`) extends deck's in three ways that matter here. `virtual` runs moves over a list's full count, not
+`ui/VENDORED.json`) extends deck's in the ways that matter here. `virtual` runs moves over a list's full count, not
 only its rendered items: the alerts triage keyboard (`views/alerts/keyboard.ts`) drives its
 `selectedIndex` cursor across the virtualized table this way and focuses a far row once the table
 has rendered it. `rovingTabIndex` makes a list one Tab stop that follows focus, without
 re-rendering the list: the timeline lane tree starts it at the selected lane. And an item handler
 (`onActivate`, `onExpand`, `onCollapse`, `onToggle`) can return `false` to leave the key unclaimed,
 so the browser or another handler gets it (Enter on a triage row's button stays native activation;
-Enter and Space on a lane tree domain row do nothing).
+Enter and Space on a lane tree domain row do nothing). `acceptKey(event, intent)` can turn down a key
+the hook would act on: the triage keyboard claims ↑/↓/Home/End only while focus is in its table, so
+they keep scrolling the page elsewhere, while j/k and gg/G work from anywhere on the Firing tab.
 
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell

@@ -3,10 +3,12 @@
 // `useTriageKeyboard` drives the cursor with `useListNavigation` (vim keys: j/k and ↑/↓ step,
 // Home/End and gg/G jump) over EVERY firing row through its `virtual` option, so a move reaches
 // rows the virtualized DataTable has not rendered: the cursor is the `selectedIndex` signal, and a
-// row outside the window is scrolled in and focused on a later frame (`focusRow`). Moves no-op off
-// the Firing tab (the catalog/silences tabs keep their own keys) and from inside a dialog (the
-// detail Sheet). Enter and Escape stay on the shared a11y registry (document level, never
-// preventDefault), so they coexist with native button activation and the Sheet's own Escape.
+// row outside the window is scrolled in and focused on a later frame (`focusRow`). The arrows and
+// Home/End are claimed only while focus is in the table (elsewhere they scroll the page); the cursor
+// follows focus (a row reached by Tab or a click). Nothing is claimed off the Firing tab (the
+// catalog/silences tabs keep their own keys) or from inside a dialog (the detail Sheet). Enter and
+// Escape stay on the shared a11y registry (document level, never preventDefault), so they coexist
+// with native button activation and the Sheet's own Escape.
 // TriageKeyboardHints lives here next to the handlers it documents; this is a .ts module, so the
 // hint row is built with `createElement` rather than JSX.
 import { createElement, useEffect, useRef } from "react";
@@ -27,8 +29,9 @@ export interface TriageKeyboardOptions {
   /** Scroll row `index` into view — the triage DataTable handle's `scrollToIndex`, which renders a
    *  virtualized-out row first so it can be focused afterwards. When it returns a promise (the
    *  handle's settles once the row is in place), the row is focused then too, which a far jump
-   *  (End, G) needs when the window takes longer than the frame retries to move. */
-  readonly scrollToIndex: (index: number) => void | Promise<void>;
+   *  (End, G) needs when the window takes longer than the frame retries to move. A promise that
+   *  resolves `false` means the scroll was cancelled, and the row is then not focused. */
+  readonly scrollToIndex: (index: number) => void | Promise<void | boolean>;
   /** True iff the Firing tab is active — gates the moves and Enter. */
   readonly isFiringTabActive: () => boolean;
   /** True iff the detail pane is open (`sel` present) — gates Escape. */
@@ -51,12 +54,18 @@ export function useTriageKeyboard(opts: TriageKeyboardOptions): void {
   useListNavigation({
     keys: "vim",
     getItems: () => optsRef.current.container()?.querySelectorAll<HTMLElement>(ROW_OPEN_SELECTOR) ?? [],
+    // Letters (j/k, gg/G) work from anywhere on the Firing tab; ↑/↓/Home/End only while focus is in
+    // the table, so they still scroll the page (and stay with links and other controls) elsewhere.
+    // Nothing is claimed off the Firing tab or inside a dialog (the detail Sheet), the `g` prefix
+    // included.
+    acceptKey: (event) => {
+      const o = optsRef.current;
+      if (!o.isFiringTabActive() || focusInDialog(o.container())) return false;
+      if (!PAGE_KEYS.has(event.key)) return true;
+      return !event.shiftKey && focusInTable(o.container());
+    },
     virtual: {
-      // Zero items is "nothing to move over": the key is left alone.
-      count: () => {
-        const o = optsRef.current;
-        return o.isFiringTabActive() && !focusInDialog(o.container()) ? o.rows().length : 0;
-      },
+      count: () => optsRef.current.rows().length,
       activeIndex: () => optsRef.current.selectedIndex.value,
       focus: (index) => {
         const o = optsRef.current;
@@ -69,6 +78,44 @@ export function useTriageKeyboard(opts: TriageKeyboardOptions): void {
   });
 
   useEffect(() => installTriageShortcuts(optsRef), []);
+
+  // The cursor follows focus: a row reached by Tab or a click is where the next j/k moves from.
+  useEffect(() => {
+    const doc = (globalThis as { document?: Document }).document;
+    if (doc === undefined) return undefined;
+    const onFocusIn = (event: FocusEvent): void => {
+      const o = optsRef.current;
+      const target = event.target as Element | null;
+      const container = o.container();
+      if (container === null || target === null || typeof target.getAttribute !== "function") return;
+      if (!container.contains(target)) return;
+      const fp = target.getAttribute("data-triage-open");
+      if (fp === null) return;
+      const index = o.rows().findIndex((row) => row.fingerprint === fp);
+      if (index < 0 || index === o.selectedIndex.value) return;
+      o.selectedIndex.value = index;
+      markCurrent(container, target);
+    };
+    doc.addEventListener("focusin", onFocusIn);
+    return () => doc.removeEventListener("focusin", onFocusIn);
+  }, []);
+}
+
+/** Keys that scroll the page when focus is outside the table: claimed only inside it. */
+const PAGE_KEYS: ReadonlySet<string> = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
+
+/** True when focus is on a row or anywhere inside the triage table's container. */
+function focusInTable(container: HTMLElement | null): boolean {
+  const active = container?.ownerDocument.activeElement ?? null;
+  return container !== null && active !== null && container.contains(active);
+}
+
+/** Give `el` the sole `aria-current` among the rows. */
+function markCurrent(container: HTMLElement | null, el: Element): void {
+  for (const prev of Array.from(container?.querySelectorAll("[data-triage-open][aria-current]") ?? [])) {
+    if (prev !== el) prev.removeAttribute("aria-current");
+  }
+  el.setAttribute("aria-current", "true");
 }
 
 /** Register Enter/Escape; returns a disposer that removes both. */
@@ -162,11 +209,7 @@ function focusRow(opts: TriageKeyboardOptions, index: number): void {
   };
 
   const focus = (el: HTMLElement): void => {
-    const container = opts.container();
-    for (const prev of Array.from(container?.querySelectorAll("[data-triage-open][aria-current]") ?? [])) {
-      prev.removeAttribute("aria-current"); // single current row
-    }
-    el.setAttribute("aria-current", "true");
+    markCurrent(opts.container(), el); // single current row
     if (typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
     el.focus();
   };
@@ -178,10 +221,15 @@ function focusRow(opts: TriageKeyboardOptions, index: number): void {
   }
   const settled = opts.scrollToIndex(index);
   if (settled !== undefined) {
-    void settled.then(() => {
+    void settled.then((completed) => {
+      if (completed === false) return; // the scroll was cancelled (a user scroll): leave the viewport be
       if (opts.selectedIndex.value !== index) return; // the cursor moved on: that move owns focus
       const found = find();
-      if (found !== null && found.ownerDocument.activeElement !== found) focus(found);
+      if (found === null || found.ownerDocument.activeElement === found) return;
+      // Only take focus that is lost or still in the table, never from wherever the user went since.
+      const active = found.ownerDocument.activeElement;
+      const lost = active === null || active === found.ownerDocument.body;
+      if (lost || focusInTable(opts.container())) focus(found);
     });
   }
   const raf =
@@ -209,6 +257,8 @@ export function TriageKeyboardHints(): ReactElement {
       className: "flex flex-wrap items-center gap-3 text-sm text-muted-foreground",
     },
     createElement("span", { className: "inline-flex items-center gap-1" }, createElement(Kbd, null, "J"), " / ", createElement(Kbd, null, "K"), " move"),
+    createElement("span", { className: "inline-flex items-center gap-1" }, createElement(Kbd, null, "↓"), " / ", createElement(Kbd, null, "↑"), " move in the table"),
+    createElement("span", { className: "inline-flex items-center gap-1" }, createElement(Kbd, null, "Home"), " / ", createElement(Kbd, null, "End"), " or ", createElement(Kbd, null, "gg"), " / ", createElement(Kbd, null, "G"), " first / last"),
     createElement("span", { className: "inline-flex items-center gap-1" }, createElement(Kbd, null, "Enter"), " open"),
     createElement("span", { className: "inline-flex items-center gap-1" }, createElement(Kbd, null, "Esc"), " close"),
   );

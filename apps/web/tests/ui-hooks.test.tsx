@@ -464,6 +464,35 @@ describeUi("@/ui hooks", () => {
       ]);
     });
 
+    it("leaves a key alone when acceptKey returns false (not consumed, gg disarmed)", () => {
+      const seen: string[] = [];
+      render(
+        <Fixture
+          acceptKey={(event, intent) => {
+            seen.push(`${event.key}:${intent}`);
+            return event.key !== "ArrowDown" && event.key !== "g";
+          }}
+        />,
+      );
+      expect(press("ArrowDown")).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+      expect(press("j")).toBe(true);
+      expect(active()).toBe("alpha");
+      press("End");
+      expect(press("g")).toBe(false);
+      expect(press("g")).toBe(false);
+      expect(active()).toBe("charlie");
+      expect(press("x")).toBe(false); // unmapped keys never reach acceptKey
+      expect(seen).toEqual(["ArrowDown:move-next", "j:move-next", "End:move-last", "g:g-prefix", "g:g-prefix"]);
+    });
+
+    it("virtual: a move clamped at an end still calls focus, so focus comes back to the item", () => {
+      const focus = mock((_index: number) => {});
+      render(<Fixture virtual={{ count: () => 3, activeIndex: () => 2, focus }} />);
+      expect(press("j")).toBe(true);
+      expect(focus).toHaveBeenLastCalledWith(2);
+    });
+
     it("acts on the item the key was pressed on, even when focus is elsewhere", () => {
       const onActivate = mock();
       render(<Fixture keys="arrows" scope="element" onActivate={onActivate} />);

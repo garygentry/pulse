@@ -939,6 +939,17 @@ describeDom("timeline keyboard — lane tree (item 019)", (dom) => {
     expect(t.active().getAttribute("data-lane-key")).toBe("domains");
   });
 
+  test("REQ-A11Y-02: Space on a host, service or Domains row does nothing and is not prevented", async () => {
+    const t = await mountTree();
+    const host = targetKey(t.hosts[0]!.target);
+    keydown(t.row(host), "ArrowRight");
+    await flush();
+    const svc = targetKey(t.hosts[0]!.children[0]!.target);
+    for (const key of [host, svc, "domains"]) expect(keydown(t.row(key), " ").defaultPrevented).toBe(false);
+    expect(t.selects).toEqual([]);
+    expect(t.toggles).toEqual([host]);
+  });
+
   test("REQ-A11Y-02: a focused row becomes the tab stop and keeps it while rows are inserted above it; collapsing them keeps it too", async () => {
     const t = await mountTree();
     const first = targetKey(t.hosts[0]!.target);

@@ -63,7 +63,7 @@ export const TIMELINE_KEY_BINDINGS: readonly KeyBindingHint[] = [
   { context: SWIM, combos: [["←"], ["→"]], action: "Previous / next alert interval (by start); shows its details" },
   { context: SWIM, combos: [["Home"], ["End"]], action: "First / last alert interval" },
   { context: SWIM, combos: [["Enter"]], action: "Open in Alerts (filtered to the target, or to the severity)" },
-  { context: TREE, combos: [["↑"], ["↓"]], action: "Move between lanes" },
+  { context: TREE, combos: [["↑"], ["↓"], ["K"], ["J"]], action: "Move between lanes (K / J as ↑ / ↓)" },
   { context: TREE, combos: [["Home"], ["End"]], action: "First / last lane" },
   { context: TREE, combos: [["→"], ["←"]], action: "Expand / collapse a host or Domains (→ on an expanded row moves to its first child; ← on a child moves to its parent)" },
   { context: TREE, combos: [["Enter"]], action: "Select a host or service lane (opens the detail region); toggles Domains; domain DNS-check lanes are not selectable" },
