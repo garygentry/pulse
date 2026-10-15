@@ -20,7 +20,12 @@ import {
 } from "../src/client/views/estate/entity-model.js";
 import type { EntityRouteTarget } from "../src/client/views/estate/entity-model.js";
 import { describeUi, render, screen, userEvent, waitFor, within } from "./rtl.js";
-import { currentAvailability, makeEstatePayloadFixture, makeLiveTarget } from "./factories/estate-payload.js";
+import {
+  currentAvailability,
+  makeEstatePayloadFixture,
+  makeLiveTarget,
+  setEstateConnection,
+} from "./factories/estate-payload.js";
 import { stubAnimationFrame } from "./mutations-dialog-dom.js";
 
 function makeRouter(): { router: PathRouter; calls: string[] } {
@@ -33,6 +38,7 @@ function makeRouter(): { router: PathRouter; calls: string[] } {
 function seed(payload: EstatePayload | null, path: string, params: Record<string, string>): AppStore {
   const store = createAppStore({ storage: null, initialQuery: {} });
   store.estate.value = payload;
+  if (payload !== null) setEstateConnection(store);
   store.route.value = { path, view: "estate", params, query: {} };
   return store;
 }
