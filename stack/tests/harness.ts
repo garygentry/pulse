@@ -296,9 +296,18 @@ export function run(argv: string[], env: Record<string, string> = {}): Ran {
   };
 }
 
-/** {@link run} without blocking the event loop, so independent commands can run concurrently. */
+/**
+ * {@link run} without blocking the event loop, so independent commands can run concurrently.
+ * Never throws: a command that cannot be spawned (e.g. no `docker` on PATH) comes back as exit
+ * 127 with the spawn error as stderr, so each caller's own exit-code check fails it by name.
+ */
 export async function runAsync(argv: string[], env: Record<string, string> = {}): Promise<Ran> {
-  const p = Bun.spawn(argv, { env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" });
+  let p: ReturnType<typeof Bun.spawn<"ignore", "pipe", "pipe">>;
+  try {
+    p = Bun.spawn(argv, { env: { ...process.env, ...env }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  } catch (error) {
+    return { exitCode: 127, stdout: "", stderr: `cannot run ${argv[0]}: ${error instanceof Error ? error.message : String(error)}` };
+  }
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(p.stdout).text(),
     new Response(p.stderr).text(),

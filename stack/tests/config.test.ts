@@ -422,8 +422,10 @@ test("every default-profile service declares a healthcheck with test + retries (
 
 test("default profile == DEFAULT_PROFILE_SERVICES; web/deep-health are gated", () => {
   // `--services` under NO active profile lists exactly the default-profile set (sorted).
-  const listed = composeRun("services")
-    .stdout.trim()
+  const services = composeRun("services");
+  expect(services.exitCode, services.stderr).toBe(0);
+  const listed = services.stdout
+    .trim()
     .split("\n")
     .filter(Boolean)
     .sort();

@@ -116,9 +116,14 @@ export async function hideShell(page: Page): Promise<void> {
   await expect(page.locator('header[aria-label="Pulse"]')).toBeHidden();
 }
 
+/** The engine page's app version text, which carries the build id (`+<buildId>` or `+nobuild`). */
+export function buildIdText(page: Page): Locator {
+  return page.getByRole("article", { name: /^Pulse web app/ }).getByText(/\+[0-9a-f]{6,}|nobuild/);
+}
+
 /** Locators whose content legitimately changes between commits (the build id in the app version). */
 function volatile(page: Page): Locator[] {
-  return [page.getByRole("article", { name: /^Pulse web app/ }).getByText(/\+[0-9a-f]{6,}|nobuild/)];
+  return [buildIdText(page)];
 }
 
 /** Marks a volatile element for {@link PIN_VOLATILE}. */
