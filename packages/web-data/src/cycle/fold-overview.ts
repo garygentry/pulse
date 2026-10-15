@@ -28,6 +28,7 @@ import type { AlertmanagerAlert } from "../sources/alertmanager.js";
 import type { GatusEndpointState, GatusCheckResult } from "../sources/gatus.js";
 import type { WebEstateHostV2, WebEstateServiceV2 } from "@pulse/renderer";
 import type { FoldInputs } from "./records.js";
+import { hostLivenessJob, isHostLivenessSample } from "../wire/host-liveness.js";
 import {
   DEFAULT_GATUS_STALE_SECONDS,
   effectiveData,
@@ -88,13 +89,6 @@ const TARGET_VARS: Record<string, "instance" | "service" | null> = {
 // Liveness and status resolution (preserving the existing overview matrix)
 // ---------------------------------------------------------------------------
 
-/** True iff any sample with `projection` carries `host=<host>` and value `1`. */
-function hasLive(series: readonly MetricSample[], projection: string, host: string): boolean {
-  return series.some(
-    (s) => s.projection === projection && s.metric["host"] === host && s.value === 1,
-  );
-}
-
 /** True when `iso` parses and is within `staleSeconds` of `now`; unparseable is never fresh. */
 function isFresh(iso: string, now: Date, staleSeconds: number): boolean {
   const t = Date.parse(iso);
@@ -138,16 +132,11 @@ interface FoldContext {
 /** Affirmative-liveness for a host (null when the governing source is unreachable). */
 function evaluateHostLiveness(host: WebEstateHostV2, ctx: FoldContext): boolean | null {
   const cls: CollectionClass = host.collectionClass;
-  if (cls === "managed-linux") {
+  if (hostLivenessJob(cls) !== null) {
+    // `up` of the host's main scrape job only — the HostDown series (wire/host-liveness.ts). An
+    // auxiliary exporter's `up` or the agent heartbeat (`pulse_agent_up`) is never host liveness.
     if (!ctx.metricsOk) return null;
-    return (
-      hasLive(ctx.liveSeries, "pulse_agent_up", host.name) ||
-      hasLive(ctx.liveSeries, "up", host.name)
-    );
-  }
-  if (cls === "hypervisor-api" || cls === "nas-api") {
-    if (!ctx.metricsOk) return null;
-    return hasLive(ctx.liveSeries, "up", host.name);
+    return ctx.liveSeries.some((s) => isHostLivenessSample(cls, host.name, s.projection, s.metric, s.value));
   }
   if (cls === "probe-only") {
     if (!ctx.checksOk) return null;

@@ -10,7 +10,7 @@
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import type { HistorySeries } from "@pulse/web-data/wire";
+import { hostLivenessJob, type HistorySeries } from "@pulse/web-data/wire";
 import { Button, Icon, Skeleton, Sparkline, type SparklineSample } from "@/ui";
 import type { HistoryController, OverviewTarget, TargetHistoryState } from "../model.js";
 import { DRAWER_EMPTY_CLASS } from "./classes.js";
@@ -30,11 +30,13 @@ export function toSparklineSamples(series: HistorySeries): readonly SparklineSam
 }
 
 /**
- * Whether the liveness query applies to the target. An `excluded` host has no scrape targets, so
- * the server answers QUERY_NOT_APPLICABLE; the drawer says "Not collected" instead of fetching.
+ * Whether the liveness query applies to the target. Host liveness history is `up` of the host's
+ * main scrape job (the HostDown series, `hostLivenessJob`); an `excluded` host has none, and a
+ * `probe-only` host is checked by Gatus with no VM scrape job, so the server answers
+ * QUERY_NOT_APPLICABLE for both and the drawer says "Not collected" instead of fetching.
  */
 export function livenessApplies(target: OverviewTarget): boolean {
-  return !(target.kind === "host" && target.host.collectionClass === "excluded");
+  return target.kind !== "host" || hostLivenessJob(target.host.collectionClass) !== null;
 }
 
 // Same wording as TargetDrawer's title; kept local so the two modules do not import each other.

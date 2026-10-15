@@ -100,7 +100,14 @@ scrape_configs:
 ```
 
 The default `node_exporter` target for the same host stays in place — the two jobs are
-complementary: `node_exporter` for host signals, your exporter for pool/dataset health.
+complementary: `node_exporter` for host signals, your exporter for pool/dataset health. Host
+liveness in the web app keeps reading the default `nas-api` job only. (The shipped `HostDown`
+rule covers managed-linux hosts, not nas-api.)
+
+The web app's estate **Coverage** tab lists this job's target as `unexpected` in its
+declared-versus-scraped table, because the estate does not declare it. The same goes for any
+static job you add downstream (a `nut` UPS exporter, for example). That row is expected for a job
+you added on purpose.
 
 ## See also
 

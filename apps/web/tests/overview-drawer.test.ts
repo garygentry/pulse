@@ -852,6 +852,20 @@ describeDom("TargetDrawer — lazy liveness sparkline", () => {
     history.dispose();
   });
 
+  test("#72: a probe-only host (Gatus-checked, no VM liveness job) fetches no liveness and says 'Not collected'", async () => {
+    const snapshot = makeOverviewSnapshot({ classes: ["probe-only"] });
+    const transport = deferredHistoryFetch();
+    const history = createHistoryController({ fetch: transport.fetch, now: () => 1_000 });
+    const { open } = await mountGridWithDrawer(snapshot, history);
+    const dialog = await open(FIXTURE_IDS.okHost);
+    expect(transport.calls).toHaveLength(0);
+    const region = liveness(dialog);
+    expect(region.getAttribute("data-history-state")).toBe("not-collected");
+    expect(region.textContent).toBe(LIVENESS_NOT_COLLECTED_TEXT);
+    expect(region.querySelector("button")).toBeNull();
+    history.dispose();
+  });
+
   test("#51: a failure a retry cannot fix (QUERY_NOT_APPLICABLE) offers no retry control", async () => {
     const snapshot = makeOverviewSnapshot();
     const transport = deferredHistoryFetch();

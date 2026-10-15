@@ -23,6 +23,8 @@ export {
   ESTATE_SCRAPE_INSTANCE_SOURCE,
   HOST_LIVENESS_JOB,
   NODE_EXPORTER_JOBS,
+  hostLivenessJob,
+  isHostLivenessSample,
   scrapeInstanceSource,
   scrapeSeriesIdentity,
 } from "./series-identity.js";
