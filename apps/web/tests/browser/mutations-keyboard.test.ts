@@ -31,11 +31,24 @@ async function tabToTrigger(page: Page, id: DialogPageId): Promise<void> {
   await page.evaluate(() => document.activeElement?.setAttribute("data-kb-trigger", ""));
 }
 
-/** Enter on the focused trigger, then wait for the lazy dialog and for focus to land inside it. */
+/** Enter on the focused trigger, then wait for the lazy dialog, for focus to land inside it, and for
+ *  its outside-pointer dismissal to be armed. */
 async function enterOpens(page: Page, id: DialogPageId): Promise<void> {
   await page.keyboard.press("Enter");
   await dialogOf(page, id).waitFor();
   await page.waitForFunction((sel) => document.activeElement?.closest(sel) !== null, DIALOG);
+  await outsideDismissArmed(page);
+}
+
+/**
+ * Radix's DismissableLayer attaches its document `pointerdown` listener in a `setTimeout(0)` scheduled
+ * by the same passive-effect flush that moves focus into the dialog. A click that lands before that
+ * timer runs is never seen, so the dialog stays open (GitHub #49: under CI load, the 30 s "detached"
+ * wait timed out). Timers of equal delay run in scheduling order (HTML timer initialisation steps),
+ * so one page-side `setTimeout(0)` queued now runs after Radix's: the listener is attached.
+ */
+async function outsideDismissArmed(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 }
 
 /** Focus returns to the trigger once the dialog unmounts (Radix restores it on the next task). */
