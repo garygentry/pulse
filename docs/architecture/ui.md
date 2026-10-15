@@ -334,15 +334,23 @@ no density.
   so a capacity that changes and changes back never resurrects an earlier page. Status changes that
   reorder the tiles keep the current page and its timer. One exception: a host that newly turns
   critical restarts the sequence at page 1 (even inside a rotation), unless it is already on the
-  visible page. To stop a flapping host pinning the wall to page 1, each host id restarts the
-  sequence at most once per full cycle. That cooldown is module-level, like the rotation cursor, so
-  it holds across rotation visits.
+  visible page. Page 1 holds the worst hosts, so the new host shows at once only if it sorts onto
+  page 1, which it does unless more critical hosts than one page holds sort ahead of it. Two flap
+  guards keep a flapping host from pinning the wall to page 1. Each host id restarts the sequence at
+  most once per full cycle, and the whole wall restarts at most once per cycle. Both are
+  module-level, like the rotation cursor, so they hold across rotation visits, and old entries are
+  pruned.
+- **Startup.** The first page timer waits for one ResizeObserver delivery for the region, and for
+  `document.fonts.ready` (up to 1 s). The first sequence therefore runs on settled metrics, after
+  the chrome above the wall and the page offset have landed.
 - **Timing.** Each page stays up for `max(10 s, cycle / P)`. Without rotation the cycle is 30 s, so
   up to three pages share it and more pages lengthen it. Inside a shell rotation (`?rotate=`) the
   cycle is the overview's dwell. A visit shows the pages that fit at that page dwell and holds the
   last one until the shell advances. The next visit resumes at the first page not yet shown, through
-  a module-level cursor, since the view unmounts between visits. The shell stays the only owner of
-  rotation timers. Page swaps fade unless `prefers-reduced-motion` is set.
+  a module-level cursor, since the view unmounts between visits. The cursor records only pages
+  actually shown: a page that ran its full dwell, or the visit's last page once it has been up for
+  half a dwell. A re-measure or resize mid-visit therefore never skips a page. The shell stays the
+  only owner of rotation timers. Page swaps fade unless `prefers-reduced-motion` is set.
 
 ## The `/_ui` workbench
 

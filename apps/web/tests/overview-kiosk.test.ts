@@ -334,6 +334,7 @@ describeDom("useKioskPaging", (dom) => {
       }
       observe(el: Element): void {
         this.record.observed.push(el);
+        this.record.callback(); // a real observer delivers the initial size once observed
       }
       unobserve(): void {}
       disconnect(): void {
@@ -482,9 +483,72 @@ describeDom("useKioskPaging", (dom) => {
     // A same-mount epoch change (e.g. `overview,overview`) also resumes, and wraps to page 1.
     await renderHook({ hosts: HOSTS, rotation: rotation(5, 20_000), clock: fc.clock });
     expect(state.activePageIndex).toBe(4);
-    fc.advance(10_000);
+    fc.advance(10_000); // page 6 appears; the shell advances before it has been up half a dwell
     await renderHook({ hosts: HOSTS, rotation: rotation(6, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(5); // not counted as shown: the next visit starts on it
+    fc.advance(10_000); // this visit shows it for a full dwell: counted, and the visit wraps on
+    await renderHook({ hosts: HOSTS, rotation: rotation(7, 20_000), clock: fc.clock });
     expect(state.activePageIndex).toBe(0);
+  });
+
+  test("a re-measure right after ready inside a rotation does not skip the resume page", async () => {
+    const fc = fakeClock();
+    layout.height = 100;
+    layout.columns = 2; // 6 pages, 10 s each; a 20 s visit shows two
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
+    // The chrome above settles a moment later: one more row, a new capacity, a new sequence.
+    layout.height = 200; // 4 per page → 3 pages
+    act(() => observers[0]!.callback());
+    expect(state.pages).toHaveLength(3);
+    expect(state.activePageIndex).toBe(0); // the resume page (still page 1), not page 2
+    await unmount();
+    resetKioskRotationCursor();
+
+    // Same mid-visit: on the second visit's first page, a resize must not skip it either.
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 20_000), clock: fc.clock });
+    fc.advance(20_000); // pages 1 and 2 shown → the next visit starts on page 3
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(2, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+    layout.columns = 1; // 1 per page → 12 pages: new sequence, resumes at the cursor
+    act(() => observers.at(-1)!.callback());
+    expect(state.activePageIndex).toBe(2);
+  });
+
+  test("the first page timer waits for web fonts (bounded) before it starts", async () => {
+    const g = globalThis as unknown as { document: { fonts?: unknown } };
+    const saved = Object.getOwnPropertyDescriptor(g.document, "fonts");
+    let release!: () => void;
+    Object.defineProperty(g.document, "fonts", {
+      configurable: true,
+      value: { status: "loading", ready: new Promise<void>((resolve) => (release = resolve)) },
+    });
+    try {
+      const fc = fakeClock();
+      layout.height = 100;
+      await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+      // Only the bounded font wait is armed; no page timer yet.
+      expect(fc.scheduled.map((t) => t.delay)).toEqual([1_000]);
+      await act(async () => {
+        release();
+        await Promise.resolve();
+      });
+      expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+
+      // Fonts that never settle: the page timer starts after the bounded wait.
+      await unmount();
+      Object.defineProperty(g.document, "fonts", { configurable: true, value: { status: "loading", ready: new Promise(() => {}) } });
+      const slow = fakeClock();
+      await renderHook({ hosts: HOSTS, rotation: null, clock: slow.clock });
+      expect(slow.scheduled.map((t) => t.delay)).toEqual([1_000]);
+      slow.advance(1_000);
+      expect(slow.scheduled.at(-1)!.delay).toBe(10_000);
+    } finally {
+      if (saved === undefined) delete (g.document as { fonts?: unknown }).fonts;
+      else Object.defineProperty(g.document, "fonts", saved);
+    }
   });
 
   test("a rotation epoch change clears the prior timer and restarts the page dwell", async () => {
@@ -496,13 +560,14 @@ describeDom("useKioskPaging", (dom) => {
     const armed = fc.scheduled.at(-1)!.handle;
 
     await renderHook({ hosts: HOSTS, rotation: rotation(2), clock: fc.clock });
-    expect(state.activePageIndex).toBe(2); // resumes after the page last shown
+    // Page 2 had only just appeared, so it was not shown: the new visit resumes on it.
+    expect(state.activePageIndex).toBe(1);
     expect(fc.cleared).toContain(armed);
     expect(fc.pending()).toBe(1);
     fc.advance(13_332);
-    expect(state.activePageIndex).toBe(2);
+    expect(state.activePageIndex).toBe(1);
     fc.advance(1);
-    expect(state.activePageIndex).toBe(0);
+    expect(state.activePageIndex).toBe(2);
   });
 
   test("a status-only change or a worst-first reorder keeps the visible page and its timer", async () => {
@@ -603,6 +668,29 @@ describeDom("useKioskPaging", (dom) => {
       expect([...seen].sort()).toEqual([0, 1, 2]);
       // 90 s of flapping: at most one restart per 30 s cycle (natural wraps to page 1 included).
       expect(restarts).toBeLessThanOrEqual(3);
+    });
+
+    test("two hosts flapping out of phase restart the wall at most once per cycle between them", async () => {
+      const fc = fakeClock();
+      layout.height = 100; // 3 pages, 10 s each, 30 s cycle
+      const SECOND = "host:host-006"; // OK too; placed just before the flapper (last page)
+      const order2 = [...order.filter((id) => id !== SECOND && id !== FLAPPER), SECOND, FLAPPER];
+      const at = (next: typeof snapshot): HostStatus[] => order2.map((id) => next.hosts.find((h) => h.drilldownId === id)!);
+      const a = at(withTargetStatus(snapshot, FLAPPER, "critical", 2));
+      const b = at(withTargetStatus(snapshot, SECOND, "critical", 2));
+      const none = at(snapshot);
+      await renderHook({ hosts: none, rotation: null, clock: fc.clock });
+      const seen = new Set<number>([state.activePageIndex]);
+      const clearedBefore = fc.cleared.length;
+      // Every 1.5 s one of the two turns critical while the other recovers.
+      for (let i = 0; i < 60; i++) {
+        await renderHook({ hosts: i % 2 === 0 ? a : b, rotation: null, clock: fc.clock });
+        fc.advance(1_500);
+        seen.add(state.activePageIndex);
+      }
+      // 90 s: a restart clears the armed page timer; at most one per 30 s cycle for the whole wall.
+      expect(fc.cleared.length - clearedBefore).toBeLessThanOrEqual(3);
+      expect([...seen].sort()).toEqual([0, 1, 2]);
     });
 
     test("no restart when the newly critical host is already on the visible page", async () => {

@@ -354,8 +354,10 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
       const { page } = handle;
       // Page time: the clock is paused, so it advances only through runFor below.
       const pageNow = (): Promise<number> => page.evaluate(() => performance.now());
-      // Let layout settle first (web fonts, chrome above the wall): page 1 must hold exactly the
-      // columns × rows the region now fits, so a late re-measure cannot restart the sequence mid-run.
+      // Let layout settle first: the chrome above the wall and the page-root offset can land a frame
+      // after the first measurement (the fixture registers no web fonts, so this is not font
+      // loading). Page 1 must hold exactly the columns × rows the region now fits, so a late
+      // re-measure cannot restart the sequence mid-run.
       // Polled from the test side in real time: the page's own timers are on the paused clock.
       const settled = (): Promise<boolean> =>
         page.evaluate(() => {

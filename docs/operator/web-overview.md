@@ -116,8 +116,9 @@ rotate between views, add `rotate`, for example `?kiosk=1&rotate=overview:60s,al
 overview visit then shows the pages that fit its dwell at 10 seconds or more each, and the next visit
 continues from where the last one stopped. A rotation dwell under 10 seconds shows one page per
 visit. When a host newly turns critical and is not on screen, the wall jumps back to page 1, where
-the worst hosts are. A host that keeps flapping does this at most once per cycle. With reduced
-motion set on the device, pages change without the fade.
+the worst hosts are (the new host is there unless more critical hosts than one page holds sort
+ahead of it). This happens at most once per cycle, however many hosts flap. With reduced motion
+set on the device, pages change without the fade.
 
 ## Where to go next
 
