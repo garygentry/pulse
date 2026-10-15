@@ -3,12 +3,13 @@
 // Covers `apiFetch`'s exact discriminated results, cycle-route metadata validation
 // (ETag/payload-id/observation) before accepting a 200 or 304, the one-unconditional-retry on an
 // invalid/validator-less 304, the session/history null-cycle-metadata contract, and bounded
-// failure (network/protocol → INTERNAL_ERROR, never an uncaught throw). No DOM: `apiFetch` uses
+// failure (protocol → INTERNAL_ERROR; network → SERVER_UNREACHABLE, deadline abort → SERVER_TIMEOUT,
+// other abort → REQUEST_CANCELLED; never an uncaught throw). No DOM: `apiFetch` uses
 // only Bun globals (`Headers`, `Response`, `atob`, `TextDecoder`).
 
 import { describe, expect, test } from "bun:test";
 
-import { apiFetch, type ApiFetchResult } from "../src/client/api/client.js";
+import { apiFetch, timeoutAbortReason, type ApiFetchResult } from "../src/client/api/client.js";
 import type { CycleObservation, SourceId } from "@pulse/web-data/wire";
 
 const SOURCE_IDS: readonly SourceId[] = [
@@ -239,14 +240,79 @@ describe("apiFetch — error responses and bounded failure", () => {
     expect(result.httpStatus).toBe(502);
   });
 
-  test("a network failure resolves to INTERNAL_ERROR httpStatus 0, never an uncaught throw", async () => {
+  test("#57: a network failure resolves to SERVER_UNREACHABLE httpStatus 0, not a server error", async () => {
     const fetchImpl = (async () => {
       throw new TypeError("Failed to fetch");
     }) as unknown as typeof fetch;
     const result: ApiFetchResult<unknown> = await apiFetch("/api/overview", undefined, fetchImpl);
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error).toEqual({ code: "SERVER_UNREACHABLE", message: "The Pulse server could not be reached." });
+    expect(result.httpStatus).toBe(0);
+  });
+
+  test("a real 500 envelope keeps its server code and status (still a server error)", async () => {
+    const { fetchImpl } = queuedFetch([
+      new Response(JSON.stringify({ code: "INTERNAL_ERROR", message: "An unexpected server error occurred." }), { status: 500 }),
+    ]);
+    const result = await apiFetch("/api/estate", undefined, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
     expect(result.error.code).toBe("INTERNAL_ERROR");
+    expect(result.httpStatus).toBe(500);
+  });
+});
+
+/** A fetch that never answers on its own: it rejects with the signal's reason once aborted. */
+const hangingFetch = ((_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+  new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal;
+    if (signal === undefined || signal === null) return;
+    signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
+  })) as unknown as typeof fetch;
+
+describe("apiFetch — #57 transport failure classification", () => {
+  test("an abort carrying the timeout reason resolves SERVER_TIMEOUT", async () => {
+    const controller = new AbortController();
+    const pending = apiFetch("/api/estate", { signal: controller.signal }, hangingFetch);
+    controller.abort(timeoutAbortReason());
+    const result = await pending;
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error).toEqual({ code: "SERVER_TIMEOUT", message: "The Pulse server did not respond in time." });
+    expect(result.httpStatus).toBe(0);
+  });
+
+  test("AbortSignal.timeout() is also classified as SERVER_TIMEOUT", async () => {
+    const result = await apiFetch("/api/estate", { signal: AbortSignal.timeout(1) }, hangingFetch);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("SERVER_TIMEOUT");
+  });
+
+  test("any other abort resolves REQUEST_CANCELLED, never unreachable or a server error", async () => {
+    const controller = new AbortController();
+    const pending = apiFetch("/api/estate", { signal: controller.signal }, hangingFetch);
+    controller.abort();
+    const result = await pending;
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("REQUEST_CANCELLED");
+    expect(result.httpStatus).toBe(0);
+  });
+
+  test("a deadline that interrupts a 200 body mid-read is SERVER_TIMEOUT, not INTERNAL_ERROR", async () => {
+    const controller = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('{"partial":'));
+        controller.signal.addEventListener("abort", () => c.error(controller.signal.reason), { once: true });
+      },
+    });
+    const fetchImpl = (async () =>
+      new Response(body, { status: 200, headers: cycleHeaders({ etag: HASH_A, payloadId: HASH_B }) })) as unknown as typeof fetch;
+    const pending = apiFetch("/api/estate", { signal: controller.signal }, fetchImpl);
+    await Promise.resolve();
+    controller.abort(timeoutAbortReason());
+    const result = await pending;
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("SERVER_TIMEOUT");
     expect(result.httpStatus).toBe(0);
   });
 });

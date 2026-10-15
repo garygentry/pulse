@@ -144,7 +144,7 @@ describe("live wire contracts (criterion 2)", () => {
     expect(propType(state, "failure")).toBe("ViewDeliveryFailure | null");
     const failure = findInterface(sf, "ViewDeliveryFailure");
     expect(propNames(failure)).toEqual(["code", "message", "status"]);
-    expect(propType(failure, "code")).toBe("ApiErrorCode");
+    expect(propType(failure, "code")).toBe("ClientFetchErrorCode");
   });
 
   test("validateLiveTick accepts a tick with all five view identities", () => {

@@ -35,9 +35,15 @@ import type {
   TimelinePayload,
 } from "@pulse/web-data/wire";
 
-import { POLL_INTERVAL_MS, POLL_STALE_MS, REFRESH_INTERVAL_MS } from "../../shared/constants.js";
+import { POLL_INTERVAL_MS, POLL_STALE_MS, REFRESH_INTERVAL_MS, VIEW_FETCH_TIMEOUT_MS } from "../../shared/constants.js";
 import type { OverviewSnapshotV2 } from "@pulse/web-data/wire";
-import { apiFetch, fetchDevBuildId, type ApiFetchOptions, type ApiFetchResult } from "../api/client.js";
+import {
+  apiFetch,
+  fetchDevBuildId,
+  timeoutAbortReason,
+  type ApiFetchOptions,
+  type ApiFetchResult,
+} from "../api/client.js";
 import type { AppStore } from "./index.js";
 import type { ConnectionPhase, ConnectionState, Transport } from "./types.js";
 
@@ -118,6 +124,9 @@ export interface LiveStateOptions {
   intervalMs?: number;
   /** Failure/stall window before `phase: "stale"`; default `POLL_STALE_MS`. */
   staleMs?: number;
+  /** Deadline for one view GET before it is aborted and recorded as `SERVER_TIMEOUT`; default
+   *  `VIEW_FETCH_TIMEOUT_MS`. Applies to view GETs only, never to the SSE stream or the dev check. */
+  viewTimeoutMs?: number;
   /** Raw reload; wrapped internally with a single-fire guard. Default `() => location.reload()`. */
   reload?: () => void;
   /** Dev build-id check, or null/absent to disable it. */
@@ -155,6 +164,7 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
   const fetchImpl = opts.fetchImpl ?? fetch;
   const intervalMs = opts.intervalMs ?? POLL_INTERVAL_MS;
   const staleMs = opts.staleMs ?? POLL_STALE_MS;
+  const viewTimeoutMs = opts.viewTimeoutMs ?? VIEW_FETCH_TIMEOUT_MS;
   const setTimer = opts.setTimer ?? setTimeout;
   const clearTimer = opts.clearTimer ?? clearTimeout;
   const now = opts.now ?? Date.now;
@@ -411,10 +421,15 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
       signal: controller.signal,
       ...(etag !== null ? { etag } : {}),
     };
+    // Bounded deadline: a hung GET is aborted with a timeout reason, so apiFetch resolves
+    // SERVER_TIMEOUT and the view records a failure instead of waiting forever (a hung estate GET
+    // under a live SSE stream would otherwise keep a stale estate looking current, #57).
+    const deadline = setTimer(() => controller.abort(timeoutAbortReason()), viewTimeoutMs);
     let result: ApiFetchResult<unknown>;
     try {
       result = await apiFetch<unknown>(VIEW_PATH[view], options, fetchImpl);
     } finally {
+      clearTimer(deadline);
       controllers.delete(controller);
     }
     // Reject a superseded callback: stop(), an epoch bump (generation reset / takeover / reconnect),
@@ -424,6 +439,9 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
   }
 
   function onViewResult(view: ViewId, result: ApiFetchResult<unknown>): void {
+    // A request this machine cancelled (supersession, takeover, stop) is never a delivery failure.
+    // The epoch/token guard already drops those; this keeps any other abort from surfacing too.
+    if (result.status === "error" && result.error.code === "REQUEST_CANCELLED") return;
     if (result.status === "error") {
       failures[view] = {
         code: result.error.code,

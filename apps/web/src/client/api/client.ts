@@ -8,11 +8,15 @@
 // browser-safe by construction (its emitted graph has no Node/Bun/renderer/source runtime edge).
 
 import {
+  CLIENT_TRANSPORT_MESSAGES,
   ERROR_MESSAGES,
   OBSERVATION_HEADER_MAX_BYTES,
   validateCycleObservation,
   validateHashId,
+  type ApiError,
   type ApiErrorCode,
+  type ClientFetchErrorCode,
+  type ClientTransportErrorCode,
   type CycleObservation,
   type ErrorEnvelope,
 } from "@pulse/web-data/wire";
@@ -69,9 +73,24 @@ export async function fetchDevBuildId(
 }
 
 /**
+ * The `DOMException` name that marks an abort as a deadline expiry (the same name
+ * `AbortSignal.timeout()` uses). A caller enforcing a timeout aborts its controller with
+ * {@link timeoutAbortReason}; `apiFetch` then resolves `SERVER_TIMEOUT` instead of `REQUEST_CANCELLED`.
+ */
+const TIMEOUT_ERROR_NAME = "TimeoutError";
+
+/** The abort reason a caller passes to `AbortController.abort()` when its request deadline expires. */
+export function timeoutAbortReason(): DOMException {
+  return new DOMException("The request deadline expired.", TIMEOUT_ERROR_NAME);
+}
+
+/**
  * The exact discriminated outcome of one `apiFetch` call (01 §11). Expected HTTP failures resolve
- * here as `status:"error"`; network/protocol failures become a bounded `INTERNAL_ERROR` error
- * result, never an uncaught throw.
+ * here as `status:"error"`; never an uncaught throw. When no usable HTTP response arrived the error
+ * carries a client transport code at `httpStatus` 0: `SERVER_UNREACHABLE` (network failure),
+ * `SERVER_TIMEOUT` (the caller's deadline aborted it), or `REQUEST_CANCELLED` (the caller aborted
+ * it for any other reason; never an operator-facing failure). A response that arrived but could not
+ * be decoded or validated is a bounded `INTERNAL_ERROR`.
  */
 export type ApiFetchResult<T> =
   | {
@@ -89,7 +108,8 @@ export type ApiFetchResult<T> =
     }
   | {
       /** Expected-failure discriminator. */ readonly status: "error";
-      /** Validated shared error envelope (bounded `INTERNAL_ERROR` on protocol/network failure). */ readonly error: ErrorEnvelope;
+      /** Validated shared error envelope (bounded `INTERNAL_ERROR` on protocol failure), or a
+       *  client transport code when no usable response arrived. */ readonly error: ApiError<ClientFetchErrorCode>;
       /** HTTP status returned by the server, or 0 for a network/transport failure. */ readonly httpStatus: number;
     };
 
@@ -97,7 +117,8 @@ export type ApiFetchResult<T> =
 export interface ApiFetchOptions {
   /** Prior strong validator; sent as a strong `If-None-Match` for conditional cycle requests. */
   readonly etag?: string;
-  /** Optional request cancellation signal. */
+  /** Optional request cancellation signal. Abort it with {@link timeoutAbortReason} to have the
+   *  call resolve `SERVER_TIMEOUT`; any other abort resolves `REQUEST_CANCELLED`. */
   readonly signal?: AbortSignal;
 }
 
@@ -135,6 +156,23 @@ function internalErrorEnvelope(): ErrorEnvelope {
 /** A bounded error result for a protocol/network failure at HTTP status `httpStatus` (0 = network). */
 function internalError(httpStatus: number): ApiFetchErrorResult {
   return { status: "error", error: internalErrorEnvelope(), httpStatus };
+}
+
+/**
+ * The bounded error result for a request that produced no usable response because the transport
+ * threw (fetch rejected, or the body stream failed mid-read). Classified from the caller's signal,
+ * not from the thrown value: an aborted signal whose reason is a deadline is `SERVER_TIMEOUT`, any
+ * other abort is `REQUEST_CANCELLED`, and an unaborted failure is `SERVER_UNREACHABLE`.
+ */
+function transportError(signal: AbortSignal | undefined): ApiFetchErrorResult {
+  let code: ClientTransportErrorCode = "SERVER_UNREACHABLE";
+  if (signal?.aborted === true) {
+    const reason: unknown = signal.reason;
+    const isTimeout =
+      typeof reason === "object" && reason !== null && (reason as { name?: unknown }).name === TIMEOUT_ERROR_NAME;
+    code = isTimeout ? "SERVER_TIMEOUT" : "REQUEST_CANCELLED";
+  }
+  return { status: "error", error: { code, message: CLIENT_TRANSPORT_MESSAGES[code] }, httpStatus: 0 };
 }
 
 /** Strip one layer of surrounding double quotes from an entity-tag header value, if present. */
@@ -188,6 +226,14 @@ async function readErrorEnvelope(res: Response): Promise<ErrorEnvelope> {
 }
 
 /**
+ * A failed 2xx body read: an abort (deadline or cancellation) that interrupted the stream is a
+ * transport failure, never a "server error"; otherwise the body was malformed (`INTERNAL_ERROR`).
+ */
+function bodyReadError(httpStatus: number, signal: AbortSignal | undefined): ApiFetchErrorResult {
+  return signal?.aborted === true ? transportError(signal) : internalError(httpStatus);
+}
+
+/**
  * Perform one HTTP round trip. Returns the final `ApiFetchResult`, or the `RETRY` sentinel when a
  * 304 arrives that cannot be accepted as conditional reuse (no retained validator or malformed 304
  * metadata) — the caller then re-issues the request unconditionally.
@@ -214,7 +260,7 @@ async function requestOnce<T>(
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
   } catch {
-    return internalError(0); // network/transport/abort — bounded, never an uncaught throw
+    return transportError(options?.signal); // network/timeout/abort — bounded, never an uncaught throw
   }
 
   // 304 — conditional reuse. Accept only with a retained validator AND valid 304 metadata; an
@@ -243,7 +289,7 @@ async function requestOnce<T>(
     try {
       value = (await res.json()) as T;
     } catch {
-      return internalError(res.status);
+      return bodyReadError(res.status, options?.signal);
     }
     return { status: "ok", value, etag, identity, observation };
   }
@@ -253,7 +299,7 @@ async function requestOnce<T>(
   try {
     value = (await res.json()) as T;
   } catch {
-    return internalError(res.status);
+    return bodyReadError(res.status, options?.signal);
   }
   return { status: "ok", value, etag: null, identity: null, observation: null };
 }
@@ -264,8 +310,10 @@ async function requestOnce<T>(
  * bodies plus ETag/payload-id/observation metadata before accepting a 200 or 304. Cycle routes
  * require the full valid metadata contract; session/history routes permit null cycle metadata. An
  * invalid 304 without a retained validator triggers exactly one unconditional retry and is never
- * empty success. Expected HTTP failures resolve as `status:"error"`; network/protocol failures
- * become a bounded `INTERNAL_ERROR` result — this never rejects for expected failure.
+ * empty success. Expected HTTP failures resolve as `status:"error"`; protocol failures become a
+ * bounded `INTERNAL_ERROR` and transport failures a client transport code (see `ApiFetchResult`) —
+ * this never rejects for expected failure. There is no built-in deadline: a caller that needs one
+ * aborts `options.signal` with `timeoutAbortReason()` (the live-state view GETs do).
  */
 export async function apiFetch<T>(
   path: string,
