@@ -2,7 +2,8 @@
  * pulse — extensions to the design tokens in theme.css (deck's file, verbatim).
  *
  * - Wallboard density: `[data-density="wallboard"]` (kiosk, or the density control) scales
- *   Tailwind's spacing and type scale for 3–4 m legibility. Desk density is theme.css as is.
+ *   Tailwind's spacing and type scale, and deck's pattern layout tokens with it, for 3–4 m
+ *   legibility. Desk density is theme.css as is.
  * - Motion tokens for the few animated state changes.
  * - Inline monospace size (`--code-font-size`) for code/kbd/samp/pre in running text.
  *
@@ -27,6 +28,35 @@
   --text-2xl: 2.25rem;
   /* 16px code in 18px body, as the pre-port wallboard scale had it. */
   --code-font-size: calc(16em / 18);
+
+  /* deck's per-pattern layout tokens (theme.css, since v0.5.0) are rem values, so they do not
+     follow the wallboard spacing above. Restate them on the spacing scale, at the same multiples
+     their desk values are of the default 0.25rem step, so tables, lists, sections and empty states
+     grow with the wallboard as they did when the patterns used spacing utilities. */
+  --table-cell-h: calc(var(--spacing) * 11);
+  --table-cell-px: calc(var(--spacing) * 3);
+  --table-cell-py: calc(var(--spacing) * 2.5);
+  --table-compact-cell-h: calc(var(--spacing) * 8);
+  --table-compact-cell-px: calc(var(--spacing) * 2);
+  --table-compact-cell-py: calc(var(--spacing) * 1);
+  --list-gap: calc(var(--spacing) * 1);
+  --list-item-py: calc(var(--spacing) * 1.5);
+  --list-divided-item-py: calc(var(--spacing) * 2);
+  --list-card-gap: calc(var(--spacing) * 2);
+  --list-card-item-px: calc(var(--spacing) * 4);
+  --list-card-item-py: calc(var(--spacing) * 3);
+  --list-group-gap: calc(var(--spacing) * 2);
+  --section-gap: calc(var(--spacing) * 3);
+  --section-card-p: calc(var(--spacing) * 4);
+  --empty-state-px: calc(var(--spacing) * 6);
+  --empty-state-py: calc(var(--spacing) * 10);
+  --empty-state-compact-py: calc(var(--spacing) * 2);
+}
+
+@media (width >= 48rem) {
+  :root[data-density="wallboard"] {
+    --section-card-p: calc(var(--spacing) * 6);
+  }
 }
 
 :root {
