@@ -258,10 +258,11 @@ describe("guard 1/2/5 — no reachable production write or audit surface", () =>
       expect(branch, "buildWriteRuntime present but the proxy-header branch is missing").not.toBeNull();
       expect(at > branch!.start && at < branch!.end).toBe(true);
     }
-    expect(code).toContain("createFetchHandler(runtime)"); // none arm: M1 default dispatcher → 405
+    // None arm: the shared static assets but no dispatcher, so the M1 default answers 405.
+    expect(code).toContain("createFetchHandler(runtime, assets)");
     // Proxy-header arm (V-001): no test boots it through main(), so pin the wiring statically. Dropping
     // the dispatcher would 405 every mutation; dropping runtimeDeps/attachRuntime disables ack reconcile.
-    expect(code).toContain("createFetchHandler(runtime, undefined, write.dispatcher)");
+    expect(code).toContain("createFetchHandler(runtime, assets, write.dispatcher)");
     expect(code).toContain("write?.runtimeDeps");
     expect(code).toContain("write?.attachRuntime(runtime)");
   });

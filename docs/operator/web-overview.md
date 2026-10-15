@@ -53,6 +53,13 @@ services:
 The image is a multi-stage Bun build and bakes **no estate value** — everything arrives via env and
 the read-only mount.
 
+It does bake the **Pulse version**, which `/healthz` and `pulse_web_build_info` report. By default
+that is the `version` in `apps/web/package.json` of the checkout you build from (`0.2.0` on the
+`v0.2.0` tag). To bake another value, pass `--build-arg PULSE_BUILD_VERSION=<version>` to
+`docker build`, or set `PULSE_BUILD_VERSION` in the environment of `docker compose build`. Open
+browser tabs reload themselves once when they see a new image: the server's `appVersion` combines
+the version with the client bundle's build id, so a rebuild at the same version also counts.
+
 ## Run-time configuration
 
 The service listens on a fixed port **8080** (deliberately not env-configurable) and publishes **no

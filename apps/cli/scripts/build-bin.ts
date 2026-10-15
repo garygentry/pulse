@@ -1,12 +1,14 @@
 // apps/cli/scripts/build-bin.ts — the compiled-binary build pipeline (01 §4, CON-03).
 //
 // Run via `bun run build:bin` (wired in apps/cli/package.json). It:
-//   1. regenerates apps/cli/src/version.ts from a version arg/env (default: the "0.0.0-dev"
-//      sentinel) — deterministically, `export const PULSE_VERSION = "<version>";` and nothing
+//   1. regenerates apps/cli/src/version.ts from a version arg/env (else apps/cli/package.json's
+//      `version`, else the "0.0.0-dev" sentinel) — deterministically, `export const PULSE_VERSION = "<version>";` and nothing
 //      clock/host/random (REQ-DET-01);
-//   2. builds the two musl-static single binaries via `bun build --compile`:
-//        pulse-linux-x64   (--target=bun-linux-x64-musl)
-//        pulse-linux-arm64 (--target=bun-linux-arm64-musl)
+//   2. builds four single-file binaries via `bun build --compile`:
+//        pulse-linux-x64        (--target=bun-linux-x64, glibc — the default asset)
+//        pulse-linux-arm64      (--target=bun-linux-arm64, glibc — the default asset)
+//        pulse-linux-x64-musl   (--target=bun-linux-x64-musl; needs libstdc++ + libgcc)
+//        pulse-linux-arm64-musl (--target=bun-linux-arm64-musl; needs libstdc++ + libgcc)
 //      into a gitignored dist/build location (never the repo tree). `--compile` bundles
 //      @pulse/core + @pulse/renderer, so the supported schema majors travel with the binary;
 //   3. emits SHA256SUMS over the produced binaries (the deploy-toolkit handoff contract);
@@ -19,7 +21,7 @@
 // @pulse/agent-kit dependency edge is added to apps/cli/package.json (the committed graph stays
 // acyclic — the reverse edge exists only transiently in the rewritten source during a release).
 //
-// It does NOT cut the private GitHub release — that publish is a human-gated release action
+// It does NOT publish the GitHub release — that publish is a human-gated release action
 // (see scripts/README.md). This script stops at producing + checksumming the artifacts locally.
 
 import { createHash } from "node:crypto";
@@ -29,13 +31,19 @@ import { basename, resolve } from "node:path";
 /** The committed version sentinel a local (non-release) build carries. */
 export const VERSION_SENTINEL = "0.0.0-dev";
 
-/** The v1 build matrix: exactly the two Linux musl arch targets (macOS/Windows are out of scope). */
+/**
+ * The build matrix: glibc binaries are the default assets (estate hosts are typically
+ * Debian/Ubuntu); the musl variants are dynamically linked against the musl loader, libstdc++ and
+ * libgcc (Alpine: `apk add libstdc++`). macOS/Windows are out of scope.
+ */
 export const BUILD_TARGETS = [
-  { target: "bun-linux-x64-musl", outfile: "pulse-linux-x64" },
-  { target: "bun-linux-arm64-musl", outfile: "pulse-linux-arm64" },
+  { target: "bun-linux-x64", outfile: "pulse-linux-x64" },
+  { target: "bun-linux-arm64", outfile: "pulse-linux-arm64" },
+  { target: "bun-linux-x64-musl", outfile: "pulse-linux-x64-musl" },
+  { target: "bun-linux-arm64-musl", outfile: "pulse-linux-arm64-musl" },
 ] as const;
 
-/** The checksum manifest attached to the private release alongside the two binaries. */
+/** The checksum manifest attached to the GitHub release alongside the binaries. */
 export const CHECKSUMS_FILENAME = "SHA256SUMS";
 
 const SCRIPTS_DIR = import.meta.dir;
@@ -220,18 +228,44 @@ export async function runBuild(opts: BuildOptions = {}): Promise<BuildResult> {
   }
 }
 
-/** Resolve the version to bake: first CLI arg, else `PULSE_BUILD_VERSION`, else the sentinel. */
-function resolveVersionArg(): string {
-  const arg = process.argv[2];
+/** apps/cli/package.json — the release version a build falls back to when none is passed. */
+export const CLI_PACKAGE_JSON = resolve(SCRIPTS_DIR, "../package.json");
+
+/**
+ * Read the `version` field of a package.json, or `null` when the file is missing, unparseable or
+ * has no non-empty string `version`. Never throws.
+ */
+export function readPackageVersion(packageJsonPath: string): string | null {
+  try {
+    const doc: unknown = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    if (typeof doc !== "object" || doc === null) return null;
+    const version = (doc as Record<string, unknown>)["version"];
+    return typeof version === "string" && version.length > 0 ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the version to bake: the first CLI arg, else `PULSE_BUILD_VERSION`, else
+ * apps/cli/package.json's `version` (so a plain `bun run build:bin` of a release checkout reports
+ * its release), else the sentinel.
+ */
+export function resolveVersionArg(
+  argv: readonly string[] = process.argv,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  packageJsonPath: string = CLI_PACKAGE_JSON,
+): string {
+  const arg = argv[2];
   if (arg !== undefined && arg.length > 0) return arg;
-  const env = process.env.PULSE_BUILD_VERSION;
-  if (env !== undefined && env.length > 0) return env;
-  return VERSION_SENTINEL;
+  const buildEnv = env["PULSE_BUILD_VERSION"];
+  if (buildEnv !== undefined && buildEnv.length > 0) return buildEnv;
+  return readPackageVersion(packageJsonPath) ?? VERSION_SENTINEL;
 }
 
 /**
  * CLI entry: run the build, print a human summary to stderr, and exit non-zero if any target
- * failed or nothing built — a release requires BOTH arch binaries. (Artifacts + SHA256SUMS are
+ * failed or nothing built — a release requires every binary in BUILD_TARGETS. (Artifacts + SHA256SUMS are
  * still written for whatever succeeded, so a partial local build is inspectable.)
  */
 async function main(): Promise<void> {
@@ -250,7 +284,7 @@ async function main(): Promise<void> {
 
   const allBuilt = result.targets.every((t) => t.ok);
   if (!allBuilt) {
-    log("build:bin: not all targets built — a release requires both arch binaries (see scripts/README.md).");
+    log("build:bin: not all targets built — a release requires every target (see scripts/README.md).");
     process.exit(1);
   }
 }

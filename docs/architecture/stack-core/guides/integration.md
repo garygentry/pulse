@@ -51,7 +51,7 @@ them. As the renderer, you own the *content* of these files; stack-core owns *wh
 Two contract points to hold:
 
 - **The rendered root carries a `.rendered-manifest.json`** with `formatVersion` and a sorted
-  `files[]` list. stack-core preflights `formatVersion === 1` before starting any container — a
+  `files[]` list. stack-core preflights `formatVersion === 2` before starting any container — a
   bump fails loud. Keep it in step with `EXPECTED_RENDER_FORMAT_VERSION`.
 - **Scrape targets for API classes are the estate's API endpoints**, not the exporter. The
   engine's relabel-through rewrites the scrape to hit the exporter and passes your target as

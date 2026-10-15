@@ -38,7 +38,10 @@ RUN bun install --frozen-lockfile --ignore-scripts
 # a cacheable checkpoint; scripts/build.ts also compiles the graph first (02 §8), so a package
 # compile failure there fails the build before any client/server bundle is published.
 RUN bunx tsc -b packages/web-data
-RUN cd apps/web && bun run scripts/build.ts        # → apps/web/dist/{client,server}
+# The baked web-app version (/healthz, pulse_web_build_info, and the version-skew reload key with
+# the client build id). Unset or empty → apps/web/package.json's `version` (scripts/build.ts).
+ARG PULSE_BUILD_VERSION=""
+RUN cd apps/web && PULSE_BUILD_VERSION="${PULSE_BUILD_VERSION}" bun run scripts/build.ts   # → apps/web/dist/{client,server}
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM oven/bun:1.3.9-slim AS runtime

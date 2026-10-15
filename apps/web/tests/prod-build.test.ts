@@ -13,15 +13,21 @@
 // the real client/server bundle is exercised by client-build.test.ts and the Docker smoke tier.
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import {
   REPO_ROOT,
+  VERSION_SENTINEL,
+  WEB_PACKAGE_JSON,
   bundleServer,
   compileWorkspacePackages,
+  readPackageVersion,
+  resolveVersionArg,
   runBuild,
 } from "../scripts/build.js";
+import { composeAppVersion } from "../src/server/app-version.js";
 import type { RunBuildDeps } from "../scripts/build.js";
 import type { BuildMetafile, ClientBuildOptions, ClientBuildResult } from "../scripts/build-client.js";
 import type { ClientManifest } from "../src/server/assets.js";
@@ -46,7 +52,7 @@ describe("runBuild step ordering (02 §8)", () => {
         compileRepoRoot = repoRoot;
         order.push("compile");
       },
-      writeVersion: () => order.push("writeVersion"),
+      writeVersion: (v) => order.push(`writeVersion:${v}`),
       buildClientImpl: async (opts: ClientBuildOptions) => {
         clientOutdir = opts.outdir;
         order.push("client");
@@ -61,7 +67,8 @@ describe("runBuild step ordering (02 §8)", () => {
 
     await runBuild("9.9.9", deps);
 
-    expect(order).toEqual(["compile", "writeVersion", "client", "server"]);
+    // The stamped version is restored to the committed sentinel once both bundles are written.
+    expect(order).toEqual(["compile", "writeVersion:9.9.9", "client", "server", `writeVersion:${VERSION_SENTINEL}`]);
     expect(compileRepoRoot).toBe("/fake/repo");
     expect(clientOutdir).toBe(resolve("/fake/dist", "client"));
   });
@@ -93,11 +100,12 @@ describe("runBuild step ordering (02 §8)", () => {
     expect(serverBuilt).toBe(false);
   });
 
-  test("a client bundle failure never reaches the server bundle", async () => {
+  test("a client bundle failure never reaches the server bundle, and still restores the sentinel", async () => {
     let serverBuilt = false;
+    const stamped: string[] = [];
     const deps: RunBuildDeps = {
       compilePackages: async () => {},
-      writeVersion: () => {},
+      writeVersion: (v) => stamped.push(v),
       buildClientImpl: async () => ({ ok: false, errors: ["boom"], durationMs: 0 }),
       bundleServerImpl: async () => {
         serverBuilt = true;
@@ -105,6 +113,59 @@ describe("runBuild step ordering (02 §8)", () => {
     };
     await expect(runBuild("1.0.0", deps)).rejects.toThrow(/client bundle failed/);
     expect(serverBuilt).toBe(false);
+    expect(stamped).toEqual(["1.0.0", VERSION_SENTINEL]);
+  });
+});
+
+describe("build version resolution", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pulse-web-version-"));
+  const pkg = join(dir, "package.json");
+  writeFileSync(pkg, JSON.stringify({ name: "@pulse/web", version: "4.5.6" }));
+  const argv = ["bun", "scripts/build.ts"];
+
+  test("falls back to the package.json version when no arg or env is given", () => {
+    expect(resolveVersionArg(argv, {}, pkg)).toBe("4.5.6");
+    expect(resolveVersionArg(argv, { PULSE_BUILD_VERSION: "" }, pkg)).toBe("4.5.6"); // empty Docker ARG
+  });
+
+  test("an explicit arg, PULSE_BUILD_VERSION, then WEB_APP_VERSION win over package.json", () => {
+    expect(resolveVersionArg([...argv, "7.0.0"], { PULSE_BUILD_VERSION: "8.0.0" }, pkg)).toBe("7.0.0");
+    expect(resolveVersionArg(argv, { PULSE_BUILD_VERSION: "8.0.0", WEB_APP_VERSION: "9.0.0" }, pkg)).toBe("8.0.0");
+    expect(resolveVersionArg(argv, { WEB_APP_VERSION: "9.0.0" }, pkg)).toBe("9.0.0");
+  });
+
+  test("uses the sentinel when package.json is missing, malformed or has no version", () => {
+    expect(resolveVersionArg(argv, {}, join(dir, "absent.json"))).toBe(VERSION_SENTINEL);
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, "{not json");
+    expect(readPackageVersion(bad)).toBeNull();
+    const none = join(dir, "none.json");
+    writeFileSync(none, JSON.stringify({ name: "x", version: "" }));
+    expect(resolveVersionArg(argv, {}, none)).toBe(VERSION_SENTINEL);
+  });
+
+  test("the real apps/web/package.json carries a version", () => {
+    expect(readPackageVersion(WEB_PACKAGE_JSON)).toMatch(/^\d+\.\d+\.\d+/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("version-skew reload key", () => {
+  test("combines the version with the client build id, so a rebuild at the same version changes it", () => {
+    expect(composeAppVersion("0.2.0", "abc123def456")).toBe("0.2.0+abc123def456");
+    expect(composeAppVersion("0.2.0", "abc123def456")).not.toBe(composeAppVersion("0.2.0", "0123456789ab"));
+    expect(composeAppVersion("0.1.0", "abc123def456")).not.toBe(composeAppVersion("0.2.0", "abc123def456"));
+  });
+
+  test("is the bare version when no client manifest loaded", () => {
+    expect(composeAppVersion("0.2.0", null)).toBe("0.2.0");
+    expect(composeAppVersion("0.2.0", undefined)).toBe("0.2.0");
+  });
+
+  test("the production entry stamps the composed key from the served client bundle", () => {
+    const entry = readFileSync(resolve(REPO_ROOT, "apps/web/src/server/index.ts"), "utf8");
+    expect(entry).toContain("composeAppVersion(WEB_APP_VERSION, assets.buildId?.())");
+    expect(entry).toContain("createFetchHandler(runtime, assets");
   });
 });
 
@@ -133,6 +194,13 @@ describe("Dockerfile frozen build (02 §8, AC4)", () => {
     expect(dockerfile).toContain("COPY packages/renderer packages/renderer");
     expect(dockerfile).toContain("COPY packages/web-data packages/web-data");
     expect(dockerfile).toContain("COPY apps/web apps/web");
+  });
+
+  test("passes the optional PULSE_BUILD_VERSION build arg through to the app build", () => {
+    expect(dockerfile).toContain('ARG PULSE_BUILD_VERSION=""');
+    expect(dockerfile.indexOf("ARG PULSE_BUILD_VERSION")).toBeLessThan(dockerfile.indexOf("bun run scripts/build.ts"));
+    const compose = readFileSync(resolve(REPO_ROOT, "stack/compose/docker-compose.yml"), "utf8");
+    expect(compose).toContain('PULSE_BUILD_VERSION: "${PULSE_BUILD_VERSION:-}"');
   });
 
   test("performs a frozen install then builds the package graph and app bundle", () => {

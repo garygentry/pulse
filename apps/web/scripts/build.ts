@@ -7,14 +7,15 @@
 //      through the package `exports` map (→ dist/*) and does NOT compile workspace deps from source,
 //      so the package dist must exist first. A package compile failure exits non-zero and publishes
 //      no new client/server bundle or manifest (02 §8).
-//   1. Generates src/version.ts from the release version (arg/env, default the "0.0.0-dev"
-//      sentinel), following apps/cli/src/version.ts: a build-time constant, never read from
-//      package.json at runtime, deterministic (the version literal is the only variable).
+//   1. Generates src/version.ts from the release version (arg/env, else apps/web/package.json's
+//      `version`, else the "0.0.0-dev" sentinel), following apps/cli/src/version.ts: a build-time
+//      constant, never read from package.json at runtime, deterministic (the version literal is the
+//      only variable). The committed sentinel is restored once the bundles are written.
 //   2. Calls buildClient (dist/client, content-hashed, minified, sourcemap=linked) — the SPA bundle.
 //      buildClient copies src/client/index.html and publishes manifest.json atomically.
 //   3. Bundles src/server/index.ts → dist/server/ (target: bun) — the server entry (dist/server/index.js).
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { buildClient } from "./build-client.js";
@@ -61,16 +62,41 @@ export function writeVersionFile(version: string, filePath: string = VERSION_FIL
   writeFileSync(filePath, renderVersionModule(version), "utf8");
 }
 
-/** Resolve the version to bake: first CLI arg, else `PULSE_BUILD_VERSION`, else `WEB_APP_VERSION`
- *  env override, else the sentinel. */
-function resolveVersionArg(): string {
-  const arg = process.argv[2];
+/** apps/web/package.json — the release version a build falls back to when none is passed. */
+export const WEB_PACKAGE_JSON = resolve(APP_ROOT, "package.json");
+
+/**
+ * Read the `version` field of a package.json, or `null` when the file is missing, unparseable or
+ * has no non-empty string `version`. Never throws.
+ */
+export function readPackageVersion(packageJsonPath: string): string | null {
+  try {
+    const doc: unknown = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    if (typeof doc !== "object" || doc === null) return null;
+    const version = (doc as Record<string, unknown>)["version"];
+    return typeof version === "string" && version.length > 0 ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the version to bake: the first CLI arg, else `PULSE_BUILD_VERSION`, else the
+ * `WEB_APP_VERSION` env override, else apps/web/package.json's `version` (so a plain
+ * `docker compose build` of a release checkout reports its release), else the sentinel.
+ */
+export function resolveVersionArg(
+  argv: readonly string[] = process.argv,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  packageJsonPath: string = WEB_PACKAGE_JSON,
+): string {
+  const arg = argv[2];
   if (arg !== undefined && arg.length > 0) return arg;
-  const env = process.env.PULSE_BUILD_VERSION;
-  if (env !== undefined && env.length > 0) return env;
-  const webEnv = process.env.WEB_APP_VERSION;
+  const buildEnv = env["PULSE_BUILD_VERSION"];
+  if (buildEnv !== undefined && buildEnv.length > 0) return buildEnv;
+  const webEnv = env["WEB_APP_VERSION"];
   if (webEnv !== undefined && webEnv.length > 0) return webEnv;
-  return VERSION_SENTINEL;
+  return readPackageVersion(packageJsonPath) ?? VERSION_SENTINEL;
 }
 
 /**
@@ -154,21 +180,26 @@ export async function runBuild(
 
   // 1. Stamp the build version.
   writeVersion(version);
+  try {
+    // 2. Client bundle — content-hashed asset names, sourcemap=linked, manifest published atomically.
+    const client = await buildClientImpl({
+      outdir: resolve(distDir, "client"),
+      minify: true,
+      sourcemap: "linked",
+      clean: true,
+    });
+    if (!client.ok) {
+      for (const message of client.errors) console.error(message);
+      throw new Error("apps/web: client bundle failed");
+    }
 
-  // 2. Client bundle — content-hashed asset names, sourcemap=linked, manifest published atomically.
-  const client = await buildClientImpl({
-    outdir: resolve(distDir, "client"),
-    minify: true,
-    sourcemap: "linked",
-    clean: true,
-  });
-  if (!client.ok) {
-    for (const message of client.errors) console.error(message);
-    throw new Error("apps/web: client bundle failed");
+    // 3. Server entry — target: bun, stable dist/server/index.js.
+    await bundleServerImpl(SRC_DIR, distDir);
+  } finally {
+    // 4. Restore the committed sentinel: the bundles already carry the stamped version, and the
+    //    working tree is never left with an injected one (mirrors apps/cli/scripts/build-bin.ts).
+    writeVersion(VERSION_SENTINEL);
   }
-
-  // 3. Server entry — target: bun, stable dist/server/index.js.
-  await bundleServerImpl(SRC_DIR, distDir);
 }
 
 if (import.meta.main) await runBuild();

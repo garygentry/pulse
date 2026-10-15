@@ -10,6 +10,9 @@ import { buildWriteRuntime, type WriteRuntime } from "./mutations/bootstrap.js";
 import { createFetchHandler } from "./router.js";
 import { createServerRuntime, type ServerRuntime } from "./refresh.js";
 import { log } from "./log.js";
+import { loadStaticAssets, type StaticAssets } from "./assets.js";
+import { composeAppVersion } from "./app-version.js";
+import { WEB_APP_VERSION } from "../version.js";
 import { LISTEN_PORT } from "../shared/constants.js";
 import { ConfigError } from "../shared/errors.js";
 
@@ -26,13 +29,19 @@ import { ConfigError } from "../shared/errors.js";
 export async function main(): Promise<void> {
   let runtime: ServerRuntime;
   let write: WriteRuntime | null = null;
+  // The built client bundle, loaded once and shared by the router and the reload key, so a new
+  // image (a new release or a rebuild of the same one) always changes `appVersion`.
+  const assets: StaticAssets = loadStaticAssets();
   try {
     const config = loadServerConfig(); // throws ConfigError on a missing required engine/model var
     if (config.identity.mode === "proxy-header") {
       write = await buildWriteRuntime(config, { secret: loadProposalSecret(process.env) });
     }
     // builds source clients (03) + the mutable state holder; the write runtime adds ackStore/onSlowCycle
-    runtime = createServerRuntime(config, write?.runtimeDeps ?? {});
+    runtime = createServerRuntime(config, {
+      ...(write?.runtimeDeps ?? {}),
+      appVersion: () => composeAppVersion(WEB_APP_VERSION, assets.buildId?.()),
+    });
     write?.attachRuntime(runtime);
   } catch (err) {
     if (err instanceof ConfigError) {
@@ -49,8 +58,8 @@ export async function main(): Promise<void> {
   // per-request timeout escape used only by `/api/events` (05 §4).
   const handler =
     write === null
-      ? createFetchHandler(runtime) // none mode: M1 default dispatchMutation → null → 405
-      : createFetchHandler(runtime, undefined, write.dispatcher);
+      ? createFetchHandler(runtime, assets) // none mode: M1 default dispatchMutation → null → 405
+      : createFetchHandler(runtime, assets, write.dispatcher);
   const server = Bun.serve({
     port: LISTEN_PORT,
     fetch: (request): Promise<Response> =>

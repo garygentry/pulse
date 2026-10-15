@@ -221,6 +221,8 @@ services:
     build:                                               # repo-root context (07-slot-reconciliation.md §3.4,
       context: ../../                                    #   CON-01 item e): reach sibling @pulse/core + @pulse/renderer
       dockerfile: apps/web/Dockerfile                    #   (tech-spec §3.2/§6.1). Paired with repo-root .dockerignore (§3.8).
+      args:
+        PULSE_BUILD_VERSION: "${PULSE_BUILD_VERSION:-}"  # empty → apps/web/package.json `version` (apps/web/scripts/build.ts)
     profiles: ["web"]                                    # gated OFF by default (REQ-WEB-02, 00 §3) — RETAINED
     expose:
       - "8080"                                           # declared in-stack listen port → web:8080 (00 §1)
