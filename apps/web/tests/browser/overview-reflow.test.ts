@@ -335,7 +335,25 @@ browserDescribe()("browser: overview kiosk page fits below the chrome and pages 
           const rowHeight = style === null ? 0 : Number.parseFloat(style.gridAutoRows);
           const rowGap = style === null ? 0 : Number.parseFloat(style.rowGap) || 0;
           const indicator = document.querySelector('[data-slot="overview-kiosk-indicator"]')?.textContent ?? "1 / 1";
+          const strip = document.querySelector<HTMLElement>("[data-stat-strip]");
+          // One line = the box is no taller than its tallest visible child.
+          const lines = (box: HTMLElement | null): number => {
+            if (box === null) return 0;
+            const kids = Array.from(box.children).filter((el) => el.getBoundingClientRect().height > 0);
+            const tallest = Math.max(...kids.map((el) => el.getBoundingClientRect().height));
+            return Math.round(box.getBoundingClientRect().height / tallest);
+          };
+          // Every chip's status word (the badge's last text span) shows in full.
+          const clippedWords = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="overview-kiosk-chip-status"]'))
+            .map((el) => el.parentElement!)
+            .filter((el) => el.scrollWidth > el.clientWidth + 1)
+            .map((el) => el.textContent);
           return {
+            stripRows: lines(strip),
+            ribbonRows: lines(document.querySelector<HTMLElement>("[data-ribbon='kiosk']")),
+            clippedWords,
+            zoneWidth: document.querySelector('[data-slot="overview-kiosk-footer"] [data-zone]')?.getBoundingClientRect().width ?? 0,
+            chipWords: document.querySelectorAll('[data-slot="overview-kiosk-chip-status"]').length,
             scrollWidth: scroller.scrollWidth,
             innerWidth: window.innerWidth,
             regionTop: region?.top ?? null,
@@ -378,6 +396,16 @@ browserDescribe()("browser: overview kiosk page fits below the chrome and pages 
         expect(geometry.tileCount, detail).toBe(geometry.columns * geometry.rows);
         expect(geometry.tilesBottom!, detail).toBeLessThanOrEqual(geometry.regionBottom! + 0.5);
         expect(geometry.tilesRight!, detail).toBeLessThanOrEqual(geometry.innerWidth);
+        // At wallboard widths the stat strip (from `xl`) and the alert line (from `sm`) are each
+        // exactly one line — the 100-host fixture has every status — so their height never moves the
+        // tile region.
+        if (viewport.width >= 1280) expect(geometry.stripRows, detail).toBe(1);
+        if (viewport.width >= 640) expect(geometry.ribbonRows, detail).toBe(1);
+        // The estate zone stays visible in the footer.
+        expect(geometry.zoneWidth, detail).toBeGreaterThan(0);
+        // Service chips truncate the name, never the status word.
+        expect(geometry.chipWords, detail).toBeGreaterThan(0);
+        expect(geometry.clippedWords, detail).toEqual([]);
       } finally {
         await handle.close();
       }

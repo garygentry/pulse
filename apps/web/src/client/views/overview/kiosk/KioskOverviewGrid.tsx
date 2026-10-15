@@ -4,9 +4,9 @@
 // label). The list is a labelled `role="list"`, not a grid: kiosk is unattended, so no tile is
 // focusable and nothing selects. The tile grid uses fixed-height rows and auto-fill column tracks;
 // useKioskPaging reads both from the rendered list and pages the hosts columns × rows at a time. The
-// "i / P" indicator sits in a fixed footer row under the tile region. This never drives shell rotation.
+// "i / P" indicator sits in a fixed footer row under the tile region, beside the estate time zone. This never drives shell rotation.
 
-import type { ReactElement, RefObject } from "react";
+import type { ReactElement, ReactNode, RefObject } from "react";
 import { useEffect, useMemo, useRef } from "react";
 
 import type { HostStatus } from "@pulse/web-data/wire";
@@ -29,6 +29,8 @@ export interface KioskOverviewGridProps {
   readonly reducedMotion: boolean;
   /** Current shell rotation context (`ViewProps.rotation ?? null`). */
   readonly rotation: ViewRotationContext | null;
+  /** The estate time-zone note (the kiosk page header that shows it on the desk is hidden). */
+  readonly zone?: ReactNode;
   /** The page root's offset below the shell chrome: a change re-measures before paint. */
   readonly layoutKey?: unknown;
   /** Optional deterministic paging clock; omitted in production. */
@@ -119,10 +121,11 @@ export function KioskOverviewGrid(props: KioskOverviewGridProps): ReactElement {
       </div>
       {/* The footer row is always there, so the region's height (and with it the capacity) never
           depends on whether the indicator shows. */}
-      <div className="flex h-6 shrink-0 items-center justify-end" data-slot="overview-kiosk-footer">
+      <div className="flex h-6 shrink-0 items-center justify-between gap-4 overflow-hidden whitespace-nowrap" data-slot="overview-kiosk-footer">
+        <div className="min-w-0 truncate">{props.zone}</div>
         {paging.indicatorLabel !== null ? (
           <span
-            className="text-sm text-muted-foreground tabular-nums"
+            className="shrink-0 text-sm text-muted-foreground tabular-nums"
             data-slot="overview-kiosk-indicator"
             role="note"
             aria-label={paging.indicatorLabel}

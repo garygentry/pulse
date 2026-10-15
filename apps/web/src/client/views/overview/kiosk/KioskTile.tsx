@@ -88,8 +88,17 @@ interface ServiceChipProps {
 }
 
 /**
- * One non-OK service: name and status word with the status icon, truncating before anything else on
- * the line is clipped; carries its own change marker.
+ * A shrinkable chip whose status word never truncates: StatusBadge renders the name as its first
+ * text span and the status word as its last (the `detail`), and only the name may shrink.
+ */
+const CHIP_CLASS = cn(
+  "min-w-0 shrink [&>span:last-child]:shrink-0 [&>span:last-child]:overflow-visible [&>span:last-child]:text-inherit",
+  "data-[changed]:outline-2 data-[changed]:outline-solid data-[changed]:outline-foreground",
+);
+
+/**
+ * One non-OK service: the status icon, its name (truncating before anything else on the line is
+ * clipped) and its status word (never truncated); carries its own change marker.
  */
 function KioskServiceChipView(props: ServiceChipProps): ReactElement {
   const { service, status, changeTracker, reducedMotion } = props;
@@ -99,9 +108,10 @@ function KioskServiceChipView(props: ServiceChipProps): ReactElement {
     <StatusBadge
       tone={s.tone}
       icon={s.icon}
-      label={`${service.name} ${s.label}`}
+      label={service.name}
+      detail={<span data-slot="overview-kiosk-chip-status">{s.label}</span>}
       {...(s.variant !== undefined ? { variant: s.variant } : {})}
-      className="min-w-0 shrink data-[changed]:outline-2 data-[changed]:outline-solid data-[changed]:outline-foreground"
+      className={CHIP_CLASS}
       data-slot="overview-kiosk-chip"
       data-target-id={service.drilldownId}
       data-status={status}

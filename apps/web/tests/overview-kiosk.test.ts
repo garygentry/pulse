@@ -33,7 +33,7 @@ import {
 import { createEstateClock } from "../src/client/format.js";
 import type { PathRouter } from "../src/client/router.js";
 import { FiringRibbon } from "../src/client/views/overview/ribbon/FiringRibbon.js";
-import { FIXTURE_ESTATE, makeOverviewSnapshot } from "./fixtures/overview/factory.js";
+import { FIXTURE_ESTATE, makeOverviewSnapshot, withTargetStatus } from "./fixtures/overview/factory.js";
 import { describeDom, renderWithStore } from "./dom.js";
 
 const HOSTS: readonly HostStatus[] = makeOverviewSnapshot({ hostCount: 12 }).hosts;
@@ -310,7 +310,7 @@ describeDom("useKioskPaging", (dom) => {
     frames = installFrames();
     layout = { height: 200, columns: 4, rowHeight: 100, rowGap: 0 };
     region = document.createElement("div") as unknown as HTMLElement;
-    Object.defineProperty(region, "clientHeight", { get: () => layout.height });
+    region.getBoundingClientRect = () => ({ height: layout.height }) as DOMRect;
     grid = document.createElement("ul") as unknown as HTMLElement;
 
     const g = globalThis as unknown as Record<string, unknown>;
@@ -406,7 +406,7 @@ describeDom("useKioskPaging", (dom) => {
     expect(observers[0]!.observed[0]).toBe(region as unknown as Element);
   });
 
-  test("readKioskGridMetrics counts laid-out tracks and is null without them", () => {
+  test("readKioskGridMetrics counts laid-out tracks (region height from its layout box) and is null without them", () => {
     expect(readKioskGridMetrics(region, grid)).toEqual({ height: 200, columns: 4, rowHeight: 100, rowGap: 0 });
     layout.columns = 0;
     expect(readKioskGridMetrics(region, grid)).toBeNull();
@@ -523,6 +523,59 @@ describeDom("useKioskPaging", (dom) => {
     expect(state.activePageIndex).toBe(1);
     expect(state.pages[1]!.hosts[0]).toBe(reordered[4]!);
     expect(fc.scheduled.length).toBe(scheduledBefore);
+  });
+
+  test("a capacity that changes and changes back restarts at page 1 and never resurrects the old page", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 4 per page → 3 pages
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+    fc.advance(20_000);
+    expect(state.activePageIndex).toBe(2);
+
+    layout.columns = 2; // e.g. chrome above grew: 2 per page → 6 pages, a new sequence at page 1
+    act(() => observers[0]!.callback());
+    expect(state.indicatorLabel).toBe("Page 1 of 6");
+
+    layout.columns = 4; // back to the first geometry: still a new sequence, not the old page 3
+    act(() => observers[0]!.callback());
+    expect(state.indicatorLabel).toBe("Page 1 of 3");
+    fc.advance(10_000);
+    expect(state.activePageIndex).toBe(1);
+  });
+
+  test("a host newly turning critical restarts the sequence at page 1; other status changes keep the page", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 3 pages
+    const snapshot = makeOverviewSnapshot({ hostCount: 12 });
+    const order = snapshot.hosts.map((h) => h.drilldownId);
+    const hostsOf = (next: typeof snapshot): HostStatus[] =>
+      order.map((id) => next.hosts.find((h) => h.drilldownId === id)!);
+    await renderHook({ hosts: hostsOf(snapshot), rotation: null, clock: fc.clock });
+    fc.advance(20_000);
+    expect(state.activePageIndex).toBe(2);
+
+    // host-001 (OK) turns warning: no new critical host, the page and its timer hold.
+    const warned = withTargetStatus(snapshot, "host:host-001", "warning", 2);
+    const scheduled = fc.scheduled.length;
+    await renderHook({ hosts: hostsOf(warned), rotation: null, clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+    expect(fc.scheduled.length).toBe(scheduled);
+
+    // It then turns critical: back to page 1 at once, with a fresh full dwell.
+    const armed = fc.scheduled.at(-1)!.handle;
+    await renderHook({ hosts: hostsOf(withTargetStatus(warned, "host:host-001", "critical", 3)), rotation: null, clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
+    expect(fc.cleared).toContain(armed);
+    expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+
+    // Inside a rotation it also restarts at page 1 rather than the resume page.
+    await unmount();
+    resetKioskRotationCursor();
+    await renderHook({ hosts: hostsOf(snapshot), rotation: rotation(1, 45_000), clock: fc.clock });
+    fc.advance(15_000);
+    expect(state.activePageIndex).toBe(1);
+    await renderHook({ hosts: hostsOf(withTargetStatus(snapshot, "host:host-001", "critical", 2)), rotation: rotation(1, 45_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
   });
 
   test("a resize that changes capacity rebuilds pages, resets page 1 and clears the prior timer", async () => {

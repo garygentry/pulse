@@ -1,6 +1,7 @@
 // apps/web/src/client/views/overview/kiosk/useKioskPaging.ts — measured kiosk paging hook.
 //
-// The hook only picks which page of the flat worst-first host list is visible. Capacity is columns ×
+// The hook only picks which page of the flat worst-first host list is visible; a host newly turning
+// critical restarts the sequence at page 1. Capacity is columns ×
 // rows of the fixed-height tile grid (read from the grid's computed tracks and the region height).
 // Every page stays up for at least KIOSK_MIN_PAGE_DWELL_MS, so the cycle grows with the page count.
 // The shell stays the sole owner of view rotation and its timers; this module reads `rotation` and
@@ -13,6 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { HostStatus } from "@pulse/web-data/wire";
 import type { ViewRotationContext } from "../../../../shared/registry.js";
+import { effectiveStatus } from "../freshness.js";
 import type { KioskPage } from "../model.js";
 import {
   MIN_KIOSK_CAPACITY,
@@ -105,6 +107,13 @@ export function resetKioskRotationCursor(): void {
   rotationCursor = 0;
 }
 
+/** Ids of the hosts whose effective rollup is critical (the danger tone). */
+function criticalIds(hosts: readonly HostStatus[]): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const host of hosts) if (effectiveStatus(host.rollupEvidence) === "critical") ids.add(host.drilldownId);
+  return ids;
+}
+
 /** `Page i of P` for a multi-page kiosk partition, otherwise null. */
 export function kioskIndicatorLabel(activePageIndex: number, pageCount: number): string | null {
   return pageCount > 1 ? `Page ${activePageIndex + 1} of ${pageCount}` : null;
@@ -133,7 +142,7 @@ export function readKioskGridMetrics(region: HTMLElement | null, grid: HTMLEleme
   const columns = (style.gridTemplateColumns ?? "").trim().split(/\s+/).filter((track) => /^\d+(\.\d+)?px$/.test(track)).length;
   const rowHeight = px(style.gridAutoRows);
   if (columns < 1 || rowHeight <= 0) return null;
-  return { height: region.clientHeight, columns, rowHeight, rowGap: px(style.rowGap) };
+  return { height: region.getBoundingClientRect().height, columns, rowHeight, rowGap: px(style.rowGap) };
 }
 
 /** Measure, partition and time kiosk pages without owning shell rotation. */
@@ -152,19 +161,28 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
   const pageDwellMs = kioskPageDwell(pageCount, rotationDwell);
   const visitPages = rotationDwell !== null ? kioskPagesPerVisit(pageCount, rotationDwell) : pageCount;
   const epoch = rotating && rotation !== null ? rotation.epoch : null;
-  // A change here starts a new generation: page timers restart and the visible page is re-chosen.
-  // Status/order changes keep the generation, so a flapping host never pins the wall to page 1.
+  // A change here starts a new sequence: page timers restart and the visible page is re-chosen.
+  // Status/order changes keep the sequence, so a flapping host never pins the wall to page 1 — except
+  // when a host newly turns critical: the sequence restarts at page 1 so it is on screen at once.
   const resetKey = `${effectiveCapacity}|${pageCount}|${rotationDwell ?? "-"}|${epoch ?? "-"}`;
 
-  // Each generation starts on page 1, or inside a rotation on the page the last visit stopped before.
-  const generation = useRef<{ readonly key: string; readonly start: number } | null>(null);
-  if (generation.current?.key !== resetKey) {
-    generation.current = { key: resetKey, start: rotating && pageCount > 0 ? rotationCursor % pageCount : 0 };
-  }
-  const start = generation.current.start;
+  const critical = useMemo(() => criticalIds(hosts), [hosts]);
+  const previousCritical = useRef<ReadonlySet<string> | null>(null);
+  const criticalGained = previousCritical.current !== null && [...critical].some((id) => !previousCritical.current!.has(id));
+  previousCritical.current = critical;
 
-  const [advance, setAdvance] = useState<{ readonly key: string; readonly steps: number }>({ key: "", steps: 0 });
-  const steps = advance.key === resetKey ? advance.steps : 0;
+  // Each sequence has its own id (never reused, so returning to an earlier key cannot resurrect an
+  // old step count) and starts on page 1, or inside a rotation on the page the last visit stopped
+  // before. A newly critical host always restarts at page 1, where the worst hosts are.
+  const sequence = useRef<{ readonly id: number; readonly key: string; readonly start: number } | null>(null);
+  if (sequence.current === null || sequence.current.key !== resetKey || criticalGained) {
+    const resume = rotating && pageCount > 0 && !criticalGained ? rotationCursor % pageCount : 0;
+    sequence.current = { id: (sequence.current?.id ?? 0) + 1, key: resetKey, start: resume };
+  }
+  const { id: sequenceId, start } = sequence.current;
+
+  const [advance, setAdvance] = useState<{ readonly sequence: number; readonly steps: number }>({ sequence: 0, steps: 0 });
+  const steps = advance.sequence === sequenceId ? advance.steps : 0;
   const activePageIndex = pageCount > 0 ? (start + steps) % pageCount : 0;
 
   // Measurement: on mount, when the first hosts arrive and when `layoutKey` changes (all before
@@ -249,7 +267,7 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
       handle = clock.setTimeout(() => {
         handle = null;
         if (!live) return;
-        setAdvance({ key: resetKey, steps: steps + 1 });
+        setAdvance({ sequence: sequenceId, steps: steps + 1 });
       }, pageDwellMs);
     } catch {
       // Timer failure: the current page stays visible; no false progress is reported.
@@ -265,7 +283,7 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
       }
       handle = null;
     };
-  }, [resetKey, measured, pageCount, steps, rotating, visitPages, pageDwellMs, clock]);
+  }, [sequenceId, measured, pageCount, steps, rotating, visitPages, pageDwellMs, clock]);
 
   return {
     pages,

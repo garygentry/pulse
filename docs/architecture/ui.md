@@ -307,9 +307,14 @@ no density.
 (`views/overview/kiosk/`):
 
 - **Chrome.** The page `h1` stays but is visually hidden (`sr-only`), so there is still one per page.
-  The stat cards collapse into `KioskStatStrip`, one line of host and service status counts plus
-  coverage and engine state, and the firing ribbon collapses to one line: severity counts, the first
-  names truncated to the line, and "+N more". Both wrap or truncate rather than grow on a phone.
+  The stat cards collapse into `KioskStatStrip`, one line: a badge per status reading
+  "Critical hosts · services" (spelled out for assistive technology), coverage gaps, and engine state
+  with its last-good time when not current. The firing ribbon collapses to one line: severity
+  counts, the first names truncated to the line, and "+N more". At wallboard widths (`xl` and up for
+  the strip, `sm` and up for the alert line) neither wraps, so their height never moves the tile
+  region. Narrower screens may wrap rather than clip a count, and below `sm` the alert line shows two
+  names instead of five. The estate time zone (with the UTC-fallback marker), which the hidden page
+  header shows on the desk, sits in the tile wall's footer beside "i / P".
 - **Tiles.** `deriveKioskHosts` flattens every host into one list, worst effective status first,
   then class, then name. It ignores the desk group/sort preferences. Each `KioskTile` is two fixed
   lines. The first holds the host name, its class label and its rollup status. The second holds the
@@ -318,14 +323,17 @@ no density.
   an `li` in a labelled `role="list"` (`Overview hosts, page i of P`). It is never a button or a tab
   stop, and nothing in kiosk selects. Tiles are memoized on the immutable host and report renders to
   the grid render probe as kind `tile`, so a live update re-renders only the tiles whose host changed.
-  The host status and the chip's service status carry the usual change marker.
+  The host status and the chip's service status carry the usual change marker. A chip truncates the
+  service name, never its status word.
 - **Paging.** Tile rows have a fixed height (`auto-rows`) and the columns are `auto-fill` tracks.
   `useKioskPaging` reads the list's computed `grid-template-columns` track count, row height and row
   gap, and the region's height. Capacity is `columns × rows`, with no probe card. The "i / P"
   indicator sits in a fixed footer row, so whether it shows never changes the capacity. A region
   resize re-measures. A new capacity or page count rebuilds the pages and restarts the sequence (at
-  page 1, or at the resume page inside a rotation). Status changes that reorder the tiles keep the
-  current page and its timer.
+  page 1, or at the resume page inside a rotation). Each sequence has its own id,
+  so a capacity that changes and changes back never resurrects an earlier page. Status changes that
+  reorder the tiles keep the current page and its timer, except that a host newly turning critical
+  restarts the sequence at page 1 (even inside a rotation), so it is on screen at once.
 - **Timing.** Each page stays up for `max(10 s, cycle / P)`. Without rotation the cycle is 30 s, so
   up to three pages share it and more pages lengthen it. Inside a shell rotation (`?rotate=`) the
   cycle is the overview's dwell. A visit shows the pages that fit at that page dwell and holds the

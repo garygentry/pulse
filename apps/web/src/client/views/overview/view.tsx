@@ -434,6 +434,7 @@ function OverviewPage(props: OverviewCompositionProps): ReactElement {
               reducedMotion={reducedMotion}
               rotation={props.rotation ?? null}
               layoutKey={kioskTop}
+              zone={<ZoneMeta clock={clock} />}
               {...(props.kioskClock !== undefined ? { clock: props.kioskClock } : {})}
             />
           ) : (
@@ -464,7 +465,7 @@ function OverviewPage(props: OverviewCompositionProps): ReactElement {
       <PageHeader
         id={PAGE_TITLE_ID}
         title={OVERVIEW_PAGE_TITLE}
-        meta={ready ? <ZoneMeta clock={clock} /> : null}
+        meta={ready && !kiosk ? <ZoneMeta clock={clock} /> : null}
         {...(kiosk ? { className: "sr-only" } : {})}
       />
       {body}

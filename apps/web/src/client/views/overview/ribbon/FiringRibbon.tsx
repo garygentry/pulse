@@ -161,6 +161,9 @@ function DeskRibbon(props: FiringRibbonProps): ReactElement {
   );
 }
 
+/** Alert names a phone-width kiosk line shows before "+N more" (wider screens show all five). */
+const KIOSK_PHONE_NAME_LIMIT = 2;
+
 /**
  * One line: severity counts, the acknowledged count, then the first ordered names (truncated to the
  * line, never wrapped) and "+N more". Below the `sm` breakpoint the parts may wrap, so the counts and
@@ -170,6 +173,7 @@ function KioskRibbon(props: FiringRibbonProps): ReactElement {
   const { alerts, clock, alertsCurrent, alertsLastGoodAt } = props;
   const summary = buildKioskFiringSummary(alerts);
   const acked = countAcked(alerts);
+  const phoneHidden = Math.max(0, summary.names.length - KIOSK_PHONE_NAME_LIMIT);
   return (
     <section
       className="flex min-w-0 items-center gap-x-4 gap-y-1 overflow-hidden text-sm whitespace-nowrap max-sm:flex-wrap"
@@ -201,11 +205,21 @@ function KioskRibbon(props: FiringRibbonProps): ReactElement {
       ) : (
         <ol className="m-0 flex min-w-0 shrink list-none gap-x-4 overflow-hidden p-0" data-ribbon-names="">
           {summary.names.map((name, index) => (
-            <li key={index} className="min-w-0 truncate" data-ribbon-name="">{name}</li>
+            <li key={index} className={cn("min-w-0 truncate", index >= KIOSK_PHONE_NAME_LIMIT && "max-sm:hidden")} data-ribbon-name="">
+              {name}
+            </li>
           ))}
         </ol>
       )}
-      {summary.overflow > 0 ? <p className={cn(EMPTY_CLASS, "shrink-0")} data-ribbon-overflow="">{`+${summary.overflow} more`}</p> : null}
+      {summary.overflow > 0 ? (
+        <p className={cn(EMPTY_CLASS, "shrink-0", phoneHidden > 0 && "max-sm:hidden")} data-ribbon-overflow="">{`+${summary.overflow} more`}</p>
+      ) : null}
+      {phoneHidden > 0 ? (
+        // A phone shows fewer names, so they stay readable; its count includes the ones it hides.
+        <p className={cn(EMPTY_CLASS, "shrink-0 sm:hidden")} data-ribbon-overflow-phone="">
+          {`+${summary.overflow + phoneHidden} more`}
+        </p>
+      ) : null}
     </section>
   );
 }

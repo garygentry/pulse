@@ -10,6 +10,7 @@ import type { ReactElement } from "react";
 import { act, render } from "./react-render.js";
 
 import type { HostStatus, OverviewSnapshotV2 } from "@pulse/web-data/wire";
+import { TARGET_STATUS } from "@/ui";
 import { OVERVIEW_STATUS_ORDER, DEFAULT_OVERVIEW_PREFERENCES, type OverviewModel } from "../src/client/views/overview/model.js";
 import { effectiveStatus } from "../src/client/views/overview/freshness.js";
 import { STATUS_CHANGE_MARKER_WINDOW_MS, createChangeTracker } from "../src/client/views/overview/grid/change-marker.js";
@@ -164,6 +165,13 @@ describeDom("kiosk tile wall", () => {
     expect(chips).toHaveLength(Math.min(flagged, KIOSK_TILE_CHIP_LIMIT));
     const worst = Math.min(...statuses.filter((s) => s !== "ok").map((s) => OVERVIEW_STATUS_ORDER.indexOf(s)));
     expect(OVERVIEW_STATUS_ORDER.indexOf(chips[0]!.dataset["status"] as never)).toBe(worst);
+    // The chip's status word is its own text element, apart from the (truncatable) service name.
+    const chipStatus = chips[0]!.dataset["status"] as keyof typeof TARGET_STATUS;
+    const chipService = host.services.find((svc) => svc.drilldownId === chips[0]!.dataset["targetId"])!;
+    const word = within(chips[0]!).getByText(TARGET_STATUS[chipStatus].label, { exact: true });
+    const name = within(chips[0]!).getByText(chipService.name, { exact: true });
+    expect(word).not.toBe(name);
+    expect(word.contains(name) || name.contains(word)).toBe(false);
     const more = tile.querySelector('[data-slot="overview-kiosk-more"]');
     if (flagged > KIOSK_TILE_CHIP_LIMIT) expect(more!.textContent).toBe(`+${flagged - KIOSK_TILE_CHIP_LIMIT} more`);
     else expect(more).toBeNull();

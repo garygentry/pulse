@@ -10,7 +10,7 @@
 
 import type { ReactElement, ReactNode } from "react";
 
-import { ALERT_SEVERITY, Badge, TARGET_STATUS } from "@/ui";
+import { ALERT_SEVERITY, Badge, TARGET_STATUS, VisuallyHidden } from "@/ui";
 import type { EstateClock } from "../../../format.js";
 import { OVERVIEW_STATUS_ORDER } from "../model.js";
 import type { CoverageStat, EngineOkStat, OverviewStats, OverviewSurfaceState, StatusCounts } from "../model.js";
@@ -163,10 +163,10 @@ export function StatHeader(props: StatHeaderProps): ReactElement {
   );
 }
 
-/** One labelled run of the kiosk strip: a muted label, then its badges. */
+/** One labelled run of the kiosk strip: a muted label, then its badges; never shrinks. */
 function StripGroup(props: { readonly stat: string; readonly label: string; readonly children: ReactNode }): ReactElement {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-stat={props.stat} role="group" aria-label={props.label}>
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5 xl:flex-nowrap" data-stat={props.stat} role="group" aria-label={props.label}>
       <span className="text-sm font-medium text-muted-foreground" aria-hidden="true">
         {props.label}
       </span>
@@ -175,19 +175,35 @@ function StripGroup(props: { readonly stat: string; readonly label: string; read
   );
 }
 
-/** Non-zero status counts (every status when all are zero, so the run is never empty). */
-function StripStatuses(props: { readonly counts: StatusCounts }): ReactElement {
-  const present = OVERVIEW_STATUS_ORDER.filter((status) => props.counts[status] !== 0);
+/**
+ * Host and service counts per status as one badge each: "Critical 1 · 2" reads hosts · services
+ * (the run's label says so); the accessible text spells both out. Statuses with no host and no
+ * service are left out (OK always shows, so the run is never empty).
+ */
+function StripStatuses(props: { readonly hosts: StatusCounts; readonly services: StatusCounts }): ReactElement {
+  const { hosts, services } = props;
+  const present = OVERVIEW_STATUS_ORDER.filter((status) => status === "ok" || hosts[status] !== 0 || services[status] !== 0);
   return (
     <>
-      {(present.length > 0 ? present : (["ok"] as const)).map((status) => (
+      {present.map((status) => (
         <span key={status} data-stat-status={status}>
-          <TargetStatusBadge status={status} label={`${countText(props.counts[status])} ${TARGET_STATUS[status].label}`} />
+          <TargetStatusBadge
+            status={status}
+            label={
+              <>
+                <span aria-hidden="true">{`${TARGET_STATUS[status].label} ${countText(hosts[status])} · ${countText(services[status])}`}</span>
+                <VisuallyHidden>{`${TARGET_STATUS[status].label}: ${countText(hosts[status])} hosts, ${countText(services[status])} services`}</VisuallyHidden>
+              </>
+            }
+          />
         </span>
       ))}
     </>
   );
 }
+
+/** Muted, truncating strip detail (a qualifier or last-good time): the first thing to give way. */
+const STRIP_DETAIL_CLASS = "min-w-0 shrink truncate text-xs text-muted-foreground tabular-nums";
 
 function StripCoverage(props: { readonly coverage: CoverageStat; readonly clock: EstateClock }): ReactElement {
   const { coverage, clock } = props;
@@ -201,19 +217,21 @@ function StripCoverage(props: { readonly coverage: CoverageStat; readonly clock:
   const current = coverage.availability.state === "current";
   const gapsText = `Gaps ${countText(coverage.gaps)}`;
   return (
-    <StripGroup stat="coverage" label="Coverage">
-      {coverage.gaps > 0
-        ? <TargetStatusBadge status="warning" label={gapsText} />
-        : <Badge variant="outline" className="tabular-nums">{gapsText}</Badge>}
+    <>
+      <StripGroup stat="coverage" label="Coverage">
+        {coverage.gaps > 0
+          ? <TargetStatusBadge status="warning" label={gapsText} />
+          : <Badge variant="outline" className="tabular-nums">{gapsText}</Badge>}
+      </StripGroup>
       {current ? null : (
-        <span className={DETAIL_CLASS} data-stat-qualifier="">{evidenceQualifier(clock, coverage.availability)}</span>
+        <span className={STRIP_DETAIL_CLASS} data-stat-qualifier="">{evidenceQualifier(clock, coverage.availability)}</span>
       )}
-    </StripGroup>
+    </>
   );
 }
 
-function StripEngine(props: { readonly engine: EngineOkStat }): ReactElement {
-  const { engine } = props;
+function StripEngine(props: { readonly engine: EngineOkStat; readonly clock: EstateClock }): ReactElement {
+  const { engine, clock } = props;
   const current = engine.status === "available" && engine.availability.state === "current";
   let badge: ReactElement;
   if (engine.status === "available" && current) {
@@ -223,35 +241,42 @@ function StripEngine(props: { readonly engine: EngineOkStat }): ReactElement {
   } else {
     badge = engineBadge("unknown", "Unavailable");
   }
+  const lastGood = engine.availability.lastGoodAt;
   return (
-    <StripGroup stat="engine" label="Engine">
-      {badge}
-    </StripGroup>
+    <>
+      <StripGroup stat="engine" label="Engine">
+        {badge}
+      </StripGroup>
+      {current || lastGood === null ? null : (
+        <span className={STRIP_DETAIL_CLASS} data-stat-qualifier="">{lastGoodLabel(clock, lastGood)}</span>
+      )}
+    </>
   );
 }
 
 /**
- * The kiosk's estate totals as one compact line (wrapping only on a narrow screen): host and service
- * status counts, coverage gaps and engine state. Firing counts are on the kiosk alert line below.
+ * The kiosk's estate totals as one line: host · service counts per status, coverage gaps and engine
+ * state (with its last-good time when not current). From `xl` (wallboard widths) up it never wraps —
+ * details truncate instead — so its height, and with it the tile region's, stays fixed; narrower
+ * screens may wrap rather than clip a count. Firing counts are on the kiosk alert line below; the
+ * estate time zone is in the tile wall's footer. `relative` keeps the visually
+ * hidden badge text inside the strip's clip, so it never widens the page.
  */
 export function KioskStatStrip(props: StatHeaderProps): ReactElement {
   const { stats, surface, clock } = props;
   return (
     <section
-      className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1"
+      className="relative flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 overflow-hidden whitespace-nowrap xl:flex-nowrap"
       aria-label="Estate statistics"
       data-surface={surface.status}
       data-slot="overview-stat-strip"
       data-stat-strip=""
     >
-      <StripGroup stat="hosts" label="Hosts">
-        <StripStatuses counts={stats.hosts} />
-      </StripGroup>
-      <StripGroup stat="services" label="Services">
-        <StripStatuses counts={stats.services} />
+      <StripGroup stat="hosts" label="Hosts · services">
+        <StripStatuses hosts={stats.hosts} services={stats.services} />
       </StripGroup>
       <StripCoverage coverage={stats.coverage} clock={clock} />
-      <StripEngine engine={stats.engine} />
+      <StripEngine engine={stats.engine} clock={clock} />
     </section>
   );
 }
