@@ -236,7 +236,8 @@ library patterns.
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable` (deck's since v0.5.0),
 backed by `@tanstack/react-virtual`. It switches on at a row threshold (300 by default), keeps the
 focused row and its neighbours rendered by id, exposes `aria-rowcount` and `aria-rowindex`, and
-offers a ref handle: `scrollToIndex` (a promise that settles once the row is in place) and
+offers a ref handle: `scrollToIndex` (a promise that settles once the row is in place, with
+`true`, or `false` when a user scroll or a newer call cancelled it; pulse divergence) and
 `focusIndex`. The root is the scroll region on both paths. Rows take their height from the density
 tokens and are measured as they render, so rows that grow a second line, such as the alert
 catalog's rule errors, keep the spacers, the scrollbar and `scrollToIndex` exact. A list driven by

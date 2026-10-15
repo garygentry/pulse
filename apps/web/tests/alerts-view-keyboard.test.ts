@@ -37,7 +37,7 @@ describeDom("triage keyboard", (dom) => {
   }
 
   /** `awaitScroll`: hand the keyboard the handle's scroll promise, as the view does. */
-  async function setup(tableRows: readonly ActiveAlert[] = rows, awaitScroll: boolean | "cancelled" = false): Promise<Harness> {
+  async function setup(tableRows: readonly ActiveAlert[] = rows, awaitScroll = false): Promise<Harness> {
     const { createElement: h, createRef } = await import("react");
     const { signal } = await import("@preact/signals-core");
     const { TriageTable } = await import("../src/client/views/alerts/table/TriageTable.js");
@@ -80,9 +80,8 @@ describeDom("triage keyboard", (dom) => {
         hn.scrolls.push(index);
         const settled = tableRef.current?.scrollToIndex(index);
         if (!awaitScroll || settled === undefined) return undefined;
-        const handed = awaitScroll === "cancelled" ? settled.then(() => false) : settled;
-        hn.settles.push(handed);
-        return handed;
+        hn.settles.push(settled);
+        return settled;
       },
       isFiringTabActive: () => hn.state.firing,
       isPaneOpen: () => hn.state.paneOpen,
@@ -504,15 +503,18 @@ describeDom("triage keyboard", (dom) => {
       hn.dispose();
       hn.unmount();
 
-      // A cancelled scroll (the promise resolves false): no focus on settle.
+      // A scroll the user cancels (a wheel gesture before it settled): the real DataTable handle
+      // resolves false, and the row is not focused on settle even if it rendered.
       (liveDoc?.activeElement as HTMLElement | null | undefined)?.blur();
-      hn = await setup(many, "cancelled");
+      hn = await setup(many, true);
       hn.selectedIndex.value = 3999;
       press("j");
+      const viewport = hn.container.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
+      viewport.dispatchEvent(new (viewport.ownerDocument.defaultView as unknown as { Event: typeof Event }).Event("wheel", { bubbles: true }));
       expect(hn.settles).toHaveLength(1);
-      await hn.settles[0];
+      expect(await hn.settles[0]).toBe(false);
+      await eventually(() => expect(rendered(hn)).toContain("virtual-4000"));
       await flushMicrotasks();
-      expect(rendered(hn)).toContain("virtual-4000");
       expect(focusedFp()).toBeNull();
       frames.splice(0);
       hn.dispose();

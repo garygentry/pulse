@@ -8,7 +8,7 @@ the blob id of pulse's copy as last reviewed, and the divergence notes that expl
 difference. `bun run ui:drift` checks the record, and `bun test` runs the same check in CI.
 
 <!-- ui-drift:begin source (generated from VENDORED.json by `bun run ui:drift --record`; do not edit) -->
-Pinned upstream: https://github.com/garygentry/deck at `209c635` (deck v0.5.0). Vendored files: 99, 27 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 6.
+Pinned upstream: https://github.com/garygentry/deck at `209c635` (deck v0.5.0). Vendored files: 99, 28 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 6.
 <!-- ui-drift:end source -->
 
 The library is imported as `@/ui` (tsconfig `paths` `@/*` → `src/client/*`, Bundler resolution, so
@@ -129,7 +129,7 @@ the next sync turns them from pulse-only into vendored files.
 | `apps/web/src/client/ui/patterns/code-block.tsx` | `apps/web/src/ui/patterns/code-block.tsx` | None |
 | `apps/web/src/client/ui/patterns/command-palette.tsx` | `apps/web/src/ui/patterns/command-palette.tsx` | `exact-optional` |
 | `apps/web/src/client/ui/patterns/comparison-grid.tsx` | `apps/web/src/ui/patterns/comparison-grid.tsx` | `exact-optional` |
-| `apps/web/src/client/ui/patterns/data-table.tsx` | `apps/web/src/ui/patterns/data-table.tsx` | None |
+| `apps/web/src/client/ui/patterns/data-table.tsx` | `apps/web/src/ui/patterns/data-table.tsx` | `data-table-scroll-completed` |
 | `apps/web/src/client/ui/patterns/disclosure.tsx` | `apps/web/src/ui/patterns/disclosure.tsx` | None |
 | `apps/web/src/client/ui/patterns/empty-state.tsx` | `apps/web/src/ui/patterns/empty-state.tsx` | None |
 | `apps/web/src/client/ui/patterns/error-state.tsx` | `apps/web/src/ui/patterns/error-state.tsx` | None |
@@ -227,6 +227,7 @@ Not vendored:
 - **`list-navigation-virtual`** (`use-list-navigation.ts`): Optional `virtual` (`count`, `activeIndex`, `focus(index)`), so moves in a virtualized list run over every item, not only the rendered ones (deck's `focusEdge` covers only Home/End); optional `typeaheadActive()`, while true printable keys (j/k included) are left to the list's type-ahead; optional `rovingTabIndex` (`initialIndex()`): the list is one Tab stop, `tabindex` 0/-1 set on `getItems()` after every render of the caller (no re-render), following focus (`focusin`), kept by element identity else clamped to its old index, removed again when the mode ends; `onActivate`/`onExpand`/`onCollapse`/`onToggle` may return `false` to leave the key unclaimed (as `onEscape`); the key's origin and acted-on item come from the element it was pressed on (the event target; the document's active element only for a key dispatched on the document) instead of always the active element; optional `acceptKey(event, intent)`, `false` leaves a key the hook would act on alone (not consumed, a pending `g` disarmed); with `virtual`, `focus(index)` is called for a move clamped at an end too, so focus returns to the item.
 - **`tree-row-position`** (`tree.ts`): `VisibleTreeRow` carries `posInSet`/`setSize`.
 - **`stat-tile-absent`** (`stat-tile.tsx`): Optional `valueState: "absent"` (placeholder text such as "not reported" renders small and muted on the neutral tone, whatever `tone` says, so "no data" never reads as a headline number) with an optional screen-reader `absentDescription`; the root and the value carry `data-value-state`.
+- **`data-table-scroll-completed`** (`data-table.tsx`): The handle's `scrollToIndex` resolves the scroll's completion (`Promise<boolean>`: `true` once the row is in place, `false` when a user scroll or a newer call cancelled it) instead of `Promise<void>`; the alerts triage keyboard leaves focus alone after a cancelled scroll.
 <!-- ui-drift:end notes -->
 
 ## Pulse-only additions
@@ -267,6 +268,9 @@ deck v0.5.0 and is vendored from there since the sync to it (issue #18).
   `getItems()` by element, so combined with `virtual` the stop falls to the wrong logical item when
   its row unmounts (it clamps to the old DOM index, not the item's index in the list). No pulse list
   combines the two today.
+- `patterns/data-table.tsx` handle: `scrollToIndex` resolves whether the scroll completed
+  (`Promise<boolean>`), as the internal scroll already knows; callers can then skip work after a
+  cancelled scroll (issue #37).
 - `patterns/stat-tile.tsx` `valueState="absent"` (placeholder text never reads as a headline number).
 - `lib/dom.ts` `isTextEntryTarget`, used by `SearchInput`'s `/` and the sidebar's Ctrl/Cmd-B.
 - The lazy uPlot `TimeSeriesChart` (`viz/time-series-chart.tsx`, `viz/uplot-chart.tsx`).

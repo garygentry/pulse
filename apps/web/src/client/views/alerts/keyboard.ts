@@ -30,7 +30,8 @@ export interface TriageKeyboardOptions {
    *  virtualized-out row first so it can be focused afterwards. When it returns a promise (the
    *  handle's settles once the row is in place), the row is focused then too, which a far jump
    *  (End, G) needs when the window takes longer than the frame retries to move. A promise that
-   *  resolves `false` means the scroll was cancelled, and the row is then not focused. */
+   *  resolves `false` means the scroll was cancelled (the DataTable handle does so after a user
+   *  scroll or a newer call), and the row is then not focused. */
   readonly scrollToIndex: (index: number) => void | Promise<void | boolean>;
   /** True iff the Firing tab is active — gates the moves and Enter. */
   readonly isFiringTabActive: () => boolean;
