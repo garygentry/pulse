@@ -1,11 +1,11 @@
-// A horizontal scroller for fixed-width content (a StatusTimeline SVG in a narrow pane). While its
+// Pulse-only pattern (not in deck). A horizontal scroller for fixed-width content (a StatusTimeline SVG in a narrow pane). While its
 // content overflows it is a labelled, focusable region, so a keyboard user can reach it and scroll
 // it with the arrow keys (DataTable's scroll-region convention); while everything fits it is a plain
 // box and adds no tab stop (#51).
 import type { ReactElement, ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { cn } from "@/ui";
+import { cn } from "@/ui/lib/utils";
 
 export interface ScrollRegionProps {
   /** The region's accessible name while it scrolls, e.g. "Firing history chart". */

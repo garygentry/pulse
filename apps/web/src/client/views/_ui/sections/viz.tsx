@@ -1,6 +1,7 @@
 import type { TargetStatus } from "@pulse/web-data/wire";
 import {
   Gauge,
+  ScrollRegion,
   Sparkline,
   StatusTimeline,
   TARGET_STATUS,
@@ -10,7 +11,6 @@ import {
   type TimelineLane,
   type TimeSeriesSeries,
 } from "@/ui";
-import { ScrollRegion } from "../../_shared/scroll-region.js";
 import { Specimen, type WorkbenchSectionDef } from "../kit.js";
 
 // Fixed data only: the workbench is snapshotted, so nothing here may vary per render.

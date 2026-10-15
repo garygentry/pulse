@@ -8,10 +8,9 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 
 import { announce } from "../../../a11y/index.js";
-import { ALERT_INTERVAL, EmptyState, Section, Skeleton, StatusTimeline } from "@/ui";
+import { ALERT_INTERVAL, EmptyState, ScrollRegion, Section, Skeleton, StatusTimeline } from "@/ui";
 import type { ActiveAlert, RangeId } from "@pulse/web-data/wire";
 import type { EstateClock } from "../../../format.js";
-import { ScrollRegion } from "../../_shared/scroll-region.js";
 import { DEFAULT_HISTORY_RANGE } from "../taxonomy.js";
 import { fetchAlertHistory } from "./history-client.js";
 import { buildLanes, deriveDomain } from "./history-model.js";

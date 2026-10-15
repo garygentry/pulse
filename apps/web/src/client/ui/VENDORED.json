@@ -26,7 +26,7 @@
     "app-css": "Pulse's Tailwind entry, kept in deck's file order with deck's base rules: `source(\"..\")` on the Tailwind import and an `@source not` for the workbench (no `@source` for deck's runtime modules, which pulse does not have), `theme-pulse.css` instead of `hljs.css`, the token utilities from the vendored `tailwind-theme.css` (deck imports `@deck/sdk/tailwind/theme.css`), no `@fontsource` imports (the faces register from `styles/fonts.ts`), and pulse base rules (heading wrap, focus ring, inline monospace size, app-wide reduced motion).",
     "icons-additions": "Pulse additions: a second `lucide-react` import block and a \"pulse additions\" section at the end of `ICONS` (the shell and views' icons deck lacks). The shell's icons moved to the pulse-only `icons-shell.ts` (spread into `ICONS`, which keeps its type and contents) and `FALLBACK_ICON` with them; evaluating `icons.ts` registers the set with `icon-registry.ts` (pulse-only), so it can load as a lazy chunk.",
     "components-json": "`tailwind.css` points at `src/client/styles/app.css`.",
-    "barrel-exports": "No `ConfigGate` or contributed-icon exports (`contributed-icons.ts` is not vendored). Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, `commandGroupsFromIndex` (+ `CommandGroupsOptions`, `CommandIndexEntry`, from the pulse-only `lib/command-groups.ts`), the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"`, the StatusTimeline layout helpers (`timelineHeight`, `timelineSegmentRect`, `TimelineLayoutOpts`, `TimelineRect`) for the timeline view's decorations, the pulse-only `TimeSeriesChart` (+ its types), and the TreeView virtualization exports (`TREE_VIEW_VIRTUALIZE_DEFAULTS`, `TreeViewVirtualizeOptions`).",
+    "barrel-exports": "No `ConfigGate` or contributed-icon exports (`contributed-icons.ts` is not vendored). Adds the pulse-only exports: `FreshnessStamp`/`FreshnessState`, `commandGroupsFromIndex` (+ `CommandGroupsOptions`, `CommandIndexEntry`, from the pulse-only `lib/command-groups.ts`), the `useDisposable` hook, `isTextEntryTarget`, `export * from \"./status\"`, the StatusTimeline layout helpers (`timelineHeight`, `timelineSegmentRect`, `TimelineLayoutOpts`, `TimelineRect`) for the timeline view's decorations, the pulse-only `TimeSeriesChart` (+ its types), the pulse-only `ScrollRegion` (+ `ScrollRegionProps`), and the TreeView virtualization exports (`TREE_VIEW_VIRTUALIZE_DEFAULTS`, `TreeViewVirtualizeOptions`).",
     "freshness-types": "Imports `FreshnessStamp`/`FreshnessState` from `lib/freshness.ts` (deck imports them from its server contract).",
     "console-prefix": "Console prefix `[deck]` becomes `[pulse]`.",
     "icon-registry": "Resolves names through `lib/icon-registry.ts`: shell icons eager, the rest once the lazy icon chunk loads; an empty same-size svg until then, the fallback glyph if the load fails. Deck's module-contributed SVG icons (`contributed-icons.ts`, v0.5.0) are not taken: pulse has no runtime modules.",
@@ -154,7 +154,7 @@
       "local": "apps/web/src/client/ui/index.ts",
       "upstream": "apps/web/src/ui/index.ts",
       "upstreamBlob": "09e8e5526faa900e95736da02523ecb9b8469d17",
-      "localBlob": "f5f1afcf75755ba9d93c2813c43da6b24a65b8bf",
+      "localBlob": "f1abce74f6fb49e422521036f8a7494e516cf706",
       "notes": [
         "barrel-exports"
       ]
@@ -873,6 +873,11 @@
       "local": "apps/web/src/client/ui/lib/command-groups.ts",
       "source": "pulse",
       "note": "`commandGroupsFromIndex`: maps command-index entries (structural `CommandIndexEntry`, no shell import) to `CommandPalette` groups keyed by kind; `{ groupOrder: \"entries\" }` keeps a ranked list's best match first"
+    },
+    {
+      "local": "apps/web/src/client/ui/patterns/scroll-region.tsx",
+      "source": "pulse",
+      "note": "`ScrollRegion`: a horizontal scroller for fixed-width content (a StatusTimeline in a narrow pane) that is a labelled, focusable region (`tabIndex=0`) only while its content overflows; `data-slot=\"scroll-region\"`"
     }
   ]
 }
