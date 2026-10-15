@@ -81,7 +81,7 @@ cd examples/reference && "$PULSE_BIN" render
 ```
 
 **Verify (content):** `rendered/.rendered-manifest.json` exists and contains
-`"formatVersion": 1`; `cat rendered/.rendered-manifest.json` and confirm `files` lists
+`"formatVersion": 2`; `cat rendered/.rendered-manifest.json` and confirm `files` lists
 `scrape/file_sd/managed-linux.json`, `alertmanager/routing.yaml`, and `gatus/config.yaml`.
 Then re-run `"$PULSE_BIN" render --check` in the same directory: **exit `0`** (no drift)
 proves the on-disk tree equals a fresh render. **Exit `1`** means the committed tree drifted

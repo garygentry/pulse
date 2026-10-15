@@ -49,6 +49,9 @@ cd pulse
 bun install
 ```
 
+To run a tagged release instead of `main`, check out its tag (for example `git checkout v0.2.0`) before `bun install`.
+Release notes are in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Quickstart
 
 ### 1. Validate and render an estate
@@ -137,6 +140,7 @@ After an intentional estate or renderer change, regenerate goldens with `bun run
 ## Documentation
 
 - [`docs/operator/`](docs/operator/) — task-oriented operator guides: [getting started](docs/operator/getting-started.md), [exposure](docs/operator/exposure.md), [alerting](docs/operator/alerting.md), and the [web overview](docs/operator/web-overview.md), plus recipes for secrets, sizing, and the command-exporter.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release; operators upgrading an existing deployment follow the [upgrade path](docs/operator/upgrade-path.md#upgrading-to-020).
 - [`docs/runbooks/`](docs/runbooks/) — step-by-step operational runbooks: [bootstrap](docs/runbooks/bootstrap.md), [agent install](docs/runbooks/agent-install.md), [backup enrollment](docs/runbooks/backup-enrollment.md), and the retirement checklist.
 - [`docs/architecture/`](docs/architecture/) — a developer-focused architecture document per component (overview, design, API reference, and integration guide).
 - [`examples/`](examples/) — annotated estate fixtures, from the smallest valid estate to one exercising every schema surface.
