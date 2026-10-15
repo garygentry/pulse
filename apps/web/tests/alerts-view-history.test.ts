@@ -88,12 +88,27 @@ describe("buildLanes / deriveDomain", () => {
     expect(new Set(lanes.map((l) => l.id))).toEqual(new Set(p.lanes.map((l) => l.id)));
   });
 
-  test("segments are numeric epoch ms with INTERVAL_STATUS status", () => {
+  test("segments are numeric epoch ms; a firing interval takes its lane's severity (#44)", () => {
     const lanes = buildLanes(makeHistoryPayload(), hostDown);
     const seg = lanes[0]!.segments[0]!;
     expect(seg.start).toBe(Date.parse("2026-09-22T02:00:00.000Z"));
     expect(seg.end).toBe(Date.parse("2026-09-22T02:20:00.000Z"));
     expect(seg.status).toBe("critical");
+    // The warning lane is warning (amber), never critical: the same colours as the timeline swimlane.
+    expect(lanes[1]!.segments.map((s) => s.status)).toEqual(["warning"]);
+  });
+
+  test("an info lane's firing intervals are info; a failed interval is its own 'failed' state", () => {
+    const p = makeHistoryPayload();
+    const disk = p.lanes[1]!;
+    const info: AlertHistoryLane = {
+      ...disk,
+      severity: "info",
+      labels: { ...disk.labels, severity: "info" },
+      intervals: [...disk.intervals, { start: "2026-09-22T08:00:00.000Z", end: "2026-09-22T08:30:00.000Z", state: "failed", provenance: "gatus" }],
+    };
+    const lanes = buildLanes({ ...p, lanes: [info] }, hostDown);
+    expect(lanes[0]!.segments.map((s) => s.status)).toEqual(["info", "failed"]);
   });
 
   test("domain prefers [fetchedAt - range, fetchedAt], falls back to lane bounds", () => {
@@ -181,6 +196,9 @@ describeDom("History", (dom) => {
     // Lane names live in the timeline's screen-reader list (one item per lane).
     const labels = [...container.querySelectorAll('[data-slot="status-timeline-text"] > li > span')].map((el) => el.textContent);
     expect(labels).toEqual(["HostDown (this alert)", "DiskAlmostFull", "HostDown (unmatched)"]);
+    // Segments draw from ALERT_INTERVAL: critical lanes danger, the warning lane warn (#44).
+    const tones = [...container.querySelectorAll(`${TIMELINE} rect[data-status]`)].map((r) => [r.getAttribute("data-status"), r.getAttribute("data-tone")]);
+    expect(tones).toEqual([["critical", "danger"], ["critical", "danger"], ["warning", "warn"], ["critical", "danger"]]);
     expect(container.querySelector('[data-history-note="unmatched"]')).not.toBeNull();
     unmount();
   });

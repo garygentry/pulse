@@ -857,7 +857,7 @@
     {
       "local": "apps/web/src/client/ui/status/",
       "source": "pulse",
-      "note": "`TARGET_STATUS`, `ALERT_SEVERITY` (+ `alertSeverityOf`), `ALERT_STATE` (+ `alertStateOf`), `MUTATION_STATE` on `defineStatusMap`; the domain → `TargetStatus` maps in `src/client/status/target-status.ts` are unchanged"
+      "note": "`TARGET_STATUS`, `ALERT_SEVERITY` (+ `alertSeverityOf`), `ALERT_STATE` (+ `alertStateOf`), `ALERT_INTERVAL` (+ `alertIntervalStatusOf`), `MUTATION_STATE` on `defineStatusMap`; the domain → `TargetStatus` maps in `src/client/status/target-status.ts` are unchanged"
     },
     {
       "local": "apps/web/src/client/ui/viz/time-series-chart.tsx",
