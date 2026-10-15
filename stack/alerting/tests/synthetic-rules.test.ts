@@ -5,6 +5,8 @@
 // advisory IGNORED_ALERT_FIELD findings.
 /// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parse } from "yaml";
 import { gatusEndpointName } from "@pulse/renderer";
 import {
@@ -14,6 +16,7 @@ import {
   syntheticExpr,
   templateLiteral,
 } from "../src/transform/synthetic-rules.js";
+import { METRICS } from "../src/constants.js";
 import type { AlertingFinding } from "../src/transform/findings.js";
 import type { EstateModel, Service } from "../src/transform/estate.js";
 
@@ -50,9 +53,21 @@ interface Rule {
   annotations: Record<string, string>;
 }
 
+/** The alerting rules of a rendered file (the mount-marker recording rule excluded). */
 function rulesOf(yaml: string): Rule[] {
   const doc = parse(yaml) as { groups: Array<{ name: string; rules: Rule[] }> };
-  return doc.groups.flatMap((g) => g.rules);
+  return doc.groups.flatMap((g) => g.rules).filter((r) => r.alert !== undefined);
+}
+
+/** The mount-marker group every rendered file ends with (issue #23), for `count` bound checks. */
+function markerLines(count: number): string[] {
+  return [
+    "  - interval: 30s",
+    "    name: synthetic-checks-loaded",
+    "    rules:",
+    `      - expr: vector(${count})`,
+    "        record: pulse:synthetic_checks_bound",
+  ];
 }
 
 function build(services: Service[]): { yaml: string; findings: AlertingFinding[] } {
@@ -92,6 +107,7 @@ describe("buildSyntheticRules — the rendered rule", () => {
         "          group: web-01",
         "          severity: critical",
         "          source: gatus",
+        ...markerLines(1),
         "",
       ].join("\n"),
     );
@@ -131,7 +147,8 @@ describe("buildSyntheticRules — selection", () => {
         alerts: [{ type: "custom", enabled: false }],
       }),
     ]);
-    expect(yaml).toBe("groups: []\n");
+    // Nothing bound: the file still carries the mount marker (value 0) so a missing mount is loud.
+    expect(yaml).toBe(["groups:", ...markerLines(0), ""].join("\n"));
   });
 
   test("type selects nothing: any type, and enabled: true, both render", () => {
@@ -244,6 +261,33 @@ describe("buildSyntheticRules — escaping", () => {
   test("formatDuration renders whole minutes as m, otherwise s", () => {
     expect(formatDuration(180)).toBe("3m");
     expect(formatDuration(90)).toBe("90s");
+  });
+});
+
+describe("buildSyntheticRules — mount marker (issue #23)", () => {
+  test("always emits pulse:synthetic_checks_bound, valued at the bound-check count", () => {
+    for (const services of [[], [PORTAL], [PORTAL, svc({ ...PORTAL, name: "admin" })]]) {
+      const doc = parse(build(services).yaml) as {
+        groups: Array<{ name: string; rules: Array<{ record?: string; expr: string }> }>;
+      };
+      const marker = doc.groups.find((g) => g.name === "synthetic-checks-loaded");
+      expect(marker?.rules).toEqual([
+        { record: "pulse:synthetic_checks_bound", expr: `vector(${services.length})` },
+      ]);
+    }
+  });
+
+  test("the static SyntheticRulesNotLoaded rule watches exactly the rendered marker series", () => {
+    const pipeline = parse(
+      readFileSync(
+        join(import.meta.dir, "..", "..", "compose", "config", "vmalert", "rules", "pipeline-health.yml"),
+        "utf8",
+      ),
+    ) as { groups: Array<{ rules: Array<{ alert?: string; expr: string }> }> };
+    const rule = pipeline.groups
+      .flatMap((g) => g.rules)
+      .find((r) => r.alert === "SyntheticRulesNotLoaded");
+    expect(rule?.expr.trim()).toBe(`absent(${METRICS.syntheticChecksBound})`);
   });
 });
 

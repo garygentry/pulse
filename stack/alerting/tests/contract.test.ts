@@ -352,6 +352,7 @@ const PROTECTED_FAMILIES = [
   "AlertNotificationsFailing",
   "AlertNotificationLatencyHigh",
   "AlertRemoteWriteBacklog",
+  "SyntheticRulesNotLoaded", // issue #23
 ] as const;
 
 /** The churn family the expected-churn rule is allowed to target. */

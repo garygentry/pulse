@@ -103,8 +103,11 @@ describe("buildAlertingConfig (pure, 03 §2.2)", () => {
     expect(out.syntheticRules).toContain("GatusCheckFailed");
   });
 
-  test("an estate with no alerts: binding renders an empty synthetic ruleset", () => {
-    expect(buildAlertingConfig(input()).syntheticRules).toBe("groups: []\n");
+  test("an estate with no alerts: binding renders only the synthetic mount marker", () => {
+    const yaml = buildAlertingConfig(input()).syntheticRules;
+    expect(yaml).not.toContain("GatusCheckFailed");
+    expect(yaml).toContain("record: pulse:synthetic_checks_bound");
+    expect(yaml).toContain("expr: vector(0)");
   });
 
   test("is deterministic: identical input → byte-identical output", () => {

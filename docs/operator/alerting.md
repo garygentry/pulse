@@ -154,14 +154,71 @@ Field notes:
   `ingress_url` that is not suppressed. On any other service it is inert and raises an
   `inert_alert_binding` **warning** at validation.
 - The rule file is a rendered artifact like `deep-health.yml` and `backup.yml`: mount it into
-  vmalert as the [rollout session](/rollout-session/) shows, or no synthetic check pages.
+  vmalert as the [rollout session](/rollout-session/) shows, or no synthetic check pages. Mount it
+  **even when no service has a binding**. A missing mount raises `SyntheticRulesNotLoaded` (see
+  below).
+
+### Detecting a missing `synthetic.yml` mount
+
+A Gatus check pages only through the rendered `synthetic.yml`. If vmalert never loads that file,
+nothing errors and every check stays green in the Gatus UI, so a missing mount used to be silent.
+Pulse now makes it loud:
+
+- **The file always carries a marker.** The alerting transform always renders a
+  `synthetic-checks-loaded` group into `synthetic.yml`, even for an estate with no `alerts:`
+  binding. The group holds one recording rule, `pulse:synthetic_checks_bound`, whose value is the
+  number of `GatusCheckFailed` rules in the file (it can be 0).
+- **A static rule watches for it.** The always-mounted `pipeline-health` family carries
+  **`SyntheticRulesNotLoaded`** (`absent(pulse:synthetic_checks_bound)`, `for: 10m`, warning). Once
+  the marker series is absent for 10 minutes, the alert fires through the warning route and links
+  to the [pipeline-health runbook](/pipeline-health/).
+- **Expect it about 10–15 minutes after the mount goes missing.** On a stack that never had the
+  file, the series never existed, so the alert fires about 10–11 minutes after vmalert starts. If
+  the mount is dropped from a running stack, VictoriaMetrics keeps returning the last marker sample
+  for its 5-minute lookback (vmalert's `-datasource.queryStep=5m`). `absent()` only turns true
+  after that, so the alert fires about 15 minutes after the drop.
+
+The alert fires when:
+
+- `synthetic.yml` is not mounted into `/etc/vmalert/rules/` at all (the usual cause after an
+  upgrade);
+- the mounted file was rendered before the marker existed, so it predates this check (re-run
+  `bun run alerting:render`);
+- vmalert's remote-write to VictoriaMetrics is failing, so the recorded marker never lands
+  (`AlertRemoteWriteBacklog` may fire too; if VictoriaMetrics is unreachable, the query itself
+  errors and you see `AlertRuleEvalErrors` instead).
+
+To check by hand, look for the marker and the check rules in vmalert's loaded rules:
+
+```bash
+docker compose run --rm --entrypoint sh alertmanager -c \
+  "wget -qO- http://vmalert:8880/api/v1/rules" | grep -o '"name":"synthetic-checks-loaded"\|"name":"GatusCheckFailed"' | sort | uniq -c
+```
+
+`synthetic-checks-loaded` must appear once, and `GatusCheckFailed` once for each bound check. The
+grep matches the exact `"name":"…"` field: a bare `GatusCheckFailed` would also match each rule's
+own expression (it reads `ALERTS{alertname="GatusCheckFailed"}`) and count every check twice.
+
+Limits:
+
+- It tells you whether *a* `synthetic.yml` is loaded, not whether it is the current render. A
+  file rendered before you added a binding still carries the marker, but its count is lower.
+  Compare `pulse:synthetic_checks_bound` with the number of enabled bindings after every estate
+  change, or re-render and re-mount as part of the change.
+- The base compose tree (`stack/compose` with no override) does not mount any rendered rule file,
+  so `SyntheticRulesNotLoaded` fires there after about 10 minutes. That is correct: in that state no
+  Gatus check can page.
+- `absent()` has no estate filter. If several estates' vmalerts write to one shared
+  VictoriaMetrics (not a supported topology), one estate's marker hides another estate's missing
+  mount.
 
 > **BREAKING for existing deployments: upgrading from the Gatus push provider.** Earlier revisions
 > paged Gatus checks through a Gatus `custom` alerting provider posting straight to Alertmanager.
 > That provider never resolved alerts correctly (issue #1) and has been removed. After upgrading you
 > **must** re-run the alerting transform and add the `synthetic.yml` mount to vmalert. If you
-> don't, Gatus checks **silently stop paging**: nothing errors, and the checks stay green in the
-> Gatus UI. No estate change is needed, since the same `alerts:` bindings drive the rules. Alerts
+> don't, Gatus checks stop paging, and the only signal is the `SyntheticRulesNotLoaded` warning
+> ([above](#detecting-a-missing-syntheticyml-mount)): nothing else errors, and the checks stay
+> green in the Gatus UI. No estate change is needed, since the same `alerts:` bindings drive the rules. Alerts
 > also change identity at cutover (new labels such as `estate`, `name` and `alertgroup`), so
 > existing silences matching on the full old label set need updating.
 

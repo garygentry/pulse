@@ -1,0 +1,26 @@
+# stack/alerting/tests/fixtures/promtool/synthetic-mount.test.yaml
+# Missing synthetic.yml mount (issue #23): with ONLY the static pipeline-health family loaded — the
+# rendered synthetic.yml never mounted — the mount marker pulse:synthetic_checks_bound is absent and
+# SyntheticRulesNotLoaded fires (warning) once its 10m `for:` elapses; not before.
+# The mounted case (the marker present → silent) is synthetic-mount-loaded.test.yaml.
+rule_files:
+  - pipeline-health.yml
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'up{job="vmalert", instance="vmalert:8880", estate="fixture-estate"}'
+        values: "1+0x40"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: SyntheticRulesNotLoaded
+        exp_alerts: [] # pending inside the 10m `for:`
+      - eval_time: 11m
+        alertname: SyntheticRulesNotLoaded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/pipeline-health"
+              summary: "Synthetic-check (Gatus) rules are not loaded in vmalert (warning)"
+              description: "The synthetic-check marker pulse:synthetic_checks_bound has been absent for 10m (about 10-15m after the mount went missing), so rendered/vmalert/rules/synthetic.yml is not mounted (or is stale). Gatus checks with an alerts: binding CANNOT page until it is: re-run the alerting transform and mount synthetic.yml into /etc/vmalert/rules/ (mount it even when no service has a binding)."

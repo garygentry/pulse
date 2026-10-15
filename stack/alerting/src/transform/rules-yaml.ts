@@ -13,11 +13,17 @@ export interface AlertRuleYaml {
   annotations: Record<string, string>;    // summary/description (REQ-RULE-04)
 }
 
+/** One vmalert recording rule (Prometheus rule-group format). */
+export interface RecordingRuleYaml {
+  record: string;                         // recorded series name
+  expr: string;                           // PromQL expression
+}
+
 /** One vmalert rule group. */
 export interface RuleGroupYaml {
   name: string;
   interval?: string;                      // evaluation interval; omitted → vmalert's global default
-  rules: AlertRuleYaml[];
+  rules: Array<AlertRuleYaml | RecordingRuleYaml>;
 }
 
 /**

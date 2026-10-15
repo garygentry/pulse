@@ -125,5 +125,6 @@ healthy check.
 - **The host itself is down** → [availability](/availability/).
 - **Gatus is down or not scraped** → [engine](/engine/).
 - **Mount the rendered rule files into vmalert** → [rollout session](/rollout-session/).
+- **`SyntheticRulesNotLoaded` is firing (the file isn't loaded)** → [pipeline health](/pipeline-health/).
 - **How the `alerts:` binding maps to the rule** → [alerting](/alerting/).
 - **Full runbook index** → [runbooks](/runbooks/).
