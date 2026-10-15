@@ -361,6 +361,158 @@ describeUi("@/ui hooks", () => {
     });
   });
 
+  // Pulse divergence `list-navigation-virtual` (ui/VENDORED.json): roving tab stop, handlers that
+  // leave a key unclaimed, and keys acting on the element they were pressed on.
+  describe("useListNavigation (roving tabindex)", () => {
+    function Roving({ names, initialIndex, on = true }: { names: readonly string[]; initialIndex?: number; on?: boolean }) {
+      const ref = useRef<HTMLUListElement>(null);
+      useListNavigation({
+        keys: "arrows",
+        scope: "element",
+        containerRef: ref,
+        getItems: () => ref.current?.querySelectorAll<HTMLElement>("li") ?? [],
+        ...(on ? { rovingTabIndex: initialIndex === undefined ? {} : { initialIndex: () => initialIndex } } : {}),
+      });
+      return (
+        <ul ref={ref} aria-label="Lanes">
+          {names.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
+      );
+    }
+    const stops = (): string[] =>
+      screen.getAllByRole("listitem").filter((li) => li.getAttribute("tabindex") === "0").map((li) => li.textContent ?? "");
+    const item = (name: string): HTMLElement => screen.getByText(name);
+
+    it("makes the list one Tab stop at initialIndex (default 0), the rest -1", () => {
+      render(<Roving names={["a", "b", "c"]} initialIndex={1} />);
+      expect(stops()).toEqual(["b"]);
+      expect(item("a")).toHaveAttribute("tabindex", "-1");
+      cleanup();
+      render(<Roving names={["a", "b", "c"]} />);
+      expect(stops()).toEqual(["a"]);
+    });
+
+    it("moves the tab stop with the keys and with any focus (click, code)", () => {
+      render(<Roving names={["a", "b", "c"]} />);
+      act(() => item("a").focus());
+      expect(press("ArrowDown")).toBe(true);
+      expect(active()).toBe("b");
+      expect(stops()).toEqual(["b"]);
+      press("End");
+      expect(stops()).toEqual(["c"]);
+      act(() => item("a").focus());
+      expect(stops()).toEqual(["a"]);
+    });
+
+    it("keeps the tab stop on its element across re-renders, else falls to the item at its index", () => {
+      const { rerender } = render(<Roving names={["a", "b", "c"]} />);
+      act(() => item("b").focus());
+      rerender(<Roving names={["x", "a", "b", "c"]} />); // inserted above: identity wins
+      expect(stops()).toEqual(["b"]);
+      expect(item("x")).toHaveAttribute("tabindex", "-1");
+      rerender(<Roving names={["x", "a", "c"]} />); // the stop (index 2) is gone: index 2 takes it
+      expect(stops()).toEqual(["c"]);
+      rerender(<Roving names={["x"]} />); // clamped
+      expect(stops()).toEqual(["x"]);
+    });
+
+    it("gives the items back their natural tab order when roving ends", () => {
+      const { rerender } = render(<Roving names={["a", "b"]} />);
+      expect(stops()).toEqual(["a"]);
+      rerender(<Roving names={["a", "b"]} on={false} />);
+      for (const li of screen.getAllByRole("listitem")) expect(li).not.toHaveAttribute("tabindex");
+    });
+
+    it("leaves tabindex alone without the option", () => {
+      render(<Roving names={["a", "b"]} on={false} />);
+      for (const li of screen.getAllByRole("listitem")) expect(li).not.toHaveAttribute("tabindex");
+    });
+  });
+
+  describe("useListNavigation (unclaimed handlers, event target)", () => {
+    it("does not consume Enter, Space, → or ← when the item handler returns false", () => {
+      const calls: string[] = [];
+      const handler = (name: string) => (el: HTMLElement) => {
+        calls.push(`${name}:${el.textContent ?? ""}`);
+        return el.textContent === "alpha" ? undefined : false;
+      };
+      render(
+        <Fixture
+          keys="arrows"
+          scope="element"
+          onActivate={handler("activate")}
+          onToggle={handler("toggle")}
+          onExpand={handler("expand")}
+          onCollapse={handler("collapse")}
+        />,
+      );
+      act(() => screen.getByRole("link", { name: "bravo" }).focus());
+      for (const k of ["Enter", " ", "ArrowRight", "ArrowLeft"]) expect(press(k)).toBe(false);
+      act(() => screen.getByRole("link", { name: "alpha" }).focus());
+      for (const k of ["Enter", " ", "ArrowRight", "ArrowLeft"]) expect(press(k)).toBe(true);
+      expect(calls).toEqual([
+        "activate:bravo",
+        "toggle:bravo",
+        "expand:bravo",
+        "collapse:bravo",
+        "activate:alpha",
+        "toggle:alpha",
+        "expand:alpha",
+        "collapse:alpha",
+      ]);
+    });
+
+    it("leaves a key alone when acceptKey returns false (not consumed, gg disarmed)", () => {
+      const seen: string[] = [];
+      render(
+        <Fixture
+          acceptKey={(event, intent) => {
+            seen.push(`${event.key}:${intent}`);
+            return event.key !== "ArrowDown" && event.key !== "g";
+          }}
+        />,
+      );
+      expect(press("ArrowDown")).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+      expect(press("j")).toBe(true);
+      expect(active()).toBe("alpha");
+      press("End");
+      expect(press("g")).toBe(false);
+      expect(press("g")).toBe(false);
+      expect(active()).toBe("charlie");
+      expect(press("x")).toBe(false); // unmapped keys never reach acceptKey
+      expect(seen).toEqual(["ArrowDown:move-next", "j:move-next", "End:move-last", "g:g-prefix", "g:g-prefix"]);
+    });
+
+    it("virtual: a move clamped at an end still calls focus, so focus comes back to the item", () => {
+      const focus = mock((_index: number) => {});
+      render(<Fixture virtual={{ count: () => 3, activeIndex: () => 2, focus }} />);
+      expect(press("j")).toBe(true);
+      expect(focus).toHaveBeenLastCalledWith(2);
+    });
+
+    it("acts on the item the key was pressed on, even when focus is elsewhere", () => {
+      const onActivate = mock();
+      render(<Fixture keys="arrows" scope="element" onActivate={onActivate} />);
+      const charlie = screen.getByRole("link", { name: "charlie" });
+      expect(document.activeElement).toBe(document.body);
+      expect(press("Enter", {}, charlie)).toBe(true);
+      expect(onActivate).toHaveBeenCalledWith(charlie, 2);
+    });
+
+    it("reads a key dispatched on the document as pressed on the focused element", () => {
+      render(<Fixture withSearch={false} />);
+      const field = screen.getByRole("searchbox", { name: "Search hosts" });
+      act(() => field.focus());
+      expect(press("j", {}, document as unknown as Element)).toBe(false); // the field's, not the list's
+      act(() => screen.getByRole("link", { name: "alpha" }).focus());
+      expect(press("j", {}, document as unknown as Element)).toBe(true);
+      expect(active()).toBe("bravo");
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // isEditableTarget / cssEscape
   // ---------------------------------------------------------------------------

@@ -24,9 +24,8 @@ import { LiveStatusPill } from "../src/client/shell/HealthRegion.js";
 import { CommandPalette } from "../src/client/shell/CommandPalette.js";
 import { PaletteDialog, type PaletteDialogProps } from "../src/client/shell/PaletteDialog.js";
 import { VIEWS } from "../src/client/views/registry.js";
-import { installTriageKeyboard } from "../src/client/views/alerts/keyboard.js";
+import { useTriageKeyboard } from "../src/client/views/alerts/keyboard.js";
 import { signal } from "@preact/signals-core";
-import { useEffect } from "react";
 import type { ActiveAlert } from "@pulse/web-data/wire";
 import { NOW } from "./factories.js";
 
@@ -200,20 +199,16 @@ describeUi("Shell frame", () => {
     const selectedIndex = signal(-1);
     const rows = [{ fingerprint: "a" }, { fingerprint: "b" }] as unknown as ActiveAlert[];
     function AlertsStub() {
-      useEffect(
-        () =>
-          installTriageKeyboard({
-            selectedIndex,
-            rows: () => rows,
-            container: () => null,
-            scrollToIndex: () => {},
-            isFiringTabActive: () => true,
-            isPaneOpen: () => false,
-            openAlert: () => {},
-            closePane: () => {},
-          }),
-        [],
-      );
+      useTriageKeyboard({
+        selectedIndex,
+        rows: () => rows,
+        container: () => null,
+        scrollToIndex: () => {},
+        isFiringTabActive: () => true,
+        isPaneOpen: () => false,
+        openAlert: () => {},
+        closePane: () => {},
+      });
       return <div>Alerts body</div>;
     }
     const views = STUB_VIEWS.map((v) =>

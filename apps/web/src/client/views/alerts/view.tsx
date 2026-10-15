@@ -36,7 +36,7 @@ import { FacetBar } from "./facet-bar.js";
 import { SourceStatusBanners } from "./degraded.js";
 import { useEstateClock } from "./estate-clock.js";
 import { TriageTable } from "./table/TriageTable.js";
-import { TriageKeyboardHints, installTriageKeyboard } from "./keyboard.js";
+import { TriageKeyboardHints, useTriageKeyboard } from "./keyboard.js";
 import { DetailPane } from "./detail/DetailPane.js";
 import { CatalogTab } from "./catalog/CatalogTab.js";
 import { SilencesTab } from "./silences/SilencesTab.js";
@@ -186,22 +186,17 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
     selectedIndex.value = -1; // the cursor indexes the filtered list, which just changed
   };
 
-  // Install j/k/Enter/Esc once; getters read live signal values, so no re-install on data change.
-  // The returned disposer fires on unmount.
-  useEffect(
-    () =>
-      installTriageKeyboard({
-        selectedIndex,
-        rows: () => filtered.value,
-        container: () => tableContainerRef.current,
-        scrollToIndex: (index) => tableRef.current?.scrollToIndex(index),
-        isFiringTabActive: () => activeTab.value === "firing",
-        isPaneOpen: () => url.value.selected !== null,
-        openAlert: (fp) => setSelection(fp),
-        closePane: () => setSelection(null),
-      }),
-    [],
-  );
+  // j/k/Enter/Esc for the page's lifetime; getters read live signal values, so no re-install on data change.
+  useTriageKeyboard({
+    selectedIndex,
+    rows: () => filtered.value,
+    container: () => tableContainerRef.current,
+    scrollToIndex: (index) => tableRef.current?.scrollToIndex(index),
+    isFiringTabActive: () => activeTab.value === "firing",
+    isPaneOpen: () => url.value.selected !== null,
+    openAlert: (fp) => setSelection(fp),
+    closePane: () => setSelection(null),
+  });
 
   const tab = activeTab.value;
   const sourcesCurrent =

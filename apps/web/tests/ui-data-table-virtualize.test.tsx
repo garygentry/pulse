@@ -393,7 +393,7 @@ describeUi("@/ui DataTable virtualize", () => {
       act(() => link.focus());
 
       let focused!: Promise<boolean>;
-      let scrolled!: Promise<void>;
+      let scrolled!: Promise<boolean>;
       act(() => {
         // host-4 stays rendered (the focused row's neighbour), so a stale focus would land.
         focused = ref.current!.focusIndex(4);
@@ -431,6 +431,30 @@ describeUi("@/ui DataTable virtualize", () => {
 
       expect(result).toBe(false);
       expect(document.activeElement).toBe(link);
+    });
+
+    it("scrollToIndex resolves true when the row is in place, false when a user scroll cancels it", async () => {
+      const ref = createRef<DataTableHandle>();
+      render(<DataTable ref={ref} {...linkProps} data={hosts(1000)} virtualize />);
+      let done!: Promise<boolean>;
+      act(() => {
+        done = ref.current!.scrollToIndex(500);
+      });
+      let completed: boolean | undefined;
+      await act(async () => {
+        completed = await done;
+      });
+      expect(completed).toBe(true);
+
+      let cancelled!: Promise<boolean>;
+      act(() => {
+        cancelled = ref.current!.scrollToIndex(900);
+        viewport().dispatchEvent(new Event("wheel", { bubbles: true })); // before it settled
+      });
+      await act(async () => {
+        completed = await cancelled;
+      });
+      expect(completed).toBe(false);
     });
   });
 
@@ -860,14 +884,14 @@ describeUi("@/ui DataTable virtualize", () => {
       const data = mixed(1000, 3);
       const { rerender } = render(<DataTable ref={ref} {...props} data={data} />);
 
-      let scrolled!: Promise<void>;
+      let scrolled!: Promise<boolean>;
       act(() => {
         scrolled = ref.current!.scrollToIndex(600, { align: "start" });
         // A live update lands 30 rows above the target before the scroll settles.
         const inserted: Host[] = Array.from({ length: 30 }, (_, i) => ({ key: `new-${i}`, kind: "VM" }));
         rerender(<DataTable ref={ref} {...props} data={[...inserted, ...data]} />);
       });
-      await scrolled;
+      expect(await scrolled).toBe(true); // completed
 
       expect(bodyOffset(row("host-600"))).toBe(viewport().scrollTop);
       expect(row("host-600")).toHaveAttribute("aria-rowindex", "632");
@@ -879,7 +903,7 @@ describeUi("@/ui DataTable virtualize", () => {
 
       // PageDown right after the call, before the scroll has rendered (and re-aimed): the
       // browser scrolls the viewport by a page from where scrollToIndex put it.
-      let scrolled!: Promise<void>;
+      let scrolled!: Promise<boolean>;
       act(() => {
         scrolled = ref.current!.scrollToIndex(600, { align: "start" });
         viewport().focus();

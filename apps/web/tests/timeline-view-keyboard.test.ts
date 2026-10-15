@@ -939,6 +939,37 @@ describeDom("timeline keyboard — lane tree (item 019)", (dom) => {
     expect(t.active().getAttribute("data-lane-key")).toBe("domains");
   });
 
+  test("REQ-A11Y-02: Space on a host, service or Domains row does nothing and is not prevented", async () => {
+    const t = await mountTree();
+    const host = targetKey(t.hosts[0]!.target);
+    keydown(t.row(host), "ArrowRight");
+    await flush();
+    const svc = targetKey(t.hosts[0]!.children[0]!.target);
+    for (const key of [host, svc, "domains"]) expect(keydown(t.row(key), " ").defaultPrevented).toBe(false);
+    expect(t.selects).toEqual([]);
+    expect(t.toggles).toEqual([host]);
+  });
+
+  test("REQ-A11Y-02: a focused row becomes the tab stop and keeps it while rows are inserted above it; collapsing them keeps it too", async () => {
+    const t = await mountTree();
+    const first = targetKey(t.hosts[0]!.target);
+    const last = targetKey(t.hosts[2]!.target);
+    t.row(last).focus();
+    expect(t.active().getAttribute("data-lane-key")).toBe(last);
+    keydown(t.row(first), "ArrowRight"); // expands host 0: its services render above the tab stop
+    await flush();
+    expect(t.row(first).getAttribute("aria-expanded")).toBe("true");
+    expect(t.active().getAttribute("data-lane-key")).toBe(last);
+    expect(t.c.querySelectorAll('[role="treeitem"][tabindex="0"]').length).toBe(1);
+    expect(t.c.querySelectorAll('[role="treeitem"]:not([tabindex])').length).toBe(0); // new rows are -1
+    keydown(t.row(first), "ArrowLeft");
+    await flush();
+    expect(t.active().getAttribute("data-lane-key")).toBe(last);
+    // j/k move like ↓/↑ (the hook's arrows preset).
+    expect(keydown(t.row(last), "k").defaultPrevented).toBe(true);
+    expect(focusedKey(t.row(last))).toBe(targetKey(t.hosts[1]!.target));
+  });
+
   test("REQ-A11Y-02: clicking a host row selects it and makes it the tab stop; the twisty toggles without selecting", async () => {
     const t = await mountTree();
     const host = targetKey(t.hosts[2]!.target);

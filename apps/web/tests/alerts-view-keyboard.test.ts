@@ -9,17 +9,26 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { firingRows } from "../src/client/views/alerts/model.js";
 import type { DataTableHandle } from "@/ui";
+import type { TriageKeyboardOptions } from "../src/client/views/alerts/keyboard.js";
 import { describeDom } from "./dom.js";
 import { COMPACT_ROW_ESTIMATE, eventually, stubVirtualViewport } from "./alerts-dom-helpers.js";
 import { makeAlertsPayload } from "./alerts-fixtures.js";
 
 const rows: readonly ActiveAlert[] = firingRows(makeAlertsPayload({ scenario: "mixed" }));
 
+/** Let settled promises run their callbacks. */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 20));
+}
+
 describeDom("triage keyboard", (dom) => {
   interface Harness {
     container: HTMLElement;
     selectedIndex: { value: number };
     scrolls: number[];
+    /** The scroll promises handed to the keyboard (awaitScroll only). */
+    settles: Promise<unknown>[];
     opened: string[];
     closes: number;
     state: { firing: boolean; paneOpen: boolean };
@@ -27,11 +36,12 @@ describeDom("triage keyboard", (dom) => {
     unmount: () => void;
   }
 
-  async function setup(tableRows: readonly ActiveAlert[] = rows): Promise<Harness> {
+  /** `awaitScroll`: hand the keyboard the handle's scroll promise, as the view does. */
+  async function setup(tableRows: readonly ActiveAlert[] = rows, awaitScroll = false): Promise<Harness> {
     const { createElement: h, createRef } = await import("react");
     const { signal } = await import("@preact/signals-core");
     const { TriageTable } = await import("../src/client/views/alerts/table/TriageTable.js");
-    const { installTriageKeyboard } = await import("../src/client/views/alerts/keyboard.js");
+    const { useTriageKeyboard } = await import("../src/client/views/alerts/keyboard.js");
     const selectedIndex = signal(-1);
     const containerRef = createRef<HTMLDivElement>();
     const tableRef = createRef<DataTableHandle>();
@@ -49,6 +59,7 @@ describeDom("triage keyboard", (dom) => {
       container,
       selectedIndex,
       scrolls: [],
+      settles: [],
       opened: [],
       closes: 0,
       state: { firing: true, paneOpen: false },
@@ -56,13 +67,21 @@ describeDom("triage keyboard", (dom) => {
       unmount,
     };
     liveDoc = container.ownerDocument;
-    hn.dispose = installTriageKeyboard({
+    // The keyboard hook mounts in a root of its own, so `dispose` can take it away on its own.
+    const Keyboard = (props: { opts: TriageKeyboardOptions }): null => {
+      useTriageKeyboard(props.opts);
+      return null;
+    };
+    const opts: TriageKeyboardOptions = {
       selectedIndex,
       rows: () => tableRows,
       container: () => containerRef.current,
       scrollToIndex: (index) => {
         hn.scrolls.push(index);
-        tableRef.current?.scrollToIndex(index);
+        const settled = tableRef.current?.scrollToIndex(index);
+        if (!awaitScroll || settled === undefined) return undefined;
+        hn.settles.push(settled);
+        return settled;
       },
       isFiringTabActive: () => hn.state.firing,
       isPaneOpen: () => hn.state.paneOpen,
@@ -70,7 +89,9 @@ describeDom("triage keyboard", (dom) => {
       closePane: () => {
         hn.closes += 1;
       },
-    });
+    };
+    const keyboard = await dom.mount(h(Keyboard, { opts }) as unknown as ReactElement);
+    hn.dispose = keyboard.unmount;
     return hn;
   }
 
@@ -79,10 +100,10 @@ describeDom("triage keyboard", (dom) => {
   // the document the table actually lives in.
   let liveDoc: Document | null = null;
 
-  function press(key: string): KeyboardEvent {
+  function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
     const doc = liveDoc ?? (dom.win.document as unknown as Document);
     const view = doc.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent };
-    const ev = new view.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    const ev = new view.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
     doc.dispatchEvent(ev);
     return ev;
   }
@@ -289,6 +310,223 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
+  test("↓/↑ step and End/Home, G/gg jump over every row of a virtualized table, focusing far rows once rendered", async () => {
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
+    const hn = await setup(many, true);
+    try {
+      press("j"); // into the table: the arrows are claimed only while focus is in it
+      expect(press("ArrowDown").defaultPrevented).toBe(true);
+      expect(hn.selectedIndex.value).toBe(1);
+      expect(focusedFp()).toBe("virtual-1");
+      press("End");
+      expect(hn.selectedIndex.value).toBe(4999);
+      expect(rendered(hn)).not.toContain("virtual-4999"); // far row: scrolled in, focused later
+      await eventually(() => expect(focusedFp()).toBe("virtual-4999"));
+      press("ArrowUp");
+      await eventually(() => expect(focusedFp()).toBe("virtual-4998"));
+      press("Home");
+      expect(hn.selectedIndex.value).toBe(0);
+      await eventually(() => expect(focusedFp()).toBe("virtual-0"));
+      press("G");
+      expect(hn.selectedIndex.value).toBe(4999);
+      press("g");
+      press("g");
+      expect(hn.selectedIndex.value).toBe(0);
+      await eventually(() => expect(focusedFp()).toBe("virtual-0"));
+      expect(hn.scrolls).toContain(4999);
+      expect(rendered(hn).length).toBeLessThan(300);
+    } finally {
+      hn.dispose();
+      hn.unmount();
+      restoreViewport();
+    }
+  });
+
+  test("moves stand aside while focus is inside a dialog (the detail Sheet) or on another control", async () => {
+    const hn = await setup();
+    const doc = hn.container.ownerDocument;
+    const sheet = doc.createElement("div");
+    sheet.setAttribute("role", "dialog");
+    const link = doc.createElement("a");
+    link.href = "#runbook";
+    sheet.appendChild(link);
+    const chip = doc.createElement("button");
+    chip.type = "button";
+    doc.body.append(sheet, chip);
+    try {
+      link.focus();
+      for (const key of ["j", "ArrowDown", "End"]) expect(pressOn(link, key).defaultPrevented).toBe(false);
+      expect(hn.selectedIndex.value).toBe(-1);
+      expect(doc.activeElement).toBe(link);
+      chip.focus();
+      expect(pressOn(chip, "j").defaultPrevented).toBe(false);
+      expect(hn.selectedIndex.value).toBe(-1);
+      // A row's own open button is part of the list: j moves on from it.
+      const row0 = hn.container.querySelector<HTMLElement>(`[data-triage-open="${rows[0]!.fingerprint}"]`)!;
+      row0.focus(); // the cursor follows focus
+      expect(hn.selectedIndex.value).toBe(0);
+      expect(pressOn(row0, "j").defaultPrevented).toBe(true);
+      expect(focusedFp()).toBe(rows[1]!.fingerprint);
+    } finally {
+      sheet.remove();
+      chip.remove();
+      hn.dispose();
+      hn.unmount();
+    }
+  });
+
+  test("↑/↓/Home/End are claimed only with focus in the table: not on the page body, links or other controls, and never with Shift", async () => {
+    const hn = await setup();
+    const doc = hn.container.ownerDocument;
+    const link = doc.createElement("a");
+    link.href = "#main";
+    link.textContent = "Skip to content";
+    doc.body.prepend(link);
+    try {
+      for (const key of ["ArrowDown", "ArrowUp", "Home", "End"]) expect(press(key).defaultPrevented).toBe(false);
+      expect(press("ArrowDown", { shiftKey: true }).defaultPrevented).toBe(false);
+      expect(hn.selectedIndex.value).toBe(-1);
+      link.focus();
+      expect(pressOn(link, "ArrowDown").defaultPrevented).toBe(false);
+      expect(doc.activeElement).toBe(link);
+      expect(hn.selectedIndex.value).toBe(-1);
+      // On a row they move; Shift-modified they do not.
+      const row0 = hn.container.querySelector<HTMLElement>(`[data-triage-open="${rows[0]!.fingerprint}"]`)!;
+      row0.focus();
+      expect(pressOn(row0, "ArrowDown").defaultPrevented).toBe(true);
+      expect(focusedFp()).toBe(rows[1]!.fingerprint);
+      const row1 = doc.activeElement!;
+      expect(pressOn(row1, "ArrowDown", { shiftKey: true }).defaultPrevented).toBe(false);
+      expect(focusedFp()).toBe(rows[1]!.fingerprint);
+      expect(pressOn(row1, "End").defaultPrevented).toBe(true);
+      expect(focusedFp()).toBe(rows[rows.length - 1]!.fingerprint);
+    } finally {
+      link.remove();
+      hn.dispose();
+      hn.unmount();
+    }
+  });
+
+  test("j at the last row brings focus back to it after focus left the table", async () => {
+    const hn = await setup();
+    try {
+      for (let i = 0; i < rows.length; i++) press("j");
+      expect(focusedFp()).toBe(rows[rows.length - 1]!.fingerprint);
+      (liveDoc?.activeElement as HTMLElement | null | undefined)?.blur();
+      expect(focusedFp()).toBeNull();
+      expect(press("j").defaultPrevented).toBe(true);
+      expect(hn.selectedIndex.value).toBe(rows.length - 1);
+      expect(focusedFp()).toBe(rows[rows.length - 1]!.fingerprint);
+    } finally {
+      hn.dispose();
+      hn.unmount();
+    }
+  });
+
+  test("the cursor follows focus: Tab or a click onto row 2, then j, moves to row 3", async () => {
+    const hn = await setup();
+    try {
+      press("j");
+      const row2 = hn.container.querySelector<HTMLElement>(`[data-triage-open="${rows[2]!.fingerprint}"]`)!;
+      row2.focus();
+      expect(hn.selectedIndex.value).toBe(2);
+      expect([...hn.container.querySelectorAll("[aria-current]")].map((e) => e.getAttribute("data-triage-open"))).toEqual([
+        rows[2]!.fingerprint,
+      ]);
+      press("j");
+      expect(focusedFp()).toBe(rows[3]!.fingerprint);
+    } finally {
+      hn.dispose();
+      hn.unmount();
+    }
+  });
+
+  test("the g prefix is not consumed off the Firing tab or inside a dialog", async () => {
+    const hn = await setup();
+    const doc = hn.container.ownerDocument;
+    const sheet = doc.createElement("div");
+    sheet.setAttribute("role", "dialog");
+    sheet.tabIndex = -1;
+    doc.body.appendChild(sheet);
+    try {
+      expect(press("g").defaultPrevented).toBe(true); // on the Firing tab it arms gg
+      press("Escape");
+      hn.state.firing = false;
+      expect(press("g").defaultPrevented).toBe(false);
+      expect(press("G").defaultPrevented).toBe(false);
+      hn.state.firing = true;
+      sheet.focus();
+      expect(pressOn(sheet, "g").defaultPrevented).toBe(false);
+      expect(pressOn(sheet, "G").defaultPrevented).toBe(false);
+      expect(hn.selectedIndex.value).toBe(-1);
+    } finally {
+      sheet.remove();
+      hn.dispose();
+      hn.unmount();
+    }
+  });
+
+  test("a far row's settle-time focus never takes focus the user moved elsewhere, nor follows a cancelled scroll", async () => {
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
+    const originalRaf = globalThis.requestAnimationFrame;
+    const frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    }) as typeof requestAnimationFrame;
+    const doc = (liveDoc ?? (dom.win.document as unknown as Document));
+    const chip = doc.createElement("button");
+    chip.type = "button";
+    doc.body.appendChild(chip);
+    try {
+      // Focus moved to a control outside the table while the scroll settles: it stays there.
+      let hn = await setup(many, true);
+      hn.selectedIndex.value = 3999;
+      press("j"); // → 4000, not rendered
+      chip.focus();
+      expect(hn.settles).toHaveLength(1);
+      await hn.settles[0];
+      await flushMicrotasks();
+      expect(rendered(hn)).toContain("virtual-4000");
+      expect(doc.activeElement).toBe(chip);
+      frames.splice(0);
+      hn.dispose();
+      hn.unmount();
+
+      // Focus lost (body): the settle focuses the row.
+      chip.blur();
+      hn = await setup(many, true);
+      hn.selectedIndex.value = 3999;
+      press("j");
+      await eventually(() => expect(focusedFp()).toBe("virtual-4000"));
+      frames.splice(0);
+      hn.dispose();
+      hn.unmount();
+
+      // A scroll the user cancels (a wheel gesture before it settled): the real DataTable handle
+      // resolves false, and the row is not focused on settle even if it rendered.
+      (liveDoc?.activeElement as HTMLElement | null | undefined)?.blur();
+      hn = await setup(many, true);
+      hn.selectedIndex.value = 3999;
+      press("j");
+      const viewport = hn.container.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
+      viewport.dispatchEvent(new (viewport.ownerDocument.defaultView as unknown as { Event: typeof Event }).Event("wheel", { bubbles: true }));
+      expect(hn.settles).toHaveLength(1);
+      expect(await hn.settles[0]).toBe(false);
+      await eventually(() => expect(rendered(hn)).toContain("virtual-4000"));
+      await flushMicrotasks();
+      expect(focusedFp()).toBeNull();
+      frames.splice(0);
+      hn.dispose();
+      hn.unmount();
+    } finally {
+      chip.remove();
+      if (originalRaf === undefined) delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
+      else globalThis.requestAnimationFrame = originalRaf;
+      restoreViewport();
+    }
+  });
+
   test("k from an unset cursor lands on row 0", async () => {
     const hn = await setup();
     try {
@@ -318,9 +556,9 @@ describeDom("triage keyboard", (dom) => {
   });
 
   // Dispatch a keydown ON `el` (bubbling to the document listener), as a real focused control would.
-  function pressOn(el: Element, key: string): KeyboardEvent {
+  function pressOn(el: Element, key: string, init: KeyboardEventInit = {}): KeyboardEvent {
     const view = el.ownerDocument.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent };
-    const ev = new view.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    const ev = new view.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
     el.dispatchEvent(ev);
     return ev;
   }
@@ -472,7 +710,7 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
-  test("the disposer removes all four shortcuts", async () => {
+  test("unmounting removes every key: j/k, Enter and Escape", async () => {
     const hn = await setup();
     hn.state.paneOpen = true;
     hn.dispose();
@@ -490,14 +728,14 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
-  test("registers every combo with allowInInput: false; Enter/Escape without preventDefault", () => {
+  test("j/k go through useListNavigation; Enter/Escape are registry combos with allowInInput: false and no preventDefault", () => {
     const src = readFileSync(
       fileURLToPath(new URL("../src/client/views/alerts/keyboard.ts", import.meta.url)),
       "utf8",
     );
+    expect(src).toContain("useListNavigation({");
     const combos = [...src.matchAll(/registerShortcut\(\s*"([^"]+)"/g)].map((m) => m[1]);
-    expect(combos).toEqual(["j", "k", "enter", "escape"]);
-    expect(src.match(/\{ allowInInput: false(, preventDefault: false)? \}/g)).toHaveLength(4);
+    expect(combos).toEqual(["enter", "escape"]);
     // Enter/Escape must not cancel native activation of buttons/links (the registry listens on document).
     expect(src.match(/\{ allowInInput: false, preventDefault: false \}/g)).toHaveLength(2);
   });
@@ -508,10 +746,10 @@ describeDom("triage keyboard", (dom) => {
     const { container, unmount } = await dom.mount(h(TriageKeyboardHints, {}) as unknown as ReactElement);
     try {
       const kbds = [...container.querySelectorAll('kbd[data-slot="kbd"]')];
-      expect(kbds.map((k) => k.textContent)).toEqual(["J", "K", "Enter", "Esc"]);
+      expect(kbds.map((k) => k.textContent)).toEqual(["J", "K", "↓", "↑", "Home", "End", "gg", "G", "Enter", "Esc"]);
       const note = container.querySelector('[role="note"]')!;
       expect(note.getAttribute("aria-label")).toBe("Keyboard shortcuts");
-      expect(note.textContent).toBe("J / K moveEnter openEsc close");
+      expect(note.textContent).toBe("J / K move↓ / ↑ move in the tableHome / End or gg / G first / lastEnter openEsc close");
     } finally {
       unmount();
     }

@@ -4,13 +4,12 @@
 // line. Evidence rules live in evidence.ts; this module only gathers inputs (including the Domains
 // header and its per-domain DNS-check rows, 09 §3) and summarises results for the row labels. Every upstream label renders as a JSX
 // text child (REQ-SEC-02). The cursor signal is never read during render (REQ-PERF-05).
-import type { ReactElement, HTMLAttributes, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { ReactElement, HTMLAttributes, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TargetStatus } from "@pulse/web-data/wire";
-import { Button, Icon, Section, StatusBadge, StatusTimeline, TARGET_STATUS } from "@/ui";
+import { Button, Icon, Section, StatusBadge, StatusTimeline, TARGET_STATUS, useListNavigation } from "@/ui";
 import type { StatusBadgeMapProps, TimelineLane } from "@/ui";
-import { rovingTabindex, STATUS_LABEL } from "../../a11y/index.js";
-import type { RovingController } from "../../a11y/index.js";
+import { STATUS_LABEL } from "../../a11y/index.js";
 import type { EstateClock } from "../../format.js";
 import type { TimeAxis, TimeWindow } from "../_shared/timeseries/axis.js";
 import { FAILURE_COPY, REGION_TEXT } from "../_shared/timeseries/history/region.js";
@@ -189,13 +188,11 @@ export function LaneTree(props: LaneTreeProps): ReactElement {
   const view = props.axis.view.value;
   const treeRef = useRef<HTMLDivElement>(null);
   const plotColRef = useRef<HTMLDivElement>(null);
-  const rovingRef = useRef<RovingController | null>(null);
   const [rowPx, setRowPx] = useState(DEFAULT_ROW_PX);
   const [plotWidth, setPlotWidth] = useState(MIN_PLOT_WIDTH_PX);
 
   const rows = blocks.flatMap((b) => b.rows);
   const views = new Map(rows.map((row) => [row.key, rowView(row, evidence, view, props.reachable, props.liveTailSeconds ?? 0)] as const));
-  const rowKeys = rows.map((r) => r.key).join("|");
 
   // Callbacks are read through a ref so the key handler never goes stale.
   const live = useRef({ rows, onToggle: props.onToggle, onSelect: props.onSelect });
@@ -224,77 +221,66 @@ export function LaneTree(props: LaneTreeProps): ReactElement {
     return () => ro?.disconnect();
   }, []);
 
-  // Roving tabindex: ↑/↓/Home/End and the single tab stop (desk only).
-  useEffect(() => {
-    const tree = treeRef.current;
-    if (!interactive || tree === null) return undefined;
-    const selectedIndex = live.current.rows.findIndex((r) => r.key === props.selected);
-    const roving = rovingTabindex(tree, {
-      itemSelector: '[role="treeitem"]',
-      orientation: "vertical",
-      wrap: false,
-      initialIndex: selectedIndex < 0 ? 0 : selectedIndex,
-    });
-    rovingRef.current = roving;
-    return () => {
-      roving.release();
-      rovingRef.current = null;
-    };
-  }, [interactive]);
-
-  useEffect(() => {
-    rovingRef.current?.refresh();
-  }, [rowKeys]);
-
   const indexOfKey = (key: string): number => live.current.rows.findIndex((r) => r.key === key);
-
-  const onKeyDown = (e: ReactKeyboardEvent): void => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const target = e.target as Element | null;
-    const key = target?.closest?.("[data-lane-key]")?.getAttribute("data-lane-key");
-    if (key === null || key === undefined) return;
-    const { rows: current, onToggle, onSelect } = live.current;
-    const i = current.findIndex((r) => r.key === key);
-    const row = current[i];
-    if (row === undefined) return;
-    let handled = false;
-    if (e.key === "ArrowRight") {
-      if (isExpandable(row) && !isExpanded(row)) {
-        onToggle(row.kind === "domains" ? "domains" : (row.key as TargetKey));
-        handled = true;
-      } else if (isExpandable(row) && isExpanded(row)) {
-        rovingRef.current?.setActive(i + 1);
-        handled = true;
-      }
-    } else if (e.key === "ArrowLeft") {
-      if (isExpandable(row) && isExpanded(row)) {
-        onToggle(row.kind === "domains" ? "domains" : (row.key as TargetKey));
-        handled = true;
-      } else if (row.kind === "service" || row.kind === "domain") {
-        const parent = indexOfKey(row.kind === "service" ? row.parentKey : "domains");
-        if (parent >= 0) rovingRef.current?.setActive(parent);
-        handled = true;
-      }
-    } else if (e.key === "Enter") {
-      if (row.kind === "host" || row.kind === "service") {
-        onSelect(row.node);
-        handled = true;
-      } else if (row.kind === "domains") {
-        onToggle("domains");
-        handled = true;
-      }
-    }
-    if (handled) e.preventDefault();
+  /** The tree row behind a treeitem element, with its index. */
+  const rowOf = (item: HTMLElement): { row: LaneRow; index: number } | null => {
+    const index = indexOfKey(item.getAttribute("data-lane-key") ?? "");
+    const row = live.current.rows[index];
+    return row === undefined ? null : { row, index };
   };
+  const focusIndex = (index: number): void => {
+    treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]')[index]?.focus();
+  };
+  const toggle = (row: LaneRow): void => live.current.onToggle(row.kind === "domains" ? "domains" : (row.key as TargetKey));
 
-  const onRowClick = (row: LaneRow): void => {
-    const i = indexOfKey(row.key);
+  // Desk only: ↑/↓ (and j/k), Home/End move; → expands, then steps to the first child; ← collapses,
+  // then steps to the parent; Enter selects a host or service and toggles Domains. The tree is ONE
+  // Tab stop (roving tabindex), starting at the selected lane. A handler returning false leaves the
+  // key alone (Space never acts; domain rows take no Enter).
+  useListNavigation({
+    enabled: interactive,
+    scope: "element",
+    containerRef: treeRef,
+    keys: "arrows",
+    getItems: () => treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [],
+    rovingTabIndex: {
+      initialIndex: () => Math.max(0, live.current.rows.findIndex((r) => r.key === props.selected)),
+    },
+    onExpand: (item) => {
+      const at = rowOf(item);
+      if (at === null || !isExpandable(at.row)) return false;
+      if (isExpanded(at.row)) focusIndex(at.index + 1);
+      else toggle(at.row);
+      return true;
+    },
+    onCollapse: (item) => {
+      const at = rowOf(item);
+      if (at === null) return false;
+      const { row } = at;
+      if (isExpandable(row) && isExpanded(row)) toggle(row);
+      else if (row.kind === "service" || row.kind === "domain") {
+        const parent = indexOfKey(row.kind === "service" ? row.parentKey : "domains");
+        if (parent >= 0) focusIndex(parent);
+      } else return false;
+      return true;
+    },
+    onActivate: (item) => {
+      const row = rowOf(item)?.row;
+      if (row?.kind === "host" || row?.kind === "service") live.current.onSelect(row.node);
+      else if (row?.kind === "domains") toggle(row);
+      else return false;
+      return true;
+    },
+    onToggle: () => false,
+  });
+
+  const onRowClick = (row: LaneRow, el: HTMLElement): void => {
     if (row.kind === "host" || row.kind === "service") {
       props.onSelect(row.node);
-      if (i >= 0) rovingRef.current?.setActive(i);
+      el.focus();
     } else if (row.kind === "domains") {
       props.onToggle("domains");
-      if (i >= 0) rovingRef.current?.setActive(i);
+      el.focus();
     }
   };
 
@@ -310,7 +296,7 @@ export function LaneTree(props: LaneTreeProps): ReactElement {
           "aria-posinset": row.posInSet,
           ...(expandable ? { "aria-expanded": isExpanded(row) ? "true" : "false" } : {}),
           ...(selectable ? { "aria-selected": row.key === props.selected ? "true" : "false" } : {}),
-          onClick: () => onRowClick(row),
+          onClick: (e: ReactMouseEvent<HTMLDivElement>) => onRowClick(row, e.currentTarget),
         }
       : { role: "listitem" };
     return (
@@ -318,7 +304,6 @@ export function LaneTree(props: LaneTreeProps): ReactElement {
         key={row.key}
         className={ROW_CLASS}
         data-tree-row=""
-        data-roving-item={interactive ? "" : undefined}
         data-lane-key={row.key}
         data-level={row.level}
         data-status={v.worst.status}
@@ -367,7 +352,6 @@ export function LaneTree(props: LaneTreeProps): ReactElement {
             className="flex flex-col"
             role={interactive ? "tree" : "list"}
             aria-label="Status lanes by host"
-            onKeyDown={interactive ? onKeyDown : undefined}
           >
             {rows.map(renderRow)}
           </div>

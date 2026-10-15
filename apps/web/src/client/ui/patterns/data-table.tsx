@@ -57,12 +57,12 @@ export interface DataTableHandle {
   /**
    * Scroll the row at `index` (into `data`) into view, clear of a sticky header: inside the
    * table's own scroll region when it has one, else (a plain table as tall as its rows) by
-   * scrolling the row into the page. The promise resolves once the row is rendered and in
+   * scrolling the row into the page. The promise resolves `true` once the row is rendered and in
    * place: at once on a plain table; on a virtualized one after the window has moved to it and
-   * its rows are measured. It also resolves, with the row possibly not rendered, when a user
+   * its rows are measured. It resolves `false`, with the row possibly not rendered, when a user
    * scroll or a newer call takes over, or the row leaves `data`.
    */
-  scrollToIndex: (index: number, options?: { align?: DataTableScrollAlign }) => Promise<void>;
+  scrollToIndex: (index: number, options?: { align?: DataTableScrollAlign }) => Promise<boolean>;
   /**
    * `scrollToIndex`, then focus the row's link (or the row itself, when `rowDomId` makes it
    * focusable) and make sure it is visible on the page. Resolves `true` once it has focus, and
@@ -384,7 +384,7 @@ export function DataTable<T>({
     return {
       async scrollToIndex(index, options) {
         requestRef.current += 1;
-        await scroll(index, options?.align ?? "auto");
+        return scroll(index, options?.align ?? "auto");
       },
       async focusIndex(index, options) {
         const token = (requestRef.current += 1);

@@ -236,7 +236,8 @@ library patterns.
 **DataTable `virtualize`.** An opt-in prop on the vendored `DataTable` (deck's since v0.5.0),
 backed by `@tanstack/react-virtual`. It switches on at a row threshold (300 by default), keeps the
 focused row and its neighbours rendered by id, exposes `aria-rowcount` and `aria-rowindex`, and
-offers a ref handle: `scrollToIndex` (a promise that settles once the row is in place) and
+offers a ref handle: `scrollToIndex` (a promise that settles once the row is in place, with
+`true`, or `false` when a user scroll or a newer call cancelled it; pulse divergence) and
 `focusIndex`. The root is the scroll region on both paths. Rows take their height from the density
 tokens and are measured as they render, so rows that grow a second line, such as the alert
 catalog's rule errors, keep the spacers, the scrollbar and `scrollToIndex` exact. A list driven by
@@ -260,6 +261,18 @@ that had it, and `*` opening rows above the focused one scrolls it back into vie
 limitations: the browser's find (Ctrl/Cmd-F) only finds rendered rows, printing shows only the
 rendered window, and the 70vh scroll region uses `overscroll-contain`, so on a phone a swipe that
 reaches its end does not scroll the page; swipe outside the tree to scroll the page.
+
+**List keyboards beyond the rendered rows.** Pulse's `useListNavigation` (divergence notes in
+`ui/VENDORED.json`) extends deck's in the ways that matter here. `virtual` runs moves over a list's full count, not
+only its rendered items: the alerts triage keyboard (`views/alerts/keyboard.ts`) drives its
+`selectedIndex` cursor across the virtualized table this way and focuses a far row once the table
+has rendered it. `rovingTabIndex` makes a list one Tab stop that follows focus, without
+re-rendering the list: the timeline lane tree starts it at the selected lane. And an item handler
+(`onActivate`, `onExpand`, `onCollapse`, `onToggle`) can return `false` to leave the key unclaimed,
+so the browser or another handler gets it (Enter on a triage row's button stays native activation;
+Enter and Space on a lane tree domain row do nothing). `acceptKey(event, intent)` can turn down a key
+the hook would act on: the triage keyboard claims ↑/↓/Home/End only while focus is in its table, so
+they keep scrolling the page elsewhere, while j/k and gg/G work from anywhere on the Firing tab.
 
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell
@@ -487,9 +500,9 @@ suffix keeps them out of `bun test`, which collects `*.spec.*`.
   classes built by concatenation or returned from a helper are not seen;
 - list keyboards through `useListNavigation`: no new hand-rolled `ArrowUp`/`ArrowDown` or `j`/`k`
   handler (`.key`/`.code` comparisons, inline key lists, case-folded keys), vertical or 2-D
-  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The alerts triage
-  keyboard, the timeline lane tree and the overview grid are listed exemptions, each with its reason, as is
-  the command palette's pre-load key buffer, which swallows keys but moves nothing.
+  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The overview grid is
+  a listed exemption with its reason (it migrates after the kiosk redesign, issue #37), as is the
+  command palette's pre-load key buffer, which swallows keys but moves nothing.
 
 `tests/views-page-structure.test.tsx` renders every registered view on every route it owns (tabs and
 deep routes included), loaded, before data and after a render fault, and checks the
