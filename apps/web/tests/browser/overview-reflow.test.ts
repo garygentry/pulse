@@ -9,9 +9,10 @@
 //     close button measures at least the shared 44×44 CSS px touch minimum;
 //   - a touch tap on a host trigger opens the drawer for exactly that target without page-level
 //     horizontal overflow, and both Escape and the close button return focus to the tapped trigger.
-// Plus the kiosk fit: under ?kiosk=1 at 1280×720 and 1920×1080 the page root fills exactly the
-// viewport space below the chrome above it (the fixture's 56px kiosk top bar), so the document never
-// scrolls and the paged grid is not cut off.
+// Plus the kiosk fit: under ?kiosk=1 at 1280×720, 1920×1080, 768×1024 and 375×812 the page root fills
+// exactly the viewport space below the chrome above it (the fixture's 56px kiosk top bar), so the
+// document never scrolls either way, the compact chrome leaves the tile wall at least two rows, and a
+// full page holds exactly columns × rows tiles, none cut off.
 // Layout, touch geometry and real tap dispatch are engine properties happy-dom cannot compute.
 //
 // SELF-SKIPS when Chromium is not provisioned (_harness.browserDescribe); THROWS at collection under
@@ -296,9 +297,11 @@ const KIOSK_CHROME = "[data-fixture-chrome]";
 const KIOSK_VIEWPORTS = [
   { width: 1280, height: 720 },
   { width: 1920, height: 1080 },
+  { width: 768, height: 1024 },
+  { width: 375, height: 812 },
 ] as const;
 
-browserDescribe()("browser: overview kiosk page fits below the chrome (no page scroll)", () => {
+browserDescribe()("browser: overview kiosk page fits below the chrome and pages by columns × rows (no page scroll)", () => {
   let browser: Browser;
   let fixtures: Map<FixtureTheme, FixturePage> | undefined;
 
@@ -324,7 +327,26 @@ browserDescribe()("browser: overview kiosk page fits below the chrome (no page s
           const kiosk = document.querySelector<HTMLElement>('[data-slot="overview-kiosk"]');
           const rootBox = root?.getBoundingClientRect();
           const kioskBox = kiosk?.getBoundingClientRect();
+          const region = document.querySelector<HTMLElement>('[data-slot="overview-kiosk-region"]')?.getBoundingClientRect();
+          const list = document.querySelector<HTMLElement>('[data-slot="overview-kiosk-page"] ul[role="list"]');
+          const tiles = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="overview-kiosk-tile"]')).map((el) => el.getBoundingClientRect());
+          const style = list === null ? null : getComputedStyle(list);
+          const columns = style === null ? 0 : style.gridTemplateColumns.split(" ").filter((t) => t.endsWith("px")).length;
+          const rowHeight = style === null ? 0 : Number.parseFloat(style.gridAutoRows);
+          const rowGap = style === null ? 0 : Number.parseFloat(style.rowGap) || 0;
+          const indicator = document.querySelector('[data-slot="overview-kiosk-indicator"]')?.textContent ?? "1 / 1";
           return {
+            scrollWidth: scroller.scrollWidth,
+            innerWidth: window.innerWidth,
+            regionTop: region?.top ?? null,
+            regionBottom: region?.bottom ?? null,
+            regionHeight: region?.height ?? null,
+            tileCount: tiles.length,
+            tilesBottom: tiles.length === 0 ? null : Math.max(...tiles.map((r) => r.bottom)),
+            tilesRight: tiles.length === 0 ? null : Math.max(...tiles.map((r) => r.right)),
+            columns,
+            rows: region === undefined || rowHeight <= 0 ? 0 : Math.floor((region.height + rowGap) / (rowHeight + rowGap)),
+            pages: Number(/\/\s*(\d+)/.exec(indicator)?.[1] ?? "1"),
             scrollHeight: scroller.scrollHeight,
             innerHeight: window.innerHeight,
             chromeBottom: bar?.getBoundingClientRect().bottom ?? null,
@@ -345,6 +367,17 @@ browserDescribe()("browser: overview kiosk page fits below the chrome (no page s
         // The paged grid gets real height and stays inside the viewport.
         expect(geometry.kioskHeight!, detail).toBeGreaterThan(100);
         expect(geometry.kioskBottom!, detail).toBeLessThanOrEqual(geometry.innerHeight + 1);
+        // No horizontal page scroll at any kiosk width (phones included).
+        expect(geometry.scrollWidth, `kiosk page scrolls sideways: ${detail}`).toBeLessThanOrEqual(geometry.innerWidth);
+        // The compact chrome leaves the tile wall at least two rows, and the page is filled by plain
+        // columns × rows arithmetic: a full page (the fixture has 100 hosts) shows exactly that many
+        // tiles, every one inside the region — nothing clipped, no lost row or column.
+        expect(geometry.rows, detail).toBeGreaterThanOrEqual(2);
+        expect(geometry.columns, detail).toBeGreaterThanOrEqual(1);
+        expect(geometry.pages, detail).toBeGreaterThan(1);
+        expect(geometry.tileCount, detail).toBe(geometry.columns * geometry.rows);
+        expect(geometry.tilesBottom!, detail).toBeLessThanOrEqual(geometry.regionBottom! + 0.5);
+        expect(geometry.tilesRight!, detail).toBeLessThanOrEqual(geometry.innerWidth);
       } finally {
         await handle.close();
       }

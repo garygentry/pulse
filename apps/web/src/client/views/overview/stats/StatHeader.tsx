@@ -4,7 +4,8 @@
 // coverage/engine evidence is rendered as an explicit "unavailable" state — never 0 gaps or OK — and
 // retained non-current values carry their stale qualifier plus last-good time. Feed freshness
 // (Live/Stale + update time) is the shell's top-bar indicator and the estate zone + UTC fallback
-// marker sit in the page header meta; this header repeats neither.
+// marker sit in the page header meta; this header repeats neither. Kiosk renders `KioskStatStrip`
+// instead: the same numbers as one compact line, so the tile wall keeps the screen.
 // Read-only: no control in this region mutates anything.
 
 import type { ReactElement, ReactNode } from "react";
@@ -158,6 +159,98 @@ export function StatHeader(props: StatHeaderProps): ReactElement {
         <CoverageGroup coverage={stats.coverage} clock={clock} />
         <EngineGroup engine={stats.engine} clock={clock} />
       </div>
+    </section>
+  );
+}
+
+/** One labelled run of the kiosk strip: a muted label, then its badges. */
+function StripGroup(props: { readonly stat: string; readonly label: string; readonly children: ReactNode }): ReactElement {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-stat={props.stat} role="group" aria-label={props.label}>
+      <span className="text-sm font-medium text-muted-foreground" aria-hidden="true">
+        {props.label}
+      </span>
+      {props.children}
+    </div>
+  );
+}
+
+/** Non-zero status counts (every status when all are zero, so the run is never empty). */
+function StripStatuses(props: { readonly counts: StatusCounts }): ReactElement {
+  const present = OVERVIEW_STATUS_ORDER.filter((status) => props.counts[status] !== 0);
+  return (
+    <>
+      {(present.length > 0 ? present : (["ok"] as const)).map((status) => (
+        <span key={status} data-stat-status={status}>
+          <TargetStatusBadge status={status} label={`${countText(props.counts[status])} ${TARGET_STATUS[status].label}`} />
+        </span>
+      ))}
+    </>
+  );
+}
+
+function StripCoverage(props: { readonly coverage: CoverageStat; readonly clock: EstateClock }): ReactElement {
+  const { coverage, clock } = props;
+  if (coverage.status === "unavailable") {
+    return (
+      <StripGroup stat="coverage" label="Coverage">
+        <TargetStatusBadge status="unknown" label="Unavailable" />
+      </StripGroup>
+    );
+  }
+  const current = coverage.availability.state === "current";
+  const gapsText = `Gaps ${countText(coverage.gaps)}`;
+  return (
+    <StripGroup stat="coverage" label="Coverage">
+      {coverage.gaps > 0
+        ? <TargetStatusBadge status="warning" label={gapsText} />
+        : <Badge variant="outline" className="tabular-nums">{gapsText}</Badge>}
+      {current ? null : (
+        <span className={DETAIL_CLASS} data-stat-qualifier="">{evidenceQualifier(clock, coverage.availability)}</span>
+      )}
+    </StripGroup>
+  );
+}
+
+function StripEngine(props: { readonly engine: EngineOkStat }): ReactElement {
+  const { engine } = props;
+  const current = engine.status === "available" && engine.availability.state === "current";
+  let badge: ReactElement;
+  if (engine.status === "available" && current) {
+    badge = engine.ok ? engineBadge("ok", "OK") : engineBadge("critical", "Not OK");
+  } else if (engine.availability.state === "not-configured") {
+    badge = engineBadge("unknown", "Not configured");
+  } else {
+    badge = engineBadge("unknown", "Unavailable");
+  }
+  return (
+    <StripGroup stat="engine" label="Engine">
+      {badge}
+    </StripGroup>
+  );
+}
+
+/**
+ * The kiosk's estate totals as one compact line (wrapping only on a narrow screen): host and service
+ * status counts, coverage gaps and engine state. Firing counts are on the kiosk alert line below.
+ */
+export function KioskStatStrip(props: StatHeaderProps): ReactElement {
+  const { stats, surface, clock } = props;
+  return (
+    <section
+      className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1"
+      aria-label="Estate statistics"
+      data-surface={surface.status}
+      data-stat-strip=""
+    >
+      <StripGroup stat="hosts" label="Hosts">
+        <StripStatuses counts={stats.hosts} />
+      </StripGroup>
+      <StripGroup stat="services" label="Services">
+        <StripStatuses counts={stats.services} />
+      </StripGroup>
+      <StripCoverage coverage={stats.coverage} clock={clock} />
+      <StripEngine engine={stats.engine} />
     </section>
   );
 }

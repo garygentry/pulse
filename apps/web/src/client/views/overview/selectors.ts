@@ -504,6 +504,38 @@ function buildTargetIndex(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Kiosk order
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Every host of `groups` as one flat list, worst effective status first (OVERVIEW_STATUS_ORDER),
+ * then class, then name and id. The kiosk ignores the desk grouping/sort preferences: its tiles
+ * carry their class label, so one flat worst-first wall replaces the grouped sections. Returns
+ * `previous` itself when the order and every host reference are unchanged.
+ */
+export function deriveKioskHosts(
+  groups: readonly OverviewGroup[],
+  previous?: readonly HostStatus[],
+): readonly HostStatus[] {
+  const rank = new Map<HostStatus, number>();
+  const hosts: HostStatus[] = [];
+  for (const group of groups) {
+    for (const host of group.hosts) {
+      rank.set(host, statusRank(effectiveStatus(host.rollupEvidence)));
+      hosts.push(host);
+    }
+  }
+  hosts.sort(
+    (a, b) =>
+      rank.get(a)! - rank.get(b)! ||
+      textCompare(a.collectionClass, b.collectionClass) ||
+      textCompare(a.name, b.name) ||
+      codeUnitCompare(a.drilldownId, b.drilldownId),
+  );
+  return previous !== undefined && sameElements(previous, hosts) ? previous : hosts;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Model derivation
 // ---------------------------------------------------------------------------------------------
 

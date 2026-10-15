@@ -9,9 +9,10 @@
 //     number of host cells / service chips, never the whole grid (fixture render counters).
 //   Layout — the 4-host fixture scales its host cells up under wallboard density at the same
 //     viewport; the 100-host/300-service envelope keeps grouped, headed cards with no table; kiosk
-//     paging under a 4 s rotation dwell shows every host exactly once across one page cycle, repeats a
-//     split group's heading, starts every page before the dwell elapses, and starts at page 1 — timed
-//     on a paused fake clock, so the bounds measure page time, not host load (GitHub #33).
+//     paging (no rotation) shows every host exactly once across one page cycle as read-only tiles in
+//     worst-first order, starts at page 1, and holds every page for its full dwell (never under 10 s,
+//     the 30 s base cycle split across the pages) — timed on a paused fake clock, so the bounds
+//     measure page time, not host load (GitHub #33, #6).
 // Computed styles, layout boxes and real timers are engine properties happy-dom cannot provide.
 //
 // SELF-SKIPS when Chromium is not provisioned (_harness.browserDescribe); THROWS at collection under
@@ -41,12 +42,14 @@ const MARKER_WAIT_MS = 5_000;
 const GROUP_BY = "[data-control=group-by] [role=radio]";
 const MODE_LABEL = { status: "Status", name: "Name" } as const;
 
-const KIOSK_DWELL_MS = 4_000;
+/** Shortest kiosk page dwell, and the base cycle split across up to three pages (kiosk/paging.ts). */
+const KIOSK_MIN_PAGE_DWELL_MS = 10_000;
+const KIOSK_BASE_CYCLE_MS = 30_000;
 /** Fake-clock step between kiosk observations; page starts are measured to within one step. */
-const KIOSK_STEP_MS = 25;
-/** Fake-time bound for seeing every page (page time, independent of host load — GitHub #33). */
-const KIOSK_DEADLINE_MS = KIOSK_DWELL_MS + 3_000;
-const KIOSK_PAGE = '[data-slot="overview-kiosk-page"]:not([aria-hidden="true"])';
+const KIOSK_STEP_MS = 250;
+const KIOSK_PAGE = '[data-slot="overview-kiosk-page"]';
+/** Worst-first rank of a tile's `data-status` (OVERVIEW_STATUS_ORDER). */
+const STATUS_RANK: Readonly<Record<string, number>> = { critical: 0, warning: 1, unknown: 2, suppressed: 3, ok: 4 };
 
 interface MarkedState {
   readonly count: number;
@@ -129,27 +132,26 @@ interface KioskObservation {
   readonly label: string | null;
   readonly text: string;
   readonly hosts: string[];
-  readonly headings: string[];
+  readonly statuses: string[];
+  readonly focusable: number;
 }
 
-/** The visible kiosk page only (the aria-hidden measurement probe is never counted). */
+/** The visible kiosk page: its tiles (id + status), the "i / P" indicator and any focusable node. */
 function observeKioskPage(page: Page): Promise<KioskObservation> {
   return page.evaluate((pageSelector) => {
     const current = document.querySelector(pageSelector);
-    const indicator = current?.querySelector('[data-slot="overview-kiosk-indicator"][role=note]') ?? null;
+    const indicator = document.querySelector('[data-slot="overview-kiosk-indicator"][role=note]');
     const text = indicator?.textContent?.trim() ?? "";
     const match = /^(\d+)\s*\/\s*(\d+)$/.exec(text);
+    const tiles = Array.from(current?.querySelectorAll('[data-slot="overview-kiosk-tile"][data-target-id]') ?? []);
     return {
       index: match ? Number(match[1]) : null,
       total: match ? Number(match[2]) : null,
       label: indicator?.getAttribute("aria-label") ?? null,
       text,
-      hosts: Array.from(current?.querySelectorAll('[data-slot="overview-host"][data-target-id]') ?? []).map(
-        (el) => el.getAttribute("data-target-id") ?? "",
-      ),
-      headings: Array.from(current?.querySelectorAll('[role="rowgroup"] [role="columnheader"] h2') ?? []).map(
-        (el) => el.textContent?.trim() ?? "",
-      ),
+      hosts: tiles.map((el) => el.getAttribute("data-target-id") ?? ""),
+      statuses: tiles.map((el) => el.getAttribute("data-status") ?? ""),
+      focusable: document.querySelectorAll('[data-slot="overview-kiosk"] :is(button, a[href], input, [tabindex])').length,
     };
   }, KIOSK_PAGE);
 }
@@ -341,10 +343,9 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
     }
   }, 60_000);
 
-  test("kiosk paging: every host once per cycle, split headings repeat, all pages start within the dwell", async () => {
+  test("kiosk paging: every host once per cycle as worst-first read-only tiles, each page held its full dwell", async () => {
     const handle = await open({
       mode: "kiosk",
-      dwell: KIOSK_DWELL_MS,
       viewport: { width: 1920, height: 1080 },
       reducedMotion: "reduce",
       pausedClock: true,
@@ -358,8 +359,11 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
       expect(total, `kiosk indicator unreadable: ${JSON.stringify(first)}`).not.toBeNull();
       expect(total!, `kiosk does not page (P=${total}): ${JSON.stringify(first)}`).toBeGreaterThan(1);
       expect(first.label, JSON.stringify(first)).toBe(`Page ${first.index} of ${total}`);
+      expect(first.focusable, `kiosk tiles must not take focus: ${JSON.stringify(first)}`).toBe(0);
+      const dwell = Math.max(KIOSK_MIN_PAGE_DWELL_MS, Math.floor(KIOSK_BASE_CYCLE_MS / total!));
+      const deadline = total! * dwell + 2_000;
 
-      const seen = new Map<number, { hosts: string[]; headings: string[]; atMs: number }>();
+      const seen = new Map<number, { hosts: string[]; statuses: string[]; atMs: number }>();
       const order: number[] = [];
       const log: string[] = [];
       let start: number | null = null;
@@ -367,48 +371,40 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
       for (;;) {
         const now = await pageNow();
         const obs = last;
+        if (start === null) start = now;
         if (obs.index !== null && !seen.has(obs.index)) {
-          if (start === null) start = now;
-          seen.set(obs.index, { hosts: obs.hosts, headings: obs.headings, atMs: now - start });
+          seen.set(obs.index, { hosts: obs.hosts, statuses: obs.statuses, atMs: now - start });
           order.push(obs.index);
-          log.push(`page ${obs.index}/${obs.total} at ${(now - start).toFixed(0)}ms: ${obs.hosts.length} hosts, headings ${JSON.stringify(obs.headings)}`);
+          log.push(`page ${obs.index}/${obs.total} at ${(now - start).toFixed(0)}ms: ${obs.hosts.length} tiles`);
         }
         if (obs.total !== total) throw new Error(`page count changed mid-cycle ${total}→${obs.total}:\n${log.join("\n")}`);
         if (seen.size === total) break;
-        if (start !== null && now - start > KIOSK_DEADLINE_MS) {
-          throw new Error(`kiosk saw ${seen.size}/${total} pages within ${KIOSK_DEADLINE_MS}ms:\n${log.join("\n")}`);
+        if (obs.index === null) throw new Error(`kiosk shows no page index: ${JSON.stringify(obs)}`);
+        if (now - start > deadline) {
+          throw new Error(`kiosk saw ${seen.size}/${total} pages within ${deadline}ms:\n${log.join("\n")}`);
         }
-        if (start === null) throw new Error(`kiosk shows no page index: ${JSON.stringify(obs)}`);
         await page.clock.runFor(KIOSK_STEP_MS);
         await drainTasks(page);
         last = await observeKioskPage(page);
       }
       const detail = log.join("\n");
-      console.log(`[overview-motion-layout] kiosk P=${total} dwell=${KIOSK_DWELL_MS}ms\n${detail}`);
+      console.log(`[overview-motion-layout] kiosk P=${total} page dwell=${dwell}ms\n${detail}`);
 
-      // Page 1 was the first page observed, and every page started before the dwell elapsed.
-      expect(order[0], detail).toBe(1);
+      // Page 1 came first and page k appeared after (k-1) whole dwells (within one observation step).
+      expect(order, detail).toEqual(Array.from({ length: total! }, (_, i) => i + 1));
       for (const [index, entry] of seen) {
-        expect(entry.atMs, `page ${index} started at ${entry.atMs}ms (dwell ${KIOSK_DWELL_MS}ms)\n${detail}`).toBeLessThan(KIOSK_DWELL_MS);
+        expect(Math.abs(entry.atMs - (index - 1) * dwell), `page ${index} started at ${entry.atMs}ms (dwell ${dwell}ms)\n${detail}`).toBeLessThanOrEqual(KIOSK_STEP_MS);
       }
 
-      // Every one of the 100 hosts appears exactly once across the cycle.
-      const all = [...seen.values()].flatMap((entry) => entry.hosts);
-      const counts = new Map<string, number>();
-      for (const id of all) counts.set(id, (counts.get(id) ?? 0) + 1);
-      const repeated = [...counts].filter(([, n]) => n > 1);
-      expect(repeated, `hosts on more than one page:\n${detail}`).toEqual([]);
-      expect(counts.size, detail).toBe(100);
+      // Every one of the 100 hosts appears exactly once across the cycle, worst status first.
+      const all = order.flatMap((index) => seen.get(index)!.hosts);
+      const statuses = order.flatMap((index) => seen.get(index)!.statuses);
+      expect(new Set(all).size, detail).toBe(100);
       expect(all.length, detail).toBe(100);
-      for (const entry of seen.values()) expect(entry.hosts.length, detail).toBeGreaterThan(0);
-
-      // A group split across pages repeats its heading on each page it spans.
-      const pagesPerHeading = new Map<string, number>();
-      for (const entry of seen.values()) {
-        for (const heading of new Set(entry.headings)) pagesPerHeading.set(heading, (pagesPerHeading.get(heading) ?? 0) + 1);
+      for (let i = 1; i < statuses.length; i++) {
+        expect(STATUS_RANK[statuses[i - 1]!]! <= STATUS_RANK[statuses[i]!]!, `tile ${i} breaks worst-first order: ${statuses.join(",")}`).toBe(true);
       }
-      const split = [...pagesPerHeading].filter(([, n]) => n >= 2);
-      expect(split.length, `no group heading repeats across pages: ${JSON.stringify([...pagesPerHeading])}\n${detail}`).toBeGreaterThan(0);
+      expect(statuses[0], detail).toBe("critical");
     } finally {
       await handle.close();
     }

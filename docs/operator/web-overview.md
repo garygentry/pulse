@@ -95,6 +95,24 @@ cd stack/compose && docker compose --profile web up --wait
 docker compose exec web wget -qO- http://127.0.0.1:8080/healthz
 ```
 
+## Wallboard (kiosk) mode
+
+For an unattended screen, open the overview with `?kiosk=1`, for example
+`https://pulse.example/overview?kiosk=1`. Kiosk mode hides the navigation and the controls, uses the
+larger wallboard type, and replaces the host grid with a read-only wall of compact tiles:
+
+- One line of host and service status counts, then one line of firing-alert counts and names.
+- One two-line tile per host, worst status first: the host name, its class and status, its firing
+  alert count, its worst failing service, and how many services are OK.
+- Tiles are not interactive. Use the desk view to open a host's details.
+
+When the hosts do not fit one screen, the wall pages through them, showing "i / P" at the bottom
+right. Each page stays up for at least 10 seconds. Up to three pages share a 30-second cycle, and
+more pages lengthen the cycle. To rotate between views, add `rotate`, for example
+`?kiosk=1&rotate=overview:60s,alerts:30s`. Each overview visit then shows the pages that fit its
+dwell at 10 seconds or more each, and the next visit continues from where the last one stopped.
+With reduced motion set on the device, pages change without the fade.
+
 ## Where to go next
 
 - **Expose it safely** → the [exposure recipe](/exposure/).

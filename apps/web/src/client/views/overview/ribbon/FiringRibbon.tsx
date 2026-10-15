@@ -3,14 +3,14 @@
 // `alerts` is the snapshot's already-filtered firing list, rendered exactly as given: no silenced/
 // inhibited inference, dedupe, severity removal or second alert source. Desk/mobile rows expose an
 // alert triage action and, only for attributed alerts, a separate target triage action, both through
-// the canonical path helpers. Kiosk renders a text-only summary (counts, first five ordered names,
-// "+N more") with no interactive or focusable descendant. Non-current alert evidence keeps retained
+// the canonical path helpers. Kiosk renders a one-line text-only summary (counts, first five ordered
+// names, "+N more") with no interactive or focusable descendant. Non-current alert evidence keeps retained
 // names as historical context and never shows the affirmative "No firing alerts". Read-only.
 
 import type { ReactElement } from "react";
 
 import type { OverviewAlertSummary } from "@pulse/web-data/wire";
-import { Badge, Button, Callout, Icon, Section, Tooltip, TooltipContent, TooltipTrigger, alertSeverityOf } from "@/ui";
+import { Badge, Button, Callout, Icon, Section, Tooltip, TooltipContent, TooltipTrigger, alertSeverityOf, cn } from "@/ui";
 import type { EstateClock } from "../../../format.js";
 import type { PathRouter } from "../../../router.js";
 import { memoWithEquality, shallowEqualProps } from "../grid/memo.js";
@@ -161,38 +161,50 @@ function DeskRibbon(props: FiringRibbonProps): ReactElement {
   );
 }
 
+/**
+ * One line: severity counts, the acknowledged count, then the first ordered names (truncated to the
+ * line, never wrapped) and "+N more". Below the `sm` breakpoint the parts may wrap, so the counts and
+ * "+N more" stay readable on a phone. Non-current alert evidence is a short inline note.
+ */
 function KioskRibbon(props: FiringRibbonProps): ReactElement {
   const { alerts, clock, alertsCurrent, alertsLastGoodAt } = props;
   const summary = buildKioskFiringSummary(alerts);
   const acked = countAcked(alerts);
   return (
     <section
-      className="grid min-w-0 gap-2 text-sm"
+      className="flex min-w-0 items-center gap-x-4 gap-y-1 overflow-hidden text-sm whitespace-nowrap max-sm:flex-wrap"
       aria-label="Firing alerts summary"
       data-ribbon="kiosk"
       data-kiosk="true"
       data-alerts-current={String(alertsCurrent)}
     >
-      <p className="m-0 font-semibold tabular-nums" data-ribbon-counts="">{countsText(summary.counts)}</p>
+      <p className="m-0 shrink-0 font-semibold tabular-nums" data-ribbon-counts="">{countsText(summary.counts)}</p>
       {acked > 0 ? (
-        <p className="m-0" data-ribbon-acked="">
+        <p className="m-0 shrink-0" data-ribbon-acked="">
           <Badge variant="secondary">
             <Icon name="circle-check" />
             {`${acked} acknowledged`}
           </Badge>
         </p>
       ) : null}
-      {alertsCurrent ? null : <StaleNotice clock={clock} lastGoodAt={alertsLastGoodAt} />}
+      {alertsCurrent ? null : (
+        <p className="m-0 flex min-w-0 shrink items-center gap-1 text-muted-foreground" data-ribbon-stale="" data-alerts-current="false">
+          <Icon name="circle-alert" className="shrink-0" />
+          <span className="truncate">
+            {`${ALERT_STATE_STALE_TEXT} · ${alertsLastGoodAt === null ? "No successful observation" : lastGoodLabel(clock, alertsLastGoodAt)}`}
+          </span>
+        </p>
+      )}
       {summary.names.length === 0 ? (
-        alertsCurrent ? <p className={EMPTY_CLASS} data-ribbon-empty="">{NO_FIRING_ALERTS_TEXT}</p> : null
+        alertsCurrent ? <p className={cn(EMPTY_CLASS, "shrink-0")} data-ribbon-empty="">{NO_FIRING_ALERTS_TEXT}</p> : null
       ) : (
-        <ol className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0" data-ribbon-names="">
+        <ol className="m-0 flex min-w-0 shrink list-none gap-x-4 overflow-hidden p-0" data-ribbon-names="">
           {summary.names.map((name, index) => (
-            <li key={index} data-ribbon-name="">{name}</li>
+            <li key={index} className="min-w-0 truncate" data-ribbon-name="">{name}</li>
           ))}
         </ol>
       )}
-      {summary.overflow > 0 ? <p className={EMPTY_CLASS} data-ribbon-overflow="">{`+${summary.overflow} more`}</p> : null}
+      {summary.overflow > 0 ? <p className={cn(EMPTY_CLASS, "shrink-0")} data-ribbon-overflow="">{`+${summary.overflow} more`}</p> : null}
     </section>
   );
 }

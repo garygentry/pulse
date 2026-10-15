@@ -248,7 +248,7 @@ window.__PULSE_OVERVIEW_METRICS__ = metrics;
 
 setGridRenderObserver((kind) => {
   if (kind === "host") metrics.hostRenders += 1;
-  else metrics.serviceRenders += 1;
+  else if (kind === "service") metrics.serviceRenders += 1;
 });
 
 /** In-page liveness history transport (the loopback server has no API). */
