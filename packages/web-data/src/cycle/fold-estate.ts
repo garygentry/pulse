@@ -36,6 +36,7 @@ import type {
 import type { FoldInputs } from "./records.js";
 import { DEFAULT_GATUS_STALE_SECONDS, effectiveData, sourceAvailability } from "./records.js";
 import { candidateFromAlertLabels, resolveCandidate } from "./target-match.js";
+import { scrapeSeriesIdentity } from "../queries/series-identity.js";
 
 /** The renderer host collection-class discriminant, derived from the model to avoid a core import. */
 type CollectionClass = WebEstateHostV2["collectionClass"];
@@ -325,6 +326,11 @@ function buildFindings(inputs: FoldInputs): AvailabilitySection<WebFindingsArtif
   };
 }
 
+/** A collision-free `job`/`instance` map key. */
+function scrapeKey(job: string, instance: string): string {
+  return `${job}\u0000${instance}`;
+}
+
 /**
  * Build independently actionable declared-versus-scraped rows from VM scrape discovery.
  * A non-current source yields explicit unknown rows (never an implied clean result); a current
@@ -336,18 +342,36 @@ function buildDeclaredVersusScraped(
   const record = inputs.records["victoriametrics-targets"];
   const availability = sourceAvailability(record, "victoriametrics-targets");
 
-  const declared = new Map<string, string>();
+  // Declared targets keyed by their post-relabel `job`/`instance` identity (issue #69): VM's
+  // targets API reports labels AFTER relabeling, so a managed-linux target rendered as
+  // `10.0.0.5:9100` is discovered as `instance="<host name>"` within its job. Rows stay one per
+  // rendered target (several custom-exporter ports on one host share a stored identity and are
+  // told apart only by their `exporter_port` label, which the targets source does not carry).
+  interface Declared {
+    readonly key: string;
+    readonly rendered: string;
+    readonly drilldownId: string;
+  }
+  const declaredRows = new Map<string, Declared>();
   for (const host of inputs.model.hosts) {
     for (const target of host.scrapeTargets) {
-      if (!declared.has(target.instance)) declared.set(target.instance, host.drilldownId);
+      const rowKey = scrapeKey(target.job, target.instance);
+      if (declaredRows.has(rowKey)) continue;
+      const identity = scrapeSeriesIdentity(host.name, target);
+      declaredRows.set(rowKey, {
+        key: scrapeKey(identity.job, identity.instance),
+        rendered: target.instance,
+        drilldownId: host.drilldownId,
+      });
     }
   }
+  const declaredKeys = new Set([...declaredRows.values()].map((d) => d.key));
 
   if (availability.state !== "current" || !record.latest.result.ok) {
     const message = "Scrape discovery is unavailable; declared-versus-scraped drift cannot be determined.";
-    const unknown = [...declared].map(([instance, drilldownId]): DeclaredScrapeComparison => ({
+    const unknown = [...declaredRows.values()].map(({ rendered, drilldownId }): DeclaredScrapeComparison => ({
       drilldownId,
-      scrapeTarget: instance,
+      scrapeTarget: rendered,
       state: "unknown",
       message,
     }));
@@ -359,21 +383,25 @@ function buildDeclaredVersusScraped(
     };
   }
 
-  const discovered = new Set(record.latest.result.data.map((target) => target.instance));
+  const discovered = new Map<string, string>();
+  for (const target of record.latest.result.data) {
+    const key = scrapeKey(target.job, target.instance);
+    if (!discovered.has(key)) discovered.set(key, target.instance);
+  }
   const rows: DeclaredScrapeComparison[] = [];
-  for (const [instance, drilldownId] of declared) {
-    const matched = discovered.has(instance);
+  for (const { key, rendered, drilldownId } of declaredRows.values()) {
+    const matched = discovered.has(key);
     rows.push({
       drilldownId,
-      scrapeTarget: instance,
+      scrapeTarget: rendered,
       state: matched ? "matched" : "missing",
       message: matched
-        ? `Declared scrape target ${instance} was discovered.`
-        : `Declared scrape target ${instance} was not discovered.`,
+        ? `Declared scrape target ${rendered} was discovered.`
+        : `Declared scrape target ${rendered} was not discovered.`,
     });
   }
-  for (const instance of discovered) {
-    if (declared.has(instance)) continue;
+  for (const [key, instance] of discovered) {
+    if (declaredKeys.has(key)) continue;
     rows.push({
       drilldownId: "",
       scrapeTarget: instance,

@@ -6,9 +6,11 @@
 //   - alert history (`ALERTS{…}`): one firing series per current Alertmanager alert, from its
 //     `startsAt` to its `endsAt` (or now);
 //   - liveness (`… or vector(0/0)`): the current VM `up`/`pulse_agent_up`/deep-health value of the
-//     selected instances, service, or the whole estate, held over the range;
+//     selected `job`/`instance` series (the post-relabel identity), service, or the whole estate,
+//     held over the range;
 //   - curated host/endpoint/engine metrics: a deterministic wave in a plausible band per metric,
-//     phased by the query text so different hosts draw different curves;
+//     phased by the query text so different hosts draw different curves (a host metric only when
+//     its `job`/`instance` selectors name a series the VM fixture stores);
 //   - check history: the endpoint's fixture row, as the statuses list serves it, addressed by the
 //     key Gatus derives from its group and name.
 // Anything else (the binder's never-match query, an unknown metric) is an empty matrix: "no data",
@@ -116,16 +118,29 @@ function alertSeries(alerts: AmAlertsResponse, window: RangeWindow, nowMs: numbe
     .map((s) => ({ metric: s.metric, values: [...s.firing].sort((a, b) => a - b).map((t): [number, string] => [t, "1"]) }));
 }
 
+/**
+ * The `job`/`instance` pairs a host query selects. The binder pins both labels on every series
+ * selector (`{job="…",instance="…"}`, the post-relabel identity — issue #69), so a sample matches
+ * only when its own pair is one of these.
+ */
+function seriesPairs(promql: string): Set<string> {
+  return new Set(
+    [...promql.matchAll(/\bjob="((?:[^"\\]|\\.)*)",instance="((?:[^"\\]|\\.)*)"/g)].map((m) => `${m[1]}\u0000${m[2]}`),
+  );
+}
+
 /** The current liveness value the query selects from the VM instant fixture, or null if none. */
 function livenessValue(promql: string, vm: VmQueryResponse): number | null {
   const samples = vm.data?.result ?? [];
   const value = (s: (typeof samples)[number]): number => Number(s.value[1]);
-  const instances = new Set(selectorValues(promql, "instance"));
+  const pairs = seriesPairs(promql);
   const [host] = selectorValues(promql, "host");
   const [service] = selectorValues(promql, "service");
   let picked: number[];
-  if (instances.size > 0) {
-    picked = samples.filter((s) => s.metric.instance !== undefined && instances.has(s.metric.instance)).map(value);
+  if (pairs.size > 0) {
+    picked = samples
+      .filter((s) => pairs.has(`${s.metric.job ?? ""}\u0000${s.metric.instance ?? ""}`))
+      .map(value);
     return picked.length > 0 ? Math.min(...picked) : null;
   }
   if (service !== undefined) {
@@ -162,6 +177,12 @@ export function mockRangeBody(
   }
   const band = BANDS.find(([metric]) => promql.includes(metric))?.[1];
   if (band === undefined) return body([]);
+  // A host metric draws only when it selects a `job`/`instance` series the scenario actually
+  // stores, so a binder that drifts from the scrape relabel contract shows "no data" here too.
+  const pairs = seriesPairs(promql);
+  if (pairs.size > 0 && !(current.vm.data?.result ?? []).some((s) => pairs.has(`${s.metric.job ?? ""}\u0000${s.metric.instance ?? ""}`))) {
+    return body([]);
+  }
   const phase = (hash(promql) % 360) * (Math.PI / 180);
   const values = instants(window).map((t): [number, string] => {
     const wave = 0.5 + 0.5 * Math.sin((2 * Math.PI * t) / band.period + phase);

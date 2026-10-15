@@ -372,6 +372,39 @@ describe("foldEstate — rendered vocabulary, joins, artifacts", () => {
     expect(est.declaredVersusScraped.value?.map((row) => row.state)).toEqual(["matched"]);
   });
 
+  test("declared-versus-scraped matches relabeled targets by their stored job/instance (issue #69)", () => {
+    // scrape.yml relabels host → instance for managed jobs, so VM's targets API reports
+    // instance="hostA" for the target the renderer emitted as 10.0.0.1:9100.
+    const relabeled = model({
+      hosts: [
+        {
+          ...model().hosts[0]!,
+          scrapeTargets: [
+            { job: "managed-linux", instance: "10.0.0.1:9100" },
+            { job: "hypervisor-api", instance: "https://10.0.0.1:8006" },
+          ],
+        },
+      ],
+    });
+    const est = foldEstate(
+      inputs({
+        model: relabeled,
+        records: records({
+          "victoriametrics-targets": ok<readonly ScrapeTargetState[]>([
+            scrapeTarget({ job: "managed-linux", instance: "hostA" }),
+            scrapeTarget({ job: "hypervisor-api", instance: "https://10.0.0.1:8006" }),
+            scrapeTarget({ job: "cadvisor", instance: "hostA" }),
+          ]),
+        }),
+      }),
+    );
+    expect(est.declaredVersusScraped.value?.map((row) => [row.scrapeTarget, row.state])).toEqual([
+      ["10.0.0.1:9100", "matched"],
+      ["https://10.0.0.1:8006", "matched"],
+      ["hostA", "unexpected"],
+    ]);
+  });
+
   test("declared-versus-scraped reports missing and unexpected drift explicitly", () => {
     const missing = foldEstate(
       inputs({ records: records({ "victoriametrics-targets": ok<readonly ScrapeTargetState[]>([]) }) }),

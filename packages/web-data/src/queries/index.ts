@@ -18,3 +18,5 @@ export {
 } from "./ranges.js";
 export { escapePrometheusLabelValue, bindCuratedQuery } from "./binding.js";
 export type { BoundQuery, QueryBindFailureCode, QueryBindResult } from "./binding.js";
+export { ESTATE_SCRAPE_INSTANCE_SOURCE, scrapeSeriesIdentity } from "./series-identity.js";
+export type { ScrapeInstanceSource, ScrapeSeriesIdentity } from "./series-identity.js";

@@ -239,6 +239,8 @@ Issues one `page=1&pageSize=512` request. It returns every endpoint's `name`, `g
 | `parseRange(value, definition)` | Resolves a range and its step, or `INVALID_REQUEST` / `RANGE_UNSUPPORTED` |
 | `bindCuratedQuery(queryId, target, range, model)` | `QueryBindResult`: a `BoundQuery` with server-authored `promql`, or a closed failure |
 | `escapePrometheusLabelValue(value)` | Escapes backslash, newline, and double quote only |
+| `ESTATE_SCRAPE_INSTANCE_SOURCE` | Each estate scrape job mapped to where its stored `instance` label comes from (`host` or `address`), per `scrape.yml` relabeling |
+| `scrapeSeriesIdentity(hostName, target)` | The post-relabel `{ job, instance }` a rendered scrape target's stored series carry |
 
 | Query id | Target | Unit | Default / max range |
 |---|---|---|---|
@@ -256,6 +258,8 @@ Issues one `page=1&pageSize=512` request. It returns every endpoint's `name`, `g
 | `engine.disk-usage` | estate | bytes | 6h / 7d |
 | `engine.notification-failures` | estate | count | 6h / 7d |
 | `engine.notification-latency` | estate | seconds | 6h / 7d |
+
+Host queries select each of the host's scrape targets by its stored `job` and `instance` labels, not by the rendered target string in `scrapeTargets[].instance`. The model records the target as the renderer wrote it into file_sd (before relabeling, for example `10.0.0.5:9100`). VictoriaMetrics stores the series after the relabel rules in `stack/compose/config/victoriametrics/scrape.yml` run. Every managed-host and `nas-api` job copies the `host` label onto `instance` (the estate-wide `instance == host` contract), so those series carry `instance="<host name>"`. `hypervisor-api` keeps the rendered API endpoint. `scrapeSeriesIdentity` does this translation. The same identity drives the declared-versus-scraped comparison in the estate fold. `tests/queries/series-identity-contract.test.ts` replays the relabel rules so the table and the scrape config cannot drift.
 
 `endpoint.check.latency` binds to `1000 * avg(gatus_results_duration_seconds{name="<endpoint name>"})`. It selects by Gatus's `name` label, which holds the pulse name, not by `key`. It applies only to service endpoint targets.
 

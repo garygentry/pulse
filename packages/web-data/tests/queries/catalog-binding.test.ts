@@ -44,7 +44,7 @@ function hostV2(over: Record<string, unknown> = {}): Record<string, unknown> {
     expectedChurn: false,
     scrapeIntervalClass: null,
     provenance: { source: "estate.yaml", line: 1 },
-    scrapeTargets: [{ job: "node", instance: "10.0.0.1:9100" }],
+    scrapeTargets: [{ job: "managed-linux", instance: "10.0.0.1:9100" }],
     artifacts: [],
     detail: { exporterPorts: [], cadvisor: false, heartbeat: false, deliveryForm: "systemd", commandSignals: [] },
     ...over,
@@ -393,12 +393,37 @@ describe("bindCuratedQuery success and pinned PromQL", () => {
     }
   });
 
-  test("host load binds the validated instance label exactly", () => {
+  test("host load binds the post-relabel job and instance (instance == host, issue #69)", () => {
     const r = bindCuratedQuery("host.load.1m", HOST_TARGET, null, model);
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.query.target).toEqual({ kind: "host", id: "host:web01" });
-      expect(r.query.promql).toBe('max(node_load1{instance="10.0.0.1:9100"})');
+      // The rendered target is 10.0.0.1:9100, but the managed-linux job relabels host → instance.
+      expect(r.query.promql).toBe('max(node_load1{job="managed-linux",instance="web01"})');
+      expect(r.query.promql).not.toContain("10.0.0.1");
+    }
+  });
+
+  test("host liveness selects the stored instance == host series, never address:port (issue #69)", () => {
+    const r = bindCuratedQuery("estate.liveness", HOST_TARGET, null, model);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.promql).toBe(
+        'min((up{job="managed-linux",instance="web01"} or pulse_agent_up{job="managed-linux",instance="web01"})) or vector(0/0)',
+      );
+    }
+  });
+
+  test("a hypervisor host keeps the rendered API endpoint as instance (__param_target passthrough)", () => {
+    const hv = makeModel({
+      hosts: [hostV2({ name: "pve1", drilldownId: "host:pve1", collectionClass: "hypervisor-api", scrapeTargets: [{ job: "hypervisor-api", instance: "https://pve1:8006" }] })],
+    });
+    const r = bindCuratedQuery("estate.liveness", { kind: "host", id: "host:pve1" }, null, hv);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.query.promql).toBe(
+        'min((up{job="hypervisor-api",instance="https://pve1:8006"} or pulse_agent_up{job="hypervisor-api",instance="https://pve1:8006"})) or vector(0/0)',
+      );
     }
   });
 
@@ -420,12 +445,15 @@ describe("bindCuratedQuery success and pinned PromQL", () => {
     }
   });
 
-  test("multi-instance host unions each instance as its own exact-match selector", () => {
-    const multi = makeModel({ hosts: [hostV2({ drilldownId: "host:m", scrapeTargets: [{ job: "node", instance: "a:9100" }, { job: "cadvisor", instance: "b:8080" }] })] });
+  test("multi-target host unions each stored series identity as its own exact-match selector", () => {
+    const multi = makeModel({ hosts: [hostV2({ drilldownId: "host:m", scrapeTargets: [{ job: "managed-linux", instance: "a:9100" }, { job: "cadvisor", instance: "a:8080" }, { job: "node", instance: "b:9100" }] })] });
     const r = bindCuratedQuery("host.load.1m", { kind: "host", id: "host:m" }, null, multi);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.query.promql).toBe('max(node_load1{instance="a:9100"} or node_load1{instance="b:8080"})');
+      // Relabeled jobs store instance == host; an unknown job keeps the rendered address.
+      expect(r.query.promql).toBe(
+        'max(node_load1{job="cadvisor",instance="web01"} or node_load1{job="managed-linux",instance="web01"} or node_load1{job="node",instance="b:9100"})',
+      );
     }
   });
 
@@ -484,12 +512,12 @@ describe("escapePrometheusLabelValue and injection safety", () => {
       // The whole query equals the pinned template with the payload confined to one
       // quoted exact-match label — proving it cannot add a selector or operator even when
       // the payload itself contains metric-like text or quote/brace characters.
-      expect(promql).toBe(`max(node_load1{instance="${escapePrometheusLabelValue(payload)}"})`);
-      expect(promql.startsWith('max(node_load1{instance="')).toBe(true);
+      expect(promql).toBe(`max(node_load1{job="node",instance="${escapePrometheusLabelValue(payload)}"})`);
+      expect(promql.startsWith('max(node_load1{job="node",instance="')).toBe(true);
       expect(promql.endsWith('"})')).toBe(true);
       // Every double-quote from the payload is backslash-escaped, so none closes the label
       // early (the only unescaped quotes are the two label delimiters the template adds).
-      const inner = promql.slice('max(node_load1{instance="'.length, -'"})'.length);
+      const inner = promql.slice('max(node_load1{job="node",instance="'.length, -'"})'.length);
       expect(inner.match(/(?<!\\)"/g)).toBeNull();
     }
   });

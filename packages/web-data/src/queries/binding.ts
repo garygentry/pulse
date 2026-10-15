@@ -16,6 +16,7 @@ import type {
 } from "@pulse/renderer";
 import { QUERY_CATALOG, isQueryId } from "./catalog.js";
 import { parseRange } from "./ranges.js";
+import { scrapeSeriesIdentity, type ScrapeSeriesIdentity } from "./series-identity.js";
 
 // ---------------------------------------------------------------------------
 // Public contracts (01-core-definitions.md §… / 06 §1)
@@ -58,7 +59,8 @@ export type QueryBindResult =
 interface ResolvedTargetBase {
   readonly target: TargetIdentity;
   readonly host: string | null;
-  readonly instances: readonly string[];
+  /** Post-relabel `job`/`instance` pairs of the host's stored series (empty for non-hosts). */
+  readonly series: readonly ScrapeSeriesIdentity[];
 }
 type ResolvedTarget =
   | (ResolvedTargetBase & { readonly kind: "host"; readonly drilldownId: string })
@@ -141,9 +143,20 @@ function makeError(code: QueryBindFailureCode, details?: ApiError["details"]): A
   return { code, message: ERROR_MESSAGES[code], ...(details !== undefined ? { details } : {}) };
 }
 
-/** Deduplicate and sort validated instance labels in deterministic code-point order. */
-function instancesOf(host: WebEstateHostV2): readonly string[] {
-  return [...new Set(host.scrapeTargets.map((t) => t.instance))].sort();
+/**
+ * The host's stored-series identities: each rendered scrape target translated through the
+ * `scrape.yml` relabel contract (issue #69 — managed and NAS jobs store `instance=<host name>`,
+ * not the rendered `address:port`), deduplicated and sorted in deterministic code-point order.
+ */
+function seriesOf(host: WebEstateHostV2): readonly ScrapeSeriesIdentity[] {
+  const byKey = new Map<string, ScrapeSeriesIdentity>();
+  for (const target of host.scrapeTargets) {
+    const identity = scrapeSeriesIdentity(host.name, target);
+    byKey.set(`${identity.job}\u0000${identity.instance}`, identity);
+  }
+  return [...byKey.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, identity]) => identity);
 }
 
 function resolveHost(model: WebEstateModelV2, id: string, targetKind: TargetKind): ResolveOutcome {
@@ -151,8 +164,8 @@ function resolveHost(model: WebEstateModelV2, id: string, targetKind: TargetKind
   if (matches.length === 0) return fail("TARGET_NOT_FOUND");
   if (matches.length > 1) return fail("TARGET_NOT_FOUND"); // ambiguous identity: never "first wins"
   const host = matches[0]!;
-  const instances = instancesOf(host);
-  if (instances.length === 0 || instances.some(hasForbiddenControl)) {
+  const series = seriesOf(host);
+  if (series.length === 0 || series.some((s) => hasForbiddenControl(s.job) || hasForbiddenControl(s.instance))) {
     return fail("QUERY_NOT_APPLICABLE", { queryId: id, targetKind });
   }
   return {
@@ -161,7 +174,7 @@ function resolveHost(model: WebEstateModelV2, id: string, targetKind: TargetKind
       kind: "host",
       target: { kind: "host", id },
       host: host.name,
-      instances,
+      series,
       drilldownId: host.drilldownId,
     },
   };
@@ -188,7 +201,7 @@ function resolveService(model: WebEstateModelV2, id: string, targetKind: TargetK
       kind: "service",
       target: { kind: "service", id },
       host: service.host,
-      instances: [],
+      series: [],
       service: service.name,
       deepHealthMetric: deepHealthMetricOf(service),
       backupAgeMetric: service.backupFreshness !== null ? BACKUP_AGE_METRIC : null,
@@ -213,7 +226,7 @@ function resolveEndpoint(model: WebEstateModelV2, id: string): ResolveOutcome {
   if (count > 1) return fail("TARGET_NOT_FOUND"); // ambiguous identity
   return {
     ok: true,
-    target: { kind: "endpoint", target: { kind: "endpoint", id }, host: null, instances: [], endpointKey: id },
+    target: { kind: "endpoint", target: { kind: "endpoint", id }, host: null, series: [], endpointKey: id },
   };
 }
 
@@ -265,7 +278,7 @@ function resolveTarget(
 // ---------------------------------------------------------------------------
 
 function asHost(target: ResolvedTarget | null): Extract<ResolvedTarget, { kind: "host" }> | null {
-  return target !== null && target.kind === "host" && target.instances.length > 0 ? target : null;
+  return target !== null && target.kind === "host" && target.series.length > 0 ? target : null;
 }
 function asService(target: ResolvedTarget | null): Extract<ResolvedTarget, { kind: "service" }> | null {
   return target !== null && target.kind === "service" ? target : null;
@@ -274,15 +287,20 @@ function asEndpoint(target: ResolvedTarget | null): Extract<ResolvedTarget, { ki
   return target !== null && target.kind === "endpoint" ? target : null;
 }
 
-/** Build a host query as an `or`-union of one exact-instance sub-expression per instance. */
+/**
+ * Build a host query as an `or`-union of one sub-expression per stored series identity, each
+ * selecting the exact post-relabel `job` and `instance` labels.
+ */
 function hostQuery(
   target: ResolvedTarget | null,
   aggregator: string,
-  perInstance: (instanceSelector: string) => string,
+  perSeries: (seriesSelector: string) => string,
 ): string {
   const host = asHost(target);
   if (host === null) return NEVER_MATCH;
-  const union = host.instances.map((i) => perInstance(labelSelector("instance", i))).join(" or ");
+  const union = host.series
+    .map((s) => perSeries(`${labelSelector("job", s.job)},${labelSelector("instance", s.instance)}`))
+    .join(" or ");
   return `${aggregator}(${union})`;
 }
 
