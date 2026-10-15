@@ -1,7 +1,12 @@
 // src/client/views/estate/delivery.ts — pure delivery-state adapter and per-artifact availability
 // classifier for the estate view. The renderers live in degrade.tsx.
 
-import type { AvailabilitySection, EstatePayload } from "@pulse/web-data/wire";
+import type {
+  AvailabilitySection,
+  DataAvailability,
+  EstatePayload,
+  EstateTargetState,
+} from "@pulse/web-data/wire";
 
 import type { EstateDeliveryState } from "./types.js";
 
@@ -106,7 +111,8 @@ export function toDeliveryState(raw: unknown, payload: EstatePayload | null): Es
         ? { kind: "ready" }
         : { kind: "model-absent", guidance: DEFAULT_MODEL_ABSENT_GUIDANCE };
     case "stale":
-      // Per-artifact staleness is rendered per section; the whole payload still renders.
+      // The whole payload still renders. While the app itself is stale, readEstate downgrades its
+      // current sections (withAppStaleness), so no badge stays ok.
       return { kind: "ready" };
     default:
       return fallback;
@@ -128,4 +134,98 @@ export function classifyAvailability<T>(
   if (section.value === null) return "absent";
   if (section.availability.state !== "current") return "stale";
   return isEmpty(section.value) ? "empty" : "ok";
+}
+
+// ── App-level staleness ──────────────────────────────────────────────────────
+
+/** The note a section carries when the payload says `current` but the app itself is not. */
+export const APP_STALE_MESSAGE = "Not refreshed from the Pulse server; showing the last delivered estate.";
+
+/**
+ * Whether the retained estate payload can no longer be trusted as current. Stale when the connection
+ * is not `live` (the same signal as the shell's stale-data callout: the app server unreachable or
+ * its cycle stalled past the stale window, or no cycle observation yet), or when estate delivery is
+ * not current AND its refetch actually failed. A non-current delivery with no failure is an
+ * in-flight refetch of a newer identity on a healthy connection; treating that as stale would flip
+ * every badge on each estate change. Unrecognized shapes fail closed to stale.
+ */
+export function isEstateViewStale(connection: unknown): boolean {
+  if (!isRecord(connection) || connection["phase"] !== "live") return true;
+  const views = connection["views"];
+  const estate = isRecord(views) ? views["estate"] : undefined;
+  if (!isRecord(estate)) return true;
+  if (estate["phase"] === "current") return false;
+  const failure = estate["failure"];
+  return failure !== null && failure !== undefined;
+}
+
+function downgrade(availability: DataAvailability): DataAvailability {
+  return availability.state === "current"
+    ? { ...availability, state: "stale", message: APP_STALE_MESSAGE }
+    : availability;
+}
+
+/** A live target with `current` evidence gets the stale copy; anything else, including a malformed
+ *  entry the inventory renders as its own error row, passes through untouched. */
+function downgradeTarget(entry: EstateTargetState): EstateTargetState {
+  const raw: unknown = entry;
+  if (!isRecord(raw)) return entry;
+  const availability = raw["availability"];
+  if (!isRecord(availability) || availability["state"] !== "current") return entry;
+  return { ...entry, availability: downgrade(entry.availability) };
+}
+
+function downgradeSection<T>(section: AvailabilitySection<T>): AvailabilitySection<T> {
+  const raw: unknown = section;
+  if (!isRecord(raw) || !isRecord(raw["availability"])) return section;
+  return section.availability.state === "current"
+    ? ({ ...section, availability: downgrade(section.availability) } as AvailabilitySection<T>)
+    : section;
+}
+
+/** One downgraded copy per payload object, so memoized consumers see a stable identity. */
+const appStaleCache = new WeakMap<EstatePayload, EstatePayload>();
+
+/** A memoized getter: computes on first successful read, rethrows a failing read every time. */
+function lazy<T>(compute: () => T): PropertyDescriptor {
+  let done = false;
+  let value: T | undefined;
+  return {
+    enumerable: true,
+    get(): T {
+      if (!done) {
+        value = compute();
+        done = true;
+      }
+      return value as T;
+    },
+  };
+}
+
+/**
+ * The payload as an app-stale view must render it: every `current` availability (each live target
+ * and each artifact section) becomes `stale` with {@link APP_STALE_MESSAGE}, so every badge that
+ * already downgrades on non-current evidence (inventory coverage/live, coverage tab, entity page)
+ * stops reading ok (I3). Non-current states keep their own, more specific state. The rendered
+ * model itself is reused unchanged.
+ *
+ * Each field is read lazily, where its consumer reads it, so a fault in one section still lands in
+ * that region's error boundary rather than at the view root.
+ */
+export function withAppStaleness(payload: EstatePayload): EstatePayload {
+  const cached = appStaleCache.get(payload);
+  if (cached !== undefined) return cached;
+  const stale = Object.defineProperties({} as EstatePayload, {
+    generatedAt: lazy(() => payload.generatedAt),
+    estate: lazy(() => payload.estate),
+    liveTargets: lazy(() => {
+      const targets: unknown = payload.liveTargets;
+      return Array.isArray(targets) ? targets.map(downgradeTarget) : payload.liveTargets;
+    }),
+    coverage: lazy(() => downgradeSection(payload.coverage)),
+    findings: lazy(() => downgradeSection(payload.findings)),
+    declaredVersusScraped: lazy(() => downgradeSection(payload.declaredVersusScraped)),
+  });
+  appStaleCache.set(payload, stale);
+  return stale;
 }

@@ -16,6 +16,8 @@ import type { CycleObservation, HashId, SourceId, ViewId } from "@pulse/web-data
 import { DEV_BUILD_ID_PATH } from "../src/client/api/client.js";
 import { overviewSnapshot } from "./factories/wire.js";
 import { createAppStore, type AppStore } from "../src/client/store/index.js";
+import { isEstateViewStale } from "../src/client/views/estate/delivery.js";
+import { readEstate } from "../src/client/views/estate/types.js";
 import {
   DEV_BUILD_CHECK_INTERVAL_MS,
   startLiveState,
@@ -879,6 +881,40 @@ describe("tick/fetch acceptance", () => {
     expect(store.connection.value.observation?.seq).toBe(6); // the observation still advanced
     expect(store.connection.value.views.overview.phase).toBe("current");
     expect(store.connection.value.views.overview.identity).toBe(hash("b"));
+  });
+
+  test("#26: an in-flight estate refetch on a live stream is not app-stale for the estate view", async () => {
+    FakeEventSource.reset();
+    const { store, server, live } = harness({
+      transport: "sse", eventSourceFactory: esFactory, activeView: () => "estate",
+      intervalMs: 1_000_000, staleMs: 1_000_000,
+    });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    server.script("/api/estate", () => ok200({ e: 1 }, { etag: hash("a"), payloadId: hash("e"), obs: observation(GEN_A, 5) }));
+    server.script("/api/estate", (() =>
+      held.then(() => ok200({ e: 2 }, { etag: hash("c"), payloadId: hash("7"), obs: observation(GEN_A, 6) }))) as unknown as () => Response);
+
+    FakeEventSource.last().emitTick(observation(GEN_A, 5), { ...identitiesAll(hash("b")), estate: hash("e") });
+    await flush();
+    const first = store.estate.value;
+    expect(store.connection.value.views.estate.phase).toBe("current");
+    expect(readEstate(store)).toBe(first);
+
+    // A newer estate identity: the refetch is in flight, delivery is `stale`, the stream is healthy.
+    FakeEventSource.last().emitTick(observation(GEN_A, 6), { ...identitiesAll(hash("b")), estate: hash("7") });
+    await flush();
+    expect(store.connection.value.phase).toBe("live");
+    expect(store.connection.value.views.estate.phase).toBe("stale");
+    expect(store.connection.value.views.estate.failure).toBeNull();
+    expect(isEstateViewStale(store.connection.value)).toBe(false);
+    expect(readEstate(store)).toBe(first); // not downgraded: no badge flicker during the refetch
+
+    release();
+    await flush();
+    live.stop();
+    expect(store.connection.value.views.estate.phase).toBe("current");
+    expect(store.estate.value as unknown).toEqual({ e: 2 });
   });
 
   test("a tick advancing an INACTIVE view's desired identity marks it stale without refetching it (§8.4)", async () => {
