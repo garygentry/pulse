@@ -1,12 +1,12 @@
 // apps/web/src/client/views/overview/grid/render-probe.ts — an optional observer of grid target renders.
 //
-// The grid's only-changed-cells-re-render contract is verified by counting `HostCellView` and
-// `ServiceChipView` renders per target. React has no public per-component render hook, so the two
-// views report each render here. No observer is installed in the app; unit tests and the browser
+// The grid's only-changed-cells-re-render contract is verified by counting `HostCellView`,
+// `ServiceChipView` and kiosk `KioskTileView` renders per target. React has no public per-component
+// render hook, so those views report each render here. No observer is installed in the app; unit tests and the browser
 // perf fixture install one around the renders they measure.
 
-/** Which grid target rendered. */
-export type GridRenderKind = "host" | "service";
+/** Which grid target rendered: a desk host cell, a desk service chip, or a kiosk tile. */
+export type GridRenderKind = "host" | "service" | "tile";
 
 /** Called once per render of a grid target with its canonical drilldown id. */
 export type GridRenderObserver = (kind: GridRenderKind, drilldownId: string) => void;

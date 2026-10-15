@@ -150,13 +150,9 @@ describe("overview model shapes (type-level pins)", () => {
         retryable: true,
       },
     ];
-    const page: KioskPage = {
-      index: 0,
-      hosts: [host],
-      groupStarts: [{ groupId: "class:managed-linux", label: "managed-linux", hostOffset: 0 }],
-    };
+    const page: KioskPage = { index: 0, hosts: [host] };
     expect(states.map((s) => s.status)).toEqual(["idle", "loading", "ready", "error"]);
-    expect(page.groupStarts[0]?.hostOffset).toBe(0);
+    expect(page.hosts[0]).toBe(host);
   });
 });
 

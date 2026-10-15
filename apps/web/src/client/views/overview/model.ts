@@ -470,27 +470,13 @@ export interface SpatialGridOptions {
 // Kiosk paging
 // ---------------------------------------------------------------------------------------------
 
-/** One deterministic kiosk page. */
+/**
+ * One deterministic kiosk page: a slice of the flat worst-first host list (`deriveKioskHosts`).
+ * Kiosk tiles carry their own class label, so a page has no group headings.
+ */
 export interface KioskPage {
   /** Zero-based page position. */
   readonly index: number;
-  /** Hosts on this page in current group/sort order. */
+  /** Hosts on this page, worst status first. */
   readonly hosts: readonly HostStatus[];
-  /** Group labels repeated when a group spans pages. */
-  readonly groupStarts: readonly {
-    /** Stable `OverviewGroup.id` of the group starting or continuing here. */
-    readonly groupId: string;
-    /** Group heading text rendered on this page. */
-    readonly label: string;
-    /** Zero-based index into `hosts` where this group's hosts begin. */
-    readonly hostOffset: number;
-  }[];
-}
-
-/** Start offset of one page within a dwell cycle. */
-export interface PageScheduleEntry {
-  /** Zero-based page index. */
-  readonly pageIndex: number;
-  /** Milliseconds from cycle start at which the page becomes visible. */
-  readonly startsAtMs: number;
 }

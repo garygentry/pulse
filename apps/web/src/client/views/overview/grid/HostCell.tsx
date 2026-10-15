@@ -70,8 +70,8 @@ function HostCellView(props: HostCellProps): ReactElement {
   if (unknown) parts.push(lastGoodText(evidence));
   const alertSeverity = highestColouredSeverity(host.activeAlerts);
 
-  // The card also carries `data-target-id` so the kiosk probe (readKioskFitMetrics) measures a whole
-  // card; only `[data-overview-target]` triggers are roving targets.
+  // The card also carries `data-target-id` (tests address a whole card by it); only
+  // `[data-overview-target]` triggers are roving targets.
   return (
     <div
       role="row"

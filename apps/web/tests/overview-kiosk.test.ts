@@ -1,7 +1,7 @@
-// apps/web/tests/overview-kiosk.test.ts — kiosk partition/schedule/capacity helpers and the
-// useKioskPaging hook (06 §§4–6, 08 §4.8; REQ-DEN-03..04, REQ-GROUP-01). Timing runs on an
-// injected fake KioskPagingClock and frames on a manual queue — no wall-clock waits.
-// Kiosk DOM composition (controls, drawer, indicator markup) is covered in item 015.
+// apps/web/tests/overview-kiosk.test.ts — kiosk capacity/partition/dwell helpers and the
+// useKioskPaging hook (GitHub #6; REQ-DEN-03..04). Timing runs on an injected fake KioskPagingClock
+// and frames on a manual queue — no wall-clock waits. The tile wall's DOM is covered in
+// overview-kiosk-tiles.test.ts.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -10,20 +10,22 @@ import { act } from "./react-render.js";
 
 import type { HostStatus } from "@pulse/web-data/wire";
 import type { ViewRotationContext } from "../src/shared/registry.js";
-import { DEFAULT_OVERVIEW_PREFERENCES, type OverviewGroup } from "../src/client/views/overview/model.js";
-import { deriveOverviewModel } from "../src/client/views/overview/selectors.js";
 import {
+  KIOSK_MIN_PAGE_DWELL_MS,
   MIN_KIOSK_CAPACITY,
   NON_ROTATING_KIOSK_CYCLE_MS,
   buildKioskPages,
-  fitKioskCapacity,
-  kioskPageFits,
-  pageSchedule,
-  type KioskFitMetrics,
+  kioskCapacity,
+  kioskPageDwell,
+  kioskPagesPerVisit,
+  kioskRows,
+  type KioskGridMetrics,
 } from "../src/client/views/overview/kiosk/paging.js";
 import {
   kioskIndicatorLabel,
   overviewRotationDwell,
+  readKioskGridMetrics,
+  resetKioskRotationCursor,
   useKioskPaging,
   type KioskPagingClock,
   type KioskPagingState,
@@ -31,34 +33,25 @@ import {
 import { createEstateClock } from "../src/client/format.js";
 import type { PathRouter } from "../src/client/router.js";
 import { FiringRibbon } from "../src/client/views/overview/ribbon/FiringRibbon.js";
-import { FIXTURE_ESTATE, makeOverviewSnapshot } from "./fixtures/overview/factory.js";
+import { FIXTURE_ESTATE, makeOverviewSnapshot, withTargetStatus } from "./fixtures/overview/factory.js";
 import { describeDom, renderWithStore } from "./dom.js";
 
 const HOSTS: readonly HostStatus[] = makeOverviewSnapshot({ hostCount: 12 }).hosts;
 
-/** Hand-built groups over fixture hosts: sizes [a, b, …] consume HOSTS in order. */
-function groupsOf(...sizes: number[]): OverviewGroup[] {
-  let at = 0;
-  return sizes.map((size, i) => {
-    const hosts = HOSTS.slice(at, at + size);
-    at += size;
-    return { id: `class:g${i}`, label: `Group ${i}`, hosts };
-  });
-}
-
-function flatIds(groups: readonly { readonly hosts: readonly HostStatus[] }[]): string[] {
-  return groups.flatMap((g) => g.hosts.map((host) => host.drilldownId));
+function ids(pages: readonly { readonly hosts: readonly HostStatus[] }[]): string[] {
+  return pages.flatMap((p) => p.hosts.map((host) => host.drilldownId));
 }
 
 describe("kiosk constants", () => {
-  test("30 s non-rotating cycle and a minimum capacity of one", () => {
+  test("30 s base cycle, 10 s minimum page dwell and a minimum capacity of one", () => {
     expect(NON_ROTATING_KIOSK_CYCLE_MS).toBe(30_000);
+    expect(KIOSK_MIN_PAGE_DWELL_MS).toBe(10_000);
     expect(MIN_KIOSK_CAPACITY).toBe(1);
   });
 });
 
 describe("buildKioskPages", () => {
-  const groups = groupsOf(3, 4, 2); // 9 hosts
+  const hosts = HOSTS.slice(0, 9);
 
   test.each([
     ["zero", 0],
@@ -66,9 +59,9 @@ describe("buildKioskPages", () => {
     ["NaN", Number.NaN],
     ["Infinity", Number.POSITIVE_INFINITY],
   ])("capacity %s clamps to one host per page", (_label, capacity) => {
-    const pages = buildKioskPages(groups, capacity);
+    const pages = buildKioskPages(hosts, capacity);
     expect(pages).toHaveLength(9);
-    expect(pages.every((p) => p.hosts.length === 1 && p.groupStarts.length === 1)).toBe(true);
+    expect(pages.every((p) => p.hosts.length === 1)).toBe(true);
   });
 
   test.each([
@@ -77,130 +70,83 @@ describe("buildKioskPages", () => {
     ["one over", 8, [8, 1]],
     ["larger than estate", 50, [9]],
     ["fractional", 4.9, [4, 4, 1]],
-    ["many groups", 3, [3, 3, 3]],
   ])("capacity %s → page sizes", (_label, capacity, sizes) => {
-    const pages = buildKioskPages(groups, capacity);
+    const pages = buildKioskPages(hosts, capacity);
     expect(pages.map((p) => p.hosts.length)).toEqual(sizes);
     expect(pages.map((p) => p.index)).toEqual(sizes.map((_, i) => i));
   });
 
-  test("flattened pages equal the source hosts exactly once, in order, by identity", () => {
-    const matrix = [groupsOf(3, 4, 2), groupsOf(1, 1, 1, 1), groupsOf(12), groupsOf(5, 0, 7), groupsOf(2, 3, 1, 6)];
-    for (const input of matrix) {
-      const source = input.flatMap((g) => g.hosts);
-      for (let capacity = 0; capacity <= 14; capacity++) {
-        const out = buildKioskPages(input, capacity).flatMap((p) => p.hosts);
-        expect(out).toHaveLength(source.length);
-        out.forEach((host, i) => expect(host).toBe(source[i]!));
-        expect(new Set(flatIds([{ hosts: out }])).size).toBe(source.length);
-      }
+  test("pages hold every host exactly once, in order, by identity; the input is not mutated", () => {
+    const before = hosts.map((h) => h.drilldownId);
+    for (let capacity = 0; capacity <= 11; capacity++) {
+      const out = buildKioskPages(hosts, capacity).flatMap((p) => p.hosts);
+      expect(out).toHaveLength(hosts.length);
+      out.forEach((host, i) => expect(host).toBe(hosts[i]!));
     }
+    expect(hosts.map((h) => h.drilldownId)).toEqual(before);
   });
 
-  test("a split group repeats its heading at offset 0; a new group records its exact offset", () => {
-    const pages = buildKioskPages(groupsOf(3, 4, 2), 4);
-    expect(pages.map((p) => p.groupStarts)).toEqual([
-      [
-        { groupId: "class:g0", label: "Group 0", hostOffset: 0 },
-        { groupId: "class:g1", label: "Group 1", hostOffset: 3 },
-      ],
-      [
-        { groupId: "class:g1", label: "Group 1", hostOffset: 0 },
-        { groupId: "class:g2", label: "Group 2", hostOffset: 3 },
-      ],
-      [{ groupId: "class:g2", label: "Group 2", hostOffset: 0 }],
-    ]);
-  });
-
-  test("empty groups and an empty estate produce no phantom page", () => {
+  test("an empty estate produces no phantom page", () => {
     expect(buildKioskPages([], 4)).toEqual([]);
-    expect(buildKioskPages(groupsOf(0, 0), 4)).toEqual([]);
-    const pages = buildKioskPages(groupsOf(2, 0, 2), 4);
-    expect(pages).toHaveLength(1);
-    expect(pages[0]!.groupStarts.map((s) => s.groupId)).toEqual(["class:g0", "class:g2"]);
-  });
-
-  test("inputs are not mutated and the model's real group order is preserved", () => {
-    const model = deriveOverviewModel(makeOverviewSnapshot({ hostCount: 10 }), DEFAULT_OVERVIEW_PREFERENCES);
-    const before = JSON.stringify(model.groups);
-    const pages = buildKioskPages(model.groups, 3);
-    expect(JSON.stringify(model.groups)).toBe(before);
-    expect(flatIds(pages)).toEqual(flatIds(model.groups));
   });
 });
 
-describe("pageSchedule", () => {
-  test.each([
-    [1, 30_000],
-    [3, 30_000],
-    [4, 45_000],
-    [7, 10_001],
-    [100, 30_000],
-  ])("P=%d D=%d: starts at 0, monotonic, every start < D", (pageCount, dwell) => {
-    const schedule = pageSchedule(pageCount, dwell);
-    expect(schedule).toHaveLength(pageCount);
-    expect(schedule[0]).toEqual({ pageIndex: 0, startsAtMs: 0 });
-    schedule.forEach((entry, i) => {
-      expect(entry.pageIndex).toBe(i);
-      expect(entry.startsAtMs).toBe(Math.floor((i * dwell) / pageCount));
-      expect(entry.startsAtMs).toBeLessThan(dwell);
-      if (i > 0) expect(entry.startsAtMs).toBeGreaterThan(schedule[i - 1]!.startsAtMs);
-    });
+describe("capacity arithmetic", () => {
+  const base: KioskGridMetrics = { height: 200, columns: 4, rowHeight: 100, rowGap: 0 };
+
+  test("capacity is columns × rows of the fixed tile height", () => {
+    expect(kioskCapacity(base)).toBe(8);
+    expect(kioskCapacity({ ...base, columns: 7, height: 1000 })).toBe(70);
   });
 
-  test("invalid page counts or dwells produce no schedule", () => {
-    expect(pageSchedule(0, 30_000)).toEqual([]);
-    expect(pageSchedule(-1, 30_000)).toEqual([]);
-    expect(pageSchedule(2.5, 30_000)).toEqual([]);
-    expect(pageSchedule(3, 0)).toEqual([]);
-    expect(pageSchedule(3, Number.NaN)).toEqual([]);
-    expect(pageSchedule(3, Number.POSITIVE_INFINITY)).toEqual([]);
-    expect(pageSchedule(10, 5)).toEqual([]);
-  });
-});
-
-describe("capacity fit", () => {
-  const base: KioskFitMetrics = {
-    width: 400,
-    height: 200,
-    cellWidth: 100,
-    cellHeight: 100,
-    headingHeight: 0,
-    columnGap: 0,
-    rowGap: 0,
-  };
-
-  test("geometric fit without headings is columns × rows, capped at the host count", () => {
-    expect(fitKioskCapacity(groupsOf(12), base)).toBe(8);
-    expect(fitKioskCapacity(groupsOf(5), base)).toBe(5);
+  test("rows count gaps and never lose a row at an exact fit", () => {
+    expect(kioskRows({ ...base, height: 210, rowGap: 10 })).toBe(2); // 100 + 10 + 100 = 210
+    expect(kioskRows({ ...base, height: 209, rowGap: 10 })).toBe(1);
+    expect(kioskRows({ ...base, height: 320, rowGap: 10 })).toBe(3);
   });
 
-  test("gaps are included in the column/row estimate", () => {
-    expect(fitKioskCapacity(groupsOf(12), { ...base, width: 430, columnGap: 10, rowGap: 10, height: 210 })).toBe(8);
-    expect(fitKioskCapacity(groupsOf(12), { ...base, width: 429, columnGap: 10, rowGap: 10, height: 210 })).toBe(6);
-  });
-
-  test("overflow from repeated headings reduces capacity until every page fits", () => {
-    const metrics = { ...base, headingHeight: 20 };
-    const capacity = fitKioskCapacity(groupsOf(12), metrics);
-    expect(capacity).toBe(4);
-    expect(buildKioskPages(groupsOf(12), capacity).every((p) => kioskPageFits(p, metrics))).toBe(true);
-    expect(buildKioskPages(groupsOf(12), capacity + 1).every((p) => kioskPageFits(p, metrics))).toBe(false);
-  });
-
-  test("several groups on one page consume extra rows", () => {
-    // Three 1-host groups need three rows even though 3 hosts fit one geometric row.
-    const metrics = { ...base, height: 250, headingHeight: 10 };
-    expect(fitKioskCapacity(groupsOf(1, 1, 1, 1), metrics)).toBe(2);
+  test("a region shorter than one tile still shows one row", () => {
+    expect(kioskRows({ ...base, height: 40 })).toBe(1);
+    expect(kioskCapacity({ ...base, height: 40 })).toBe(4);
   });
 
   test("invalid or unavailable metrics fall back to one", () => {
-    expect(fitKioskCapacity(groupsOf(12), null)).toBe(1);
-    expect(fitKioskCapacity(groupsOf(12), { ...base, width: 0 })).toBe(1);
-    expect(fitKioskCapacity(groupsOf(12), { ...base, height: Number.NaN })).toBe(1);
-    expect(fitKioskCapacity(groupsOf(12), { ...base, cellWidth: 500 })).toBe(1);
-    expect(fitKioskCapacity(groupsOf(12), { ...base, rowGap: -1 })).toBe(1);
-    expect(fitKioskCapacity([], base)).toBe(1);
+    expect(kioskCapacity(null)).toBe(1);
+    expect(kioskCapacity({ ...base, columns: 0 })).toBe(1);
+    expect(kioskCapacity({ ...base, columns: 2.5 })).toBe(1);
+    expect(kioskCapacity({ ...base, height: Number.NaN })).toBe(4);
+    expect(kioskCapacity({ ...base, rowHeight: 0 })).toBe(4);
+    expect(kioskRows({ ...base, rowGap: -1 })).toBe(2);
+  });
+});
+
+describe("page dwell", () => {
+  test.each([
+    // [pages, rotation dwell or null, page dwell]
+    [1, null, 30_000],
+    [2, null, 15_000],
+    [3, null, 10_000],
+    [4, null, 10_000],
+    [10, null, 10_000],
+    [3, 45_000, 15_000],
+    [6, 20_000, 10_000],
+    [2, 8_000, 10_000],
+  ])("P=%d rotation=%p → %d ms per page (never below 10 s)", (pages, rotation, dwell) => {
+    expect(kioskPageDwell(pages, rotation)).toBe(dwell);
+    expect(kioskPageDwell(pages, rotation)).toBeGreaterThanOrEqual(KIOSK_MIN_PAGE_DWELL_MS);
+  });
+
+  test("without rotation the cycle grows with the page count past three pages", () => {
+    expect(10 * kioskPageDwell(10, null)).toBe(100_000);
+    expect(3 * kioskPageDwell(3, null)).toBe(NON_ROTATING_KIOSK_CYCLE_MS);
+  });
+
+  test("a rotation visit shows the whole pages its dwell fits (at least one, at most all)", () => {
+    expect(kioskPagesPerVisit(3, 45_000)).toBe(3);
+    expect(kioskPagesPerVisit(6, 20_000)).toBe(2);
+    expect(kioskPagesPerVisit(6, 25_000)).toBe(2);
+    expect(kioskPagesPerVisit(2, 8_000)).toBe(1);
+    expect(kioskPagesPerVisit(0, 30_000)).toBe(0);
   });
 });
 
@@ -331,11 +277,10 @@ function installFrames(): { flush(): void; restore(): void } {
 }
 
 interface HarnessProps {
-  readonly groups: readonly OverviewGroup[];
-  readonly kiosk: boolean;
+  readonly hosts: readonly HostStatus[];
   readonly rotation: ViewRotationContext | null;
-  readonly viewportRef: RefObject<HTMLElement>;
-  readonly measurementRef: RefObject<HTMLElement>;
+  readonly regionRef: RefObject<HTMLElement>;
+  readonly gridRef: RefObject<HTMLElement>;
   readonly clock: KioskPagingClock;
   readonly onState: (state: KioskPagingState) => void;
 }
@@ -349,30 +294,36 @@ function Harness({ onState, ...options }: HarnessProps): JSX.Element {
 describeDom("useKioskPaging", (dom) => {
   let container: HTMLElement;
   let frames: { flush(): void; restore(): void };
-  let viewport: HTMLElement;
-  let probe: HTMLElement;
-  let size: { width: number; height: number };
+  let region: HTMLElement;
+  let grid: HTMLElement;
+  /** The region's height and the grid's laid-out geometry (read through a stubbed getComputedStyle). */
+  let layout: { height: number; columns: number; rowHeight: number; rowGap: number };
   let state: KioskPagingState;
   let savedRO: unknown;
+  let savedStyle: unknown;
   let observers: { callback: () => void; observed: Element[]; disconnected: boolean }[];
 
   beforeEach(() => {
+    resetKioskRotationCursor();
     container = document.createElement("div");
     document.body.appendChild(container);
     frames = installFrames();
-    size = { width: 400, height: 200 };
-    viewport = document.createElement("div") as unknown as HTMLElement;
-    Object.defineProperty(viewport, "clientWidth", { get: () => size.width });
-    Object.defineProperty(viewport, "clientHeight", { get: () => size.height });
-    probe = document.createElement("div") as unknown as HTMLElement;
-    const grid = document.createElement("div");
-    const cell = document.createElement("div");
-    cell.setAttribute("data-target-id", "host:probe");
-    cell.getBoundingClientRect = () => ({ width: 100, height: 100 }) as DOMRect;
-    grid.appendChild(cell);
-    probe.appendChild(grid);
+    layout = { height: 200, columns: 4, rowHeight: 100, rowGap: 0 };
+    region = document.createElement("div") as unknown as HTMLElement;
+    region.getBoundingClientRect = () => ({ height: layout.height }) as DOMRect;
+    grid = document.createElement("ul") as unknown as HTMLElement;
 
     const g = globalThis as unknown as Record<string, unknown>;
+    savedStyle = g["getComputedStyle"];
+    const realStyle = savedStyle as (el: Element) => CSSStyleDeclaration;
+    g["getComputedStyle"] = (el: Element) =>
+      el === (grid as unknown as Element)
+        ? ({
+            gridTemplateColumns: Array.from({ length: layout.columns }, () => `${layout.rowHeight}px`).join(" ") || "none",
+            gridAutoRows: `${layout.rowHeight}px`,
+            rowGap: `${layout.rowGap}px`,
+          } as unknown as CSSStyleDeclaration)
+        : realStyle(el);
     savedRO = g["ResizeObserver"];
     observers = [];
     g["ResizeObserver"] = class {
@@ -383,6 +334,7 @@ describeDom("useKioskPaging", (dom) => {
       }
       observe(el: Element): void {
         this.record.observed.push(el);
+        this.record.callback(); // a real observer delivers the initial size once observed
       }
       unobserve(): void {}
       disconnect(): void {
@@ -396,17 +348,20 @@ describeDom("useKioskPaging", (dom) => {
     act(() => render(null, container as unknown as Element));
     container.remove();
     frames.restore();
-    (globalThis as unknown as Record<string, unknown>)["ResizeObserver"] = savedRO;
+    const g = globalThis as unknown as Record<string, unknown>;
+    g["ResizeObserver"] = savedRO;
+    g["getComputedStyle"] = savedStyle;
+    resetKioskRotationCursor();
   });
 
-  async function renderHook(props: Omit<HarnessProps, "onState" | "viewportRef" | "measurementRef">): Promise<void> {
+  async function renderHook(props: Omit<HarnessProps, "onState" | "regionRef" | "gridRef">): Promise<void> {
     const { render } = await import("./react-render.js");
     act(() => {
       render(
         createElement(Harness, {
           ...props,
-          viewportRef: { current: viewport },
-          measurementRef: { current: probe },
+          regionRef: { current: region },
+          gridRef: { current: grid },
           onState: (s: KioskPagingState) => {
             state = s;
           },
@@ -416,6 +371,11 @@ describeDom("useKioskPaging", (dom) => {
     });
   }
 
+  async function unmount(): Promise<void> {
+    const { render } = await import("./react-render.js");
+    act(() => render(null, container as unknown as Element));
+  }
+
   const rotation = (epoch: number, dwellMs = 40_000): ViewRotationContext => ({
     entry: { viewId: "overview", dwellMs },
     index: 0,
@@ -423,181 +383,449 @@ describeDom("useKioskPaging", (dom) => {
     epoch,
   });
 
-  test("non-kiosk: one complete unpaged page, no indicator, no timers or observer", async () => {
+  /** Record the visible page each time it changes while advancing the fake clock in 1 s steps. */
+  function pageStarts(fc: FakeClock, untilMs: number): [number, number][] {
+    const starts: [number, number][] = [[0, state.activePageIndex]];
+    for (let elapsed = 1_000; elapsed <= untilMs; elapsed += 1_000) {
+      const before = state.activePageIndex;
+      fc.advance(1_000);
+      if (state.activePageIndex !== before) starts.push([elapsed, state.activePageIndex]);
+    }
+    return starts;
+  }
+
+  test("measures columns × rows from the grid's computed tracks and the region height", async () => {
     expect(dom.win).toBeDefined();
     const fc = fakeClock();
-    const groups = groupsOf(3, 4, 5);
-    await renderHook({ groups, kiosk: false, rotation: rotation(1), clock: fc.clock });
-    expect(state.paged).toBe(false);
-    expect(state.indicatorLabel).toBeNull();
-    expect(state.pages).toHaveLength(1);
-    expect(flatIds(state.pages)).toEqual(flatIds(groups));
-    expect(fc.pending()).toBe(0);
-    expect(observers).toHaveLength(0);
-  });
-
-  test("kiosk measures capacity from the viewport and probe and pages every host once", async () => {
-    const fc = fakeClock();
-    const groups = groupsOf(12);
-    await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
-    expect(state.paged).toBe(true);
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
     expect(state.capacity).toBe(8);
     expect(state.pages.map((p) => p.hosts.length)).toEqual([8, 4]);
-    expect(flatIds(state.pages)).toEqual(flatIds(groups));
+    expect(ids(state.pages)).toEqual(ids([{ hosts: HOSTS }]));
     expect(state.activePageIndex).toBe(0);
     expect(state.indicatorLabel).toBe("Page 1 of 2");
     expect(observers).toHaveLength(1);
-    expect(observers[0]!.observed[0]).toBe(viewport as unknown as Element);
+    expect(observers[0]!.observed[0]).toBe(region as unknown as Element);
   });
 
-  test("without rotation the 30 s cycle shows every page once and wraps to page 1", async () => {
+  test("readKioskGridMetrics counts laid-out tracks (region height from its layout box) and is null without them", () => {
+    expect(readKioskGridMetrics(region, grid)).toEqual({ height: 200, columns: 4, rowHeight: 100, rowGap: 0 });
+    layout.columns = 0;
+    expect(readKioskGridMetrics(region, grid)).toBeNull();
+    expect(readKioskGridMetrics(null, grid)).toBeNull();
+    expect(readKioskGridMetrics(region, null)).toBeNull();
+  });
+
+  test("without rotation each of three pages stays 10 s and the 30 s cycle wraps to page 1", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 }; // 4 per page → 3 pages
-    await renderHook({ groups: groupsOf(12), kiosk: true, rotation: null, clock: fc.clock });
+    layout.height = 100; // 4 per page → 3 pages
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
     expect(state.pages).toHaveLength(3);
+    expect(state.pageDwellMs).toBe(10_000);
     expect(fc.scheduled[0]!.delay).toBe(10_000);
-    const seen = [state.activePageIndex];
-    fc.advance(10_000);
-    seen.push(state.activePageIndex);
-    fc.advance(10_000);
-    seen.push(state.activePageIndex);
-    expect(seen).toEqual([0, 1, 2]);
-    expect(state.indicatorLabel).toBe("Page 3 of 3");
-    fc.advance(10_000); // end of the 30 000 ms cycle
-    expect(state.activePageIndex).toBe(0);
+    expect(pageStarts(fc, 40_000)).toEqual([[0, 0], [10_000, 1], [20_000, 2], [30_000, 0], [40_000, 1]]);
     expect(fc.pending()).toBe(1);
-    fc.advance(10_000);
-    expect(state.activePageIndex).toBe(1);
   });
 
-  test("rotation dwell drives the schedule; every page starts before the dwell and the last holds", async () => {
+  test("without rotation two pages share the 30 s cycle (15 s each)", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
-    await renderHook({ groups: groupsOf(12), kiosk: true, rotation: rotation(1, 45_000), clock: fc.clock });
-    const starts: number[] = [];
-    let elapsed = 0;
-    let last = state.activePageIndex;
-    starts[last] = 0;
-    while (fc.pending() > 0 && elapsed < 45_000) {
-      fc.advance(1_000);
-      elapsed += 1_000;
-      if (state.activePageIndex !== last) {
-        last = state.activePageIndex;
-        starts[last] = elapsed;
-      }
-    }
-    expect(starts).toEqual([0, 15_000, 30_000]);
-    expect(fc.pending()).toBe(0); // the shell advances; overview arms nothing past the last page
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+    expect(state.pages).toHaveLength(2);
+    expect(pageStarts(fc, 30_000)).toEqual([[0, 0], [15_000, 1], [30_000, 0]]);
+  });
+
+  test("without rotation the cycle grows with the page count: six pages, 10 s each, 60 s cycle", async () => {
+    const fc = fakeClock();
+    layout.height = 100;
+    layout.columns = 2; // 2 per page → 6 pages
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+    expect(state.pages).toHaveLength(6);
+    expect(state.pageDwellMs).toBe(10_000);
+    const starts = pageStarts(fc, 60_000);
+    expect(starts.map(([at]) => at)).toEqual([0, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000]);
+    expect(starts.map(([, page]) => page)).toEqual([0, 1, 2, 3, 4, 5, 0]);
+  });
+
+  test("a late timer advances one page and the next page still gets its full dwell", async () => {
+    const fc = fakeClock();
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+    fc.fireLate(25_000); // the 10 000 ms boundary is delivered 15 s late
+    expect(state.activePageIndex).toBe(1);
+    expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+  });
+
+  test("rotation dwell drives the page dwell; every page fits the visit and the last holds", async () => {
+    const fc = fakeClock();
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 45_000), clock: fc.clock });
+    expect(state.pageDwellMs).toBe(15_000);
+    expect(pageStarts(fc, 45_000)).toEqual([[0, 0], [15_000, 1], [30_000, 2]]);
+    expect(fc.pending()).toBe(0); // the shell advances; overview arms nothing past the visit
     expect(state.activePageIndex).toBe(2);
   });
 
-  test("a late timer jumps to the greatest due page without replaying intermediates", async () => {
+  test("a short rotation dwell shows the pages that fit at 10 s each; the next visit resumes after them", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
-    const seen: number[] = [];
-    const { render } = await import("./react-render.js");
-    act(() => {
-      render(
-        createElement(Harness, {
-          groups: groupsOf(12),
-          kiosk: true,
-          rotation: rotation(1, 30_000),
-          viewportRef: { current: viewport },
-          measurementRef: { current: probe },
-          clock: fc.clock,
-          onState: (s: KioskPagingState) => seen.push(s.activePageIndex),
-        }),
-        container as unknown as Element,
-      );
-    });
-    fc.fireLate(25_000); // the 10 000 ms boundary is delivered 15 s late
-    expect(seen.at(-1)).toBe(2);
-    expect(seen).not.toContain(1);
+    layout.height = 100;
+    layout.columns = 2; // 6 pages
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 20_000), clock: fc.clock });
+    expect(state.pageDwellMs).toBe(10_000);
+    expect(pageStarts(fc, 20_000)).toEqual([[0, 0], [10_000, 1]]);
     expect(fc.pending()).toBe(0);
+
+    // The overview unmounts while the rotation shows other views, then returns.
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(4, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+    expect(state.indicatorLabel).toBe("Page 3 of 6");
+    expect(pageStarts(fc, 20_000)).toEqual([[0, 2], [10_000, 3]]);
+
+    // A same-mount epoch change (e.g. `overview,overview`) also resumes, and wraps to page 1.
+    await renderHook({ hosts: HOSTS, rotation: rotation(5, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(4);
+    fc.advance(10_000); // page 6 appears; the shell advances before it has been up half a dwell
+    await renderHook({ hosts: HOSTS, rotation: rotation(6, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(5); // not counted as shown: the next visit starts on it
+    fc.advance(10_000); // this visit shows it for a full dwell: counted, and the visit wraps on
+    await renderHook({ hosts: HOSTS, rotation: rotation(7, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
   });
 
-  test("a rotation epoch change resets to page 1 and clears the prior timer", async () => {
+  test("a re-measure right after ready inside a rotation does not skip the resume page", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
-    const groups = groupsOf(12);
-    await renderHook({ groups, kiosk: true, rotation: rotation(1), clock: fc.clock });
-    fc.advance(15_000);
+    layout.height = 100;
+    layout.columns = 2; // 6 pages, 10 s each; a 20 s visit shows two
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
+    // The chrome above settles a moment later: one more row, a new capacity, a new sequence.
+    layout.height = 200; // 4 per page → 3 pages
+    act(() => observers[0]!.callback());
+    expect(state.pages).toHaveLength(3);
+    expect(state.activePageIndex).toBe(0); // the resume page (still page 1), not page 2
+    await unmount();
+    resetKioskRotationCursor();
+
+    // Same mid-visit: on the second visit's first page, a resize must not skip it either.
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 20_000), clock: fc.clock });
+    fc.advance(20_000); // pages 1 and 2 shown → the next visit starts on page 3
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(2, 20_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+    layout.columns = 1; // 1 per page → 12 pages: new sequence, resumes at the cursor
+    act(() => observers.at(-1)!.callback());
+    expect(state.activePageIndex).toBe(2);
+  });
+
+  test("a rotation dwell shorter than a page dwell still advances the next visit (overview:5s)", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 3 pages; a 5 s visit shows one page (page dwell stays 10 s)
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 5_000), clock: fc.clock });
+    expect(state.pageDwellMs).toBe(10_000);
+    // The shell's 5 s timer started before the view mounted, so it leaves just before 5 s of
+    // page time (here 4 999 ms).
+    fc.advance(4_999);
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(2, 5_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(1);
+    fc.advance(4_999);
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(3, 5_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+  });
+
+  test("leaving after the last page was up long enough records it even if its timer never fired", async () => {
+    // Timers that never fire (e.g. throttled): only the cleanup can record the page as shown.
+    let now = 0;
+    const stalled: KioskPagingClock = { now: () => now, setTimeout: () => 1, clearTimeout: () => undefined };
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 5_000), clock: stalled });
+    now = 1_000; // shown too briefly: not recorded
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(2, 5_000), clock: stalled });
+    expect(state.activePageIndex).toBe(0);
+    now = 4_000; // shown 3 s ≥ half the 5 s rotation dwell
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(3, 5_000), clock: stalled });
+    expect(state.activePageIndex).toBe(1);
+  });
+
+  test("the font gate waits for the wall's face even when document.fonts reads loaded", async () => {
+    const g = globalThis as unknown as { document: { fonts?: unknown } };
+    const saved = Object.getOwnPropertyDescriptor(g.document, "fonts");
+    let release!: () => void;
+    const requested: string[] = [];
+    Object.defineProperty(g.document, "fonts", {
+      configurable: true,
+      value: {
+        status: "loaded",
+        ready: Promise.resolve(),
+        check: () => false, // the lazily loaded face has not been fetched yet
+        load: (font: string) => {
+          requested.push(font);
+          return new Promise<void>((resolve) => (release = resolve));
+        },
+      },
+    });
+    try {
+      const fc = fakeClock();
+      layout.height = 100;
+      await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+      expect(requested).toEqual(["1em 'Geist Variable'"]);
+      expect(fc.scheduled.map((t) => t.delay)).toEqual([1_000]);
+      await act(async () => {
+        release();
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+      expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+    } finally {
+      if (saved === undefined) delete (g.document as { fonts?: unknown }).fonts;
+      else Object.defineProperty(g.document, "fonts", saved);
+    }
+  });
+
+  test("the first page timer waits for web fonts (bounded) before it starts", async () => {
+    const g = globalThis as unknown as { document: { fonts?: unknown } };
+    const saved = Object.getOwnPropertyDescriptor(g.document, "fonts");
+    let release!: () => void;
+    Object.defineProperty(g.document, "fonts", {
+      configurable: true,
+      value: { status: "loading", ready: new Promise<void>((resolve) => (release = resolve)) },
+    });
+    try {
+      const fc = fakeClock();
+      layout.height = 100;
+      await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+      // Only the bounded font wait is armed; no page timer yet.
+      expect(fc.scheduled.map((t) => t.delay)).toEqual([1_000]);
+      await act(async () => {
+        release();
+        await Promise.resolve();
+      });
+      expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+
+      // Fonts that never settle: the page timer starts after the bounded wait.
+      await unmount();
+      Object.defineProperty(g.document, "fonts", { configurable: true, value: { status: "loading", ready: new Promise(() => {}) } });
+      const slow = fakeClock();
+      await renderHook({ hosts: HOSTS, rotation: null, clock: slow.clock });
+      expect(slow.scheduled.map((t) => t.delay)).toEqual([1_000]);
+      slow.advance(1_000);
+      expect(slow.scheduled.at(-1)!.delay).toBe(10_000);
+    } finally {
+      if (saved === undefined) delete (g.document as { fonts?: unknown }).fonts;
+      else Object.defineProperty(g.document, "fonts", saved);
+    }
+  });
+
+  test("a rotation epoch change clears the prior timer and restarts the page dwell", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 3 pages, 40 s dwell → 13 333 ms each, all fit
+    await renderHook({ hosts: HOSTS, rotation: rotation(1), clock: fc.clock });
+    fc.advance(13_333);
     expect(state.activePageIndex).toBe(1);
     const armed = fc.scheduled.at(-1)!.handle;
 
-    await renderHook({ groups, kiosk: true, rotation: rotation(2), clock: fc.clock });
-    expect(state.activePageIndex).toBe(0);
-    expect(state.indicatorLabel).toBe("Page 1 of 3");
+    await renderHook({ hosts: HOSTS, rotation: rotation(2), clock: fc.clock });
+    // Page 2 had only just appeared, so it was not shown: the new visit resumes on it.
+    expect(state.activePageIndex).toBe(1);
     expect(fc.cleared).toContain(armed);
     expect(fc.pending()).toBe(1);
-    // The new generation restarts its schedule from the epoch baseline.
     fc.advance(13_332);
-    expect(state.activePageIndex).toBe(0);
-    fc.advance(1);
     expect(state.activePageIndex).toBe(1);
+    fc.advance(1);
+    expect(state.activePageIndex).toBe(2);
   });
 
-  test("a status-only snapshot change keeps the active page and its timer", async () => {
+  test("a status-only change or a worst-first reorder keeps the visible page and its timer", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
-    const groups = groupsOf(12);
-    await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
     fc.advance(10_000);
     expect(state.activePageIndex).toBe(1);
     const scheduledBefore = fc.scheduled.length;
-    // Same ordered ids, fresh host objects (e.g. a status change).
-    const refreshed = groups.map((g) => ({ ...g, hosts: g.hosts.map((host) => ({ ...host })) }));
-    await renderHook({ groups: refreshed, kiosk: true, rotation: null, clock: fc.clock });
+
+    // Same ids, fresh host objects (a status change), and a different order.
+    const refreshed = HOSTS.map((host) => ({ ...host }));
+    await renderHook({ hosts: refreshed, rotation: null, clock: fc.clock });
     expect(state.activePageIndex).toBe(1);
+    expect(state.pages[1]!.hosts[0]).toBe(refreshed[4]!);
+    const reordered = [...refreshed].reverse();
+    await renderHook({ hosts: reordered, rotation: null, clock: fc.clock });
+    expect(state.activePageIndex).toBe(1);
+    expect(state.pages[1]!.hosts[0]).toBe(reordered[4]!);
     expect(fc.scheduled.length).toBe(scheduledBefore);
-    expect(state.pages[1]!.hosts[0]).toBe(refreshed[0]!.hosts[4]!);
+  });
+
+  test("a capacity that changes and changes back restarts at page 1 and never resurrects the old page", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 4 per page → 3 pages
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+    fc.advance(20_000);
+    expect(state.activePageIndex).toBe(2);
+
+    layout.columns = 2; // e.g. chrome above grew: 2 per page → 6 pages, a new sequence at page 1
+    act(() => observers[0]!.callback());
+    expect(state.indicatorLabel).toBe("Page 1 of 6");
+
+    layout.columns = 4; // back to the first geometry: still a new sequence, not the old page 3
+    act(() => observers[0]!.callback());
+    expect(state.indicatorLabel).toBe("Page 1 of 3");
+    fc.advance(10_000);
+    expect(state.activePageIndex).toBe(1);
+  });
+
+  test("a host newly turning critical restarts the sequence at page 1; other status changes keep the page", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 3 pages
+    const snapshot = makeOverviewSnapshot({ hostCount: 12 });
+    const order = snapshot.hosts.map((h) => h.drilldownId);
+    const hostsOf = (next: typeof snapshot): HostStatus[] =>
+      order.map((id) => next.hosts.find((h) => h.drilldownId === id)!);
+    await renderHook({ hosts: hostsOf(snapshot), rotation: null, clock: fc.clock });
+    fc.advance(20_000);
+    expect(state.activePageIndex).toBe(2);
+
+    // host-001 (OK) turns warning: no new critical host, the page and its timer hold.
+    const warned = withTargetStatus(snapshot, "host:host-001", "warning", 2);
+    const scheduled = fc.scheduled.length;
+    await renderHook({ hosts: hostsOf(warned), rotation: null, clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+    expect(fc.scheduled.length).toBe(scheduled);
+
+    // It then turns critical: back to page 1 at once, with a fresh full dwell.
+    const armed = fc.scheduled.at(-1)!.handle;
+    await renderHook({ hosts: hostsOf(withTargetStatus(warned, "host:host-001", "critical", 3)), rotation: null, clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
+    expect(fc.cleared).toContain(armed);
+    expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+
+    // Inside a rotation it also restarts at page 1 rather than the resume page.
+    await unmount();
+    resetKioskRotationCursor();
+    await renderHook({ hosts: hostsOf(snapshot), rotation: rotation(1, 45_000), clock: fc.clock });
+    fc.advance(15_000);
+    expect(state.activePageIndex).toBe(1);
+    await renderHook({ hosts: hostsOf(withTargetStatus(snapshot, "host:host-001", "critical", 2)), rotation: rotation(1, 45_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(0);
+  });
+
+  describe("flap guard for the critical restart", () => {
+    const FLAPPER = "host:host-001";
+    const snapshot = makeOverviewSnapshot({ hostCount: 12 });
+    // host-001 (OK) last, so it sits on the last page whatever the capacity.
+    const order = [...snapshot.hosts.map((h) => h.drilldownId).filter((id) => id !== FLAPPER), FLAPPER];
+    const hostsOf = (next: typeof snapshot): HostStatus[] => order.map((id) => next.hosts.find((h) => h.drilldownId === id)!);
+    const calm = hostsOf(snapshot);
+    const alarmed = hostsOf(withTargetStatus(snapshot, FLAPPER, "critical", 2));
+
+    test("a host flapping critical/OK every 3 s restarts at most once per cycle, so later pages still show", async () => {
+      const fc = fakeClock();
+      layout.height = 100; // 3 pages, 10 s each, 30 s cycle
+      await renderHook({ hosts: calm, rotation: null, clock: fc.clock });
+      const seen = new Set<number>([state.activePageIndex]);
+      let restarts = 0;
+      for (let t = 0; t < 90_000; t += 3_000) {
+        const before = state.activePageIndex;
+        await renderHook({ hosts: (t / 3_000) % 2 === 0 ? alarmed : calm, rotation: null, clock: fc.clock });
+        if (state.activePageIndex === 0 && before !== 0) restarts += 1;
+        fc.advance(3_000);
+        seen.add(state.activePageIndex);
+      }
+      expect([...seen].sort()).toEqual([0, 1, 2]);
+      // 90 s of flapping: at most one restart per 30 s cycle (natural wraps to page 1 included).
+      expect(restarts).toBeLessThanOrEqual(3);
+    });
+
+    test("two hosts flapping out of phase restart the wall at most once per cycle between them", async () => {
+      const fc = fakeClock();
+      layout.height = 100; // 3 pages, 10 s each, 30 s cycle
+      const SECOND = "host:host-006"; // OK too; placed just before the flapper (last page)
+      const order2 = [...order.filter((id) => id !== SECOND && id !== FLAPPER), SECOND, FLAPPER];
+      const at = (next: typeof snapshot): HostStatus[] => order2.map((id) => next.hosts.find((h) => h.drilldownId === id)!);
+      const a = at(withTargetStatus(snapshot, FLAPPER, "critical", 2));
+      const b = at(withTargetStatus(snapshot, SECOND, "critical", 2));
+      const none = at(snapshot);
+      await renderHook({ hosts: none, rotation: null, clock: fc.clock });
+      const seen = new Set<number>([state.activePageIndex]);
+      const clearedBefore = fc.cleared.length;
+      // Every 1.5 s one of the two turns critical while the other recovers.
+      for (let i = 0; i < 60; i++) {
+        await renderHook({ hosts: i % 2 === 0 ? a : b, rotation: null, clock: fc.clock });
+        fc.advance(1_500);
+        seen.add(state.activePageIndex);
+      }
+      // 90 s: a restart clears the armed page timer; at most one per 30 s cycle for the whole wall.
+      expect(fc.cleared.length - clearedBefore).toBeLessThanOrEqual(3);
+      expect([...seen].sort()).toEqual([0, 1, 2]);
+    });
+
+    test("no restart when the newly critical host is already on the visible page", async () => {
+      const fc = fakeClock();
+      layout.height = 100;
+      await renderHook({ hosts: calm, rotation: null, clock: fc.clock });
+      fc.advance(20_000);
+      expect(state.activePageIndex).toBe(2); // the flapper's page
+      const scheduled = fc.scheduled.length;
+      await renderHook({ hosts: alarmed, rotation: null, clock: fc.clock });
+      expect(state.activePageIndex).toBe(2);
+      expect(fc.scheduled.length).toBe(scheduled);
+    });
+
+    test("inside a rotation a flapping host does not reset the resume page on every visit", async () => {
+      const fc = fakeClock();
+      layout.height = 100;
+      layout.columns = 2; // 6 pages at 10 s: a 60 s cycle, two pages per 20 s visit
+      await renderHook({ hosts: calm, rotation: rotation(1, 20_000), clock: fc.clock });
+      await renderHook({ hosts: alarmed, rotation: rotation(1, 20_000), clock: fc.clock }); // restart (page 1)
+      fc.advance(3_000);
+      await renderHook({ hosts: calm, rotation: rotation(1, 20_000), clock: fc.clock });
+      fc.advance(7_000);
+      expect(state.activePageIndex).toBe(1);
+      fc.advance(10_000);
+      await unmount();
+
+      // The next visit mounts while the host keeps flapping; the flap is in its cooldown.
+      await renderHook({ hosts: calm, rotation: rotation(2, 20_000), clock: fc.clock });
+      expect(state.activePageIndex).toBe(2);
+      await renderHook({ hosts: alarmed, rotation: rotation(2, 20_000), clock: fc.clock });
+      expect(state.activePageIndex).toBe(2);
+    });
   });
 
   test("a resize that changes capacity rebuilds pages, resets page 1 and clears the prior timer", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
-    const groups = groupsOf(12);
-    await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
     fc.advance(10_000);
     expect(state.activePageIndex).toBe(1);
     const armed = fc.scheduled.at(-1)!.handle;
 
-    size = { width: 200, height: 100 }; // 2 per page → 6 pages
-    act(() => observers[0]!.callback());
-    expect(state.capacity).toBe(4); // coalesced into the next frame, not measured synchronously
-    frames.flush();
+    layout.columns = 2; // 2 per page → 6 pages
+    act(() => observers[0]!.callback()); // ResizeObserver delivers after layout: measured at once
     expect(state.capacity).toBe(2);
     expect(state.pages).toHaveLength(6);
-    expect(flatIds(state.pages)).toEqual(flatIds(groups));
+    expect(ids(state.pages)).toEqual(ids([{ hosts: HOSTS }]));
     expect(state.activePageIndex).toBe(0);
     expect(state.indicatorLabel).toBe("Page 1 of 6");
     expect(fc.cleared).toContain(armed);
     expect(fc.pending()).toBe(1);
-    expect(fc.scheduled.at(-1)!.delay).toBe(5_000);
+    expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
   });
 
-  test("leaving kiosk and unmounting release timers and the observer", async () => {
+  test("unmounting releases the timer and the observer", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
-    const groups = groupsOf(12);
-    await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
     expect(fc.pending()).toBe(1);
-    await renderHook({ groups, kiosk: false, rotation: null, clock: fc.clock });
-    expect(fc.pending()).toBe(0);
-    expect(observers[0]!.disconnected).toBe(true);
-    expect(state.paged).toBe(false);
-
-    await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
-    const { render } = await import("./react-render.js");
-    act(() => render(null, container as unknown as Element));
+    await unmount();
     expect(fc.pending()).toBe(0);
     expect(observers.every((o) => o.disconnected)).toBe(true);
   });
 
   test("one page arms no timer and shows no indicator", async () => {
     const fc = fakeClock();
-    await renderHook({ groups: groupsOf(3), kiosk: true, rotation: rotation(1), clock: fc.clock });
-    expect(state.paged).toBe(true);
+    await renderHook({ hosts: HOSTS.slice(0, 3), rotation: rotation(1), clock: fc.clock });
     expect(state.pages).toHaveLength(1);
     expect(state.indicatorLabel).toBeNull();
     expect(fc.pending()).toBe(0);
@@ -617,18 +845,15 @@ describeDom("useKioskPaging", (dom) => {
     };
     try {
       const fc = fakeClock();
-      const groups = groupsOf(12);
-      await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
-      expect(state.capacity).toBeGreaterThanOrEqual(1);
-      expect(flatIds(state.pages)).toEqual(flatIds(groups));
+      await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+      expect(state.capacity).toBe(8);
       expect(listeners).toHaveLength(1);
-      size = { width: 200, height: 100 };
+      layout.columns = 1;
       act(() => listeners[0]!());
       frames.flush();
       expect(state.capacity).toBe(2);
       expect(state.activePageIndex).toBe(0);
-      const { render } = await import("./react-render.js");
-      act(() => render(null, container as unknown as Element));
+      await unmount();
       expect(listeners).toHaveLength(0);
     } finally {
       g["addEventListener"] = realAdd;
@@ -636,25 +861,23 @@ describeDom("useKioskPaging", (dom) => {
     }
   });
 
-  test("a throwing ResizeObserver constructor or unmeasurable probe falls back to capacity one", async () => {
+  test("a throwing ResizeObserver constructor or an unmeasurable grid falls back to capacity one", async () => {
     (globalThis as unknown as Record<string, unknown>)["ResizeObserver"] = class {
       constructor() {
         throw new Error("unsupported");
       }
     };
     const fc = fakeClock();
-    probe.replaceChildren(); // no representative host cell to measure
-    const groups = groupsOf(3, 2);
-    await renderHook({ groups, kiosk: true, rotation: null, clock: fc.clock });
+    layout.columns = 0; // no laid-out tracks
+    await renderHook({ hosts: HOSTS.slice(0, 5), rotation: null, clock: fc.clock });
     expect(state.capacity).toBe(1);
     expect(state.pages).toHaveLength(5);
-    expect(flatIds(state.pages)).toEqual(flatIds(groups));
     expect(state.indicatorLabel).toBe("Page 1 of 5");
   });
 
   test("a throwing clock.setTimeout keeps page 1 visible without an error", async () => {
     const fc = fakeClock();
-    size = { width: 400, height: 100 };
+    layout.height = 100;
     const clock: KioskPagingClock = {
       now: fc.clock.now,
       setTimeout: () => {
@@ -662,7 +885,7 @@ describeDom("useKioskPaging", (dom) => {
       },
       clearTimeout: fc.clock.clearTimeout,
     };
-    await renderHook({ groups: groupsOf(12), kiosk: true, rotation: null, clock });
+    await renderHook({ hosts: HOSTS, rotation: null, clock });
     expect(state.activePageIndex).toBe(0);
     expect(state.indicatorLabel).toBe("Page 1 of 3");
   });

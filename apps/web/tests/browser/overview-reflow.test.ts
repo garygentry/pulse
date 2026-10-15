@@ -9,9 +9,10 @@
 //     close button measures at least the shared 44×44 CSS px touch minimum;
 //   - a touch tap on a host trigger opens the drawer for exactly that target without page-level
 //     horizontal overflow, and both Escape and the close button return focus to the tapped trigger.
-// Plus the kiosk fit: under ?kiosk=1 at 1280×720 and 1920×1080 the page root fills exactly the
-// viewport space below the chrome above it (the fixture's 56px kiosk top bar), so the document never
-// scrolls and the paged grid is not cut off.
+// Plus the kiosk fit: under ?kiosk=1 at 1280×720, 1920×1080, 768×1024 and 375×812 the page root fills
+// exactly the viewport space below the chrome above it (the fixture's 56px kiosk top bar), so the
+// document never scrolls either way, the compact chrome leaves the tile wall at least two rows, and a
+// full page holds exactly columns × rows tiles, none cut off.
 // Layout, touch geometry and real tap dispatch are engine properties happy-dom cannot compute.
 //
 // SELF-SKIPS when Chromium is not provisioned (_harness.browserDescribe); THROWS at collection under
@@ -296,9 +297,30 @@ const KIOSK_CHROME = "[data-fixture-chrome]";
 const KIOSK_VIEWPORTS = [
   { width: 1280, height: 720 },
   { width: 1920, height: 1080 },
+  { width: 768, height: 1024 },
+  { width: 1024, height: 768 },
+  { width: 375, height: 812 },
 ] as const;
 
-browserDescribe()("browser: overview kiosk page fits below the chrome (no page scroll)", () => {
+/** Badges in the kiosk stat strip that are not wholly inside it (clipped or pushed out of view). */
+function stripClipped(page: Page): Promise<{ clipped: string[]; badges: number; scrollWidth: number; innerWidth: number }> {
+  return page.evaluate(() => {
+    const strip = document.querySelector<HTMLElement>("[data-stat-strip]");
+    const box = strip?.getBoundingClientRect();
+    const badges = Array.from(strip?.querySelectorAll<HTMLElement>('[data-slot="status-badge"], [data-slot="badge"]') ?? []);
+    const clipped = badges
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        const inner = el.querySelector<HTMLElement>(":scope > span");
+        const truncated = inner !== null && inner.scrollWidth > inner.clientWidth + 1;
+        return box === undefined || r.left < box.left - 0.5 || r.right > box.right + 0.5 || r.right > window.innerWidth || truncated;
+      })
+      .map((el) => el.textContent ?? "");
+    return { clipped, badges: badges.length, scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth };
+  });
+}
+
+browserDescribe()("browser: overview kiosk page fits below the chrome and pages by columns × rows (no page scroll)", () => {
   let browser: Browser;
   let fixtures: Map<FixtureTheme, FixturePage> | undefined;
 
@@ -324,7 +346,44 @@ browserDescribe()("browser: overview kiosk page fits below the chrome (no page s
           const kiosk = document.querySelector<HTMLElement>('[data-slot="overview-kiosk"]');
           const rootBox = root?.getBoundingClientRect();
           const kioskBox = kiosk?.getBoundingClientRect();
+          const region = document.querySelector<HTMLElement>('[data-slot="overview-kiosk-region"]')?.getBoundingClientRect();
+          const list = document.querySelector<HTMLElement>('[data-slot="overview-kiosk-page"] ul[role="list"]');
+          const tiles = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="overview-kiosk-tile"]')).map((el) => el.getBoundingClientRect());
+          const style = list === null ? null : getComputedStyle(list);
+          const columns = style === null ? 0 : style.gridTemplateColumns.split(" ").filter((t) => t.endsWith("px")).length;
+          const rowHeight = style === null ? 0 : Number.parseFloat(style.gridAutoRows);
+          const rowGap = style === null ? 0 : Number.parseFloat(style.rowGap) || 0;
+          const indicator = document.querySelector('[data-slot="overview-kiosk-indicator"]')?.textContent ?? "1 / 1";
+          const strip = document.querySelector<HTMLElement>("[data-stat-strip]");
+          // One line = the box is no taller than its tallest visible child.
+          const lines = (box: HTMLElement | null): number => {
+            if (box === null) return 0;
+            const kids = Array.from(box.children).filter((el) => el.getBoundingClientRect().height > 0);
+            const tallest = Math.max(...kids.map((el) => el.getBoundingClientRect().height));
+            return Math.round(box.getBoundingClientRect().height / tallest);
+          };
+          // Every chip's status word (the badge's last text span) shows in full.
+          const clippedWords = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="overview-kiosk-chip-status"]'))
+            .map((el) => el.parentElement!)
+            .filter((el) => el.scrollWidth > el.clientWidth + 1)
+            .map((el) => el.textContent);
           return {
+            stripRows: lines(strip),
+            ribbonRows: lines(document.querySelector<HTMLElement>("[data-ribbon='kiosk']")),
+            clippedWords,
+            zoneWidth: document.querySelector('[data-slot="overview-kiosk-footer"] [data-zone]')?.getBoundingClientRect().width ?? 0,
+            chipWords: document.querySelectorAll('[data-slot="overview-kiosk-chip-status"]').length,
+            scrollWidth: scroller.scrollWidth,
+            innerWidth: window.innerWidth,
+            regionTop: region?.top ?? null,
+            regionBottom: region?.bottom ?? null,
+            regionHeight: region?.height ?? null,
+            tileCount: tiles.length,
+            tilesBottom: tiles.length === 0 ? null : Math.max(...tiles.map((r) => r.bottom)),
+            tilesRight: tiles.length === 0 ? null : Math.max(...tiles.map((r) => r.right)),
+            columns,
+            rows: region === undefined || rowHeight <= 0 ? 0 : Math.floor((region.height + rowGap) / (rowHeight + rowGap)),
+            pages: Number(/\/\s*(\d+)/.exec(indicator)?.[1] ?? "1"),
             scrollHeight: scroller.scrollHeight,
             innerHeight: window.innerHeight,
             chromeBottom: bar?.getBoundingClientRect().bottom ?? null,
@@ -345,9 +404,59 @@ browserDescribe()("browser: overview kiosk page fits below the chrome (no page s
         // The paged grid gets real height and stays inside the viewport.
         expect(geometry.kioskHeight!, detail).toBeGreaterThan(100);
         expect(geometry.kioskBottom!, detail).toBeLessThanOrEqual(geometry.innerHeight + 1);
+        // No horizontal page scroll at any kiosk width (phones included).
+        expect(geometry.scrollWidth, `kiosk page scrolls sideways: ${detail}`).toBeLessThanOrEqual(geometry.innerWidth);
+        // The compact chrome leaves the tile wall at least two rows, and the page is filled by plain
+        // columns × rows arithmetic: a full page (the fixture has 100 hosts) shows exactly that many
+        // tiles, every one inside the region — nothing clipped, no lost row or column.
+        expect(geometry.rows, detail).toBeGreaterThanOrEqual(2);
+        expect(geometry.columns, detail).toBeGreaterThanOrEqual(1);
+        expect(geometry.pages, detail).toBeGreaterThan(1);
+        expect(geometry.tileCount, detail).toBe(geometry.columns * geometry.rows);
+        expect(geometry.tilesBottom!, detail).toBeLessThanOrEqual(geometry.regionBottom! + 0.5);
+        expect(geometry.tilesRight!, detail).toBeLessThanOrEqual(geometry.innerWidth);
+        // At wallboard widths the stat strip (from `xl`) and the alert line (from `sm`) are each
+        // exactly one line — the 100-host fixture has every status — so their height never moves the
+        // tile region.
+        if (viewport.width >= 1280) expect(geometry.stripRows, detail).toBe(1);
+        if (viewport.width >= 640) expect(geometry.ribbonRows, detail).toBe(1);
+        // No strip badge is clipped or pushed out of view at any width (it wraps instead).
+        const strip = await stripClipped(page);
+        expect(strip.badges, JSON.stringify(strip)).toBeGreaterThanOrEqual(5);
+        expect(strip.clipped, JSON.stringify(strip)).toEqual([]);
+        // The estate zone stays visible in the footer.
+        expect(geometry.zoneWidth, detail).toBeGreaterThan(0);
+        // Service chips truncate the name, never the status word.
+        expect(geometry.chipWords, detail).toBeGreaterThan(0);
+        expect(geometry.clippedWords, detail).toEqual([]);
       } finally {
         await handle.close();
       }
     }, 90_000);
   }
+
+  test("kiosk at 1280×720 with thousands of services: compact counts, Coverage and Engine in view, nothing clipped", async () => {
+    const handle = await openOverviewPage(browser, fixtures!, { theme: "dark", mode: "kiosk", viewport: { width: 1280, height: 720 }, scale: "large" });
+    try {
+      const { page } = handle;
+      await page.waitForSelector('[data-slot="overview-kiosk-tile"]');
+      const strip = await stripClipped(page);
+      const detail = JSON.stringify(strip);
+      expect(strip.clipped, detail).toEqual([]);
+      expect(strip.scrollWidth, detail).toBeLessThanOrEqual(strip.innerWidth);
+      const text = await page.evaluate(() => document.querySelector("[data-stat-strip]")?.textContent ?? "");
+      expect(text, detail).toMatch(/\d(\.\d)?K/); // compact visible count
+      expect(text, detail).toMatch(/\d,?\d{3} services/); // exact count for assistive technology
+      for (const stat of ["coverage", "engine"]) {
+        const visible = await page.evaluate((s) => {
+          const el = document.querySelector<HTMLElement>(`[data-stat-strip] [data-stat="${s}"]`);
+          const r = el?.getBoundingClientRect();
+          return r !== undefined && r.width > 0 && r.right <= window.innerWidth;
+        }, stat);
+        expect(visible, `${stat} not in view: ${detail}`).toBe(true);
+      }
+    } finally {
+      await handle.close();
+    }
+  }, 90_000);
 });

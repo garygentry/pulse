@@ -1,5 +1,5 @@
-// apps/web/tests/overview-grid.test.ts — grouped overview grid, host cells, service chips and the
-// kiosk page wrapper (03 §§3–6, 8; 06 §7; 08 §4.2). Every case renders through describeDom +
+// apps/web/tests/overview-grid.test.ts — grouped overview grid, host cells and service chips
+// (03 §§3–6, 8; 08 §4.2). The kiosk tile wall is covered in overview-kiosk-tiles.test.ts. Every case renders through describeDom +
 // renderWithStore over the deterministic overview fixture factory and the real selectors.
 //
 // happy-dom does not synthesize a native button click for Enter/Space, so `pressNative` emulates the
@@ -19,13 +19,7 @@ import { TARGET_STATUS } from "@/ui";
 import { effectiveStatus } from "../src/client/views/overview/freshness.js";
 import { STATUS_CHANGE_MARKER_WINDOW_MS, createChangeTracker } from "../src/client/views/overview/grid/change-marker.js";
 import { lastGoodText } from "../src/client/views/overview/grid/HostCell.js";
-import {
-  KioskOverviewGrid,
-  NO_HOSTS_TITLE,
-  OverviewGrid,
-  type OverviewGridProps,
-} from "../src/client/views/overview/grid/OverviewGrid.js";
-import type { KioskPagingClock } from "../src/client/views/overview/kiosk/useKioskPaging.js";
+import { NO_HOSTS_TITLE, OverviewGrid, type OverviewGridProps } from "../src/client/views/overview/grid/OverviewGrid.js";
 import { DEFAULT_OVERVIEW_PREFERENCES, type OverviewModel } from "../src/client/views/overview/model.js";
 import { deriveOverviewModel } from "../src/client/views/overview/selectors.js";
 import { FIXTURE_IDS } from "./fixtures/overview/expected.js";
@@ -455,88 +449,12 @@ describe("selection — exact canonical id, suppressed in wallboard/kiosk", () =
   });
 });
 
-/** Injected paging clock that never fires on its own. */
-function inertClock(): KioskPagingClock {
-  let id = 0;
-  return { now: () => 0, setTimeout: () => ++id, clearTimeout: () => undefined };
-}
-
-async function mountKiosk(model: OverviewModel, selected: string[]): Promise<HTMLElement> {
-  let result!: Awaited<ReturnType<typeof renderWithStore>>;
-  await act(async () => {
-    result = await renderWithStore(
-      createElement(KioskOverviewGrid, {
-        model,
-        estateName: FIXTURE_ESTATE.name,
-        collapsedGroupIds: new Set<string>(),
-        selectedTargetId: null,
-        wallboard: true,
-        changeTracker: createChangeTracker(),
-        reducedMotion: true,
-        onToggleGroup: () => undefined,
-        onSelect: (id: string) => selected.push(id),
-        rotation: null,
-        clock: inertClock(),
-      }) as unknown as ReactElement,
-    );
-  });
-  mounted.push({ container: result.container, selected, toggled: [], rerender: () => undefined, unmount: () => result.unmount() });
-  return result.container;
-}
-
-describe("KioskOverviewGrid / KioskPageView", () => {
-  test("renders the active page with repeated headings and a 'i / P' indicator named 'Page i of P'", async () => {
-    // happy-dom lays nothing out, so measured capacity falls back to one host per page.
-    const snapshot = makeOverviewSnapshot({ hostCount: 3 });
-    const model = modelOf(snapshot);
-    const selected: string[] = [];
-    const container = await mountKiosk(model, selected);
-
-    const page = container.querySelector<HTMLElement>('[data-slot="overview-kiosk-page"]')!;
-    expect(page).not.toBeNull();
-    const grid = page.querySelector('[role="grid"]')!;
-    expect(grid.getAttribute("aria-label")).toBe("Overview hosts, page 1 of 3");
-    const indicator = page.querySelector('[data-slot="overview-kiosk-indicator"]')!;
-    expect(indicator.textContent).toBe("1 / 3");
-    expect(indicator.getAttribute("aria-label")).toBe("Page 1 of 3");
-    expect(indicator.querySelectorAll("button, a, [tabindex]").length).toBe(0);
-
-    // The page's group segment is headed and labelled by that heading.
-    const segment = grid.querySelector<HTMLElement>('[role="rowgroup"]')!;
-    const heading = segment.querySelector("h2")!;
-    expect(segment.getAttribute("aria-labelledby")).toBe(heading.id);
-    expect(heading.textContent).toBe(model.groups[0]!.label);
-    expect(targets(grid)[0]!.dataset["targetId"]).toBe(model.groups[0]!.hosts[0]!.drilldownId);
-
-    // Kiosk never selects.
-    targets(grid)[0]!.click();
-    expect(selected).toEqual([]);
-
-    // The measurement probe is hidden, inert and outside the roving grid.
-    const probe = container.querySelector<HTMLElement>('[data-slot="overview-kiosk-probe"]')!;
-    expect(probe.getAttribute("aria-hidden")).toBe("true");
-    expect(probe.hasAttribute("inert")).toBe(true);
-    expect(grid.contains(probe)).toBe(false);
-  });
-
-  test("a single page shows no indicator", async () => {
-    const container = await mountKiosk(modelOf(makeOverviewSnapshot({ hostCount: 1 })), []);
-    expect(container.querySelector('[data-slot="overview-kiosk-page"]')).not.toBeNull();
-    expect(container.querySelector('[data-slot="overview-kiosk-indicator"]')).toBeNull();
-  });
-
-  test("zero hosts render the shared EmptyState in kiosk too", async () => {
-    const container = await mountKiosk(modelOf(makeOverviewSnapshot({ hostCount: 0 })), []);
-    expect(container.querySelector('[data-slot="overview-grid-empty"] [data-slot="empty-state"]')!.textContent).toContain(NO_HOSTS_TITLE);
-    expect(container.querySelector('[role="grid"]')).toBeNull();
-  });
-});
-
 /** Count renders of the grid's inner target components through the grid render observer. */
 function countRenders(): { readonly hosts: Map<string, number>; readonly services: Map<string, number>; stop(): void } {
   const hosts = new Map<string, number>();
   const services = new Map<string, number>();
   const previous = setGridRenderObserver((kind, id) => {
+    if (kind === "tile") return;
     const counts = kind === "host" ? hosts : services;
     counts.set(id, (counts.get(id) ?? 0) + 1);
   });

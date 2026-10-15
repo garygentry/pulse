@@ -1,12 +1,11 @@
 // apps/web/src/client/views/overview/grid/target-classes.ts — token class strings shared by host cards,
-// host triggers and service chips.
+// host triggers, service chips and kiosk tiles.
 //
 // Status colour is derived from TARGET_STATUS (tone → token class), never chosen locally. The status
 // edge uses each tone's foreground token, which meets 3:1 non-text contrast against the card; the
 // suppressed entry (an outline badge) is additionally dashed, so it stays distinct from unknown,
-// which shares its neutral tone. Kiosk layout is read from the enclosing hosts container
-// (`group/hosts` with `data-layout`), so cells take no extra props and their memo equality is
-// unchanged. Wallboard type and spacing need no overrides: the density root scales both ramps.
+// which shares its neutral tone. Wallboard type and spacing need no overrides: the density root
+// scales both ramps.
 
 import type { TargetStatus } from "@pulse/web-data/wire";
 import { TARGET_STATUS, cn } from "@/ui";
@@ -73,6 +72,22 @@ export const TARGET_TRIGGER_CLASS = cn(
   "data-[changed=animated]:duration-(--motion-slow) data-[changed=animated]:ease-(--motion-ease)",
   "motion-reduce:animate-none",
 );
+
+/**
+ * A read-only kiosk tile (KioskTile): the host card surface and status edge at a fixed height set by
+ * the tile grid's row track, overflow clipped, with the same opacity/outline change marker as a
+ * target trigger (inset, so a neighbour never covers it). Never focusable.
+ */
+export function kioskTileClass(status: TargetStatus): string {
+  return cn(
+    "grid min-w-0 grid-rows-[auto_auto] content-center gap-1 overflow-hidden rounded-lg border border-border border-s-4 bg-card px-2 text-card-foreground",
+    statusEdgeClass(status),
+    "data-[changed]:outline-2 data-[changed]:-outline-offset-2 data-[changed]:outline-solid data-[changed]:outline-foreground",
+    "data-[changed=animated]:animate-in data-[changed=animated]:fade-in-50",
+    "data-[changed=animated]:duration-(--motion-slow) data-[changed=animated]:ease-(--motion-ease)",
+    "motion-reduce:animate-none",
+  );
+}
 
 /** Muted evidence line under an unknown target. */
 export const TARGET_EVIDENCE_CLASS = "basis-full text-xs text-muted-foreground";

@@ -1,27 +1,33 @@
 // apps/web/src/client/views/overview/kiosk/useKioskPaging.ts — measured kiosk paging hook.
 //
-// The hook only picks which page of the already-derived groups is visible. The shell stays the
-// sole owner of view rotation and its timers; this module reads `rotation` and never writes it.
-// All page timing goes through the injected `KioskPagingClock`.
+// The hook only picks which page of the flat worst-first host list is visible; a host newly turning
+// critical restarts the sequence at page 1. Capacity is columns ×
+// rows of the fixed-height tile grid (read from the grid's computed tracks and the region height).
+// Every page stays up for at least KIOSK_MIN_PAGE_DWELL_MS, so the cycle grows with the page count.
+// The shell stays the sole owner of view rotation and its timers; this module reads `rotation` and
+// never writes it. Inside a rotation a visit shows the pages that fit its dwell and holds the last
+// one; the next visit resumes at the first page not yet shown. All timing goes through the injected
+// `KioskPagingClock`.
 
 import type { RefObject } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import type { HostStatus } from "@pulse/web-data/wire";
 import type { ViewRotationContext } from "../../../../shared/registry.js";
-import { TARGET_ID_ATTRIBUTE } from "../grid/navigation.js";
-import type { KioskPage, OverviewGroup } from "../model.js";
+import { effectiveStatus } from "../freshness.js";
+import type { KioskPage } from "../model.js";
 import {
   MIN_KIOSK_CAPACITY,
-  NON_ROTATING_KIOSK_CYCLE_MS,
   buildKioskPages,
-  fitKioskCapacity,
-  pageSchedule,
-  type KioskFitMetrics,
+  kioskCapacity,
+  kioskPageDwell,
+  kioskPagesPerVisit,
+  type KioskGridMetrics,
 } from "./paging.js";
 
 /** Injected timer/clock seam used by deterministic unit tests. */
 export interface KioskPagingClock {
-  /** Return monotonic milliseconds for elapsed-time selection. */
+  /** Return monotonic milliseconds. */
   now(): number;
   /** Schedule one page boundary callback. */
   setTimeout(callback: () => void, delayMs: number): number;
@@ -31,39 +37,40 @@ export interface KioskPagingClock {
 
 /** Inputs to the kiosk paging hook. */
 export interface UseKioskPagingOptions {
-  /** Ordered groups from the coherent `OverviewModel`. */
-  readonly groups: readonly OverviewGroup[];
-  /** True only for `route.query.kiosk === "1"`. */
-  readonly kiosk: boolean;
+  /** Every host, worst status first (`deriveKioskHosts`). */
+  readonly hosts: readonly HostStatus[];
   /** Current shell-owned rotation context, or null without active rotation. */
   readonly rotation: ViewRotationContext | null;
-  /** Element containing exactly the available grouped-grid page area. */
-  readonly viewportRef: RefObject<HTMLElement | null>;
-  /** Hidden, inert page probe used to validate actual rendered fit. */
-  readonly measurementRef: RefObject<HTMLElement | null>;
+  /** The region the tile grid may fill; its height bounds the rows and its resizes re-measure. */
+  readonly regionRef: RefObject<HTMLElement | null>;
+  /** The rendered tile grid; its computed column tracks, row height and row gap are read. */
+  readonly gridRef: RefObject<HTMLElement | null>;
+  /**
+   * A value whose change means the region may have been resized by the parent's own layout effect
+   * (the page root's offset below the shell chrome). Child layout effects run before the parent's,
+   * so without it the first measurement would read the region before the parent sized it.
+   */
+  readonly layoutKey?: unknown;
   /** Optional deterministic test seam; defaults to a performance/global-timer adapter. */
   readonly clock?: KioskPagingClock;
 }
 
-/** Render state returned to `OverviewGrid`; target health is never copied into this state. */
+/** Render state returned to the kiosk grid; target health is never copied into this state. */
 export interface KioskPagingState {
   /** Deterministic partition; empty only when the estate has no hosts. */
   readonly pages: readonly KioskPage[];
   /** Zero-based visible page. */
   readonly activePageIndex: number;
-  /** Measured host count per page, clamped to at least one. */
+  /** Measured tiles per page, at least one. */
   readonly capacity: number;
-  /** True while kiosk paging, false for the ordinary complete grid. */
-  readonly paged: boolean;
-  /** Stable accessible text, for example `Page 2 of 4`; null when not paged. */
+  /** How long each page stays up, in ms. */
+  readonly pageDwellMs: number;
+  /** Stable accessible text, for example `Page 2 of 4`; null for a single page. */
   readonly indicatorLabel: string | null;
 }
 
 /** The view id whose rotation entry this hook may follow. */
 const OVERVIEW_VIEW_ID = "overview";
-
-/** Selector for group headings inside the measurement probe. */
-export const KIOSK_PROBE_HEADING_SELECTOR = "h2, h3, [role='heading']";
 
 /** Production clock: `performance.now()` plus global timers read at call time. */
 const handles = new Map<number, ReturnType<typeof globalThis.setTimeout>>();
@@ -89,6 +96,68 @@ const defaultClock: KioskPagingClock = {
   },
 };
 
+/**
+ * The page the next rotation visit starts on. The overview unmounts between visits, so the cursor
+ * lives at module scope; it is only a starting hint and is taken modulo the current page count.
+ */
+let rotationCursor = 0;
+
+/**
+ * When each host id last restarted the sequence by turning critical (clock ms). Module scope for
+ * the same reason as the cursor: a host flapping across rotation visits must not reset every visit.
+ */
+const criticalRestarts = new Map<string, number>();
+
+/** When the wall last restarted for a critical host (clock ms): at most one restart per cycle. */
+let lastCriticalRestart = Number.NEGATIVE_INFINITY;
+
+/** Forget where rotation visits resume and which hosts recently restarted the sequence (tests). */
+export function resetKioskRotationCursor(): void {
+  rotationCursor = 0;
+  criticalRestarts.clear();
+  lastCriticalRestart = Number.NEGATIVE_INFINITY;
+}
+
+/** Longest the first page timer waits for web fonts before starting anyway. */
+export const KIOSK_FONT_WAIT_MS = 1_000 as const;
+
+interface FontSetLike {
+  readonly status?: string;
+  readonly ready?: Promise<unknown>;
+  check?(font: string): boolean;
+  load?(font: string): Promise<unknown>;
+}
+
+/** The face the wall's text is set in (`--font-sans`). Faces load lazily, on first use. */
+const KIOSK_FONT = "1em 'Geist Variable'";
+
+/** Whether the wall's font is usable now: no font API, or the face is loaded and nothing is loading. */
+function fontsSettledNow(fonts: FontSetLike | null): boolean {
+  if (fonts === null) return true;
+  try {
+    return fonts.status === "loaded" && (typeof fonts.check !== "function" || fonts.check(KIOSK_FONT));
+  } catch {
+    return true;
+  }
+}
+
+/** The document's font set, or null where there is none (no DOM, or no CSS Font Loading API). */
+function documentFonts(): FontSetLike | null {
+  try {
+    const fonts = (globalThis as { document?: { fonts?: FontSetLike } }).document?.fonts;
+    return fonts !== undefined && fonts !== null && typeof fonts.ready?.then === "function" ? fonts : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ids of the hosts whose effective rollup is critical (the danger tone). */
+function criticalIds(hosts: readonly HostStatus[]): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const host of hosts) if (effectiveStatus(host.rollupEvidence) === "critical") ids.add(host.drilldownId);
+  return ids;
+}
+
 /** `Page i of P` for a multi-page kiosk partition, otherwise null. */
 export function kioskIndicatorLabel(activePageIndex: number, pageCount: number): string | null {
   return pageCount > 1 ? `Page ${activePageIndex + 1} of ${pageCount}` : null;
@@ -107,62 +176,128 @@ function px(value: string | undefined): number {
 }
 
 /**
- * Read fit metrics from the viewport and the probe's first rendered host cell and heading; null
- * when either element or a representative cell is unavailable.
+ * Read the tile grid's geometry: the region's height, the grid's laid-out column tracks
+ * (`grid-template-columns` resolves `repeat(auto-fill, …)` to one length per track), its fixed row
+ * height and its row gap. Null when either element is missing or the grid reports no tracks.
  */
-export function readKioskFitMetrics(viewport: HTMLElement | null, probe: HTMLElement | null): KioskFitMetrics | null {
-  if (viewport === null || probe === null) return null;
-  const cell = probe.querySelector(`[${TARGET_ID_ATTRIBUTE}]`);
-  if (cell === null) return null;
-  const cellRect = cell.getBoundingClientRect();
-  const heading = probe.querySelector(KIOSK_PROBE_HEADING_SELECTOR);
-  const grid = cell.parentElement;
-  const style =
-    grid !== null && typeof globalThis.getComputedStyle === "function" ? globalThis.getComputedStyle(grid) : null;
-  return {
-    width: viewport.clientWidth,
-    height: viewport.clientHeight,
-    cellWidth: cellRect.width,
-    cellHeight: cellRect.height,
-    headingHeight: heading === null ? 0 : heading.getBoundingClientRect().height,
-    columnGap: px(style?.columnGap),
-    rowGap: px(style?.rowGap),
-  };
+export function readKioskGridMetrics(region: HTMLElement | null, grid: HTMLElement | null): KioskGridMetrics | null {
+  if (region === null || grid === null || typeof globalThis.getComputedStyle !== "function") return null;
+  const style = globalThis.getComputedStyle(grid);
+  const columns = (style.gridTemplateColumns ?? "").trim().split(/\s+/).filter((track) => /^\d+(\.\d+)?px$/.test(track)).length;
+  const rowHeight = px(style.gridAutoRows);
+  if (columns < 1 || rowHeight <= 0) return null;
+  return { height: region.getBoundingClientRect().height, columns, rowHeight, rowGap: px(style.rowGap) };
 }
 
-/** Ordered group/host identity sequence: a change here repartitions; status-only changes don't. */
-function orderKeyOf(groups: readonly OverviewGroup[]): string {
-  return groups.map((g) => `${g.id}\u0000${g.hosts.map((h) => h.drilldownId).join("\u0001")}`).join("\u0002");
-}
-
-/** Measure, partition, schedule, and reset kiosk pages without owning shell rotation. */
+/** Measure, partition and time kiosk pages without owning shell rotation. */
 export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState {
-  const { groups, kiosk, rotation, viewportRef, measurementRef } = options;
+  const { hosts, rotation, regionRef, gridRef, layoutKey } = options;
   const clock = options.clock ?? defaultClock;
 
   // null until the first measurement commits: no page timer is armed on an unmeasured partition.
   const [capacity, setCapacity] = useState<number | null>(null);
-  const [active, setActive] = useState<{ readonly key: string; readonly index: number }>({ key: "", index: 0 });
+  const effectiveCapacity = capacity ?? MIN_KIOSK_CAPACITY;
+  const pages = useMemo(() => buildKioskPages(hosts, effectiveCapacity), [hosts, effectiveCapacity]);
+  const pageCount = pages.length;
 
-  const orderKey = useMemo(() => orderKeyOf(groups), [groups]);
-  const groupsRef = useRef(groups);
-  groupsRef.current = groups;
-
-  const totalHosts = useMemo(() => groups.reduce((n, g) => n + g.hosts.length, 0), [groups]);
-  const measured = capacity !== null;
-  const effectiveCapacity = kiosk ? (capacity ?? MIN_KIOSK_CAPACITY) : Math.max(MIN_KIOSK_CAPACITY, totalHosts);
-  const pages = useMemo(() => buildKioskPages(groups, effectiveCapacity), [groups, effectiveCapacity]);
-
-  const rotationDwell = kiosk ? overviewRotationDwell(rotation) : null;
+  const rotationDwell = overviewRotationDwell(rotation);
   const rotating = rotationDwell !== null;
-  const dwell = rotationDwell ?? NON_ROTATING_KIOSK_CYCLE_MS;
+  const pageDwellMs = kioskPageDwell(pageCount, rotationDwell);
+  const visitPages = rotationDwell !== null ? kioskPagesPerVisit(pageCount, rotationDwell) : pageCount;
   const epoch = rotating && rotation !== null ? rotation.epoch : null;
-  // Any change here selects page 1 in the same render and restarts the page timers.
-  const resetKey = `${kiosk ? 1 : 0}|${effectiveCapacity}|${dwell}|${epoch ?? "-"}|${orderKey}`;
+  // A change here starts a new sequence: page timers restart and the visible page is re-chosen.
+  // Status/order changes keep the sequence, so a flapping host never pins the wall to page 1 — except
+  // when a host newly turns critical off screen: the sequence restarts at page 1 (flap-guarded).
+  const resetKey = `${effectiveCapacity}|${pageCount}|${rotationDwell ?? "-"}|${epoch ?? "-"}`;
+  const cycleMs = pageCount * pageDwellMs;
 
-  // Measurement: once per kiosk entry / ordered-host change, then on viewport resize.
+  const [advance, setAdvance] = useState<{ readonly sequence: number; readonly steps: number }>({ sequence: 0, steps: 0 });
+  const sequence = useRef<{ readonly id: number; readonly key: string; readonly start: number } | null>(null);
+
+  const critical = useMemo(() => criticalIds(hosts), [hosts]);
+  const previousCritical = useRef<ReadonlySet<string> | null>(null);
+  const gained = previousCritical.current === null ? [] : [...critical].filter((id) => !previousCritical.current!.has(id));
+  previousCritical.current = critical;
+
+  // Flap guard: a newly critical host restarts the sequence only when it is not already on the
+  // visible page and has not itself triggered a restart within the last full cycle, and the wall has
+  // not restarted for any critical host within that cycle either.
+  let criticalRestart = false;
+  if (gained.length > 0 && sequence.current !== null && sequence.current.key === resetKey && pageCount > 0) {
+    const currentSteps = advance.sequence === sequence.current.id ? advance.steps : 0;
+    const visible = pages[(sequence.current.start + currentSteps) % pageCount]?.hosts ?? [];
+    const now = clock.now();
+    const triggers = gained.filter(
+      (id) => !visible.some((host) => host.drilldownId === id) && !(now - (criticalRestarts.get(id) ?? Number.NEGATIVE_INFINITY) < cycleMs),
+    );
+    if (triggers.length > 0 && now - lastCriticalRestart >= cycleMs) {
+      criticalRestart = true;
+      lastCriticalRestart = now;
+      for (const [id, at] of criticalRestarts) if (now - at >= cycleMs) criticalRestarts.delete(id);
+      for (const id of triggers) criticalRestarts.set(id, now);
+    }
+  }
+
+  // Each sequence has its own id (never reused, so returning to an earlier key cannot resurrect an
+  // old step count) and starts on page 1, or inside a rotation on the page the last visit stopped
+  // before. A critical restart always starts at page 1, where the worst hosts are: a newly critical
+  // host sorts onto it unless more critical hosts than one page holds sort ahead of it.
+  if (sequence.current === null || sequence.current.key !== resetKey || criticalRestart) {
+    const resume = rotating && pageCount > 0 && !criticalRestart ? rotationCursor % pageCount : 0;
+    sequence.current = { id: (sequence.current?.id ?? 0) + 1, key: resetKey, start: resume };
+  }
+  const { id: sequenceId, start } = sequence.current;
+
+  const steps = advance.sequence === sequenceId ? advance.steps : 0;
+  const activePageIndex = pageCount > 0 ? (start + steps) % pageCount : 0;
+
+  // Measurement: on mount, when the first hosts arrive and when `layoutKey` changes (all before
+  // paint), then on every ResizeObserver delivery for the region (or, without ResizeObserver, on
+  // window resize coalesced to one frame).
+  const hasHosts = pageCount > 0;
+  // Startup settle: the first page timer waits for one ResizeObserver delivery (the region's settled
+  // size after the chrome above it and the page offset land) and for web fonts (bounded), so the
+  // first sequence runs on settled metrics instead of restarting a moment later.
+  const [regionSettled, setRegionSettled] = useState(false);
+  // `document.fonts.status` can read "loaded" before the lazily loaded face is even requested, so
+  // the gate asks for the wall's own face (check/load) after the first layout, bounded at 1 s.
+  const [fontsSettled, setFontsSettled] = useState(() => documentFonts() === null);
+  useEffect(() => {
+    if (fontsSettled) return undefined;
+    const fonts = documentFonts();
+    if (fontsSettledNow(fonts)) {
+      setFontsSettled(true);
+      return undefined;
+    }
+    let live = true;
+    let handle: number | null = null;
+    const done = (): void => {
+      if (live) setFontsSettled(true);
+    };
+    try {
+      handle = clock.setTimeout(done, KIOSK_FONT_WAIT_MS);
+    } catch {
+      handle = null;
+    }
+    try {
+      const wait = typeof fonts?.load === "function" ? fonts.load(KIOSK_FONT).then(() => fonts.ready) : fonts?.ready;
+      wait?.then(done, done);
+    } catch {
+      done();
+    }
+    return () => {
+      live = false;
+      if (handle !== null) {
+        try {
+          clock.clearTimeout(handle);
+        } catch {
+          // Nothing left to cancel.
+        }
+      }
+    };
+    // Mount-only: once settled it stays settled.
+  }, []);
   useLayoutEffect(() => {
-    if (!kiosk) return undefined;
     let live = true;
     let frame: number | null = null;
     const measure = (): void => {
@@ -170,7 +305,7 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
       if (!live) return;
       let next: number = MIN_KIOSK_CAPACITY;
       try {
-        next = fitKioskCapacity(groupsRef.current, readKioskFitMetrics(viewportRef.current, measurementRef.current));
+        next = kioskCapacity(readKioskGridMetrics(regionRef.current, gridRef.current));
       } catch {
         next = MIN_KIOSK_CAPACITY;
       }
@@ -194,16 +329,21 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
     measure();
 
     let observer: ResizeObserver | null = null;
-    const viewport = viewportRef.current;
+    const region = regionRef.current;
     try {
       const RO = globalThis.ResizeObserver;
-      if (typeof RO !== "function" || viewport === null) throw new Error("ResizeObserver unavailable");
-      observer = new RO(scheduleMeasure);
-      observer.observe(viewport);
+      if (typeof RO !== "function" || region === null) throw new Error("ResizeObserver unavailable");
+      // ResizeObserver already delivers once per frame, after layout: measure right away.
+      observer = new RO(() => {
+        measure();
+        if (live) setRegionSettled(true);
+      });
+      observer.observe(region);
     } catch {
       // Bounded fallback: keep the current (≥1) capacity and re-measure on window resize.
       observer = null;
     }
+    if (observer === null) setRegionSettled(true);
     const onWindowResize = (): void => scheduleMeasure();
     const listenWindow = observer === null && typeof globalThis.addEventListener === "function";
     if (listenWindow) globalThis.addEventListener("resize", onWindowResize);
@@ -221,49 +361,52 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
       observer?.disconnect();
       if (listenWindow) globalThis.removeEventListener("resize", onWindowResize);
     };
-  }, [kiosk, orderKey, viewportRef, measurementRef]);
+  }, [regionRef, gridRef, hasHosts, layoutKey]);
 
-  const pageCount = pages.length;
+  const measured = capacity !== null;
+  const ready = measured && regionSettled && fontsSettled;
+  const lastOfVisit = rotating && steps + 1 >= visitPages;
 
-  // Page timers: one armed boundary at a time against the generation's monotonic baseline.
+  // When the visible page appeared (its sequence started or the wall advanced to it).
+  const visibleSince = useRef<{ readonly sequence: number; readonly page: number; readonly at: number } | null>(null);
+  if (visibleSince.current?.sequence !== sequenceId || visibleSince.current.page !== activePageIndex) {
+    visibleSince.current = { sequence: sequenceId, page: activePageIndex, at: clock.now() };
+  }
+  // A visit's last page counts as shown after half the shorter of the page and rotation dwells: the
+  // shell may advance the view right at its dwell's end, which can be sooner than a page dwell.
+  const lastPageShownMs = Math.floor(Math.min(pageDwellMs, rotationDwell ?? pageDwellMs) / 2);
+
+  // Page timer: one armed boundary at a time; each page keeps its full dwell from when it appeared.
+  // Inside a rotation the resume cursor records only pages actually shown: a page that ran its full
+  // dwell, or the visit's last page once it has been up for `lastPageShownMs` — checked when its
+  // timer fires and again when the view leaves (the effect cleanup), since a short rotation dwell can
+  // end the visit first. A re-measure or resize mid-visit therefore never skips a page.
   useEffect(() => {
-    if (!kiosk || !measured || pageCount <= 1) return undefined;
-    const schedule = pageSchedule(pageCount, dwell);
-    if (schedule.length === 0) return undefined;
+    if (!ready || pageCount <= 1) return undefined;
     let live = true;
     let handle: number | null = null;
-    let baseline = clock.now();
-
-    const arm = (elapsed: number): void => {
-      const next = schedule.find((entry) => entry.startsAtMs > elapsed);
-      // Rotating: the last page holds until the shell advances. Non-rotating: wrap every cycle.
-      const target = next !== undefined ? next.startsAtMs : rotating ? null : dwell;
-      if (target === null) return;
-      try {
-        handle = clock.setTimeout(tick, Math.max(0, target - elapsed));
-      } catch {
-        // Timer failure: the current page stays visible; no false progress is reported.
-        handle = null;
-      }
+    const shown = activePageIndex;
+    const since = visibleSince.current?.at ?? clock.now();
+    const record = (): void => {
+      if (rotating) rotationCursor = (shown + 1) % pageCount;
     };
-
-    function tick(): void {
+    try {
+      handle = clock.setTimeout(
+        () => {
+          handle = null;
+          if (!live) return;
+          record();
+          if (!lastOfVisit) setAdvance({ sequence: sequenceId, steps: steps + 1 });
+        },
+        lastOfVisit ? Math.max(0, lastPageShownMs - (clock.now() - since)) : pageDwellMs,
+      );
+    } catch {
+      // Timer failure: the current page stays visible; no false progress is reported.
       handle = null;
-      if (!live) return;
-      let elapsed = clock.now() - baseline;
-      if (!rotating && elapsed >= dwell) {
-        baseline = clock.now();
-        elapsed = 0;
-      }
-      let index = 0;
-      for (const entry of schedule) if (entry.startsAtMs <= elapsed) index = entry.pageIndex;
-      setActive({ key: resetKey, index });
-      arm(elapsed);
     }
-
-    arm(0);
     return () => {
       live = false;
+      if (lastOfVisit && clock.now() - since >= lastPageShownMs) record();
       if (handle === null) return;
       try {
         clock.clearTimeout(handle);
@@ -272,15 +415,13 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
       }
       handle = null;
     };
-  }, [resetKey, measured, pageCount, dwell, rotating, clock]);
-
-  const activePageIndex = active.key === resetKey ? Math.min(active.index, Math.max(0, pageCount - 1)) : 0;
+  }, [sequenceId, ready, pageCount, steps, rotating, lastOfVisit, activePageIndex, pageDwellMs, lastPageShownMs, clock]);
 
   return {
     pages,
     activePageIndex,
     capacity: effectiveCapacity,
-    paged: kiosk,
-    indicatorLabel: kiosk ? kioskIndicatorLabel(activePageIndex, pageCount) : null,
+    pageDwellMs,
+    indicatorLabel: kioskIndicatorLabel(activePageIndex, pageCount),
   };
 }
