@@ -51,6 +51,22 @@ route:
       repeat_interval: 1m
       continue: false
 
+# ---------------------------------------------------------------------------------------------
+# Hypervisor-relay inhibition (issue #74). Every hypervisor-api scrape goes through the one
+# pve-exporter, so while it is down every hypervisor reads `up == 0` for the exporter's fault.
+# HypervisorExporterDown (availability.yml, for: 60s) fires before HostDown (for: 90s) and holds
+# the hypervisor HostDown pages back (inhibited, not resolved) for the outage. Mirrors the
+# product-static rule `alerting` generates (stack/alerting/src/transform/inhibit.ts).
+# ---------------------------------------------------------------------------------------------
+inhibit_rules:
+  - source_matchers:
+      - alertname="HypervisorExporterDown"
+    target_matchers:
+      - alertname="HostDown"
+      - job="hypervisor-api"
+    equal:
+      - estate
+
 receivers:
   # Default / null sink: a receiver with no notifier config discards everything routed to it.
   # This is what makes an estate-free bring-up boot green and stay silent (REQ-ALERT-02).

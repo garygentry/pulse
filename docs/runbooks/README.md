@@ -71,7 +71,7 @@ resolves to these pages.
 
 | Slug | Runbook | Fires for |
 |------|---------|-----------|
-| `availability` | [Availability](/availability/) | HostDown, DeepHealthProbeFailed, DeepHealthProbeStale |
+| `availability` | [Availability](/availability/) | HostDown, HypervisorExporterDown, DeepHealthProbeFailed, DeepHealthProbeStale |
 | `capacity` | [Capacity](/capacity/) | HighCPU, HighMemory, LowDisk, CriticalDisk |
 | `churn` | [Container churn](/churn/) | ContainerRestarting, ContainerChurn |
 | `deep-health` | [Deep health](/deep-health/) | DeepHealthFailed (per-service functional) |

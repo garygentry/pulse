@@ -1,6 +1,6 @@
 ---
 title: Availability
-description: Triage and remediate the availability alert family — HostDown, DeepHealthProbeFailed, and DeepHealthProbeStale — the host-reachability and deep-health-probe signals where missing data is always treated as failure, never as healthy.
+description: Triage and remediate the availability alert family — HostDown, HypervisorExporterDown, DeepHealthProbeFailed, and DeepHealthProbeStale — the host-reachability and deep-health-probe signals where missing data is always treated as failure, never as healthy.
 slug: availability
 ---
 
@@ -17,8 +17,18 @@ expression is a separate critical rule covered by the [deep-health runbook](/dee
 
 ## When this fires
 
-- **HostDown** (critical) — no successful scrape from a `managed-linux` target for **90s** (three
-  consecutive missed 30s scrapes). Keys on `up == 0`, not `pulse_agent_up`.
+- **HostDown** (critical) — no successful scrape of a host's **main** collection job for **90s**
+  (three consecutive missed 30s scrapes). The main job is `managed-linux` (node_exporter),
+  `nas-api` (node_exporter on the NAS) or `hypervisor-api` (the PVE API through pve-exporter); the
+  alert's `job` and `collection_class` labels say which. Keys on `up == 0`, not `pulse_agent_up`.
+  While pve-exporter itself is down, hypervisor `HostDown` pages are inhibited (held, not
+  resolved) by `HypervisorExporterDown`.
+- **HypervisorExporterDown** (warning) — `up{job="pve-exporter"} == 0` for **60s**. Every
+  hypervisor-api scrape goes through pve-exporter, so hypervisor liveness is unknown. Restore the
+  exporter (`docker compose up -d pve-exporter` in `stack/compose`). It keeps firing for 2m after
+  the exporter recovers (`keep_firing_for`), so the hypervisor scrapes catch up before the
+  `HostDown` inhibition lifts. It is the only alert for a pve-exporter outage (`AncillaryDown` no
+  longer covers it).
 - **DeepHealthProbeFailed** (warning) — `pulse_deep_health_up == 0` for **2m**: the probe ran and
   failed (unreachable, malformed, or errored). Mapped `pulse_deep_health` values are stale meanwhile.
 - **DeepHealthProbeStale** (warning) — `time() - pulse_deep_health_last_scrape_seconds > 300`: no
@@ -36,12 +46,15 @@ docker compose run --rm --entrypoint sh alertmanager -c \
   "wget -qO- 'http://victoriametrics:8428/api/v1/query?query=up%7Bjob%3D%22managed-linux%22%7D'"
 ```
 
-A `0` value for the host confirms `HostDown`. Then prove reachability directly:
+For a NAS or hypervisor host, use the alert's `job` (`nas-api` or `hypervisor-api`) in place of
+`managed-linux`. A `0` value for the host confirms `HostDown`. Then prove reachability directly:
 
 ```bash
 # From the engine host (or your jump host):
 ping -c 3 HOST
-curl -sS --max-time 5 http://HOST:9100/metrics | head -n 3   # node_exporter still serving?
+curl -sS --max-time 5 http://HOST:9100/metrics | head -n 3   # node_exporter (managed-linux, nas-api)
+# hypervisor-api: INSTANCE is the alert's `instance` label (the rendered PVE API endpoint)
+curl -sSk --max-time 5 INSTANCE -o /dev/null -w '%{http_code}\n'
 ```
 
 If `node_exporter` answers but the scrape failed, the fault is network/firewall between engine and

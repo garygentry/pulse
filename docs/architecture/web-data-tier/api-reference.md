@@ -247,7 +247,7 @@ Issues one `page=1&pageSize=512` request. It returns every endpoint's `name`, `g
 
 | Query id | Target | Unit | Default / max range |
 |---|---|---|---|
-| `estate.liveness` | estate, host, service | state | 1h / 24h |
+| `estate.liveness` | host, service (no-target form not applicable) | state | 1h / 24h |
 | `alerts.firing` | estate | state | 6h / 7d |
 | `host.cpu.utilization` | host | percent | 1h / 7d |
 | `host.memory.utilization` | host | percent | 1h / 7d |
@@ -277,7 +277,7 @@ A host is live when `up` of its main scrape job (`HOST_LIVENESS_JOB`, by collect
 - the server snapshot fold in `apps/web/src/server/snapshot/liveness.ts`;
 - the history binder (`estate.liveness` above) and the overview drawer, which uses `hostLivenessJob` to decide whether a host has liveness history at all.
 
-For a managed-linux host this is the series `HostDown` reads (`up{job="managed-linux"} == 0`), so the overview can no longer draw a host as live while `HostDown` fires for it. The shipped `HostDown` rule covers managed-linux only. nas-api and hypervisor-api hosts use their own main job for both live state and history. `pulse_agent_up` is the agent heartbeat: it reports 1 while the per-host heartbeat exporter answers, and is absent otherwise. It is the agent's own health, not the host's, and no per-host liveness reader on any overview, kiosk, estate or timeline surface uses it. (The estate-wide `estate.liveness` query with no target is a separate aggregate, unchanged here.) An auxiliary exporter's `up` (cadvisor, process-exporter, the heartbeat job, custom exporters) does not count either. The host liveness contract in `tests/queries/series-identity-contract.test.ts` pins the two live folds, the history query and the parsed `HostDown` expression to the same series for every rendered bundle under test.
+This is the series `HostDown` reads for every class (`up{job=~"managed-linux|nas-api|hypervisor-api"} == 0`, issue #74), so the overview can no longer draw a host as live while `HostDown` fires for it. The alert names the host by the rendered `host` label, since a hypervisor-api `instance` is the API URL. `pulse_agent_up` is the agent heartbeat: it reports 1 while the per-host heartbeat exporter answers, and is absent otherwise. It is the agent's own health, not the host's, and no per-host liveness reader on any overview, kiosk, estate or timeline surface uses it. `estate.liveness` with no target is `QUERY_NOT_APPLICABLE`: there is no estate-wide liveness series, and a bare `up` would mix in profile-gated jobs that report down by design. An auxiliary exporter's `up` (cadvisor, process-exporter, the heartbeat job, custom exporters) does not count either. The host liveness contract in `tests/queries/series-identity-contract.test.ts` pins the two live folds, the history query and the parsed `HostDown` expression to the same series for every rendered bundle under test, and requires the rule's job set to equal `HOST_LIVENESS_JOB`.
 
 `endpoint.check.latency` binds to `1000 * avg(gatus_results_duration_seconds{name="<endpoint name>"})`. It selects by Gatus's `name` label, which holds the pulse name, not by `key`. It applies only to service endpoint targets.
 

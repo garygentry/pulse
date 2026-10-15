@@ -32,6 +32,69 @@ deadman  ──────┘     routing, grouping, silences, templates
   (`REQ-SEC-01`). The estate declares channels; the renderer maps each kind to its Alertmanager
   slot (chat→slack, email→email, telegram→telegram, push/webhook→webhook).
 
+## Host liveness: `HostDown` covers every host class
+
+`HostDown` (critical, `for: 90s`) fires when a host's **main** collection job has failed three
+consecutive 30s scrapes. The main job is the one whose `up` the web app draws host liveness from
+(`HOST_LIVENESS_JOB` in `packages/web-data/src/wire/host-liveness.ts`), and a contract test keeps
+the rule and that table in step:
+
+| Collection class | Job `HostDown` reads | `instance` on the alert |
+| --- | --- | --- |
+| `managed-linux` | `managed-linux` (node_exporter) | the host name |
+| `nas-api` | `nas-api` (node_exporter on the NAS) | the host name |
+| `hypervisor-api` | `hypervisor-api` (PVE API through pve-exporter) | the PVE API URL |
+
+Every `HostDown` alert carries the host name in `host`, plus the `job` and `collection_class` labels,
+so route or silence on those, not on `instance`. Auxiliary exporters on a host (cadvisor,
+process-exporter, the heartbeat, custom exporters) never raise it, and probe-only hosts have no
+scrape job at all (Gatus checks them as `host:<name>`).
+
+Every hypervisor-api scrape goes through the one pve-exporter, which is passed the bare PVE host
+as `?target=` (the scrape job strips the scheme, port and path from the rendered endpoint; the
+exporter always talks to port 8006). While pve-exporter itself is down, every hypervisor reads
+`up == 0` for the exporter's fault. `HypervisorExporterDown` (warning, `for: 60s`,
+`keep_firing_for: 2m`) fires before any
+hypervisor `HostDown` can (`for: 90s`), and an Alertmanager inhibit rule (source
+`HypervisorExporterDown`, target `HostDown{job="hypervisor-api"}`, equal on `estate`) holds the
+hypervisor pages back for the outage. They are inhibited, not resolved: `HypervisorExporterDown`
+is the signal, and a hypervisor that is still down when the exporter returns pages without a new
+90s wait. Because the exporter's own `up` can recover a scrape interval before the hypervisor
+scrapes do, `HypervisorExporterDown` keeps firing for 2m after it clears, so the inhibition does
+not lift onto stale hypervisor `HostDown`s. The rule ships in both the bootstrap Alertmanager config and every config `alerting`
+generates.
+
+> **Upgrade note (issue #74): NAS and hypervisor hosts now raise `HostDown`.**
+> Before this release `HostDown` covered `managed-linux` hosts only, so a dead NAS or hypervisor
+> node was drawn not-live on the overview but paged nobody. After upgrading, NAS and hypervisor
+> hosts raise the same critical `HostDown` page. The alert name is unchanged on purpose: a host
+> down is a host down, and routing is by severity, so no route or inhibit rule needs editing.
+> Check two things in a downstream estate:
+>
+> - A silence or inhibit rule that matches `alertname="HostDown"` **without** a `host` matcher
+>   now also mutes NAS and hypervisor hosts. Add `collection_class="managed-linux"` to keep the
+>   old scope.
+> - A route that sends `HostDown` somewhere specific now receives NAS and hypervisor pages too.
+>   Split it on `collection_class` if those belong elsewhere.
+>
+> - The stock hypervisor scrape was broken: it passed the rendered URL (`https://pve1:8006`,
+>   `https://pve1/api`) to pve-exporter as `?target=`, which the pinned exporter answers with
+>   HTTP 500, so every hypervisor read as down. The `hypervisor-api` job now passes the bare host.
+>   `instance` is unchanged (still the rendered endpoint). An endpoint on a port other than 8006
+>   needs a downstream override of this job. A downstream relabel that adds `__param_module`
+>   (`&module=`) keeps working as before.
+> - The new `HypervisorExporterDown` warning inhibits hypervisor `HostDown` pages while
+>   pve-exporter is down (above). `AncillaryDown` no longer covers pve-exporter, so an exporter
+>   outage raises this one warning. A route or silence that matched
+>   `alertname="AncillaryDown",job="pve-exporter"` should match `HypervisorExporterDown` instead.
+> - A hypervisor `api_endpoint` must now be `[http(s)://]HOST[:PORT][/PATH]` (HOST a DNS name,
+>   IPv4 address or bracketed IPv6 literal; no `user:pw@`, `?query` or `#fragment`). Any other
+>   shape fails rendering with `invalid_hypervisor_endpoint`, instead of a hypervisor that scrapes
+>   as down for good.
+>
+> The expected-DOWN fictional NAS and hypervisor targets in a demo estate now raise `HostDown`,
+> as the fictional managed hosts already did.
+
 ## Runbook links on every page (`runbook_url`)
 
 Every alert carries a Prometheus-style **`runbook_url`** annotation, so an operator paged at 2am has

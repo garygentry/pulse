@@ -4,21 +4,53 @@
 groups:
   - name: availability
     rules:
-      # REQ-AVAIL-01: a managed host is DOWN after three consecutive missed 30s scrapes.
-      # Keys on up==0 (scrape failure of a configured managed-linux target), NOT on
-      # pulse_agent_up (which only ever emits 1 — REQ-RULE-05, §2.3). instance→host normalized.
+      # REQ-AVAIL-01: a monitored host is DOWN after three consecutive missed 30s scrapes of its
+      # MAIN collection job: managed-linux (node_exporter), nas-api (node_exporter on the NAS) or
+      # hypervisor-api (the PVE API, relayed through pve-exporter). The job set is
+      # HOST_LIVENESS_JOB in packages/web-data/src/wire/host-liveness.ts, the series the web app
+      # draws host liveness from; series-identity-contract.test.ts pins the two together (#74).
+      # Keys on up==0 (scrape failure of a configured target), NOT on pulse_agent_up (which only
+      # ever emits 1 — REQ-RULE-05, §2.3). `host` is the rendered file_sd label every estate job
+      # keeps (for hypervisor-api `instance` is the API URL, so it cannot name the host).
+      # While pve-exporter itself is down every hypervisor-api scrape fails at once; that is the
+      # exporter's fault, not the hypervisors'. HypervisorExporterDown (below) fires first and
+      # Alertmanager INHIBITS HostDown{job="hypervisor-api"} while it does (it is not resolved).
       - alert: HostDown
         expr: |
-          label_replace(up{job="managed-linux"}, "host", "$1", "instance", "(.*)") == 0
+          up{job=~"managed-linux|nas-api|hypervisor-api"} == 0
         for: 90s
         labels:
           severity: critical
         annotations:
           summary: "Host {{ $labels.host }} is DOWN (critical)"
           description: >-
-            No successful metric scrape from managed host {{ $labels.host }} for at least 90s
-            (three consecutive missed 30s scrapes). The host agent is unreachable or the host is
-            down. Missing data is treated as failure, never as healthy.
+            No successful metric scrape from host {{ $labels.host }} (job {{ $labels.job }}) for at
+            least 90s (three consecutive missed 30s scrapes). The host or its collection endpoint is
+            unreachable, or the host is down. Missing data is treated as failure, never as healthy.
+          runbook_url: "https://runbooks.pulse.local/availability"
+
+      # Issue #74: the relay every hypervisor-api scrape goes through is down, so hypervisor
+      # liveness is unknown rather than failed. `for: 60s` is shorter than HostDown's 90s so this
+      # is firing before any hypervisor HostDown could, and the Alertmanager inhibit rule
+      # (source HypervisorExporterDown, target HostDown{job="hypervisor-api"}, equal: [estate]) holds
+      # those pages back for the outage. Assumes ONE pve-exporter target (scrape.yml §2); several
+      # exporters under one job would need per-target matching in the inhibition.
+      # `keep_firing_for: 2m` closes the recovery race: the exporter's own `up` can return to 1 up
+      # to a scrape interval (30s) before the hypervisor-api scrapes do, so without it the
+      # inhibition would lift while hypervisor HostDowns were still firing and page them all.
+      - alert: HypervisorExporterDown
+        expr: up{job="pve-exporter"} == 0
+        for: 60s
+        keep_firing_for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pve-exporter is DOWN; hypervisor liveness is unknown (warning)"
+          description: >-
+            The pve-exporter relay ({{ $labels.instance }}) has been unreachable for 60s. Every
+            hypervisor-api scrape goes through it, so hypervisor liveness is unknown and HostDown
+            pages for hypervisors are inhibited (held, not resolved) until it recovers. Restore the
+            exporter; this alert is the signal for the outage.
           runbook_url: "https://runbooks.pulse.local/availability"
 
       # REQ-AVAIL-03: the deep-health PROBE failed (unreachable/malformed/errored). Distinct from

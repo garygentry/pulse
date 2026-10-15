@@ -101,8 +101,8 @@ scrape_configs:
 
 The default `node_exporter` target for the same host stays in place — the two jobs are
 complementary: `node_exporter` for host signals, your exporter for pool/dataset health. Host
-liveness in the web app keeps reading the default `nas-api` job only. (The shipped `HostDown`
-rule covers managed-linux hosts, not nas-api.)
+liveness in the web app and the shipped `HostDown` rule both keep reading the default `nas-api`
+job only, so your exporter's own `up` never pages the NAS as down.
 
 The web app's estate **Coverage** tab lists this job's target as `unexpected` in its
 declared-versus-scraped table, because the estate does not declare it. The same goes for any

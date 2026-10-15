@@ -24,7 +24,7 @@ import {
 } from "../constants.js";
 import { buildTimeIntervals } from "./time-intervals.js";
 import { buildDeadman } from "./deadman.js";
-import { buildInhibitRules } from "./inhibit.js";
+import { buildInhibitRules, withProductStaticInhibits } from "./inhibit.js";
 
 /** The renderer's provider slots the transform preserves verbatim (chat→slack, email→email,
  *  telegram→telegram, push|webhook→webhook). A receiver with none of these is malformed (§2). */
@@ -431,8 +431,9 @@ export function buildAlertmanagerConfig(
     pulseDigestReceiver(),
     pulseWebhookMirrorReceiver(),
   ];
-  // 6. Inhibit rules (already sorted by a stable key inside buildInhibitRules).
-  const { rules: inhibitRules } = buildInhibitRules(estate, findings);
+  // 6. Inhibit rules: the estate's (sorted by a stable key inside buildInhibitRules) plus the
+  //    product-static ones (the pve-exporter → hypervisor HostDown inhibition, issue #74).
+  const inhibitRules = withProductStaticInhibits(buildInhibitRules(estate, findings).rules);
 
   // Whole-or-nothing: any error finding aborts the config (REQ-CONFIG-01).
   if (findings.some((f) => f.severity === "error")) return null;

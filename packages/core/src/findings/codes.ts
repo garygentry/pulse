@@ -11,6 +11,7 @@ export const FINDING_CODES = {
   MISSING_RATIONALE: "missing_rationale",
   SECRET_LITERAL: "secret_literal",
   INCOMPLETE_NAS_API: "incomplete_nas_api",
+  INVALID_HYPERVISOR_ENDPOINT: "invalid_hypervisor_endpoint",
   MISSING_CHAT_ID: "missing_chat_id",
   DUPLICATE_COMMAND_SIGNAL: "duplicate_command_signal",
   BACKUP_COMMAND_HOST: "backup_command_host",

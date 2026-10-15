@@ -296,7 +296,7 @@ const shapeErrors = result.findings.filter(
 | Producing layer | Codes |
 |-----------------|-------|
 | Shape (Zod)     | `unknown_field`, `missing_field`, `wrong_type`, `invalid_enum` |
-| Semantic        | `missing_rationale`, `secret_literal`, `incomplete_nas_api`, `unresolved_host`, `unresolved_channel`, `duplicate_identity`, `duplicate_estate`, `missing_timezone`, `invalid_timezone` |
+| Semantic        | `missing_rationale`, `secret_literal`, `incomplete_nas_api`, `invalid_hypervisor_endpoint`, `unresolved_host`, `unresolved_channel`, `duplicate_identity`, `duplicate_estate`, `missing_timezone`, `invalid_timezone` |
 | Loader          | `malformed_yaml` |
 | Version         | `unsupported_version`, `missing_version` |
 

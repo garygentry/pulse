@@ -1,8 +1,9 @@
 // packages/web-data/src/wire/host-liveness.ts — the one host-liveness rule (issues #69, #72).
 //
 // A host is alive when `up` of its MAIN scrape job is 1, and nothing else counts. That is the
-// series the `HostDown` rule reads (`up{job="managed-linux"} == 0`,
-// stack/compose/config/vmalert/rules/availability.yml), the series the liveness history query
+// series the `HostDown` rule reads for every class in the table below
+// (`up{job=~"managed-linux|nas-api|hypervisor-api"} == 0`,
+// stack/compose/config/vmalert/rules/availability.yml, issue #74), the series the liveness history query
 // selects (queries/binding.ts), and the series the live overview and estate folds key on
 // (cycle/fold-overview.ts, cycle/fold-estate.ts, and the server's snapshot/liveness.ts). Keeping
 // the rule here, in the browser-safe `/wire` graph, lets the client drawer ask the same question
@@ -18,7 +19,8 @@
 //    fires for. It is the agent's own health, not the host's.
 //
 // The "host liveness contract" block in packages/web-data/tests/queries/series-identity-contract.test.ts
-// pins the live folds, the history query and the HostDown expression to this table.
+// pins the live folds, the history query and the HostDown expression to this table: the rule's job
+// set must equal this table's values, so widening one without the other fails the test.
 
 /**
  * The scrape job whose `up` is a host's liveness, by collection class. probe-only hosts are

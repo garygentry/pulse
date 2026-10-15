@@ -280,7 +280,11 @@ function resolveTarget(
   target: TargetIdentity | null,
   model: WebEstateModelV2,
 ): ResolveOutcome {
-  if (queryId === "estate.liveness" && target !== null) {
+  if (queryId === "estate.liveness") {
+    // Liveness is a per-host or per-service question. There is no estate-wide liveness series: a
+    // bare `up` mixes every engine and profile-gated job (prober, web) that reports down by design,
+    // so the no-target form is not applicable rather than a misleading estate verdict (#74).
+    if (target === null) return fail("QUERY_NOT_APPLICABLE", { queryId, targetKind });
     if (!isBoundedControlFreeId(target.id)) return fail("INVALID_REQUEST");
     if (target.kind === "host") return resolveHost(model, target.id, "host", queryId);
     if (target.kind === "service") return resolveService(model, target.id, "service");
@@ -356,7 +360,7 @@ const QUERY_BUILDERS: Readonly<Record<QueryId, QueryBuilder>> = {
       const labels = `${labelSelector("host", service.host ?? "")},${labelSelector("service", service.service)}`;
       return `max(pulse_deep_health_up{${labels}} or pulse_backup_freshness_up{${labels}}) or vector(0/0)`;
     }
-    return "min(up or pulse_agent_up or pulse_deep_health_up) or vector(0/0)";
+    return NEVER_MATCH; // unreachable: resolveTarget refuses a liveness query without a target
   },
   "alerts.firing": () =>
     'sum by (alertname, severity, host, service, instance) (ALERTS{alertstate="firing"})',
