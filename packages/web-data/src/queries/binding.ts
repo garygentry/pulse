@@ -17,7 +17,7 @@ import type {
 import { QUERY_CATALOG, isQueryId } from "./catalog.js";
 import { parseRange } from "./ranges.js";
 import {
-  HOST_LIVENESS_JOB,
+  hostLivenessJob,
   NODE_EXPORTER_JOBS,
   scrapeSeriesIdentity,
   type ScrapeSeriesIdentity,
@@ -179,7 +179,8 @@ const NODE_EXPORTER_QUERIES: ReadonlySet<QueryId> = new Set([
  * Narrow a host's series to the ones `queryId` reads:
  *  - liveness reads only the host's main collection job (`HOST_LIVENESS_JOB`), matching the
  *    HostDown rule, so a failed auxiliary exporter (cadvisor, process-exporter, …) never draws
- *    the host as down; a class with no main VM job (probe-only) keeps every declared target;
+ *    the host as down; a class with no main VM job (probe-only) or a host without its main-job
+ *    target has no liveness series at all (not applicable);
  *  - capacity queries read only node_exporter jobs; a host without one gets none (not applicable).
  */
 function seriesForQuery(
@@ -189,9 +190,10 @@ function seriesForQuery(
 ): readonly ScrapeSeriesIdentity[] {
   if (NODE_EXPORTER_QUERIES.has(queryId)) return series.filter((s) => NODE_EXPORTER_JOBS.has(s.job));
   if (queryId === "estate.liveness") {
-    const main = Object.hasOwn(HOST_LIVENESS_JOB, host.collectionClass) ? HOST_LIVENESS_JOB[host.collectionClass] : undefined;
-    const narrowed = series.filter((s) => s.job === main);
-    return narrowed.length > 0 ? narrowed : series;
+    // No main job (probe-only: Gatus covers it; or a host missing its main target) → no series,
+    // so the binder answers QUERY_NOT_APPLICABLE instead of a query no stored series can match.
+    const main = hostLivenessJob(host.collectionClass);
+    return main === null ? [] : series.filter((s) => s.job === main);
   }
   return series;
 }

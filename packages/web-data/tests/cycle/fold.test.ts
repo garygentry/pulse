@@ -45,8 +45,10 @@ function fail<T>(
   };
 }
 
+/** A sample; an `up` sample defaults to the host's main (managed-linux) job, the HostDown series. */
 function metric(projection: string, host: string, value: number | null, extra: Record<string, string> = {}): MetricSample {
-  return { metric: { host, ...extra }, timestampMs: Date.parse(AT), value, projection };
+  const main = projection === "up" ? { job: "managed-linux", instance: host } : {};
+  return { metric: { host, ...main, ...extra }, timestampMs: Date.parse(AT), value, projection };
 }
 
 function amAlert(over: Partial<AlertmanagerAlert> = {}): AlertmanagerAlert {
@@ -279,8 +281,8 @@ describe("foldOverview — compatibility + additive fields", () => {
       inputs({
         records: records({
           "victoriametrics-signals": ok<readonly MetricSample[]>([
-            metric("pulse_agent_up", "hostA", 1, { instance: "10.0.0.1:9100" }),
-            metric("up", "hostA", 1, { instance: "10.0.0.1:9100" }),
+            metric("pulse_agent_up", "hostA", 1, { job: "managed-linux-heartbeat", instance: "hostA" }),
+            metric("up", "hostA", 1),
           ]),
         }),
       }),

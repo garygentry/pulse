@@ -3,6 +3,7 @@
 // source/audit module may enter this graph. Populated by items 004, 006–008.
 export * from "./common.js";
 export * from "./history.js";
+export * from "./host-liveness.js";
 export * from "./overview.js";
 export * from "./alerts.js";
 export * from "./estate.js";

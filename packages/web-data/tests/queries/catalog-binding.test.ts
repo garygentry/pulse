@@ -450,13 +450,24 @@ describe("bindCuratedQuery success and pinned PromQL", () => {
     }
   });
 
-  test("a probe-only host (no VM liveness job) keeps its declared targets for liveness", () => {
+  test("a probe-only host (no VM liveness job) has no liveness query: not applicable, never a dead selector", () => {
+    // No VM job scrapes `probe-only` (Gatus covers these hosts), so `up{job="probe-only",…}` could
+    // never match a stored series and would chart as permanent "no data".
     const probe = makeModel({
       hosts: [hostV2({ name: "edge1", drilldownId: "host:edge1", collectionClass: "probe-only", scrapeTargets: [{ job: "probe-only", instance: "10.0.0.9" }] })],
     });
     const r = bindCuratedQuery("estate.liveness", { kind: "host", id: "host:edge1" }, null, probe);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.query.promql).toBe('min(up{job="probe-only",instance="10.0.0.9"}) or vector(0/0)');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("QUERY_NOT_APPLICABLE");
+  });
+
+  test("a host without its main-job target has no liveness query rather than an auxiliary stand-in", () => {
+    const auxOnly = makeModel({
+      hosts: [hostV2({ scrapeTargets: [{ job: "cadvisor", instance: "10.0.0.1:8080" }] })],
+    });
+    const r = bindCuratedQuery("estate.liveness", HOST_TARGET, null, auxOnly);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("QUERY_NOT_APPLICABLE");
   });
 
   test("service deep-health / backup-age bind the fixed metric and service label", () => {

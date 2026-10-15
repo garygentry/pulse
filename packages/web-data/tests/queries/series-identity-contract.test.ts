@@ -15,6 +15,11 @@ import { parse as parseYaml } from "yaml";
 import { render, type WebEstateModelV2 } from "@pulse/renderer";
 
 import { bindCuratedQuery } from "../../src/queries/binding.js";
+import { foldOverview } from "../../src/cycle/fold-overview.js";
+import { foldEstate } from "../../src/cycle/fold-estate.js";
+import type { CycleSourceRecords, FoldInputs } from "../../src/cycle/records.js";
+import type { SourceRecord } from "../../src/sources/types.js";
+import type { MetricSample } from "../../src/sources/vm.js";
 import {
   ENGINE_SCRAPE_JOBS,
   ESTATE_SCRAPE_INSTANCE_SOURCE,
@@ -164,6 +169,13 @@ function storedIdentity(bundle: Bundle, hostName: string, job: string, target: s
   return { job: labels.job!, instance: labels.instance! };
 }
 
+/** Every label a stored series of one rendered target carries (the `__`-prefixed ones are dropped). */
+function storedLabels(bundle: Bundle, hostName: string, job: string, target: string): Record<string, string> {
+  const scrapeJob = fileSdJobByName.get(job)!;
+  const group = (bundle.fileSd.get(job) ?? []).find((g) => g.labels.host === hostName && g.targets.includes(target))!;
+  return Object.fromEntries(Object.entries(relabel(scrapeJob, target, group.labels)).filter(([name]) => !name.startsWith("__")));
+}
+
 const key = (s: ScrapeSeriesIdentity): string => `${s.job}\u0000${s.instance}`;
 
 // ---------------------------------------------------------------------------
@@ -285,4 +297,119 @@ describe("scrape series identity contract (issue #69)", () => {
       }
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Host liveness contract (issue #72): live folds, history and HostDown read one series
+// ---------------------------------------------------------------------------
+
+/**
+ * The HostDown rule, parsed from availability.yml and evaluated the way vmalert does over an instant
+ * sample set: `label_replace(up{job="J"}, "host", "$1", "instance", "(.*)") == 0` fires for the
+ * `host` the label_replace derives from each zero `up{job="J"}` series. The test fails loudly if the
+ * expression stops having this shape, so a rule edit forces this contract to be revisited.
+ */
+function hostDownRule(): { readonly job: string; readonly firing: (samples: readonly MetricSample[]) => ReadonlySet<string> } {
+  const rules = parseYaml(readFileSync(AVAILABILITY_RULES, "utf8")) as {
+    groups: Array<{ rules: Array<{ alert?: string; expr?: string }> }>;
+  };
+  const expr = rules.groups.flatMap((g) => g.rules).find((r) => r.alert === "HostDown")?.expr?.trim() ?? "";
+  const m = /^label_replace\(up\{job="([^"]+)"\}, "host", "\$1", "instance", "\(\.\*\)"\) == 0$/.exec(expr);
+  if (m === null) throw new Error(`HostDown expression changed shape; revisit the liveness contract: ${expr}`);
+  const job = m[1]!;
+  return {
+    job,
+    firing: (samples) =>
+      new Set(samples.filter((s) => s.projection === "up" && s.metric.job === job && s.value === 0).map((s) => s.metric.instance!)),
+  };
+}
+
+const AT = "2026-01-01T00:00:00.000Z";
+function okRecord<T>(data: T): SourceRecord<T> {
+  return { latest: { attemptedAt: AT, result: { ok: true, data } }, lastGood: { at: AT, data } };
+}
+function foldInputs(model: WebEstateModelV2, samples: readonly MetricSample[]): FoldInputs {
+  const records = {
+    "victoriametrics-signals": okRecord(samples),
+    "victoriametrics-targets": okRecord([]),
+    "victoriametrics-buildinfo": okRecord({ version: "1.102.1", startedAt: null }),
+    "alertmanager-alerts": okRecord([]),
+    "alertmanager-silences": okRecord([]),
+    "alertmanager-status": okRecord({ version: "0.27.0", uptime: null, cluster: { status: "ready", peerCount: null } }),
+    "alertmanager-receivers": okRecord([]),
+    "vmalert-rules": okRecord([]),
+    "gatus-statuses": okRecord([]),
+    "grafana-health": okRecord({ database: "ok", version: "11.4.0" }),
+  } as unknown as CycleSourceRecords;
+  return { model, coverage: null, findings: null, records, appVersion: "1.2.3", observedAt: AT };
+}
+
+/** What the live overview and the estate inventory each say about one host. */
+function liveVerdicts(model: WebEstateModelV2, hostName: string, samples: readonly MetricSample[]) {
+  const host = model.hosts.find((h) => h.name === hostName)!;
+  const inputs = foldInputs(model, samples);
+  return {
+    overview: foldOverview(inputs).hosts.find((h) => h.name === hostName)!.live,
+    estate: foldEstate(inputs).liveTargets.find((t) => t.target.kind === "host" && t.target.id === host.drilldownId)!.state,
+  };
+}
+
+function upSample(labels: Record<string, string>, value: number): MetricSample {
+  return { projection: "up", metric: labels, value, timestampMs: Date.parse(AT) };
+}
+
+describe("host liveness contract (issue #72)", () => {
+  const hostDown = hostDownRule();
+
+  test("the HostDown job is the managed-linux liveness job", () => {
+    expect(HOST_LIVENESS_JOB["managed-linux"]).toBe(hostDown.job);
+  });
+
+  for (const bundle of bundles) {
+    test(`${bundle.name}: live overview, estate inventory, history and HostDown agree on every host's liveness series`, () => {
+      let checked = 0;
+      for (const host of bundle.model.hosts) {
+        const mainJob = HOST_LIVENESS_JOB[host.collectionClass];
+        if (mainJob === undefined) continue; // probe-only / excluded: no VM liveness series
+        const wired = host.scrapeTargets.filter((t) => !UNWIRED_JOBS.has(t.job));
+        const main = wired.filter((t) => t.job === mainJob);
+        expect(main.length, `${bundle.name} ${host.name} has exactly one ${mainJob} target`).toBe(1);
+        const mainLabels = storedLabels(bundle, host.name, mainJob, main[0]!.instance);
+        const auxLabels = wired.filter((t) => t.job !== mainJob).map((t) => storedLabels(bundle, host.name, t.job, t.instance));
+        // The heartbeat's own series, as the heartbeat exporter is scraped (it only ever reports 1).
+        const heartbeat: MetricSample = { projection: "pulse_agent_up", metric: { ...mainLabels, job: "managed-linux-heartbeat" }, value: 1, timestampMs: Date.parse(AT) };
+
+        // History reads exactly the main series.
+        const r = bindCuratedQuery("estate.liveness", { kind: "host", id: host.drilldownId }, null, bundle.model);
+        expect(r.ok, `${bundle.name} ${host.name}`).toBe(true);
+        if (r.ok) expect(r.query.promql).toBe(`min(up{job="${mainLabels.job}",instance="${mainLabels.instance}"}) or vector(0/0)`);
+
+        // Main series down while every auxiliary exporter and the heartbeat are up: not live.
+        const down = [upSample(mainLabels, 0), ...auxLabels.map((l) => upSample(l, 1)), heartbeat];
+        expect(liveVerdicts(bundle.model, host.name, down), `${bundle.name} ${host.name} main down`).toEqual({ overview: false, estate: "unknown" });
+        // Main series up while every auxiliary exporter is down and there is no heartbeat: live.
+        const up = [upSample(mainLabels, 1), ...auxLabels.map((l) => upSample(l, 0))];
+        expect(liveVerdicts(bundle.model, host.name, up), `${bundle.name} ${host.name} main up`).toEqual({ overview: true, estate: "healthy" });
+
+        if (host.collectionClass === "managed-linux") {
+          // HostDown fires for exactly the case the overview draws as not live, and is silent for
+          // the case it draws as live: the same series, the same host identity.
+          expect([...hostDown.firing(down)]).toEqual([host.name]);
+          expect([...hostDown.firing(up)]).toEqual([]);
+        }
+        checked += 1;
+      }
+      expect(checked).toBeGreaterThan(0);
+    });
+  }
+
+  test("a probe-only host has no metrics liveness query (QUERY_NOT_APPLICABLE, not a dead selector)", () => {
+    for (const bundle of bundles) {
+      for (const host of bundle.model.hosts.filter((h) => h.collectionClass === "probe-only")) {
+        const r = bindCuratedQuery("estate.liveness", { kind: "host", id: host.drilldownId }, null, bundle.model);
+        expect(r.ok, `${bundle.name} ${host.name}`).toBe(false);
+        if (!r.ok) expect(r.error.code).toBe("QUERY_NOT_APPLICABLE");
+      }
+    }
+  });
 });

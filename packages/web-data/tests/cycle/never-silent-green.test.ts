@@ -257,10 +257,10 @@ function inputs(over: Partial<FoldInputs> = {}): FoldInputs {
   };
 }
 
-/** A live-metrics record proving `hostA` is up (managed-linux liveness). */
+/** A live-metrics record proving `hostA` is up: `up` of its main job, the HostDown series. */
 function liveMetrics(at = AT): SourceRecord<readonly MetricSample[]> {
   return ok<readonly MetricSample[]>(
-    [metric("pulse_agent_up", "hostA", 1, { instance: "10.0.0.1:9100" })],
+    [metric("up", "hostA", 1, { job: "managed-linux", instance: "hostA" })],
     at,
   );
 }
@@ -290,7 +290,7 @@ describe("overview never-silent-green — metrics source", () => {
         inputs({
           records: records({
             "victoriametrics-signals": fail<readonly MetricSample[]>(
-              { at: AT, data: [metric("pulse_agent_up", "hostA", 1)] },
+              { at: AT, data: [metric("up", "hostA", 1, { job: "managed-linux", instance: "hostA" })] },
               kind,
             ),
             "alertmanager-alerts": ok<readonly AlertmanagerAlert[]>([]), // unrelated, stays current
@@ -633,7 +633,7 @@ function modelWithService(): WebEstateModelV2 {
 function engineMetrics(): readonly MetricSample[] {
   const startSec = Date.parse(OBSERVED) / 1000;
   return [
-    metric("pulse_agent_up", "hostA", 1, { instance: "10.0.0.1:9100" }),
+    metric("up", "hostA", 1, { job: "managed-linux", instance: "hostA" }),
     metric("pulse_deep_health_up", "hostA", 1, { service: "grafana" }),
     metric("pulse_web_engine_ingestion_rows_per_second", "", 42),
     metric("pulse_web_engine_hourly_active_series", "", 1000),

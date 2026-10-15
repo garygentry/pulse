@@ -57,7 +57,7 @@
           "name": "pulse_agent_up",
           "labels": ["host"],
           "passthrough": false,
-          "description": "1 while the per-host agent is alive. An explicit per-host liveness signal, distinct from node_exporter's up (REQ-HB-01)."
+          "description": "1 while the per-host agent is alive; absent (never 0) when it is not. The agent heartbeat, distinct from node_exporter's up (REQ-HB-01). It is the agent's own health, not host liveness: HostDown and the web app read up{job=\"managed-linux\"}."
         },
         {
           "name": "pulse_agent_build_info",

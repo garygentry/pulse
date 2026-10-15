@@ -276,8 +276,8 @@ function inputs(over: Partial<FoldInputs> = {}): FoldInputs {
 /** Current metrics with hostA linux liveness + deep-health, and full engine projections. */
 function liveMetrics(): readonly MetricSample[] {
   return [
-    sample("pulse_agent_up", 1, { host: "hostA", instance: "10.0.0.1:9100" }),
-    sample("up", 1, { host: "hostA", instance: "10.0.0.1:9100" }),
+    sample("pulse_agent_up", 1, { host: "hostA", instance: "hostA", job: "managed-linux-heartbeat" }),
+    sample("up", 1, { host: "hostA", instance: "hostA", job: "managed-linux" }),
     sample("pulse_deep_health_up", 1, { host: "hostA", service: "grafana" }),
     sample("pulse_web_engine_ingestion_rows_per_second", 42),
     sample("pulse_web_engine_hourly_active_series", 1000),
@@ -405,6 +405,47 @@ describe("foldEstate — rendered vocabulary, joins, artifacts", () => {
       ["hostA", "unexpected"],
       // The stack's own static scrape jobs are expected engine targets, never "unexpected".
       ["victoriametrics:8428", "engine"],
+    ]);
+  });
+
+  test("host liveness is up of the main job only: aux exporters and the heartbeat never count (issue #72)", () => {
+    const withMetrics = (metrics: readonly MetricSample[]) =>
+      foldEstate(inputs({ records: records({ "victoriametrics-signals": ok<readonly MetricSample[]>(metrics) }) }))
+        .liveTargets.find((t) => t.target.id === "host:hostA")!.state;
+    // node_exporter down (the HostDown series is 0) while cadvisor and the heartbeat are up.
+    expect(
+      withMetrics([
+        sample("up", 0, { host: "hostA", instance: "hostA", job: "managed-linux" }),
+        sample("up", 1, { host: "hostA", instance: "hostA", job: "cadvisor" }),
+        sample("up", 1, { host: "hostA", instance: "hostA", job: "managed-linux-heartbeat" }),
+        sample("pulse_agent_up", 1, { host: "hostA", instance: "hostA", job: "managed-linux-heartbeat" }),
+      ]),
+    ).toBe("unknown");
+    // The heartbeat alone is not liveness either.
+    expect(withMetrics([sample("pulse_agent_up", 1, { host: "hostA", instance: "hostA", job: "managed-linux-heartbeat" })])).toBe("unknown");
+    // The main job up is liveness.
+    expect(withMetrics([sample("up", 1, { host: "hostA", instance: "hostA", job: "managed-linux" })])).toBe("healthy");
+  });
+
+  test("declared-versus-scraped matches a mixed-case rendered address against its lowercase scrape URL", () => {
+    // `new URL().hostname` is always lowercase; DNS names are case-insensitive.
+    const mixed = model({
+      hosts: [
+        { ...model().hosts[0]!, scrapeTargets: [{ job: "managed-linux", instance: "HostA.Example.Lan:9100" }] },
+      ],
+    });
+    const est = foldEstate(
+      inputs({
+        model: mixed,
+        records: records({
+          "victoriametrics-targets": ok<readonly ScrapeTargetState[]>([
+            scrapeTarget({ job: "managed-linux", instance: "hostA", scrapeUrl: "http://HostA.Example.Lan:9100/metrics" }),
+          ]),
+        }),
+      }),
+    );
+    expect(est.declaredVersusScraped.value?.map((row) => [row.scrapeTarget, row.state])).toEqual([
+      ["HostA.Example.Lan:9100", "matched"],
     ]);
   });
 
