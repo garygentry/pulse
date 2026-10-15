@@ -147,13 +147,65 @@ describe("postMutation refusal mapping (REQ-UX-02, REQ-SEC-06)", () => {
   });
 });
 
+describe("#64: auth proxy session expiry", () => {
+  test("the request never follows a redirect", async () => {
+    const { fetchImpl, calls } = stubFetch(() => Response.json({ outcome: "succeeded", requestId: "r", result: null }));
+    await postMutation("/api/mutations/acks", {}, KEY, fetchImpl);
+    expect(calls[0]!.init.redirect).toBe("manual");
+  });
+
+  test("a redirect (opaque or raw 3xx) is session-expired", async () => {
+    const opaque = { type: "opaqueredirect", status: 0, ok: false, redirected: false, headers: new Headers() } as unknown as Response;
+    for (const respond of [() => opaque, () => new Response(null, { status: 302, headers: { location: "https://login.example/" } })]) {
+      const err = await refusalOf(postMutation("/api/mutations/acks", {}, KEY, stubFetch(respond).fetchImpl));
+      expect(err.reason).toBe("session-expired");
+      expect(failureText(err)).toBe(REASON_TEXT["session-expired"]);
+    }
+  });
+
+  test("a 2xx HTML login page is session-expired, not malformed-response", async () => {
+    const { fetchImpl } = stubFetch(
+      () => new Response("<!doctype html><title>Sign in</title>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }),
+    );
+    const err = await refusalOf(postMutation("/api/mutations/acks", {}, KEY, fetchImpl));
+    expect(err.reason).toBe("session-expired");
+    expect(err.status).toBe(200);
+  });
+
+  test("a 401/403 without a Pulse refusal reason is session-expired", async () => {
+    for (const status of [401, 403]) {
+      for (const respond of [
+        () => new Response("<html>Unauthorized</html>", { status, headers: { "content-type": "text/html" } }),
+        () => Response.json({ error: "unauthorized" }, { status }),
+      ]) {
+        const err = await refusalOf(postMutation("/api/mutations/acks", {}, KEY, stubFetch(respond).fetchImpl));
+        expect(err.reason).toBe("session-expired");
+        expect(err.status).toBe(status);
+      }
+    }
+  });
+
+  test("Pulse's own 403 refusal (untrusted-identity) keeps its reason", async () => {
+    const { fetchImpl } = stubFetch(() =>
+      Response.json(
+        { code: "INVALID_REQUEST", message: "The request is invalid.", details: { reason: "untrusted-identity", requestId: "r-9" } },
+        { status: 403 },
+      ),
+    );
+    const err = await refusalOf(postMutation("/api/mutations/acks", {}, KEY, fetchImpl));
+    expect(err.reason).toBe("untrusted-identity");
+    expect(err.requestId).toBe("r-9");
+  });
+});
+
 describe("REASON_TEXT (REQ-UX-02, REQ-SEC-07)", () => {
-  test("has exactly MUTATION_REASONS.length + 2 keys, covering every reason plus network/malformed-response", () => {
+  test("has exactly MUTATION_REASONS.length + 3 keys, covering every reason plus network/malformed-response/session-expired", () => {
     const keys = Object.keys(REASON_TEXT);
-    expect(keys).toHaveLength(MUTATION_REASONS.length + 2);
+    expect(keys).toHaveLength(MUTATION_REASONS.length + 3);
     for (const r of MUTATION_REASONS) expect(keys).toContain(r);
     expect(keys).toContain("network");
     expect(keys).toContain("malformed-response");
+    expect(keys).toContain("session-expired");
   });
 
   test("no value equals or contains a catalog ERROR_MESSAGES string", () => {

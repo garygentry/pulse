@@ -10,6 +10,7 @@ import { createAppStore } from "../src/client/store/index.js";
 import type { AppStore } from "../src/client/store/index.js";
 import { startLiveState } from "../src/client/store/live-state.js";
 import type { PathRouter } from "../src/client/router.js";
+import type { ViewRotationContext } from "../src/shared/registry.js";
 import EstateView from "../src/client/views/estate/view.js";
 import { APP_STALE_MESSAGE } from "../src/client/views/estate/delivery.js";
 import { describeDom, renderWithStore } from "./dom.js";
@@ -327,6 +328,48 @@ describeDom("estate view: URL-synced landing state", () => {
 
 describeDom("estate view: delivery gate", () => {
   withUiStubs();
+  test("?kiosk=1: the page root is the kiosk page on the landing, an entity page and while loading (#58)", async () => {
+    const payload = makeEstatePayloadFixture();
+    const host = payload.estate.hosts[0]!;
+    const cases: readonly [EstatePayload | null, string, Record<string, string>][] = [
+      [payload, "/estate", {}],
+      [payload, `/estate/host/${host.name}`, { name: host.name }],
+      [null, "/estate", {}],
+    ];
+    for (const [data, path, params] of cases) {
+      for (const query of [{ kiosk: "1" }, {}]) {
+        const { router } = makeRouter();
+        const { container, unmount } = await renderWithStore(EstateView, { store: seed(data, path, params, query), router });
+        try {
+          // The outermost estate-page root is the one the kiosk outlet leaves unpadded.
+          const root = container.querySelector('[data-slot="estate-page"]');
+          expect(root?.getAttribute("data-testid")).toBe("estate-view");
+          expect(root?.getAttribute("data-kiosk")).toBe(query.kiosk === "1" ? "1" : "0");
+        } finally {
+          unmount();
+        }
+      }
+    }
+  });
+
+  test("an active rotation makes the page root the kiosk page without ?kiosk=1 (#58)", async () => {
+    const { createElement } = await import("react");
+    const rotation: ViewRotationContext = { entry: { viewId: "estate", dwellMs: 30_000 }, index: 1, total: 3, epoch: 4 };
+    for (const [rot, expected] of [
+      [rotation, "1"],
+      [null, "0"],
+    ] as const) {
+      const { router } = makeRouter();
+      const store = seed(makeEstatePayloadFixture(), "/estate");
+      const { container, unmount } = await renderWithStore(createElement(EstateView, { store, router, rotation: rot }));
+      try {
+        expect(container.querySelector('[data-slot="estate-page"]')?.getAttribute("data-kiosk")).toBe(expected);
+      } finally {
+        unmount();
+      }
+    }
+  });
+
   test("no payload → loading degrade state, no surfaces (landing)", async () => {
     const { router } = makeRouter();
     const store = seed(null, "/estate");

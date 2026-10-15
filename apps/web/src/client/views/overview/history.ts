@@ -160,10 +160,15 @@ function validatePayload(input: unknown, expected: TargetIdentity): HistoryPaylo
   const stale = record.get("stale");
   if (typeof stale !== "boolean") return null;
 
+  // Zero series is a legitimate answer (no samples in range, #67); more than one is a contract break.
   const rawSeries = readArray(record.get("series"), 1);
-  if (rawSeries === null || rawSeries.length !== 1) return null;
-  const series = validateSeries(rawSeries[0]);
-  if (series === null) return null;
+  if (rawSeries === null) return null;
+  const series: HistorySeries[] = [];
+  for (const raw of rawSeries) {
+    const validated = validateSeries(raw);
+    if (validated === null) return null;
+    series.push(validated);
+  }
 
   return Object.freeze({
     queryId: OVERVIEW_HISTORY_QUERY,
@@ -173,7 +178,7 @@ function validatePayload(input: unknown, expected: TargetIdentity): HistoryPaylo
     effectiveStepSeconds: step,
     unit: "state",
     stale,
-    series: Object.freeze([series]),
+    series: Object.freeze(series),
   });
 }
 
