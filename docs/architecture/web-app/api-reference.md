@@ -142,5 +142,6 @@ Fixed cadences that define the app's freshness guarantees:
 | Server refresh interval | 10s | How often the server rebuilds the snapshot from the engines. |
 | Source fetch timeout | 5s | Per-engine request timeout inside a refresh cycle. |
 | Client poll interval | 10s | How often the browser re-fetches `/api/overview`. |
+| Client view request deadline | 8s | A view GET (`/api/<view>`) not fully answered (body included) this long after the view's first outstanding request is aborted and recorded as a `SERVER_TIMEOUT` failure. Superseding requests (ticks, navigation, retries) do not restart the window. |
 | Client stale threshold | 30s | Failed-poll window before the "app server stale" banner is raised. |
 | Gatus staleness default | 300s | Default freshness window for a Gatus check (`PULSE_GATUS_STALE_SECONDS`). |
