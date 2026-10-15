@@ -12,7 +12,7 @@
 // cycle once those source types exist, keeping this file additive so no later document
 // redeclares a competing shape.
 
-import type { ApiErrorCode, CycleObservation, HashId, ViewId } from "./common.js";
+import type { ClientFetchErrorCode, CycleObservation, HashId, ViewId } from "./common.js";
 
 /**
  * Post-publication live tick published once per successful atomic cycle assignment.
@@ -32,8 +32,9 @@ export interface LiveTick {
  * (`stale`).
  */
 export interface ViewDeliveryFailure {
-  /** Validated shared error-envelope code preserving the semantic failure cause. */
-  readonly code: ApiErrorCode;
+  /** Validated shared error-envelope code preserving the semantic failure cause, or a client
+   *  transport code (`SERVER_UNREACHABLE`/`SERVER_TIMEOUT`) when no HTTP response was received. */
+  readonly code: ClientFetchErrorCode;
   /** HTTP status returned by the route, or 0 when no HTTP response was received. */
   readonly status: number;
   /** Bounded display-safe message from the shared error envelope. */

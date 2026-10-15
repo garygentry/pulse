@@ -190,6 +190,7 @@ Each validator takes `unknown` and returns a fresh typed value (or a result obje
 ### Error catalogs
 
 - `ERROR_MESSAGES: Record<ApiErrorCode, string>`: exact text for every API error.
+- `CLIENT_TRANSPORT_MESSAGES: Record<ClientTransportErrorCode, string>`: exact text for the codes the browser API client synthesizes when no usable response arrived (`SERVER_UNREACHABLE`, `SERVER_TIMEOUT`, `REQUEST_CANCELLED`). The server never sends them, so they sit outside `ApiErrorCode`; `ClientFetchErrorCode` is the union of both.
 - `SOURCE_ERROR_MESSAGES: Record<SourceErrorKind, string>`: exact text for `timeout`, `transport`, `upstream-status`, `malformed-json`, `invalid-shape`, `incompatible`, `overflow`, and `disabled`.
 
 ## Sources (`@pulse/web-data/sources`)

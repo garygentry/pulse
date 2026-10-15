@@ -71,6 +71,15 @@ export const SOURCE_TIMEOUT_MS = 5_000 as const;
 export const POLL_INTERVAL_MS = 10_000 as const;
 /** Client polls failing for longer than this raise the app-server stale banner (REQ-LIVE-03). */
 export const POLL_STALE_MS = 30_000 as const;
+/**
+ * Client deadline for a current-view GET (`/api/<view>`), body download included. Measured from the
+ * view's FIRST outstanding request: SSE ticks (which can arrive seconds apart when cycles run
+ * unevenly), navigation, and retries supersede an in-flight request without restarting the window,
+ * so a hung view still records a `SERVER_TIMEOUT` failure. Above `SOURCE_TIMEOUT_MS` (a view GET
+ * serves the already-built cycle, so a healthy one never waits on a source) and below
+ * `POLL_INTERVAL_MS`, so a hung poll never delays the next one.
+ */
+export const VIEW_FETCH_TIMEOUT_MS = 8_000 as const;
 /** Default Gatus evaluation-freshness threshold (REQ-STATE-05, §3.5); overridable via env (§6). */
 export const GATUS_STALE_SECONDS_DEFAULT = 300 as const;
 
