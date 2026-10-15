@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { EstatePayload } from "@pulse/web-data/wire";
 
 import type { AppStore } from "../../store/index.js";
+import { isEstateViewStale, withAppStaleness } from "./delivery.js";
 
 // ── §7 URL-state param vocabulary ────────────────────────────────────────────
 
@@ -52,9 +53,16 @@ export interface RegionErrorBoundaryProps {
 
 // ── §5 Store read seam ───────────────────────────────────────────────────────
 
-/** Read the typed estate payload through the view's shared store seam. */
+/**
+ * Read the typed estate payload through the view's shared store seam. While the app itself is stale
+ * (connection not `live`, or estate delivery not `current`), every `current` availability in the
+ * retained payload is reported `stale` instead (`withAppStaleness`), so no estate surface badges ok
+ * on data Pulse can no longer refresh (I3).
+ */
 export function readEstate(store: AppStore): EstatePayload | null {
-  return store.estate.value;
+  const payload = store.estate.value;
+  if (payload === null) return null;
+  return isEstateViewStale(store.connection.value) ? withAppStaleness(payload) : payload;
 }
 
 // ── §7 Landing query helpers ─────────────────────────────────────────────────

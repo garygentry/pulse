@@ -11,8 +11,9 @@ import type { AppStore } from "../src/client/store/index.js";
 import { startLiveState } from "../src/client/store/live-state.js";
 import type { PathRouter } from "../src/client/router.js";
 import EstateView from "../src/client/views/estate/view.js";
+import { APP_STALE_MESSAGE } from "../src/client/views/estate/delivery.js";
 import { describeDom, renderWithStore } from "./dom.js";
-import { makeEstatePayloadFixture } from "./factories/estate-payload.js";
+import { makeEstatePayloadFixture, setEstateConnection } from "./factories/estate-payload.js";
 import { setInputValue } from "./react-render.js";
 import { installUiStubs } from "./rtl.js";
 
@@ -50,6 +51,7 @@ function seed(
 ): AppStore {
   const store = createAppStore({ storage: null, initialQuery: {} });
   store.estate.value = payload;
+  if (payload !== null) setEstateConnection(store);
   store.route.value = { path, view: "estate", params, query };
   return store;
 }
@@ -478,6 +480,89 @@ describeDom("estate view: delivery gate", () => {
       await tick();
       expect(container.textContent).toContain("replacement-host");
       expect(container.textContent).not.toContain(originalName);
+    } finally {
+      unmount();
+    }
+  });
+});
+
+// #26: app-level staleness (connection not live, or estate delivery not current) downgrades every
+// estate badge that would otherwise read ok on the retained payload.
+describeDom("estate view: app-level staleness", () => {
+  withUiStubs();
+  const indicators = (root: Element): HTMLElement[] => [
+    ...root.querySelectorAll<HTMLElement>("[data-slot=status-badge][data-indicator]"),
+  ];
+  const statuses = (root: Element, kind: "coverage" | "live"): string[] =>
+    indicators(root)
+      .filter((b) => b.getAttribute("data-indicator") === kind)
+      .map((b) => b.getAttribute("data-status") ?? "");
+
+  test("inventory coverage and live badges leave ok while the app server is unreachable", async () => {
+    const { router } = makeRouter();
+    const store = seed(makeEstatePayloadFixture(), "/estate");
+    const { container, unmount } = await renderWithStore(EstateView, { store, router });
+    try {
+      expect(statuses(container, "coverage")).toContain("ok");
+      expect(statuses(container, "live")).toContain("ok");
+
+      setEstateConnection(store, { phase: "stale", delivery: "stale" });
+      await tick();
+      expect(indicators(container).length).toBeGreaterThan(0);
+      expect(container.querySelector('[data-slot=status-badge][data-status="ok"]') === null).toBe(true);
+      // Downgraded badges still carry icon + text that say why (never colour alone).
+      const host = container.querySelector<HTMLElement>("[data-testid=estate-host-row]")!;
+      const coverage = host.querySelector('[data-indicator="coverage"]')!;
+      const live = host.querySelector('[data-indicator="live"]')!;
+      expect(coverage.textContent).toContain("Stale coverage");
+      expect(live.textContent).toContain("stale");
+      expect(coverage.querySelector("svg") !== null).toBe(true);
+      expect(live.querySelector("svg") !== null).toBe(true);
+
+      setEstateConnection(store);
+      await tick();
+      expect(statuses(container, "coverage")).toContain("ok");
+      expect(statuses(container, "live")).toContain("ok");
+    } finally {
+      unmount();
+    }
+  });
+
+  test("a live connection whose estate delivery is not current is still stale", async () => {
+    const { router } = makeRouter();
+    const store = seed(makeEstatePayloadFixture(), "/estate");
+    setEstateConnection(store, { phase: "live", delivery: "stale" });
+    const { container, unmount } = await renderWithStore(EstateView, { store, router });
+    try {
+      expect(indicators(container).length).toBeGreaterThan(0);
+      expect(container.querySelector('[data-slot=status-badge][data-status="ok"]') === null).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  test("the entity page header and the coverage tab downgrade too", async () => {
+    const payload = makeEstatePayloadFixture();
+    const host = payload.estate.hosts[0]!;
+    const { router } = makeRouter();
+    const store = seed(payload, `/estate/host/${host.name}`, { name: host.name });
+    const { container, unmount } = await renderWithStore(EstateView, { store, router });
+    try {
+      const header = (): Element | null =>
+        container.querySelector("[data-slot=page-header-meta] [data-slot=status-badge]");
+      expect(header()?.getAttribute("data-status")).toBe("ok");
+      setEstateConnection(store, { phase: "stale", delivery: "stale" });
+      await tick();
+      expect(header()?.getAttribute("data-status")).toBe("unknown");
+      expect(container.querySelector("[data-testid=estate-entity-live-status]")?.textContent).toContain(
+        "Live state is stale",
+      );
+
+      store.route.value = { path: "/estate", view: "estate", params: {}, query: { tab: "coverage" } };
+      await tick();
+      expect(activeTab(container)).toBe("Coverage");
+      expect(container.querySelector('[data-status="ok"]') === null).toBe(true);
+      expect(container.querySelector("[data-stale-message]")?.textContent).toBe(APP_STALE_MESSAGE);
     } finally {
       unmount();
     }

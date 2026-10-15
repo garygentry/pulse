@@ -12,6 +12,8 @@ import type {
   TargetIdentity,
 } from "@pulse/web-data/wire";
 import type { WebCoverageArtifact, WebFindingsArtifact } from "@pulse/renderer";
+import type { AppStore } from "../../src/client/store/index.js";
+import type { ConnectionPhase } from "../../src/client/store/types.js";
 import { makeEstateBundleFixture } from "./estate-bundle.js";
 
 /** The fixed "now" the fixture stamps, matching factories/wire.ts NOW for cross-suite determinism. */
@@ -87,4 +89,21 @@ export function makeEstatePayloadFixture(overrides: Partial<EstatePayload> = {})
     declaredVersusScraped: presentSection<readonly DeclaredScrapeComparison[]>([makeComparison()]),
   };
   return { ...base, ...overrides };
+}
+
+/**
+ * Set the store's connection freshness for the estate view. Defaults to a fresh app (connection
+ * `live`, estate delivery `current`); anything else makes the view treat the retained payload as
+ * app-stale (`isEstateViewStale`).
+ */
+export function setEstateConnection(
+  store: AppStore,
+  { phase = "live", delivery = "current" }: { phase?: ConnectionPhase; delivery?: "current" | "stale" } = {},
+): void {
+  const prev = store.connection.peek();
+  store.connection.value = {
+    ...prev,
+    phase,
+    views: { ...prev.views, estate: { phase: delivery, identity: null, failure: null } },
+  };
 }
