@@ -15,8 +15,17 @@ export interface UseListNavigationOptions {
   getItems: () => ArrayLike<HTMLElement>;
   /** Key preset; default `"vim"`. */
   keys?: ListNavPreset;
-  /** 2-D grid: ←/→ (and h/l for vim) move within a row, ↑/↓ by `columns`. */
-  grid?: { columns: number | (() => number) };
+  /**
+   * 2-D grid: ←/→ (and h/l for vim) move within a row, ↑/↓ by `columns`. For a layout no column
+   * count describes (a spatial grid whose rows wrap per group), pass `move` instead: it returns the
+   * index a move intent (`move-left`/`-right`/`-previous`/`-next`/`-first`/`-last`) lands on from
+   * `index` (-1 when no item has focus), `index` itself to stay put and still claim the key, or
+   * `null` to leave the key alone. `move` and `virtual` are mutually exclusive: with both set,
+   * `move` decides and `virtual` is not consulted for moves.
+   */
+  grid?:
+    | { columns: number | (() => number) }
+    | { move: (intent: ListNavIntent, index: number, items: ArrayLike<HTMLElement>) => number | null };
   /**
    * `"window"` (default) listens on `window`, for a page's main list.
    * `"element"` listens on `containerRef` only, for a widget inside a page.
@@ -301,7 +310,14 @@ function apply(
 
 /** Focus the item `intent` moves to (over every item when `virtual` is set). Returns whether there was one. */
 function moveTo(intent: ListNavIntent, opts: UseListNavigationOptions, items: ArrayLike<HTMLElement>, index: number): boolean {
-  const raw = opts.grid?.columns ?? 1;
+  if (opts.grid !== undefined && "move" in opts.grid) {
+    const to = opts.grid.move(intent, index, items);
+    const target = to === null ? undefined : items[to];
+    if (target === undefined) return false;
+    target.focus();
+    return true;
+  }
+  const raw = opts.grid !== undefined && "columns" in opts.grid ? opts.grid.columns : 1;
   const columns = typeof raw === "function" ? raw() : raw;
   if (opts.virtual !== undefined) {
     const from = opts.virtual.activeIndex();
