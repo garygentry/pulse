@@ -183,6 +183,40 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
     expect(flush, flush.join("\n")).toEqual([]);
   }, 120_000);
 
+  // No page-level horizontal scroll at phone widths, kiosk or not: a tab list too wide for the
+  // viewport scrolls inside itself (the estate and alerts tabs overflowed the page before).
+  test("phone widths: the tabbed pages keep scrollWidth within the viewport", async () => {
+    const cases = [
+      { width: 320, path: "/estate" },
+      { width: 320, path: "/estate?kiosk=1" },
+      { width: 375, path: "/estate?kiosk=1" },
+      { width: 320, path: "/alerts?kiosk=1" },
+    ] as const;
+    const overflow: string[] = [];
+    for (const { width, path } of cases) {
+      const context = await browser.newContext({ viewport: { width, height: 800 } });
+      contexts.push(context);
+      const page = await context.newPage();
+      await visit(page, path);
+      await page.waitForSelector('main [role="tablist"]', { timeout: 30_000 });
+      const { scroll, client } = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      if (scroll > client) overflow.push(`${path} at ${width}px: scrollWidth ${scroll} > clientWidth ${client}`);
+      // Arrow focus to the last tab scrolls it into the list's view (Radix focuses without scrolling).
+      const tabs = page.locator('main [role="tablist"]').first().getByRole("tab");
+      await tabs.first().focus();
+      await page.keyboard.press("End");
+      await page.waitForFunction(() => {
+        const list = document.querySelector('main [role="tablist"]')!.getBoundingClientRect();
+        const tab = document.activeElement!.getBoundingClientRect();
+        return document.activeElement!.getAttribute("role") === "tab" && tab.right <= list.right + 0.5;
+      }, undefined, { timeout: 5_000 });
+    }
+    expect(overflow, overflow.join("\n")).toEqual([]);
+  }, 120_000);
+
   test("keyboard: the skip link leads to <main>, and the nav routes by keyboard", async () => {
     const page = await open(MODES[0]);
     await visit(page, "/overview");

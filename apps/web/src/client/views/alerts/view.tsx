@@ -5,7 +5,7 @@
 // tab (`tab`, firing by omission), facet selection and `sel`. A PageErrorBoundary degrades any render
 // fault in place so the shell keeps rendering.
 
-import type { ReactElement } from "react";
+import type { FocusEvent, ReactElement } from "react";
 import { useEffect, useRef } from "react";
 import { useComputed, useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -70,6 +70,12 @@ function toQueryString(query: Readonly<Record<string, string>>): string {
 }
 
 // ── the view ─────────────────────────────────────────────────────────────────────────────────────
+
+/** Radix moves tab focus without scrolling, so bring the focused tab into the list's own scroll
+ *  area (the list scrolls at phone widths rather than overflowing the page). */
+function revealTab(event: FocusEvent<HTMLElement>): void {
+  event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+}
 
 /** Default export — the ComponentType<ViewProps> the registry loads. The boundary wraps the body so
  *  any render fault degrades in place. */
@@ -244,9 +250,13 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
       <PageHeader title="Alerts" />
       {/* Controlled by the URL: a tab change navigates, and the route re-selects the tab. */}
       <Tabs value={tab} onValueChange={onTabChange} className="min-w-0 gap-4">
-        <TabsList aria-label="Alert triage views">
+        {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). */}
+        <TabsList
+          aria-label="Alert triage views"
+          className="max-w-full justify-start overflow-x-auto"
+        >
           {TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} data-tab={t.id}>
+            <TabsTrigger key={t.id} value={t.id} data-tab={t.id} onFocus={revealTab}>
               <Icon name={t.icon} />
               {t.label}
             </TabsTrigger>

@@ -6,7 +6,7 @@
 // payload surfaces only when delivery is `ready` (I3). Path prefixes select the entity route kind;
 // entity names come from `route.params` and are never parsed from the path tail by EntityPage.
 
-import type { ReactElement, ReactNode } from "react";
+import type { FocusEvent, ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { EstatePayload } from "@pulse/web-data/wire";
 
@@ -50,6 +50,12 @@ const TAB_REGION: Readonly<Record<EstateTabId, string>> = {
   coverage: "coverage explorer",
   findings: "findings",
 };
+
+/** Radix moves tab focus without scrolling, so bring the focused tab into the list's own scroll
+ *  area (the list scrolls at phone widths rather than overflowing the page). */
+function revealTab(event: FocusEvent<HTMLElement>): void {
+  event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+}
 
 /** Write the full landing query (01 §6); `navigate` carries kiosk/rotate itself. */
 function navigateQuery(router: PathRouter, next: EstateQuery, replace: boolean): void {
@@ -98,9 +104,13 @@ function Landing({ store, router, payload }: LandingProps): ReactElement {
       {/* Manual activation: arrows move focus, Enter/Space/click select (each selection is a navigation). */}
       <Tabs value={query.tab} onValueChange={onTabChange} activationMode="manual" className="min-w-0 gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <TabsList aria-label="Estate sections">
+          {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). */}
+          <TabsList
+            aria-label="Estate sections"
+            className="max-w-full justify-start overflow-x-auto"
+          >
             {TAB_ITEMS.map((item) => (
-              <TabsTrigger key={item.id} value={item.id}>
+              <TabsTrigger key={item.id} value={item.id} onFocus={revealTab}>
                 <Icon name={item.icon} />
                 {item.label}
               </TabsTrigger>
