@@ -19,7 +19,7 @@ import { CheckHistory, NO_RECENT_CHECKS_TEXT, OBSERVATION_TIME_UNAVAILABLE_TEXT 
 import { NONE_DECLARED_TEXT } from "../src/client/views/overview/drawer/DeclaredFacts.js";
 import {
   LIVENESS_HISTORY_STALE_TEXT,
-  LIVENESS_HISTORY_UNAVAILABLE_TEXT,
+  LIVENESS_NO_SAMPLES_TEXT,
   LIVENESS_NOT_COLLECTED_TEXT,
   RETRY_LIVENESS_HISTORY_LABEL,
 } from "../src/client/views/overview/drawer/LivenessSparkline.js";
@@ -771,7 +771,27 @@ describeDom("TargetDrawer — lazy liveness sparkline", () => {
     history.dispose();
   });
 
-  test("a series with no finite sample says 'Liveness history unavailable' instead of an empty chart", async () => {
+  test("#67: a zero-series payload (empty range) shows the no-samples empty state, not an error or Retry", async () => {
+    const snapshot = makeOverviewSnapshot();
+    const transport = deferredHistoryFetch();
+    const history = createHistoryController({ fetch: transport.fetch, now: () => 1_000 });
+    const { open } = await mountGridWithDrawer(snapshot, history);
+    const dialog = await open(FIXTURE_IDS.okHost);
+    const identity = target(snapshot, FIXTURE_IDS.okHost).identity;
+    await act(async () => transport.calls[0]!.resolve(historyOk({ ...makeLivenessHistoryPayload(identity), series: [] })));
+    const region = liveness(dialog);
+    expect(region.getAttribute("data-history-state")).toBe("ready");
+    expect(region.querySelector('[data-slot="drawer-liveness-error"]')).toBeNull();
+    expect(region.querySelector("button")).toBeNull();
+    expect(region.textContent).not.toContain(RETRY_LIVENESS_HISTORY_LABEL);
+    const empty = region.querySelector('[data-slot="drawer-empty"]');
+    expect(empty?.textContent).toBe(LIVENESS_NO_SAMPLES_TEXT);
+    expect(empty?.querySelector("svg")).not.toBeNull(); // icon + text, never text alone
+    expect(region.querySelector('svg[role="img"]')).toBeNull();
+    history.dispose();
+  });
+
+  test("a series with no finite sample shows the no-samples empty state instead of an empty chart", async () => {
     const snapshot = makeOverviewSnapshot();
     const transport = deferredHistoryFetch();
     const history = createHistoryController({ fetch: transport.fetch, now: () => 1_000 });
@@ -780,8 +800,8 @@ describeDom("TargetDrawer — lazy liveness sparkline", () => {
     const identity = target(snapshot, FIXTURE_IDS.okHost).identity;
     await act(async () => transport.calls[0]!.resolve(historyOk(makeLivenessHistoryPayload(identity, { nullEvery: 1, pointCount: 6 }))));
     const region = liveness(dialog);
-    expect(region.querySelector("svg")).toBeNull();
-    expect(region.textContent).toContain(LIVENESS_HISTORY_UNAVAILABLE_TEXT);
+    expect(region.querySelector('svg[role="img"]')).toBeNull();
+    expect(region.querySelector('[data-slot="drawer-empty"]')?.textContent).toBe(LIVENESS_NO_SAMPLES_TEXT);
     history.dispose();
   });
 
