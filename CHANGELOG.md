@@ -33,23 +33,33 @@ change below needs a new vmalert mount.
 - **New validation errors.** `failure_threshold` and `success_threshold` are capped at 60, and a
   host name, service name or estate domain containing `"`, `\` or a line break is rejected
   (`gatus_unsafe_name`), because Gatus fails to start on such a name. (#21)
-- <!-- TODO(release): confirm PR #76 (issue #74) merged before tagging; move or delete this item if not. -->
-  **TODO: confirm, PR #76 (issue #74).** `HostDown` also pages for `nas-api` and
-  `hypervisor-api` hosts. A silence or inhibit rule matching `alertname="HostDown"` without a
-  `host` matcher now also mutes NAS and hypervisor hosts; add `collection_class="managed-linux"`
-  to keep the old scope.
+- **`HostDown` covers every host class.** It now pages for `nas-api` and `hypervisor-api`
+  hosts as well as `managed-linux` ones. A silence or inhibit rule that matches
+  `alertname="HostDown"` without a `host` matcher now also mutes NAS and hypervisor hosts; add
+  `collection_class="managed-linux"` to keep the old scope. (#76)
+- **`AncillaryDown` no longer covers pve-exporter.** A pve-exporter outage now raises
+  `HypervisorExporterDown`; move routes and silences on `AncillaryDown{job="pve-exporter"}` to it.
+  (#76)
+- **Hypervisor scraping passes a bare host to pve-exporter.** The `hypervisor-api` job now sends
+  the bare PVE host as `?target=` (the exporter always talks to port 8006). An endpoint on another
+  port needs a downstream override of the job. (#76)
+- **New validation error `invalid_hypervisor_endpoint`.** A hypervisor `api_endpoint` must be
+  `[http(s)://]HOST[:PORT][/PATH]`; user info, a query, a fragment, an unbracketed IPv6 literal
+  or a non-numeric port is rejected. (#76)
 
 ### Added
 
 - **`SyntheticRulesNotLoaded`** warning in the `pipeline-health` family. It fires about 10–15
   minutes after vmalert stops loading `synthetic.yml`, so a dropped mount no longer silences
   Gatus paging without a trace. (#53)
-- <!-- TODO(release): confirm PR #76 (issue #74) merged before tagging; delete if not. -->
-  **TODO: confirm, PR #76 (issue #74).** Critical host-down alerting for NAS (`nas-api`) and
-  hypervisor (`hypervisor-api`) hosts through `HostDown` (`for: 90s`) on their main scrape jobs.
-  Hypervisors do not page while pve-exporter itself is down (the `AncillaryDown` warning covers
-  that). The alert's `host` label now comes from the file_sd `host` label. The no-target
-  `estate.liveness` history query now returns 422 `QUERY_NOT_APPLICABLE`.
+- **Critical host-down paging for NAS and hypervisor hosts.** `HostDown` (critical, `for: 90s`)
+  reads `up` of the main scrape job of every class (`managed-linux|nas-api|hypervisor-api`), and
+  its `host` label comes from the rendered file_sd `host` label. (#76)
+- **`HypervisorExporterDown`** warning (`up{job="pve-exporter"} == 0`, `for: 60s`,
+  `keep_firing_for: 2m`), plus an Alertmanager inhibit rule (source `HypervisorExporterDown`,
+  target `HostDown{job="hypervisor-api"}`, equal on `estate`) in both the bootstrap config and
+  every config the alerting transform renders. A pve-exporter outage no longer pages every
+  hypervisor as down. (#76)
 - **Kiosk tile wall.** `?kiosk=1` on the overview shows a read-only wall of compact host tiles,
   worst status first, under a one-line stat strip and alert ribbon. Pages are sized from the real
   grid (columns × rows), each page stays up for at least 10 seconds, rotations resume where the
@@ -107,6 +117,11 @@ change below needs a new vmalert mount.
   8-second deadline instead of hanging. (#61)
 - **An empty liveness range** shows a no-samples state instead of an error with a Retry that
   could never succeed. (#68)
+- **Stock hypervisor scraping was broken**: the rendered URL was passed to pve-exporter as
+  `?target=`, which the pinned exporter answers with HTTP 500, so every hypervisor read as down.
+  `instance` is unchanged. (#76)
+- The no-target `estate.liveness` history query returns 422 `QUERY_NOT_APPLICABLE` instead of
+  a query that mixed in profile-gated jobs. (#76)
 - Alert targets showed their kind prefix twice (`host:host:…`). (#22)
 - Virtualized tables mis-measured rows of varying height, so scrolling jumped and
   `scrollToIndex` missed. (#24)
