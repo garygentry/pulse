@@ -471,6 +471,16 @@ describeUi("estate: inventory tree", () => {
     expect(item("hostA-managed")).not.toBeNull();
   });
 
+  test("a null or non-object live target becomes an inline error row, not a crashed region", () => {
+    const base = makeEstatePayloadFixture();
+    const junk = [null, 42, "x"] as unknown as EstatePayload["liveTargets"];
+    render(<Inventory {...propsFrom(base, { liveTargets: [...base.liveTargets, ...junk] })} />);
+    const errors = screen.getAllByTestId("estate-error-row");
+    expect(errors.length).toBe(3);
+    for (const row of errors) expect(row.textContent).toContain("Malformed live target entry");
+    expect(indicator(hookOf(item("hostA-managed")), "live").textContent).toBe("Live OK");
+  });
+
   test("a malformed host becomes an inline error row while siblings render", () => {
     const base = makeEstatePayloadFixture();
     const broken = { ...base.estate.hosts[0]!, name: "bad", collectionClass: "mystery" } as unknown as WebEstateHostV2;

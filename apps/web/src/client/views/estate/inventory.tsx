@@ -376,7 +376,8 @@ export function Inventory(props: InventoryProps): ReactElement {
     const byId = new Map<string, EstateTargetState>();
     const errors: ErrorRow[] = [];
     liveTargets.forEach((target, index) => {
-      const candidate = target as Partial<EstateTargetState>;
+      // A null / non-object entry is malformed too; check it before reading any field off it.
+      const candidate = (typeof target === "object" && target !== null ? target : {}) as Partial<EstateTargetState>;
       if (
         typeof candidate.target !== "object" ||
         candidate.target === null ||
