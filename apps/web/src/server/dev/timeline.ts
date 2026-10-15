@@ -3,8 +3,8 @@
 // Pure functions: `applyTimeline` folds a base scenario against every step whose offset lies at or
 // before elapsedMs; `freshenGatus` re-bases fixture timestamps onto the wall clock so a frozen
 // fixture stays inside the 300s Gatus staleness rule (spec 05 §2.4); `rebaseAlertmanager`,
-// `rebaseVmalert`, and `rebaseVm` re-base the other fixture timestamps onto the scenario start so
-// alert ages are realistic (GitHub #3). No I/O, no clock reads.
+// `rebaseSilences`, `rebaseVmalert`, and `rebaseVm` re-base the other fixture timestamps onto the
+// scenario start so alert ages are realistic (GitHub #3). No I/O, no clock reads.
 
 import type {
   AmAlertsResponse,
@@ -124,10 +124,40 @@ export interface VmalertRulesResponse {
   };
 }
 
-/** The four literal fixture bodies of a scenario directory (00 §3–§4). */
+/** One Alertmanager silence label matcher. */
+export interface AmSilenceMatcher {
+  /** Label name. */ name: string;
+  /** Label value or regex. */ value: string;
+  /** Whether `value` is a regex. */ isRegex: boolean;
+  /** False for a negative (`!=`/`!~`) matcher. */ isEqual?: boolean;
+}
+
+/** An Alertmanager silence lifecycle status. */
+export interface AmSilenceStatus {
+  /** Lifecycle state (`active` | `pending` | `expired`). */ state: string;
+}
+
+/** One Alertmanager `GET /api/v2/silences` entry (the wire shape `@pulse/web-data` validates). */
+export interface AmSilence {
+  /** Silence id. */ id: string;
+  /** Label matchers. */ matchers: AmSilenceMatcher[];
+  /** Creator display value. */ createdBy: string;
+  /** Operator comment. */ comment: string;
+  /** ISO-8601 start. */ startsAt: string;
+  /** ISO-8601 expiry. */ endsAt: string;
+  /** ISO-8601 last update. */ updatedAt?: string;
+  /** Lifecycle status. */ status: AmSilenceStatus;
+}
+
+/** The Alertmanager `GET /api/v2/silences` body: a bare array. */
+export type AmSilencesResponse = AmSilence[];
+
+/** The literal fixture bodies of a scenario directory (00 §3–§4). `silences` comes from the
+ *  optional `silences.json` (GitHub #32); an absent file is no silences. */
 export interface ScenarioBase {
   /** VictoriaMetrics instant-query fixture body. */ vm: VmQueryResponse;
   /** Alertmanager alerts fixture body. */ alertmanager: AmAlertsResponse;
+  /** Alertmanager silences fixture body. */ silences: AmSilencesResponse;
   /** Gatus statuses fixture body. */ gatus: GatusStatusesResponse;
   /** vmalert rules fixture body. */ vmalert: VmalertRulesResponse;
 }
@@ -136,6 +166,7 @@ export interface ScenarioBase {
 export interface ScenarioState {
   /** Current VictoriaMetrics instant-query body. */ vm: VmQueryResponse;
   /** Current Alertmanager alerts body. */ alertmanager: AmAlertsResponse;
+  /** Current Alertmanager silences body (no timeline op changes it). */ silences: AmSilencesResponse;
   /** Current Gatus statuses body. */ gatus: GatusStatusesResponse;
   /** Current vmalert rules body. */ vmalert: VmalertRulesResponse;
   /** Sources currently in an outage window. */ outages: ReadonlySet<MockSource>;
@@ -189,6 +220,7 @@ export function applyTimeline(
   return {
     vm: acc.vm,
     alertmanager: acc.alertmanager,
+    silences: structuredClone(base.silences),
     gatus: acc.gatus,
     vmalert: acc.vmalert,
     outages: acc.outages,
@@ -279,7 +311,7 @@ export function freshenGatus(
 
 // ── Scenario-clock re-base (GitHub #3) ──────────────────────────────────────────────────────────
 //
-// `rebaseAlertmanager`/`rebaseVmalert`/`rebaseVm` shift every authored timestamp by
+// `rebaseAlertmanager`/`rebaseSilences`/`rebaseVmalert`/`rebaseVm` shift every authored timestamp by
 // `scenarioStartMs - FIXTURE_ANCHOR_MS`, so each keeps its authored offset from the anchor but
 // relative to the scenario start (`--clock`, or process start). An alert authored 19 minutes before
 // the anchor is 19 minutes old when the scenario starts and ages normally from there; an `endsAt` in
@@ -314,6 +346,16 @@ export function rebaseAlertmanager(body: AmAlertsResponse, scenarioStartMs: numb
   const deltaMs = scenarioStartMs - FIXTURE_ANCHOR_MS;
   return body.map((alert) => {
     let next = { ...alert };
+    for (const key of AM_TIME_FIELDS) next = shiftField(next, key, deltaMs);
+    return next;
+  });
+}
+
+/** Re-base Alertmanager silence `startsAt`/`endsAt`/`updatedAt` onto the scenario start. */
+export function rebaseSilences(body: AmSilencesResponse, scenarioStartMs: number): AmSilencesResponse {
+  const deltaMs = scenarioStartMs - FIXTURE_ANCHOR_MS;
+  return body.map((silence) => {
+    let next = { ...silence };
     for (const key of AM_TIME_FIELDS) next = shiftField(next, key, deltaMs);
     return next;
   });

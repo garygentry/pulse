@@ -47,12 +47,13 @@ describe("MOCK constants", () => {
     expect(SCENARIO_NAMES).toContain(DEFAULT_SCENARIO);
   });
 
-  test("SCENARIO_FILES lists the four source files plus timeline", () => {
+  test("SCENARIO_FILES lists the four source files plus silences and timeline", () => {
     expect(SCENARIO_FILES).toEqual({
       vm: "vm.json",
       alertmanager: "alertmanager.json",
       gatus: "gatus.json",
       vmalert: "vmalert.json",
+      silences: "silences.json",
       timeline: "timeline.json",
     });
   });
