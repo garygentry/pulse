@@ -517,6 +517,73 @@ describeDom("useKioskPaging", (dom) => {
     expect(state.activePageIndex).toBe(2);
   });
 
+  test("a rotation dwell shorter than a page dwell still advances the next visit (overview:5s)", async () => {
+    const fc = fakeClock();
+    layout.height = 100; // 3 pages; a 5 s visit shows one page (page dwell stays 10 s)
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 5_000), clock: fc.clock });
+    expect(state.pageDwellMs).toBe(10_000);
+    // The shell's 5 s timer started before the view mounted, so it leaves just before 5 s of
+    // page time (here 4 999 ms).
+    fc.advance(4_999);
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(2, 5_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(1);
+    fc.advance(4_999);
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(3, 5_000), clock: fc.clock });
+    expect(state.activePageIndex).toBe(2);
+  });
+
+  test("leaving after the last page was up long enough records it even if its timer never fired", async () => {
+    // Timers that never fire (e.g. throttled): only the cleanup can record the page as shown.
+    let now = 0;
+    const stalled: KioskPagingClock = { now: () => now, setTimeout: () => 1, clearTimeout: () => undefined };
+    layout.height = 100;
+    await renderHook({ hosts: HOSTS, rotation: rotation(1, 5_000), clock: stalled });
+    now = 1_000; // shown too briefly: not recorded
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(2, 5_000), clock: stalled });
+    expect(state.activePageIndex).toBe(0);
+    now = 4_000; // shown 3 s ≥ half the 5 s rotation dwell
+    await unmount();
+    await renderHook({ hosts: HOSTS, rotation: rotation(3, 5_000), clock: stalled });
+    expect(state.activePageIndex).toBe(1);
+  });
+
+  test("the font gate waits for the wall's face even when document.fonts reads loaded", async () => {
+    const g = globalThis as unknown as { document: { fonts?: unknown } };
+    const saved = Object.getOwnPropertyDescriptor(g.document, "fonts");
+    let release!: () => void;
+    const requested: string[] = [];
+    Object.defineProperty(g.document, "fonts", {
+      configurable: true,
+      value: {
+        status: "loaded",
+        ready: Promise.resolve(),
+        check: () => false, // the lazily loaded face has not been fetched yet
+        load: (font: string) => {
+          requested.push(font);
+          return new Promise<void>((resolve) => (release = resolve));
+        },
+      },
+    });
+    try {
+      const fc = fakeClock();
+      layout.height = 100;
+      await renderHook({ hosts: HOSTS, rotation: null, clock: fc.clock });
+      expect(requested).toEqual(["1em 'Geist Variable'"]);
+      expect(fc.scheduled.map((t) => t.delay)).toEqual([1_000]);
+      await act(async () => {
+        release();
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+      expect(fc.scheduled.at(-1)!.delay).toBe(10_000);
+    } finally {
+      if (saved === undefined) delete (g.document as { fonts?: unknown }).fonts;
+      else Object.defineProperty(g.document, "fonts", saved);
+    }
+  });
+
   test("the first page timer waits for web fonts (bounded) before it starts", async () => {
     const g = globalThis as unknown as { document: { fonts?: unknown } };
     const saved = Object.getOwnPropertyDescriptor(g.document, "fonts");

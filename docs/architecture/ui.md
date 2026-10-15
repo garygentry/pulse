@@ -340,8 +340,9 @@ no density.
   most once per full cycle, and the whole wall restarts at most once per cycle. Both are
   module-level, like the rotation cursor, so they hold across rotation visits, and old entries are
   pruned.
-- **Startup.** The first page timer waits for one ResizeObserver delivery for the region, and for
-  `document.fonts.ready` (up to 1 s). The first sequence therefore runs on settled metrics, after
+- **Startup.** The first page timer waits for one ResizeObserver delivery for the region, and for the
+  wall's font face (up to 1 s). It asks `document.fonts` for the face itself (`check`/`load`),
+  because the font set reads "loaded" before a lazily loaded face is even requested. The first sequence therefore runs on settled metrics, after
   the chrome above the wall and the page offset have landed.
 - **Timing.** Each page stays up for `max(10 s, cycle / P)`. Without rotation the cycle is 30 s, so
   up to three pages share it and more pages lengthen it. Inside a shell rotation (`?rotate=`) the
@@ -349,7 +350,8 @@ no density.
   last one until the shell advances. The next visit resumes at the first page not yet shown, through
   a module-level cursor, since the view unmounts between visits. The cursor records only pages
   actually shown: a page that ran its full dwell, or the visit's last page once it has been up for
-  half a dwell. A re-measure or resize mid-visit therefore never skips a page. The shell stays the
+  half the shorter of the page and rotation dwells (checked when its timer fires and when the view
+  leaves, since a short rotation dwell can end the visit first). A re-measure or resize mid-visit therefore never skips a page. The shell stays the
   only owner of rotation timers. Page swaps fade unless `prefers-reduced-motion` is set.
 
 ## The `/_ui` workbench

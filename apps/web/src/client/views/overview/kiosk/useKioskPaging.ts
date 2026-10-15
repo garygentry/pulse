@@ -124,6 +124,21 @@ export const KIOSK_FONT_WAIT_MS = 1_000 as const;
 interface FontSetLike {
   readonly status?: string;
   readonly ready?: Promise<unknown>;
+  check?(font: string): boolean;
+  load?(font: string): Promise<unknown>;
+}
+
+/** The face the wall's text is set in (`--font-sans`). Faces load lazily, on first use. */
+const KIOSK_FONT = "1em 'Geist Variable'";
+
+/** Whether the wall's font is usable now: no font API, or the face is loaded and nothing is loading. */
+function fontsSettledNow(fonts: FontSetLike | null): boolean {
+  if (fonts === null) return true;
+  try {
+    return fonts.status === "loaded" && (typeof fonts.check !== "function" || fonts.check(KIOSK_FONT));
+  } catch {
+    return true;
+  }
 }
 
 /** The document's font set, or null where there is none (no DOM, or no CSS Font Loading API). */
@@ -244,12 +259,16 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
   // size after the chrome above it and the page offset land) and for web fonts (bounded), so the
   // first sequence runs on settled metrics instead of restarting a moment later.
   const [regionSettled, setRegionSettled] = useState(false);
-  const [fontsSettled, setFontsSettled] = useState(() => {
-    const fonts = documentFonts();
-    return fonts === null || fonts.status === "loaded";
-  });
+  // `document.fonts.status` can read "loaded" before the lazily loaded face is even requested, so
+  // the gate asks for the wall's own face (check/load) after the first layout, bounded at 1 s.
+  const [fontsSettled, setFontsSettled] = useState(() => documentFonts() === null);
   useEffect(() => {
     if (fontsSettled) return undefined;
+    const fonts = documentFonts();
+    if (fontsSettledNow(fonts)) {
+      setFontsSettled(true);
+      return undefined;
+    }
     let live = true;
     let handle: number | null = null;
     const done = (): void => {
@@ -260,7 +279,12 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
     } catch {
       handle = null;
     }
-    documentFonts()?.ready?.then(done, done);
+    try {
+      const wait = typeof fonts?.load === "function" ? fonts.load(KIOSK_FONT).then(() => fonts.ready) : fonts?.ready;
+      wait?.then(done, done);
+    } catch {
+      done();
+    }
     return () => {
       live = false;
       if (handle !== null) {
@@ -343,24 +367,38 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
   const ready = measured && regionSettled && fontsSettled;
   const lastOfVisit = rotating && steps + 1 >= visitPages;
 
+  // When the visible page appeared (its sequence started or the wall advanced to it).
+  const visibleSince = useRef<{ readonly sequence: number; readonly page: number; readonly at: number } | null>(null);
+  if (visibleSince.current?.sequence !== sequenceId || visibleSince.current.page !== activePageIndex) {
+    visibleSince.current = { sequence: sequenceId, page: activePageIndex, at: clock.now() };
+  }
+  // A visit's last page counts as shown after half the shorter of the page and rotation dwells: the
+  // shell may advance the view right at its dwell's end, which can be sooner than a page dwell.
+  const lastPageShownMs = Math.floor(Math.min(pageDwellMs, rotationDwell ?? pageDwellMs) / 2);
+
   // Page timer: one armed boundary at a time; each page keeps its full dwell from when it appeared.
   // Inside a rotation the resume cursor records only pages actually shown: a page that ran its full
-  // dwell, or the visit's last page once it has been up for half a dwell (the shell may advance the
-  // view right at the dwell's end). A re-measure or resize mid-visit therefore never skips a page.
+  // dwell, or the visit's last page once it has been up for `lastPageShownMs` — checked when its
+  // timer fires and again when the view leaves (the effect cleanup), since a short rotation dwell can
+  // end the visit first. A re-measure or resize mid-visit therefore never skips a page.
   useEffect(() => {
     if (!ready || pageCount <= 1) return undefined;
     let live = true;
     let handle: number | null = null;
     const shown = activePageIndex;
+    const since = visibleSince.current?.at ?? clock.now();
+    const record = (): void => {
+      if (rotating) rotationCursor = (shown + 1) % pageCount;
+    };
     try {
       handle = clock.setTimeout(
         () => {
           handle = null;
           if (!live) return;
-          if (rotating) rotationCursor = (shown + 1) % pageCount;
+          record();
           if (!lastOfVisit) setAdvance({ sequence: sequenceId, steps: steps + 1 });
         },
-        lastOfVisit ? Math.floor(pageDwellMs / 2) : pageDwellMs,
+        lastOfVisit ? Math.max(0, lastPageShownMs - (clock.now() - since)) : pageDwellMs,
       );
     } catch {
       // Timer failure: the current page stays visible; no false progress is reported.
@@ -368,6 +406,7 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
     }
     return () => {
       live = false;
+      if (lastOfVisit && clock.now() - since >= lastPageShownMs) record();
       if (handle === null) return;
       try {
         clock.clearTimeout(handle);
@@ -376,7 +415,7 @@ export function useKioskPaging(options: UseKioskPagingOptions): KioskPagingState
       }
       handle = null;
     };
-  }, [sequenceId, ready, pageCount, steps, rotating, lastOfVisit, activePageIndex, pageDwellMs, clock]);
+  }, [sequenceId, ready, pageCount, steps, rotating, lastOfVisit, activePageIndex, pageDwellMs, lastPageShownMs, clock]);
 
   return {
     pages,
