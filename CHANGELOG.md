@@ -36,7 +36,8 @@ change below needs a new vmalert mount.
 - <!-- TODO(release): confirm PR #76 (issue #74) merged before tagging; move or delete this item if not. -->
   **TODO: confirm, PR #76 (issue #74).** `HostDown` also pages for `nas-api` and
   `hypervisor-api` hosts. A silence or inhibit rule matching `alertname="HostDown"` without a
-  `host` matcher now also mutes NAS and hypervisor hosts.
+  `host` matcher now also mutes NAS and hypervisor hosts; add `collection_class="managed-linux"`
+  to keep the old scope.
 
 ### Added
 
@@ -45,8 +46,10 @@ change below needs a new vmalert mount.
   Gatus paging without a trace. (#53)
 - <!-- TODO(release): confirm PR #76 (issue #74) merged before tagging; delete if not. -->
   **TODO: confirm, PR #76 (issue #74).** Critical host-down alerting for NAS (`nas-api`) and
-  hypervisor (`hypervisor-api`) hosts through `HostDown` (`for: 90s`). Hypervisors do not page
-  while pve-exporter itself is down.
+  hypervisor (`hypervisor-api`) hosts through `HostDown` (`for: 90s`) on their main scrape jobs.
+  Hypervisors do not page while pve-exporter itself is down (the `AncillaryDown` warning covers
+  that). The alert's `host` label now comes from the file_sd `host` label. The no-target
+  `estate.liveness` history query now returns 422 `QUERY_NOT_APPLICABLE`.
 - **Kiosk tile wall.** `?kiosk=1` on the overview shows a read-only wall of compact host tiles,
   worst status first, under a one-line stat strip and alert ribbon. Pages are sized from the real
   grid (columns × rows), each page stays up for at least 10 seconds, rotations resume where the
@@ -76,9 +79,9 @@ change below needs a new vmalert mount.
   charts, and probe-only hosts show "Not collected" for liveness history. (#71, #73)
 - **Alerts triage and the timeline lane tree** use the shared `useListNavigation` keyboard, with
   a single Tab stop per list. (#70)
-- <!-- TODO(release): confirm PR #75 merged before tagging; delete if not. -->
-  **TODO: confirm, PR #75.** The overview desk grid keyboard also runs on `useListNavigation`,
-  completing the move of the bespoke list keyboards (closes #37).
+- **Overview desk grid keyboard** runs on `useListNavigation`, the last bespoke list keyboard
+  (closes #37). The grid stays a single Tab stop with the same spatial arrow moves, Home/End go
+  to the first/last host, and j/k now move like ↓/↑. (#75)
 - **Keyboard and accessibility follow-ups** after the `@/ui` port: arrow-key roving in the side
   navigation, Ctrl/Cmd-B and Ctrl/Cmd-K behaviour in text fields, disclosure counts, and
   timeline range shortcuts announced to assistive technology. (#35)

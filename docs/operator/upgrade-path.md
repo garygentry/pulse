@@ -175,7 +175,8 @@ changes, and nothing needs to be re-rendered for them.
 > unchanged and routing is by severity, so no route needs editing. A silence or inhibit rule that
 > matches `alertname="HostDown"` with no `host` matcher now also mutes NAS and hypervisor hosts.
 > Add `collection_class="managed-linux"` to it to keep the old scope. While pve-exporter is down,
-> hypervisors do not page as down; `AncillaryDown` covers the exporter.
+> hypervisors do not page as down; the `AncillaryDown` warning covers the exporter. The alert's
+> `host` label now comes from the rendered file_sd `host` label.
 
 ### 5. Web app: security headers, kiosk and timeouts
 
