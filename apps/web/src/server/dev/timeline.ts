@@ -124,16 +124,29 @@ export interface VmalertRulesResponse {
   };
 }
 
+/** One Alertmanager silence label matcher. */
+export interface AmSilenceMatcher {
+  /** Label name. */ name: string;
+  /** Label value or regex. */ value: string;
+  /** Whether `value` is a regex. */ isRegex: boolean;
+  /** False for a negative (`!=`/`!~`) matcher. */ isEqual?: boolean;
+}
+
+/** An Alertmanager silence lifecycle status. */
+export interface AmSilenceStatus {
+  /** Lifecycle state (`active` | `pending` | `expired`). */ state: string;
+}
+
 /** One Alertmanager `GET /api/v2/silences` entry (the wire shape `@pulse/web-data` validates). */
 export interface AmSilence {
   /** Silence id. */ id: string;
-  /** Label matchers. */ matchers: { name: string; value: string; isRegex: boolean; isEqual?: boolean }[];
+  /** Label matchers. */ matchers: AmSilenceMatcher[];
   /** Creator display value. */ createdBy: string;
   /** Operator comment. */ comment: string;
   /** ISO-8601 start. */ startsAt: string;
   /** ISO-8601 expiry. */ endsAt: string;
   /** ISO-8601 last update. */ updatedAt?: string;
-  /** Lifecycle state (`active` | `pending` | `expired`). */ status: { state: string };
+  /** Lifecycle status. */ status: AmSilenceStatus;
 }
 
 /** The Alertmanager `GET /api/v2/silences` body: a bare array. */
