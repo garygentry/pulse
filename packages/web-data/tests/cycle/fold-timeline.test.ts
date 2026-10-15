@@ -65,7 +65,7 @@ function managedHost(name: string, instances: readonly string[]): WebEstateModel
     expectedChurn: false,
     scrapeIntervalClass: null,
     provenance: prov(),
-    scrapeTargets: instances.map((instance) => ({ job: "node", instance })),
+    scrapeTargets: instances.map((instance) => ({ job: "managed-linux", instance })),
     artifacts: [],
     detail: { exporterPorts: [9100], cadvisor: false, heartbeat: true, deliveryForm: "compose", commandSignals: [] },
   } as WebEstateModelV2["hosts"][number];

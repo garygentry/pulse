@@ -24,6 +24,17 @@ export function notAvailableAtRange(maxRange: RangeId): string {
   return `Not available at this range (max ${maxRange})`;
 }
 
+/**
+ * Host state when the index advertises no capacity charts. The capacity queries read node_exporter
+ * series, so the binder offers them only to hosts scraped through node_exporter (managed-linux,
+ * nas-api); a hypervisor read through its API has none (issue #69).
+ */
+export const HOST_CAPACITY_NOT_COLLECTED = {
+  title: "Capacity metrics not collected for this host",
+  description:
+    "CPU, memory, disk and load come from node_exporter, which is not scraped for this host's collection class.",
+} as const;
+
 /** Service latency state for an endpoint the index does not list. */
 export const CHECK_LATENCY_UNAVAILABLE = "Check latency history not available";
 

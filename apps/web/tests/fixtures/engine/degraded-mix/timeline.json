@@ -6,7 +6,7 @@
       "step": {
         "op": "alert-fire",
         "alert": {
-          "labels": { "alertname": "BackupJobFailed", "severity": "critical", "estate": "reference-estate", "host": "harbor-app-02", "service": "nas-backups", "instance": "harbor-app-02:9100", "job": "node" },
+          "labels": { "alertname": "BackupJobFailed", "severity": "critical", "estate": "reference-estate", "host": "harbor-app-02", "service": "nas-backups", "instance": "harbor-app-02", "job": "managed-linux" },
           "annotations": { "summary": "nas-backups nightly job failed on harbor-app-02" },
           "startsAt": "2026-01-01T00:00:20.000Z",
           "endsAt": "2026-12-31T00:00:20.000Z",
@@ -19,7 +19,7 @@
     },
     { "atMs": 30000, "step": { "op": "outage-begin", "source": "vm" } },
     { "atMs": 45000, "step": { "op": "host-up", "host": "harbor-app-02" } },
-    { "atMs": 50000, "step": { "op": "alert-resolve", "alertname": "BackupJobFailed", "instance": "harbor-app-02:9100" } },
+    { "atMs": 50000, "step": { "op": "alert-resolve", "alertname": "BackupJobFailed", "instance": "harbor-app-02" } },
     { "atMs": 60000, "step": { "op": "outage-end", "source": "vm" } }
   ]
 }

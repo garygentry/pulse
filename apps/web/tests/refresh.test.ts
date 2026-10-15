@@ -430,7 +430,7 @@ function biggerGeneration(extra: number): { model: string; coverage: string; fin
       addresses: [addr],
       artifacts: [],
       suppressed: null,
-      ...("scrapeTargets" in template ? { scrapeTargets: [{ job: "node", instance: `${addr}:9100` }] } : {}),
+      ...("scrapeTargets" in template ? { scrapeTargets: [{ job: "managed-linux", instance: `${addr}:9100` }] } : {}),
     } as WebEstateHostV2);
   }
   const model: WebEstateModelV2 = { ...base, hosts: [...base.hosts, ...clones] };

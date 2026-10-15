@@ -239,6 +239,11 @@ Issues one `page=1&pageSize=512` request. It returns every endpoint's `name`, `g
 | `parseRange(value, definition)` | Resolves a range and its step, or `INVALID_REQUEST` / `RANGE_UNSUPPORTED` |
 | `bindCuratedQuery(queryId, target, range, model)` | `QueryBindResult`: a `BoundQuery` with server-authored `promql`, or a closed failure |
 | `escapePrometheusLabelValue(value)` | Escapes backslash, newline, and double quote only |
+| `ESTATE_SCRAPE_INSTANCE_SOURCE` | Each estate scrape job mapped to where its stored `instance` label comes from (`host` or `address`), per `scrape.yml` relabeling |
+| `scrapeSeriesIdentity(hostName, target)` | The post-relabel `{ job, instance }` a rendered scrape target's stored series carry |
+| `HOST_LIVENESS_JOB` | The scrape job whose `up` is a host's liveness, by collection class (`managed-linux`, `nas-api`, `hypervisor-api`) |
+| `NODE_EXPORTER_JOBS` | The jobs that scrape node_exporter (`managed-linux`, `nas-api`); the host capacity queries apply only to hosts with one |
+| `ENGINE_SCRAPE_JOBS` | The stack's own static scrape jobs; declared-versus-scraped reports their targets as `engine` (expected) |
 
 | Query id | Target | Unit | Default / max range |
 |---|---|---|---|
@@ -256,6 +261,13 @@ Issues one `page=1&pageSize=512` request. It returns every endpoint's `name`, `g
 | `engine.disk-usage` | estate | bytes | 6h / 7d |
 | `engine.notification-failures` | estate | count | 6h / 7d |
 | `engine.notification-latency` | estate | seconds | 6h / 7d |
+
+Host queries select each of the host's scrape targets by its stored `job` and `instance` labels, not by the rendered target string in `scrapeTargets[].instance`. The model records the target as the renderer wrote it into file_sd (before relabeling, for example `10.0.0.5:9100`). VictoriaMetrics stores the series after the relabel rules in `stack/compose/config/victoriametrics/scrape.yml` run. Every managed-host and `nas-api` job copies the `host` label onto `instance` (the estate-wide `instance == host` contract), so those series carry `instance="<host name>"`. `hypervisor-api` keeps the rendered API endpoint. `scrapeSeriesIdentity` does this translation. Each query then reads only its source jobs:
+
+- `estate.liveness` for a host is `min(up{…}) or vector(0/0)` over the host's main collection job (`HOST_LIVENESS_JOB`). This is the series the `HostDown` rule reads. An auxiliary exporter on the same host (cadvisor, process-exporter, the heartbeat agent) has its own job, so its failure never draws the host as down. `pulse_agent_up` only ever reports 1, so it is not part of host liveness. A probe-only host has no VM liveness job and keeps its declared targets.
+- `host.cpu.utilization`, `host.memory.utilization`, `host.disk.utilization` and `host.load.1m` read `node_*` series, so they bind only to node_exporter jobs (`NODE_EXPORTER_JOBS`). A hypervisor-api host gets `QUERY_NOT_APPLICABLE`. The timeline index then offers it no capacity charts, and the detail region says the metrics are not collected for the host.
+
+The same identity drives the declared-versus-scraped comparison in the estate fold. A discovered target of one of the stack's own static jobs (`ENGINE_SCRAPE_JOBS`: VictoriaMetrics, vmalert, Alertmanager and so on) is reported as `engine`, an expected target, not as `unexpected`. `tests/queries/series-identity-contract.test.ts` replays the relabel rules so the table and the scrape config cannot drift.
 
 `endpoint.check.latency` binds to `1000 * avg(gatus_results_duration_seconds{name="<endpoint name>"})`. It selects by Gatus's `name` label, which holds the pulse name, not by `key`. It applies only to service endpoint targets.
 
