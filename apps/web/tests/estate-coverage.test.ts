@@ -80,6 +80,16 @@ test("partitionComparisons splits both directions + matched/unknown", () => {
   expect(p.unknown).toHaveLength(1);
 });
 
+test("partitionComparisons counts engine targets apart from unexpected (issue #69)", () => {
+  const p = partitionComparisons([
+    ...BOTH_DIRECTIONS,
+    makeComparison({ state: "engine", drilldownId: "", scrapeTarget: "victoriametrics:8428" }),
+  ]);
+  expect(p.engine.map((c) => c.scrapeTarget)).toEqual(["victoriametrics:8428"]);
+  expect(p.unexpected.map((c) => c.drilldownId)).toEqual(["host:ghost"]);
+  expect(p.unknown).toHaveLength(1);
+});
+
 test("aggregateClassTotals tallies each bucket by collectionClass and sums to total", () => {
   const cov = makeEstatePayloadFixture().coverage.value as WebCoverageArtifact;
   const totals = aggregateClassTotals(cov);
@@ -288,6 +298,31 @@ describeDom("estate: coverage explorer", (dom) => {
       ]);
     } finally {
       unmount();
+    }
+  });
+
+  test("stack engine targets render as an ok 'engine (expected)' count, never an unexpected row", async () => {
+    const payload = withComparisons([
+      ...BOTH_DIRECTIONS,
+      makeComparison({ state: "engine", drilldownId: "", scrapeTarget: "vmalert:8880" }),
+    ]);
+    const { container, unmount } = await dom.mount(createElement(CoverageExplorer, { payload }) as ReactElement);
+    try {
+      const unexpected = container.querySelector('[data-testid="estate-diff-unexpected"]') as HTMLElement;
+      expect(bodyRows(unexpected)).toHaveLength(1);
+      expect(unexpected.textContent).not.toContain("vmalert:8880");
+      const engine = container.querySelector('[data-testid="estate-diff-engine-count"] [data-status]') as Element;
+      expect(engine.getAttribute("data-status")).toBe("ok");
+      expect(engine.textContent).toContain("1 engine (expected)");
+    } finally {
+      unmount();
+    }
+    // No engine rows → no engine count.
+    const none = await dom.mount(createElement(CoverageExplorer, { payload: withComparisons(BOTH_DIRECTIONS) }) as ReactElement);
+    try {
+      expect(none.container.querySelector('[data-testid="estate-diff-engine-count"]')).toBeNull();
+    } finally {
+      none.unmount();
     }
   });
 

@@ -64,7 +64,7 @@ function host(n: number): WebEstateModelV2["hosts"][number] {
     expectedChurn: false,
     scrapeIntervalClass: null,
     provenance: prov(),
-    scrapeTargets: [{ job: "node", instance: `10.0.0.${n}:9100` }],
+    scrapeTargets: [{ job: "managed-linux", instance: `10.0.0.${n}:9100` }],
     artifacts: [],
     detail: { exporterPorts: [9100], cadvisor: false, heartbeat: true, deliveryForm: "compose", commandSignals: [] },
   };
@@ -157,7 +157,7 @@ describe("global waiter bound and FIFO order (criterion 3)", () => {
     vm.pending[0]!.resolve({ ok: true, data: { series: [] } });
     for (let i = 0; i < 10 && vm.calls < 5; i += 1) await Promise.resolve();
     expect(vm.calls).toBe(5);
-    expect(vm.promqls[4]).toContain("10.0.0.4:9100");
+    expect(vm.promqls[4]).toContain(`instance="host4"`);
     expect(svc.stats().active).toBe(4);
     expect(svc.stats().queued).toBe(2);
   });

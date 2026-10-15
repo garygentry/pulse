@@ -54,7 +54,7 @@ const CASES: readonly MapCase[] = [
   { name: "HEALTH_STATUS", map: HEALTH_STATUS, keys: domain<HealthState>()(["healthy", "unhealthy", "unknown", "not-configured"]) },
   { name: "SCRAPE_HEALTH_STATUS", map: SCRAPE_HEALTH_STATUS, keys: domain<ScrapeJobState["targets"][number]["health"]>()(["up", "down", "unknown"]) },
   { name: "COVERAGE_STATUS", map: COVERAGE_STATUS, keys: domain<HostCoverage>()(["covered", "gap", "suppressed", "unknown"]) },
-  { name: "DIFF_STATUS", map: DIFF_STATUS, keys: domain<DeclaredScrapeComparison["state"]>()(["matched", "missing", "unexpected", "unknown"]) },
+  { name: "DIFF_STATUS", map: DIFF_STATUS, keys: domain<DeclaredScrapeComparison["state"]>()(["matched", "missing", "unexpected", "engine", "unknown"]) },
   { name: "FINDING_SEVERITY_STATUS", map: FINDING_SEVERITY_STATUS, keys: domain<FindingSeverity>()(["error", "warning", "info"]) },
   { name: "SEVERITY_STATUS", map: SEVERITY_STATUS, keys: ["critical", "warning", "info"] },
   { name: "RULE_HEALTH_STATUS", map: RULE_HEALTH_STATUS, keys: domain<RuleState["health"]>()(["healthy", "unhealthy", "unknown"]) },

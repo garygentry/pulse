@@ -18,3 +18,12 @@ export {
 } from "./ranges.js";
 export { escapePrometheusLabelValue, bindCuratedQuery } from "./binding.js";
 export type { BoundQuery, QueryBindFailureCode, QueryBindResult } from "./binding.js";
+export {
+  ENGINE_SCRAPE_JOBS,
+  ESTATE_SCRAPE_INSTANCE_SOURCE,
+  HOST_LIVENESS_JOB,
+  NODE_EXPORTER_JOBS,
+  scrapeInstanceSource,
+  scrapeSeriesIdentity,
+} from "./series-identity.js";
+export type { ScrapeInstanceSource, ScrapeSeriesIdentity } from "./series-identity.js";

@@ -36,6 +36,7 @@ import type {
 import type { FoldInputs } from "./records.js";
 import { DEFAULT_GATUS_STALE_SECONDS, effectiveData, sourceAvailability } from "./records.js";
 import { candidateFromAlertLabels, resolveCandidate } from "./target-match.js";
+import { ENGINE_SCRAPE_JOBS, scrapeInstanceSource, scrapeSeriesIdentity } from "../queries/series-identity.js";
 
 /** The renderer host collection-class discriminant, derived from the model to avoid a core import. */
 type CollectionClass = WebEstateHostV2["collectionClass"];
@@ -325,6 +326,26 @@ function buildFindings(inputs: FoldInputs): AvailabilitySection<WebFindingsArtif
   };
 }
 
+/** A collision-free `job`/`instance` map key. */
+function scrapeKey(job: string, instance: string): string {
+  return `${job}\u0000${instance}`;
+}
+
+/**
+ * The `host:port` a sanitized scrape URL connects to (default port by scheme), or null when there
+ * is no URL or it does not parse.
+ */
+function scrapeUrlAddress(scrapeUrl: string | null): string | null {
+  if (scrapeUrl === null) return null;
+  try {
+    const url = new URL(scrapeUrl);
+    const port = url.port !== "" ? url.port : url.protocol === "https:" ? "443" : url.protocol === "http:" ? "80" : "";
+    return port === "" ? url.hostname : `${url.hostname}:${port}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Build independently actionable declared-versus-scraped rows from VM scrape discovery.
  * A non-current source yields explicit unknown rows (never an implied clean result); a current
@@ -336,18 +357,41 @@ function buildDeclaredVersusScraped(
   const record = inputs.records["victoriametrics-targets"];
   const availability = sourceAvailability(record, "victoriametrics-targets");
 
-  const declared = new Map<string, string>();
+  // Declared targets carry their post-relabel `job`/`instance` identity (issue #69): VM's targets
+  // API reports labels AFTER relabeling, so a managed-linux target rendered as `10.0.0.5:9100` is
+  // discovered as `instance="<host name>"` within its job. Several custom-exporter ports on one
+  // host share that identity, so for a job whose instance comes from the host label the match
+  // also requires the discovered scrape URL's `host:port` to equal the rendered target (the
+  // targets source keeps the pre-relabel address there). Rows stay one per rendered target.
+  interface Declared {
+    readonly job: string;
+    readonly instance: string;
+    /** Rendered `address:port` to check against the scrape URL, or null for address-sourced jobs. */
+    readonly address: string | null;
+    readonly rendered: string;
+    readonly drilldownId: string;
+  }
+  const declaredRows = new Map<string, Declared>();
   for (const host of inputs.model.hosts) {
     for (const target of host.scrapeTargets) {
-      if (!declared.has(target.instance)) declared.set(target.instance, host.drilldownId);
+      const rowKey = scrapeKey(target.job, target.instance);
+      if (declaredRows.has(rowKey)) continue;
+      const identity = scrapeSeriesIdentity(host.name, target);
+      declaredRows.set(rowKey, {
+        job: identity.job,
+        instance: identity.instance,
+        address: scrapeInstanceSource(target.job) === "host" ? target.instance : null,
+        rendered: target.instance,
+        drilldownId: host.drilldownId,
+      });
     }
   }
 
   if (availability.state !== "current" || !record.latest.result.ok) {
     const message = "Scrape discovery is unavailable; declared-versus-scraped drift cannot be determined.";
-    const unknown = [...declared].map(([instance, drilldownId]): DeclaredScrapeComparison => ({
+    const unknown = [...declaredRows.values()].map(({ rendered, drilldownId }): DeclaredScrapeComparison => ({
       drilldownId,
-      scrapeTarget: instance,
+      scrapeTarget: rendered,
       state: "unknown",
       message,
     }));
@@ -359,26 +403,43 @@ function buildDeclaredVersusScraped(
     };
   }
 
-  const discovered = new Set(record.latest.result.data.map((target) => target.instance));
+  const discovered = record.latest.result.data.map((target) => ({
+    job: target.job,
+    instance: target.instance,
+    address: scrapeUrlAddress(target.scrapeUrl),
+  }));
+  const matches = (d: (typeof discovered)[number], r: Declared): boolean =>
+    d.job === r.job &&
+    d.instance === r.instance &&
+    (r.address === null || d.address === null || d.address === r.address);
+  const declared = [...declaredRows.values()];
   const rows: DeclaredScrapeComparison[] = [];
-  for (const [instance, drilldownId] of declared) {
-    const matched = discovered.has(instance);
+  for (const r of declared) {
+    const matched = discovered.some((d) => matches(d, r));
     rows.push({
-      drilldownId,
-      scrapeTarget: instance,
+      drilldownId: r.drilldownId,
+      scrapeTarget: r.rendered,
       state: matched ? "matched" : "missing",
       message: matched
-        ? `Declared scrape target ${instance} was discovered.`
-        : `Declared scrape target ${instance} was not discovered.`,
+        ? `Declared scrape target ${r.rendered} (job ${r.job}) was discovered.`
+        : `Declared scrape target ${r.rendered} (job ${r.job}) was not discovered.`,
     });
   }
-  for (const instance of discovered) {
-    if (declared.has(instance)) continue;
+  const reported = new Set<string>();
+  for (const d of discovered) {
+    if (declared.some((r) => matches(d, r))) continue;
+    const shown = d.address ?? d.instance;
+    const key = scrapeKey(d.job, `${d.instance}\u0000${shown}`);
+    if (reported.has(key)) continue;
+    reported.add(key);
+    const engine = ENGINE_SCRAPE_JOBS.has(d.job);
     rows.push({
       drilldownId: "",
-      scrapeTarget: instance,
-      state: "unexpected",
-      message: `Discovered scrape target ${instance} is not declared.`,
+      scrapeTarget: d.instance,
+      state: engine ? "engine" : "unexpected",
+      message: engine
+        ? `Stack engine target ${d.instance} (job ${d.job}) is expected and not an estate declaration.`
+        : `Discovered scrape target ${d.instance} (job ${d.job}, ${shown}) is not declared.`,
     });
   }
 

@@ -328,7 +328,7 @@ describeUi("estate entity page", () => {
     const scrape = byTestId("estate-entity-scrape-targets")!;
     const table = within(scrape).getByRole("table", { name: "Scrape targets" });
     expect(within(table).getByRole("columnheader", { name: "Job" })).toBeTruthy();
-    expect(table.textContent).toContain("node");
+    expect(table.textContent).toContain("managed-linux");
     expect(table.textContent).toContain("10.0.0.1:9100");
     const rendered = byTestId("estate-entity-rendered-artifacts")!;
     expect(within(rendered).getByRole("list", { name: "Rendered artifacts" }).textContent).toContain("scrape/hostA.yml");
