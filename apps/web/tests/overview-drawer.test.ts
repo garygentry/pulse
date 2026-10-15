@@ -20,6 +20,7 @@ import { NONE_DECLARED_TEXT } from "../src/client/views/overview/drawer/Declared
 import {
   LIVENESS_HISTORY_STALE_TEXT,
   LIVENESS_HISTORY_UNAVAILABLE_TEXT,
+  LIVENESS_NOT_COLLECTED_TEXT,
   RETRY_LIVENESS_HISTORY_LABEL,
 } from "../src/client/views/overview/drawer/LivenessSparkline.js";
 import { NO_SUCCESSFUL_OBSERVATION_TEXT, SIGNAL_UNAVAILABLE_TEXT } from "../src/client/views/overview/drawer/format.js";
@@ -807,6 +808,44 @@ describeDom("TargetDrawer — lazy liveness sparkline", () => {
     expect(liveness(dialog2).querySelector("[data-stale]")).toBeNull();
     expect(liveness(dialog2).textContent).not.toContain(LIVENESS_HISTORY_STALE_TEXT);
     history2.dispose();
+  });
+
+  test("#51: an excluded (uncollected) host fetches no liveness and says 'Not collected' with an icon", async () => {
+    const snapshot = makeOverviewSnapshot({ classes: ["excluded"] });
+    const transport = deferredHistoryFetch();
+    const history = createHistoryController({ fetch: transport.fetch, now: () => 1_000 });
+    const { root, open } = await mountGridWithDrawer(snapshot, history);
+    const dialog = await open(FIXTURE_IDS.okHost);
+    expect(transport.calls).toHaveLength(0);
+    const region = liveness(dialog);
+    expect(region.getAttribute("data-history-state")).toBe("not-collected");
+    expect(region.textContent).toBe(LIVENESS_NOT_COLLECTED_TEXT);
+    expect(region.querySelector('svg[data-slot="icon"]')).not.toBeNull();
+    expect(region.querySelector("button")).toBeNull();
+    expect(dialog.querySelector('[data-section="facts"]')).not.toBeNull();
+    expect(root.querySelectorAll("[data-overview-target]").length).toBeGreaterThan(0);
+    // A service on that host still has a liveness query (service liveness does not need scrape targets).
+    for (const m of mounted.splice(0)) m.unmount();
+    const second = await mountGridWithDrawer(snapshot, history);
+    await second.open(FIXTURE_IDS.okService);
+    expect(transport.calls).toHaveLength(1);
+    history.dispose();
+  });
+
+  test("#51: a failure a retry cannot fix (QUERY_NOT_APPLICABLE) offers no retry control", async () => {
+    const snapshot = makeOverviewSnapshot();
+    const transport = deferredHistoryFetch();
+    const history = createHistoryController({ fetch: transport.fetch, now: () => 1_000 });
+    const { open } = await mountGridWithDrawer(snapshot, history);
+    const dialog = await open(FIXTURE_IDS.okHost);
+    await act(async () =>
+      transport.calls[0]!.resolve({ status: "error", error: { code: "QUERY_NOT_APPLICABLE", message: "x" }, httpStatus: 422 }),
+    );
+    const region = liveness(dialog);
+    expect(region.getAttribute("data-history-state")).toBe("error");
+    expect(region.getAttribute("data-error-code")).toBe("QUERY_NOT_APPLICABLE");
+    expect(region.querySelector("button")).toBeNull();
+    history.dispose();
   });
 
   test("error renders bounded text and a retry control; retry keeps the drawer, sections and grid", async () => {

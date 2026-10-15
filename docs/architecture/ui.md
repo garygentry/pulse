@@ -220,7 +220,7 @@ Each takes its status as a status-map entry, `status={TARGET_STATUS[s]}`, never 
 the entry's tone colours the mark and an outline entry draws hatched or dashed. `Gauge` is a
 `meter` and needs an `ariaLabel`; it shows the entry's label under the value. `StatusTimeline`
 needs a `statusMap` and a `formatTime` (the estate clock, or `formatTimestamp`) for its
-screen-reader list of intervals; its root is a named `group`. `TimeSeriesChart` loads uPlot through `React.lazy`, so uPlot never ships on the initial route.
+screen-reader list of intervals; its root is a named `group`. It is a fixed-width SVG: in a narrow pane, wrap it in pulse's `ScrollRegion` (`@/ui`), which scrolls it horizontally and becomes a named, focusable region only while it overflows. `TimeSeriesChart` loads uPlot through `React.lazy`, so uPlot never ships on the initial route.
 Colours come only from the tone and chart tokens. uPlot draws to a `<canvas>`, which cannot
 resolve `var()`, so `ui/viz/uplot-chart.tsx` reads the theme tokens from the chart root's computed
 style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--chart-1` to

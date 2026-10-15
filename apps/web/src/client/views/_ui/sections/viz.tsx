@@ -1,6 +1,7 @@
 import type { TargetStatus } from "@pulse/web-data/wire";
 import {
   Gauge,
+  ScrollRegion,
   Sparkline,
   StatusTimeline,
   TARGET_STATUS,
@@ -85,16 +86,17 @@ function Viz() {
         <Sparkline values={[]} ariaLabel="No samples" />
       </Specimen>
       <Specimen label="StatusTimeline: lanes, suppressed hatched, unknown solid">
-        <StatusTimeline
-          lanes={LANES}
-          statusMap={TARGET_STATUS}
-          formatTime={(t) => formatTimestamp(new Date(t).toISOString())}
-          domainStart={START}
-          domainEnd={START + 24 * HOUR}
-          width={560}
-          ariaLabel="Host status over 24 hours"
-          className="max-w-full overflow-x-auto"
-        />
+        <ScrollRegion label="Host status chart">
+          <StatusTimeline
+            lanes={LANES}
+            statusMap={TARGET_STATUS}
+            formatTime={(t) => formatTimestamp(new Date(t).toISOString())}
+            domainStart={START}
+            domainEnd={START + 24 * HOUR}
+            width={560}
+            ariaLabel="Host status over 24 hours"
+          />
+        </ScrollRegion>
       </Specimen>
       <Specimen label="Gauge: every status (its label under the value), custom range">
         {STATUSES.map((status, i) => (

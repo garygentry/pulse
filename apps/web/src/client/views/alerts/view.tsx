@@ -5,7 +5,7 @@
 // tab (`tab`, firing by omission), facet selection and `sel`. A PageErrorBoundary degrades any render
 // fault in place so the shell keeps rendering.
 
-import type { ReactElement } from "react";
+import type { FocusEvent, ReactElement } from "react";
 import { useEffect, useRef } from "react";
 import { useComputed, useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -34,6 +34,7 @@ import { TAB_QUERY_KEY, tabFromQuery } from "./view-model.js";
 import type { TriageTabId } from "./view-model.js";
 import { FacetBar } from "./facet-bar.js";
 import { SourceStatusBanners } from "./degraded.js";
+import { useEstateClock } from "./estate-clock.js";
 import { TriageTable } from "./table/TriageTable.js";
 import { TriageKeyboardHints, installTriageKeyboard } from "./keyboard.js";
 import { DetailPane } from "./detail/DetailPane.js";
@@ -71,6 +72,12 @@ function toQueryString(query: Readonly<Record<string, string>>): string {
 
 // ── the view ─────────────────────────────────────────────────────────────────────────────────────
 
+/** Radix moves tab focus without scrolling, so bring the focused tab into the list's own scroll
+ *  area (the list scrolls at phone widths rather than overflowing the page). */
+function revealTab(event: FocusEvent<HTMLElement>): void {
+  event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+}
+
 /** Default export — the ComponentType<ViewProps> the registry loads. The boundary wraps the body so
  *  any render fault degrades in place. */
 export default function AlertsView(props: ViewProps): ReactElement {
@@ -105,6 +112,7 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
 
   // Single store read — zero upstream fan-out. Signals auto-track.
   const payload = readAlerts(store);
+  const clock = useEstateClock(store);
 
   const activeTab = useComputed(() => tabFromQuery(route.value.query));
   // decodeTriageRoute also accepts the overview deep links (/alerts/:fingerprint, ?target=<id>).
@@ -211,7 +219,7 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
   } else {
     panel = (
       <>
-        <SourceStatusBanners payload={payload} />
+        <SourceStatusBanners payload={payload} clock={clock} />
         <FacetBar
           values={facetValues(payload)}
           selection={url.value.facets}
@@ -244,9 +252,14 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
       <PageHeader title="Alerts" />
       {/* Controlled by the URL: a tab change navigates, and the route re-selects the tab. */}
       <Tabs value={tab} onValueChange={onTabChange} className="min-w-0 gap-4">
-        <TabsList aria-label="Alert triage views">
+        {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). The bar is
+            hidden so a classic scrollbar can't squeeze the fixed-height tabs; a clipped tab shows the overflow. */}
+        <TabsList
+          aria-label="Alert triage views"
+          className="max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+        >
           {TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} data-tab={t.id}>
+            <TabsTrigger key={t.id} value={t.id} data-tab={t.id} onFocus={revealTab}>
               <Icon name={t.icon} />
               {t.label}
             </TabsTrigger>

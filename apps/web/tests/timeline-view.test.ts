@@ -19,7 +19,7 @@ import { createAppStore } from "../src/client/store/index.js";
 import type { AppStore } from "../src/client/store/index.js";
 import { createEstateClock, TZ_FALLBACK_MARKER } from "../src/client/format.js";
 import type { EstateClock } from "../src/client/format.js";
-import { createTimeAxis } from "../src/client/views/_shared/timeseries/axis.js";
+import { KEY_ZOOM_FACTOR, createTimeAxis } from "../src/client/views/_shared/timeseries/axis.js";
 import type { TimeAxisController, TimeWindow } from "../src/client/views/_shared/timeseries/axis.js";
 import { UOVER_GRACE_MS, SyncedChart } from "../src/client/views/_shared/timeseries/chart.js";
 import type { ChartReadoutMode } from "../src/client/views/_shared/timeseries/chart.js";
@@ -1112,8 +1112,10 @@ describeDom("timeline lanes — LaneTree, LaneEvidenceStatus and LaneDecorations
     selected?: TargetKey | null;
     readouts?: ReturnType<typeof createReadoutRegistry>;
     reachable?: (key: string) => boolean;
+    axis?: TimeAxisController;
+    clock?: EstateClock;
   }): ReactElement {
-    const axis = newAxis();
+    const axis = o.axis ?? newAxis();
     axes.push(axis);
     return el(LaneTree, {
       reachable: o.reachable ?? (() => false),
@@ -1122,7 +1124,7 @@ describeDom("timeline lanes — LaneTree, LaneEvidenceStatus and LaneDecorations
       selected: o.selected ?? null,
       axis,
       readouts: o.readouts ?? createReadoutRegistry(),
-      clock: CLOCK,
+      clock: o.clock ?? CLOCK,
       interactive: o.interactive ?? true,
       readoutId: "pulse-timeline-readout",
       status: null,
@@ -1172,6 +1174,32 @@ describeDom("timeline lanes — LaneTree, LaneEvidenceStatus and LaneDecorations
     expect(plots[0]!.querySelectorAll("[data-deco=selected]").length).toBe(1);
     expect(c.querySelector('ul[aria-label="Status lane legend"]')!.textContent).toContain("Checks (Gatus)");
     expect(c.querySelector("svg[data-slot=timeline-axis]")!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  test("#51: a zoom re-render formats only the moved domain edges for each block's StatusTimeline text list", async () => {
+    let calls = 0;
+    const clock: EstateClock = {
+      ...CLOCK,
+      format: (iso) => {
+        if (new Error().stack?.includes("status-timeline") === true) calls += 1;
+        return CLOCK.format(iso);
+      },
+    };
+    const hosts = fixtureTree();
+    const { blocks, evidence } = laneInputs({ hosts });
+    const axis = newAxis();
+    const c = await mount(treeVNode({ blocks, evidence, axis, clock }));
+    const intervals = c.querySelectorAll('[data-slot="status-timeline-text"] li li').length;
+    expect(intervals).toBeGreaterThanOrEqual(4);
+    expect(calls).toBeGreaterThan(0);
+    const view = axis.view.peek();
+    calls = 0;
+    axis.zoomAround(view.end, KEY_ZOOM_FACTOR);
+    await flush();
+    expect(axis.view.peek()).not.toEqual(view);
+    // Unmemoised: 2 × intervals. Memoised: the two new domain edges, once per plot block.
+    expect(calls).toBeLessThanOrEqual(2 * blocks.length);
+    expect(calls).toBeLessThan(2 * intervals);
   });
 
   test("REQ-LANE-01/REQ-ECR-C3: expanding Domains lists one DNS-check row per domain, and expanded services read partial evidence and check history not available", async () => {
@@ -1474,6 +1502,7 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
     onShorterRange?: (() => void) | null;
     axis?: TimeAxisController;
     readouts?: ReturnType<typeof createReadoutRegistry>;
+    clock?: EstateClock;
   }): Promise<HTMLElement> {
     const m = await dom.mount(
       el(AlertSwimlane, {
@@ -1483,7 +1512,7 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
         tree,
         axis: o.axis ?? dayAxis(),
         readouts: o.readouts ?? createReadoutRegistry(),
-        clock: CLOCK,
+        clock: o.clock ?? CLOCK,
         interactive: o.interactive ?? true,
         readoutId: "pulse-timeline-readout",
         onNavigate: () => {},
@@ -1514,6 +1543,32 @@ describeDom("timeline swimlane — AlertSwimlane (item 020)", (dom) => {
     const infoTrack = view.getAllByRole("group").find((g) => g.getAttribute("aria-labelledby") === "swim-head-info")!;
     expect(within(infoTrack).getByRole("group", { name: "Info alert intervals" }).querySelector('rect[data-tone="info"]')).not.toBeNull();
     expect(c.querySelector('[data-swim-track][data-severity="info"] rect[data-tone="neutral"]')).toBeNull();
+  });
+
+  test("#51: a zoom re-render formats only the moved domain edges for the StatusTimeline text list, not every interval again", async () => {
+    // Count the estate-clock formats made on behalf of StatusTimeline (its screen-reader interval list).
+    let calls = 0;
+    const clock: EstateClock = {
+      ...CLOCK,
+      format: (iso) => {
+        if (new Error().stack?.includes("status-timeline") === true) calls += 1;
+        return CLOCK.format(iso);
+      },
+    };
+    const axis = dayAxis();
+    const c = await mountSwim({ state: ready(TIMELINE_INCIDENT.alerts), axis, clock });
+    const intervals = (): number =>
+      [...c.querySelectorAll('[data-slot="status-timeline-text"] li li')].filter((li) => li.textContent!.includes(" to ")).length;
+    expect(calls).toBeGreaterThan(0); // the spy sees StatusTimeline's formats
+    const view = axis.view.peek();
+    calls = 0;
+    axis.zoomAround(view.end, KEY_ZOOM_FACTOR); // the incident is recent: keep it in view
+    await flush();
+    expect(axis.view.peek()).not.toEqual(view);
+    expect(intervals()).toBeGreaterThan(4);
+    // Unmemoised, every listed interval's start and end go through Intl again (2 × intervals per step);
+    // memoised, only the new domain edges miss the cache.
+    expect(calls).toBeLessThanOrEqual(2);
   });
 
   test("REQ-SWIM-01/02/03, REQ-LANE-07: severity rows, packed sub-lanes with the +k badge, and unmatched outlines", async () => {
