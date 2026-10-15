@@ -14,6 +14,9 @@
 //       their text size (4.5:1, or 3:1 for large text), and the overview status border cues (host
 //       `border-inline-start-color`, service chip border colour) reach 3:1 against the adjacent
 //       background (WCAG 1.4.11). Failures are collected and reported together; thresholds are fixed.
+//   (5) the kiosk tile wall (all 100 hosts on one 2560×2400 page) gives every status a tile whose
+//       badge has a distinct glyph and label with AA contrast, a 3:1 status edge, and badges that stay
+//       pixel-distinct under grayscale.
 //
 // Screenshot review/sign-off is a HUMAN post-loop action (08 §5.3, C-03): this suite only PRODUCES the
 // archived images and logs their absolute paths; it adds no snapshot/pixel-diff library and holds no
@@ -331,6 +334,103 @@ browserDescribe()("browser: overview grayscale, archived screenshots and AA cont
         if (ratio < 3) failures.push(`${theme}: ${b.key} ${fmt(border)} vs adjacent bg ${fmt(bg)} = ${ratio.toFixed(2)}:1 < 3:1`);
       }
       expect(failures, failures.join("\n")).toEqual([]);
+    }, 60_000);
+  }
+});
+
+/** Large enough that the 100-host kiosk wall fits one page, so every tile status is on screen. */
+const KIOSK_VIEWPORT = { width: 2560, height: 2400 } as const;
+
+browserDescribe()("browser: kiosk tiles never read by colour alone — glyph + label, AA contrast, grayscale, both themes", () => {
+  let fixtures: Map<FixtureTheme, FixturePage> | undefined;
+  let browser: Browser | undefined;
+  const handles = new Map<FixtureTheme, OverviewPageHandle>();
+
+  beforeAll(async () => {
+    fixtures = await buildOverviewFixtures();
+    browser = await launchOverviewBrowser();
+    for (const theme of OVERVIEW_THEMES) {
+      const handle = await openOverviewPage(browser, fixtures, { theme, mode: "kiosk", viewport: KIOSK_VIEWPORT, reducedMotion: "reduce" });
+      await handle.page.waitForSelector('[data-slot="overview-kiosk-tile"]');
+      handles.set(theme, handle);
+    }
+  }, 180_000);
+
+  afterAll(async () => {
+    try {
+      for (const handle of handles.values()) await handle.close();
+    } finally {
+      stopOverviewFixtures(fixtures);
+    }
+  }, 60_000);
+
+  for (const theme of OVERVIEW_THEMES) {
+    test(`every tile status: distinct glyph + label, AA label contrast, 3:1 status edge (${theme})`, async () => {
+      const page = handles.get(theme)!.page;
+      const reads = await page.evaluate((statuses) => {
+        const stackOf = (el: Element | null): string[] => {
+          const out: string[] = [];
+          for (let n = el; n !== null; n = n.parentElement) out.push(getComputedStyle(n).backgroundColor);
+          return out;
+        };
+        return statuses.map((status) => {
+          const tile = document.querySelector(`[data-slot="overview-kiosk-tile"][data-status="${status}"]`);
+          const badge = tile?.querySelector(`[data-slot="status-badge"][data-status="${status}"]`) ?? null;
+          const icon = badge?.querySelector('svg[data-slot="icon"]') ?? null;
+          const label = badge?.querySelector(":scope > span") ?? null;
+          const cs = label === null ? null : getComputedStyle(label);
+          return {
+            status,
+            found: tile !== null && badge !== null,
+            icon: icon === null ? "" : (/\blucide-[a-z0-9-]+/.exec(icon.getAttribute("class") ?? "")?.[0] ?? ""),
+            iconVisible: icon !== null && icon.getBoundingClientRect().width > 0,
+            label: (label?.textContent ?? "").trim(),
+            color: cs?.color ?? "",
+            fontSizePx: cs === null ? 0 : parseFloat(cs.fontSize),
+            fontWeight: cs === null ? 0 : Number(cs.fontWeight),
+            backgrounds: stackOf(label),
+            edge: tile === null ? "" : getComputedStyle(tile).borderInlineStartColor,
+            edgeBackgrounds: stackOf(tile?.parentElement ?? null),
+          };
+        });
+      }, [...STATUSES]);
+      const failures: string[] = [];
+      for (const r of reads) {
+        expect(r.found, `no kiosk tile with a ${r.status} status badge`).toBe(true);
+        expect(r.iconVisible, `no visible glyph for ${r.status}`).toBe(true);
+        expect(r.label.length, `empty label for ${r.status}`).toBeGreaterThan(0);
+        const bg = effectiveBackground(r.backgrounds);
+        const ratio = contrast(over(parseColor(r.color), bg), bg);
+        if (ratio < 4.5) failures.push(`${theme}: kiosk ${r.status} label ${ratio.toFixed(2)}:1 < 4.5:1`);
+        const edgeBg = effectiveBackground(r.edgeBackgrounds);
+        const edge = contrast(over(parseColor(r.edge), edgeBg), edgeBg);
+        if (edge < 3) failures.push(`${theme}: kiosk ${r.status} tile edge ${edge.toFixed(2)}:1 < 3:1`);
+      }
+      expect(new Set(reads.map((r) => r.icon)).size, JSON.stringify(reads.map((r) => r.icon))).toBe(STATUSES.length);
+      expect(new Set(reads.map((r) => r.label)).size, JSON.stringify(reads.map((r) => r.label))).toBe(STATUSES.length);
+      expect(failures, failures.join("\n")).toEqual([]);
+    }, 60_000);
+
+    test(`tile status badges stay pairwise pixel-distinct under grayscale (${theme})`, async () => {
+      const page = handles.get(theme)!.page;
+      const style = await page.addStyleTag({ content: "html { filter: grayscale(1) !important; }" });
+      try {
+        const shots: Buffer[] = [];
+        for (const status of STATUSES) {
+          const badge = page
+            .locator(`[data-slot="overview-kiosk-tile"][data-status="${status}"] [data-slot="status-badge"][data-status="${status}"]`)
+            .first();
+          expect(await badge.count(), `no kiosk tile badge for ${status}`).toBe(1);
+          shots.push(await badge.screenshot());
+        }
+        for (let a = 0; a < shots.length; a += 1) {
+          for (let b = a + 1; b < shots.length; b += 1) {
+            expect(shots[a]!.equals(shots[b]!), `${STATUSES[a]} and ${STATUSES[b]} kiosk badges are pixel-identical in grayscale (${theme})`).toBe(false);
+          }
+        }
+      } finally {
+        await style.evaluate((el) => (el as Element).remove());
+      }
     }, 60_000);
   }
 });

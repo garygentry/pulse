@@ -673,25 +673,34 @@ describeDom("overview integration — real OverviewView over store commits", (do
       const root = view.container;
       const doc = root.ownerDocument;
 
-      // Wallboard: the store's effective density is forced, the grid is the kiosk page grid.
+      // Wallboard: the store's effective density is forced, the grid is the kiosk tile list.
       expect(store.density.value).toBe("wallboard");
       expect(root.querySelector('[data-slot="overview-page"]')?.getAttribute("data-kiosk")).toBe("true");
-      expect(root.querySelector('[data-slot="overview-kiosk-page"] [data-slot="overview-grid"][data-layout="kiosk"]')).not.toBeNull();
+      expect(root.querySelector('[data-slot="overview-kiosk-page"] ul[role="list"][data-layout="kiosk"]')).not.toBeNull();
+
+      // Compact chrome: the page h1 stays for assistive technology but is visually hidden.
+      const h1s = root.querySelectorAll("h1");
+      expect(h1s).toHaveLength(1);
+      expect(h1s[0]!.closest('[data-slot="page-header"]')?.className).toContain("sr-only");
+      expect(root.querySelector('section[aria-label="Estate statistics"][data-stat-strip]')).not.toBeNull();
 
       // No grouping/sorting controls, no drawer (even with a persisted selection), no selection.
       expect(root.querySelector("[data-control]")).toBeNull();
       expect(root.querySelector("[role='group'][aria-label='Overview layout']")).toBeNull();
       expect(root.querySelector("[role='radiogroup']")).toBeNull();
       expect(doc.querySelector("[role='dialog']")).toBeNull();
-      const first = root.querySelector<HTMLElement>(`[data-slot="overview-kiosk-page"] ${TARGETS}`)!;
+      // Tiles are read-only: no target trigger, no button; a click on a tile selects nothing.
+      expect(root.querySelector(`[data-slot="overview-kiosk-page"] ${TARGETS}`)).toBeNull();
+      expect(root.querySelectorAll('[data-slot="overview-kiosk"] button, [data-slot="overview-kiosk"] [tabindex]').length).toBe(0);
+      const first = root.querySelector<HTMLElement>('[data-slot="overview-kiosk-tile"]')!;
       await act(async () => {
         first.click();
       });
       expect(doc.querySelector("[role='dialog']")).toBeNull();
       expect(store.selection.value).toBeNull();
 
-      // The stat header stays (freshness itself is the shell's top-bar pill, shown in kiosk too);
-      // the ribbon is the text-only summary.
+      // The stat strip stays (freshness itself is the shell's top-bar pill, shown in kiosk too);
+      // the ribbon is the one-line text-only summary.
       expect(root.querySelector('section[aria-label="Estate statistics"]')?.getAttribute("data-surface")).toBe("ready");
       expect(root.querySelector("[data-feed]")).toBeNull();
       const kioskRibbon = root.querySelector<HTMLElement>("[data-ribbon='kiosk'][data-kiosk='true']")!;

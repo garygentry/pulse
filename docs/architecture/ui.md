@@ -296,9 +296,63 @@ tree's rows show provenance as plain text and the provenance copy button lives o
 The keyboard path there is Enter on a host or service row, and the tree's visible keyboard help
 (its `aria-describedby`) says so.
 
-**Overview grid.** The host grid stays bespoke (a 2-D `role="grid"` with spatial roving focus and
+**Overview grid.** The desk host grid stays bespoke (a 2-D `role="grid"` with spatial roving focus and
 change markers) and is restyled with token classes. Its cells use `React.memo` with an explicit
-equality function, so a live update re-renders only the cells that changed.
+equality function, so a live update re-renders only the cells that changed. Rebuilding it on
+`CardGrid` was evaluated and rejected: `CardGrid`'s one-dimensional, one-target-per-item model does
+not fit a card holding a host target plus independently selectable service chips, and it would add
+no density.
+
+**Overview kiosk.** `?kiosk=1` does not page the desk grid. It renders its own read-only tile wall
+(`views/overview/kiosk/`):
+
+- **Chrome.** The page `h1` stays but is visually hidden (`sr-only`), so there is still one per page.
+  The stat cards collapse into `KioskStatStrip`: coverage gaps and engine state (with its last-good
+  time when not current) first, then a badge per status reading "Critical hosts · services". Counts
+  from 1,000 up are compact ("5K"), and assistive technology hears the exact numbers. The strip is
+  one line when it fits, which a typical estate does at wallboard widths, and wraps rather than clip
+  a count. The firing ribbon collapses to one line: severity counts, the first names truncated to
+  the line, and "+N more". It never wraps at `sm` and up, and below `sm` it shows two names instead
+  of five. The estate time zone (with the UTC-fallback marker), which the hidden page header shows on
+  the desk, sits in the tile wall's footer beside "i / P".
+- **Tiles.** `deriveKioskHosts` flattens every host into one list, worst effective status first,
+  then class, then name. It ignores the desk group/sort preferences. Each `KioskTile` is two fixed
+  lines. The first holds the host name, its class label and its rollup status. The second holds the
+  firing-alert count, the worst non-OK service as a chip, "+N more" for the rest, and "N OK" for the
+  OK services. Every status is a `TARGET_STATUS`/`ALERT_SEVERITY` badge (icon and text). A tile is
+  an `li` in a labelled `role="list"` (`Overview hosts, page i of P`). It is never a button or a tab
+  stop, and nothing in kiosk selects. Tiles are memoized on the immutable host and report renders to
+  the grid render probe as kind `tile`, so a live update re-renders only the tiles whose host changed.
+  The host status and the chip's service status carry the usual change marker. A chip truncates the
+  service name, never its status word.
+- **Paging.** Tile rows have a fixed height (`auto-rows`) and the columns are `auto-fill` tracks.
+  `useKioskPaging` reads the list's computed `grid-template-columns` track count, row height and row
+  gap, and the region's height. Capacity is `columns × rows`, with no probe card. The "i / P"
+  indicator sits in a fixed footer row, so whether it shows never changes the capacity. A region
+  resize re-measures. A new capacity or page count rebuilds the pages and restarts the sequence (at
+  page 1, or at the resume page inside a rotation). Each sequence has its own id,
+  so a capacity that changes and changes back never resurrects an earlier page. Status changes that
+  reorder the tiles keep the current page and its timer. One exception: a host that newly turns
+  critical restarts the sequence at page 1 (even inside a rotation), unless it is already on the
+  visible page. Page 1 holds the worst hosts, so the new host shows at once only if it sorts onto
+  page 1, which it does unless more critical hosts than one page holds sort ahead of it. Two flap
+  guards keep a flapping host from pinning the wall to page 1. Each host id restarts the sequence at
+  most once per full cycle, and the whole wall restarts at most once per cycle. Both are
+  module-level, like the rotation cursor, so they hold across rotation visits, and old entries are
+  pruned.
+- **Startup.** The first page timer waits for one ResizeObserver delivery for the region, and for the
+  wall's font face (up to 1 s). It asks `document.fonts` for the face itself (`check`/`load`),
+  because the font set reads "loaded" before a lazily loaded face is even requested. The first sequence therefore runs on settled metrics, after
+  the chrome above the wall and the page offset have landed.
+- **Timing.** Each page stays up for `max(10 s, cycle / P)`. Without rotation the cycle is 30 s, so
+  up to three pages share it and more pages lengthen it. Inside a shell rotation (`?rotate=`) the
+  cycle is the overview's dwell. A visit shows the pages that fit at that page dwell and holds the
+  last one until the shell advances. The next visit resumes at the first page not yet shown, through
+  a module-level cursor, since the view unmounts between visits. The cursor records only pages
+  actually shown: a page that ran its full dwell, or the visit's last page once it has been up for
+  half the shorter of the page and rotation dwells (checked when its timer fires and when the view
+  leaves, since a short rotation dwell can end the visit first). A re-measure or resize mid-visit therefore never skips a page. The shell stays the
+  only owner of rotation timers. Page swaps fade unless `prefers-reduced-motion` is set.
 
 ## The `/_ui` workbench
 

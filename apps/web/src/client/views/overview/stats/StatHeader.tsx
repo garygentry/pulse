@@ -4,12 +4,13 @@
 // coverage/engine evidence is rendered as an explicit "unavailable" state — never 0 gaps or OK — and
 // retained non-current values carry their stale qualifier plus last-good time. Feed freshness
 // (Live/Stale + update time) is the shell's top-bar indicator and the estate zone + UTC fallback
-// marker sit in the page header meta; this header repeats neither.
+// marker sit in the page header meta; this header repeats neither. Kiosk renders `KioskStatStrip`
+// instead: the same numbers as one compact line, so the tile wall keeps the screen.
 // Read-only: no control in this region mutates anything.
 
 import type { ReactElement, ReactNode } from "react";
 
-import { ALERT_SEVERITY, Badge, TARGET_STATUS } from "@/ui";
+import { ALERT_SEVERITY, Badge, TARGET_STATUS, VisuallyHidden } from "@/ui";
 import type { EstateClock } from "../../../format.js";
 import { OVERVIEW_STATUS_ORDER } from "../model.js";
 import type { CoverageStat, EngineOkStat, OverviewStats, OverviewSurfaceState, StatusCounts } from "../model.js";
@@ -158,6 +159,132 @@ export function StatHeader(props: StatHeaderProps): ReactElement {
         <CoverageGroup coverage={stats.coverage} clock={clock} />
         <EngineGroup engine={stats.engine} clock={clock} />
       </div>
+    </section>
+  );
+}
+
+/** One labelled run of the kiosk strip: a muted label, then its badges, wrapping when it must. */
+function StripGroup(props: { readonly stat: string; readonly label: string; readonly children: ReactNode }): ReactElement {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-stat={props.stat} role="group" aria-label={props.label}>
+      <span className="text-sm font-medium text-muted-foreground" aria-hidden="true">
+        {props.label}
+      </span>
+      {props.children}
+    </div>
+  );
+}
+
+const COMPACT = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+
+/** A count as shown on the strip: exact below 1,000, compact above ("5K", "12.3K"). */
+export function compactCount(value: number): string {
+  const text = countText(value);
+  return text === String(value) && value >= 1_000 ? COMPACT.format(value) : text;
+}
+
+/**
+ * Host and service counts per status as one badge each: "Critical 1 · 2" reads hosts · services
+ * (the run's label says so), compact from 1,000 up; the accessible text spells both out exactly. Statuses with no host and no
+ * service are left out (OK always shows, so the run is never empty).
+ */
+function StripStatuses(props: { readonly hosts: StatusCounts; readonly services: StatusCounts }): ReactElement {
+  const { hosts, services } = props;
+  const present = OVERVIEW_STATUS_ORDER.filter((status) => status === "ok" || hosts[status] !== 0 || services[status] !== 0);
+  return (
+    <>
+      {present.map((status) => (
+        <span key={status} data-stat-status={status}>
+          <TargetStatusBadge
+            status={status}
+            label={
+              <>
+                <span aria-hidden="true">{`${TARGET_STATUS[status].label} ${compactCount(hosts[status])} · ${compactCount(services[status])}`}</span>
+                <VisuallyHidden>{`${TARGET_STATUS[status].label}: ${countText(hosts[status])} hosts, ${countText(services[status])} services`}</VisuallyHidden>
+              </>
+            }
+          />
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Muted, truncating strip detail (a qualifier or last-good time): the first thing to give way. */
+const STRIP_DETAIL_CLASS = "min-w-0 shrink truncate text-xs text-muted-foreground tabular-nums";
+
+function StripCoverage(props: { readonly coverage: CoverageStat; readonly clock: EstateClock }): ReactElement {
+  const { coverage, clock } = props;
+  if (coverage.status === "unavailable") {
+    return (
+      <StripGroup stat="coverage" label="Coverage">
+        <TargetStatusBadge status="unknown" label="Unavailable" />
+      </StripGroup>
+    );
+  }
+  const current = coverage.availability.state === "current";
+  const gapsText = `Gaps ${countText(coverage.gaps)}`;
+  return (
+    <>
+      <StripGroup stat="coverage" label="Coverage">
+        {coverage.gaps > 0
+          ? <TargetStatusBadge status="warning" label={gapsText} />
+          : <Badge variant="outline" className="tabular-nums">{gapsText}</Badge>}
+      </StripGroup>
+      {current ? null : (
+        <span className={STRIP_DETAIL_CLASS} data-stat-qualifier="">{evidenceQualifier(clock, coverage.availability)}</span>
+      )}
+    </>
+  );
+}
+
+function StripEngine(props: { readonly engine: EngineOkStat; readonly clock: EstateClock }): ReactElement {
+  const { engine, clock } = props;
+  const current = engine.status === "available" && engine.availability.state === "current";
+  let badge: ReactElement;
+  if (engine.status === "available" && current) {
+    badge = engine.ok ? engineBadge("ok", "OK") : engineBadge("critical", "Not OK");
+  } else if (engine.availability.state === "not-configured") {
+    badge = engineBadge("unknown", "Not configured");
+  } else {
+    badge = engineBadge("unknown", "Unavailable");
+  }
+  const lastGood = engine.availability.lastGoodAt;
+  return (
+    <>
+      <StripGroup stat="engine" label="Engine">
+        {badge}
+      </StripGroup>
+      {current || lastGood === null ? null : (
+        <span className={STRIP_DETAIL_CLASS} data-stat-qualifier="">{lastGoodLabel(clock, lastGood)}</span>
+      )}
+    </>
+  );
+}
+
+/**
+ * The kiosk's estate totals as one line when it fits: coverage gaps and engine state (with its
+ * last-good time when not current) first, so they never drop out of view, then host · service counts
+ * per status. It wraps rather than clip a count — at wallboard widths it fits one line for a typical
+ * estate, and a wrap only restarts the paging at page 1. Firing counts are on the kiosk alert line
+ * below; the estate time zone is in the tile wall's footer. `relative` keeps the visually hidden
+ * badge text positioned inside the strip, so it never widens the page.
+ */
+export function KioskStatStrip(props: StatHeaderProps): ReactElement {
+  const { stats, surface, clock } = props;
+  return (
+    <section
+      className="relative flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1"
+      aria-label="Estate statistics"
+      data-surface={surface.status}
+      data-slot="overview-stat-strip"
+      data-stat-strip=""
+    >
+      <StripCoverage coverage={stats.coverage} clock={clock} />
+      <StripEngine engine={stats.engine} clock={clock} />
+      <StripGroup stat="hosts" label="Hosts · services">
+        <StripStatuses hosts={stats.hosts} services={stats.services} />
+      </StripGroup>
     </section>
   );
 }

@@ -6,7 +6,8 @@
 // rendered). It then proves the keyboard contract in a real engine: Tab from the top of the page enters
 // the grid, there is exactly ONE roving tab stop, ArrowRight/ArrowDown move focus and the tab stop with
 // it, Enter opens the drawer naming the focused target, and Escape closes it returning focus to that
-// same trigger.
+// same trigger. The kiosk tile wall (`kiosk` mode, 100 hosts at 1280×720) is also axe-clean in both
+// themes and has no focusable descendant.
 //
 // SELF-SKIPS when Chromium is not provisioned (_harness.browserDescribe); THROWS at collection under
 // PULSE_REQUIRE_BROWSER=1 so CI never green-skips it.
@@ -93,6 +94,27 @@ browserDescribe()("browser: overview axe zero wcag2a/wcag2aa violations + keyboa
       const handle = await open(theme);
       try {
         await expectNoAxeViolations(handle.page);
+      } finally {
+        await handle.close();
+      }
+    }, 60_000);
+
+    test(`kiosk tile wall: zero wcag2a/wcag2aa violations and no focusable tile in ${theme} theme`, async () => {
+      const handle = await openOverviewPage(browser, fixtures!, {
+        theme,
+        mode: "kiosk",
+        viewport: { width: 1280, height: 720 },
+        reducedMotion: "reduce",
+      });
+      handles.push(handle);
+      try {
+        const { page } = handle;
+        await page.waitForSelector('[data-slot="overview-kiosk-tile"]');
+        await expectNoAxeViolations(page);
+        const focusable = await page.evaluate(
+          () => document.querySelectorAll('[data-slot="overview-kiosk"] :is(button, a[href], input, [tabindex])').length,
+        );
+        expect(focusable).toBe(0);
       } finally {
         await handle.close();
       }

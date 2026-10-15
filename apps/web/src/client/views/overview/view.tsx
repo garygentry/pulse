@@ -7,7 +7,9 @@
 // and written through preferences.ts with a guarded browser-storage adapter. Selection is canonical
 // (`TargetIdentity.id`); the store's name-based `selection` is only a compatibility mirror.
 // `?kiosk=1` implies wallboard, suppresses the drawer and the grouping controls, fits the page to the
-// viewport below the shell chrome and pages the grid. Feed freshness is the shell's top-bar indicator.
+// viewport below the shell chrome and swaps in the compact kiosk chrome (a visually hidden h1, a
+// one-line stat strip and a one-line alert summary) above a paged wall of read-only tiles. Feed
+// freshness is the shell's top-bar indicator.
 // The page sits in a PageErrorBoundary; the stat header, ribbon and drawer each in a
 // FragmentBoundary. The grid is not wrapped, so its render-count contract is untouched.
 
@@ -24,8 +26,9 @@ import { TargetDrawer, toStoreSelection } from "./drawer/TargetDrawer.js";
 import { OVERVIEW_LOADING_MESSAGE, deriveOverviewSurfaceState } from "./freshness.js";
 import { createChangeTracker } from "./grid/change-marker.js";
 import { memoWithEquality, shallowEqualProps } from "./grid/memo.js";
-import { KioskOverviewGrid, OVERVIEW_TARGET_SELECTOR, OverviewGrid } from "./grid/OverviewGrid.js";
+import { OVERVIEW_TARGET_SELECTOR, OverviewGrid } from "./grid/OverviewGrid.js";
 import { apiHistoryFetch, createHistoryController } from "./history.js";
+import { KioskOverviewGrid } from "./kiosk/KioskOverviewGrid.js";
 import type { KioskPagingClock } from "./kiosk/useKioskPaging.js";
 import { useViewportTop } from "./kiosk/useViewportTop.js";
 import { MAX_COLLAPSED_GROUP_IDS } from "./model.js";
@@ -41,7 +44,7 @@ import { browserPreferenceStorage } from "./preference-storage.js";
 import { readOverviewPreferences, reconcileOverviewPreferences, writeOverviewPreferences } from "./preferences.js";
 import { FiringRibbon } from "./ribbon/FiringRibbon.js";
 import { deriveOverviewModel, deriveTargetDrawerModel } from "./selectors.js";
-import { StatHeader } from "./stats/StatHeader.js";
+import { KioskStatStrip, StatHeader } from "./stats/StatHeader.js";
 import type { StatHeaderProps } from "./stats/StatHeader.js";
 import { OverviewSurfaceNotice } from "./stats/SurfaceNotice.js";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -82,6 +85,11 @@ function reloadPage(): void {
 // field-wise because deriveOverviewSurfaceState builds a fresh object every render.
 const StableStatHeader = memoWithEquality(
   StatHeader,
+  (a: Readonly<StatHeaderProps>, b: Readonly<StatHeaderProps>) =>
+    a.stats === b.stats && a.clock === b.clock && shallowEqualProps(a.surface, b.surface),
+);
+const StableKioskStatStrip = memoWithEquality(
+  KioskStatStrip,
   (a: Readonly<StatHeaderProps>, b: Readonly<StatHeaderProps>) =>
     a.stats === b.stats && a.clock === b.clock && shallowEqualProps(a.surface, b.surface),
 );
@@ -201,13 +209,17 @@ function ZoneMeta({ clock }: { readonly clock: EstateClock }): ReactElement {
  */
 const MODAL_LOCK_ISOLATION = "pointer-events-auto";
 
-/** Root layout: a single column; kiosk is a fixed-height grid whose last row (the pages) takes the rest. */
+/**
+ * Root layout: a single column. Kiosk is a fixed-height grid — strip, alert line, then the tile wall
+ * taking the rest (the visually hidden header is absolutely positioned, so it takes no row) — with
+ * tight vertical chrome and the wallboard side gutter.
+ */
 function rootClass(kiosk: boolean, wallboard: boolean): string {
   return cn(
     "grid min-w-0 content-start gap-4",
     MODAL_LOCK_ISOLATION,
     wallboard && "gap-6",
-    kiosk && "h-[calc(100dvh-var(--overview-kiosk-top,0px))] grid-rows-[auto_auto_auto_minmax(0,1fr)] content-stretch p-4",
+    kiosk && "h-[calc(100dvh-var(--overview-kiosk-top,0px))] grid-rows-[auto_auto_minmax(0,1fr)] content-stretch gap-2 px-4 py-2",
   );
 }
 
@@ -390,7 +402,11 @@ function OverviewPage(props: OverviewCompositionProps): ReactElement {
     body = (
       <>
         <FragmentBoundary label="Estate statistics">
-          <StableStatHeader stats={model.stats} surface={surface} clock={clock} />
+          {kiosk ? (
+            <StableKioskStatStrip stats={model.stats} surface={surface} clock={clock} />
+          ) : (
+            <StableStatHeader stats={model.stats} surface={surface} clock={clock} />
+          )}
         </FragmentBoundary>
         <FragmentBoundary label="Firing alerts">
           <StableFiringRibbon
@@ -413,8 +429,12 @@ function OverviewPage(props: OverviewCompositionProps): ReactElement {
         <div ref={gridRegionRef} className={GRID_REGION_CLASS} data-slot="overview-grid-region" tabIndex={-1}>
           {kiosk ? (
             <KioskOverviewGrid
-              {...gridProps}
+              model={model}
+              changeTracker={changeTracker}
+              reducedMotion={reducedMotion}
               rotation={props.rotation ?? null}
+              layoutKey={kioskTop}
+              zone={<ZoneMeta clock={clock} />}
               {...(props.kioskClock !== undefined ? { clock: props.kioskClock } : {})}
             />
           ) : (
@@ -442,7 +462,12 @@ function OverviewPage(props: OverviewCompositionProps): ReactElement {
       data-surface={ready ? surface.status : surface.status === "unavailable" ? "unavailable" : "loading"}
       data-kiosk={kiosk ? "true" : "false"}
     >
-      <PageHeader id={PAGE_TITLE_ID} title={OVERVIEW_PAGE_TITLE} meta={ready ? <ZoneMeta clock={clock} /> : null} />
+      <PageHeader
+        id={PAGE_TITLE_ID}
+        title={OVERVIEW_PAGE_TITLE}
+        meta={ready && !kiosk ? <ZoneMeta clock={clock} /> : null}
+        {...(kiosk ? { className: "sr-only" } : {})}
+      />
       {body}
     </section>
   );
