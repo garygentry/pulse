@@ -1241,13 +1241,10 @@ const LIST_NAV_INFRA = new Set([
   "src/client/a11y/roving-tabindex.ts",
 ]);
 
-/** Bespoke list keyboards that predate the rule. Only shrinks; a stale entry fails. The alerts triage
- *  keyboard and the timeline lane tree moved onto useListNavigation (`virtual`, `rovingTabIndex`) in
- *  #37; the overview grid follows once the kiosk redesign (#6) lands. */
-const BESPOKE_LIST_KEYBOARDS: Readonly<Record<string, string>> = {
-  "src/client/views/overview/grid/navigation.ts":
-    "the overview host grid: a 2-D spatial role=grid with change markers, documented as bespoke in docs/architecture/ui.md (Overview grid).",
-};
+/** Bespoke list keyboards that predate the rule. Only shrinks; a stale entry fails. Empty since #37
+ *  moved the last three (the alerts triage keyboard, the timeline lane tree and the overview grid)
+ *  onto useListNavigation; keep it empty. */
+const BESPOKE_LIST_KEYBOARDS: Readonly<Record<string, string>> = {};
 
 /** Key handlers that are not list keyboards: vertical widgets (a slider, a spin button, a vertical
  *  splitter) or handlers that only intercept keys. One reason each (rel → why); only shrinks. */

@@ -3,7 +3,7 @@
 //
 // The chip's status is its OWN effective status (never the host rollup). Status word, icon and
 // `data-status` come from TARGET_STATUS and the a11y helpers; no local status-label map exists.
-// Activation is native: the grid's spatial controller receives the button's single click (Enter and
+// Activation is native: the grid's spatial navigation (navigation.ts) receives the button's single click (Enter and
 // Space synthesize it) and forwards the canonical id, so the chip binds no click/keydown handler of
 // its own — a second handler would double-select.
 

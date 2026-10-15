@@ -1,15 +1,16 @@
 // apps/web/src/client/views/overview/grid/navigation.ts — geometry-based arrow navigation over the
 // overview grid's target triggers.
 //
-// The shared `rovingTabindex` primitive stays the sole writer of target `tabindex` and the sole
-// programmatic focus path; this layer only decides WHICH index an arrow key should move to, using
-// measured candidate centers, and hands that index to `RovingController.setActive`. Geometry is read
-// lazily on arrow input and cached until a `ResizeObserver` callback or `refresh()` invalidates it;
-// without a working observer every arrow reads current geometry. Pure DOM — no React.
+// The keyboard is `useListNavigation` (`@/ui`): its roving tabindex keeps the grid a single Tab stop
+// and is the sole writer of target `tabindex`, and its `grid.move` option asks this module WHICH item
+// a move lands on. This layer answers from measured candidate centers (a spatial grid: groups wrap to
+// different column counts, so no fixed column count describes it). Geometry is read lazily on arrow
+// input and cached until a `ResizeObserver` callback or a render of the grid invalidates it; without a
+// working observer every arrow reads current geometry.
 
-import { rovingTabindex } from "../../../a11y/index.js";
-import type { RovingController } from "../../../a11y/index.js";
-import type { SpatialGridController, SpatialGridOptions } from "../model.js";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+
+import { useListNavigation, type ListNavIntent } from "@/ui";
 
 /** Attribute carrying a target trigger's canonical `drilldownId`. */
 export const TARGET_ID_ATTRIBUTE = "data-target-id";
@@ -19,11 +20,12 @@ const SECONDARY_WEIGHT = 0.25;
 
 type Direction = "left" | "right" | "up" | "down";
 
-const ARROW_DIRECTION: Readonly<Record<string, Direction>> = {
-  ArrowLeft: "left",
-  ArrowRight: "right",
-  ArrowUp: "up",
-  ArrowDown: "down",
+/** The hook's 2-D move intents, as directions on screen. */
+const INTENT_DIRECTION: Partial<Readonly<Record<ListNavIntent, Direction>>> = {
+  "move-left": "left",
+  "move-right": "right",
+  "move-previous": "up",
+  "move-next": "down",
 };
 
 /** Center point of one visible candidate; `null` for zero-sized or detached items. */
@@ -32,167 +34,172 @@ interface Center {
   readonly y: number;
 }
 
-/** Compose shared tabindex ownership with geometry-based arrow navigation. */
-export function createSpatialGridController(
-  container: HTMLElement,
-  options: SpatialGridOptions,
-): SpatialGridController {
-  const { itemSelector, onActivate } = options;
+/** Options for `useSpatialGrid`. */
+export interface SpatialGridOptions {
+  /** CSS selector matching every roving target trigger. */
+  readonly itemSelector: string;
+  /** Invoked with the target id when a trigger is activated (a click, or Enter/Space on a non-button). */
+  readonly onActivate: (id: string) => void;
+  /** Whether the grid is mounted and navigable. Default `true`. */
+  readonly enabled?: boolean;
+}
 
-  let items: HTMLElement[] = [];
-  let geometry: (Center | null)[] | null = null;
-  let released = false;
-  let addedContainerTabindex = false;
+/** What `useSpatialGrid` exposes: the tab stop's target id, and moving focus to a target by id. */
+export interface SpatialGridHandle {
+  /** The target id owning the roving tab stop, or null when none (or not mounted). */
+  activeId(): string | null;
+  /** Move DOM focus (and with it the roving tab stop) to `id`; a no-op for an unknown id. */
+  focus(id: string): void;
+}
 
-  function query(): HTMLElement[] {
-    return Array.from(container.querySelectorAll<HTMLElement>(itemSelector));
-  }
-
-  items = query();
-  const roving: RovingController = rovingTabindex(container, {
-    itemSelector,
-    orientation: "both",
-    wrap: false,
+/**
+ * Arrow navigation over the grid in `gridRef`: one Tab stop, ←/→/↑/↓ (and j/k as ↓/↑) to the
+ * nearest target on screen in that direction (never wrapping; an arrow at an edge is still claimed),
+ * Home/End to the first/last target in DOM order. A click on a target moves focus there before it
+ * activates, so the drawer has a deterministic return target; Enter/Space stay with native buttons.
+ * After a render, a focused target that vanished hands focus to the surviving tab stop, else to the
+ * grid itself.
+ */
+export function useSpatialGrid(gridRef: RefObject<HTMLElement | null>, options: SpatialGridOptions): SpatialGridHandle {
+  const enabled = options.enabled ?? true;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const state = useRef({
+    geometry: null as (Center | null)[] | null,
+    observed: false,
+    lastFocused: null as HTMLElement | null,
+    addedContainerTabindex: false,
+    mounted: false,
   });
 
-  const observer = createObserver(() => {
-    geometry = null;
+  const items = (): HTMLElement[] =>
+    Array.from(gridRef.current?.querySelectorAll<HTMLElement>(optionsRef.current.itemSelector) ?? []);
+
+  useListNavigation({
+    enabled,
+    scope: "element",
+    containerRef: gridRef,
+    keys: "arrows",
+    getItems: items,
+    rovingTabIndex: {},
+    grid: {
+      move: (intent, index, list) => {
+        if (index < 0 || list.length === 0) return null;
+        if (intent === "move-first") return 0;
+        if (intent === "move-last") return list.length - 1;
+        const direction = INTENT_DIRECTION[intent];
+        if (direction === undefined) return null;
+        const s = state.current;
+        if (s.geometry === null || !s.observed) s.geometry = Array.from(list, center);
+        // No candidate in that direction: stay put, but the arrow is still claimed.
+        return nearest(s.geometry, index, direction) ?? index;
+      },
+    },
+    // Native buttons synthesize a click for Enter/Space, which the click handler activates once.
+    onActivate: (item) => {
+      if (item.tagName === "BUTTON") return false;
+      const id = item.getAttribute(TARGET_ID_ATTRIBUTE);
+      if (id === null || id === "") return false;
+      optionsRef.current.onActivate(id);
+      return true;
+    },
   });
-  if (observer !== null) {
-    try {
-      observer.observe(container);
-    } catch {
-      // An observer that cannot observe is treated as absent: geometry is read on every arrow.
+
+  // Mounted: the geometry observer, the delegated click and focus tracking.
+  useEffect(() => {
+    const container = gridRef.current;
+    const s = state.current;
+    if (!enabled || container === null) return undefined;
+    s.mounted = true;
+    const observer = createObserver(() => {
+      s.geometry = null;
+    });
+    s.observed = false;
+    if (observer !== null) {
+      try {
+        observer.observe(container);
+        s.observed = true;
+      } catch {
+        // An observer that cannot observe is treated as absent: geometry is read on every arrow.
+      }
     }
-  }
+    const targetOf = (event: Event): HTMLElement | null => {
+      const origin = event.target as Element | null;
+      if (origin === null || typeof origin.closest !== "function") return null;
+      const item = origin.closest<HTMLElement>(optionsRef.current.itemSelector);
+      return item !== null && container.contains(item) ? item : null;
+    };
+    const onClick = (event: MouseEvent): void => {
+      const item = targetOf(event);
+      const id = item?.getAttribute(TARGET_ID_ATTRIBUTE);
+      if (item === null || id === null || id === undefined || id === "") return;
+      // Pointer selection moves focus (and the tab stop) first.
+      if (item.ownerDocument.activeElement !== item) item.focus();
+      optionsRef.current.onActivate(id);
+    };
+    const onFocusIn = (event: FocusEvent): void => {
+      const item = targetOf(event);
+      if (item !== null) s.lastFocused = item;
+    };
+    container.addEventListener("click", onClick);
+    container.addEventListener("focusin", onFocusIn);
+    return () => {
+      s.mounted = false;
+      container.removeEventListener("click", onClick);
+      container.removeEventListener("focusin", onFocusIn);
+      if (observer !== null) {
+        try {
+          observer.disconnect();
+        } catch {
+          // Nothing left to detach.
+        }
+      }
+      if (s.addedContainerTabindex) container.removeAttribute("tabindex");
+      s.addedContainerTabindex = false;
+      s.geometry = null;
+      s.lastFocused = null;
+    };
+  }, [gridRef, enabled]);
 
-  function activeElement(): HTMLElement | null {
-    const index = roving.activeIndex();
-    return index >= 0 ? (items[index] ?? null) : null;
-  }
-
-  function measure(): (Center | null)[] {
-    if (geometry !== null && observer !== null) return geometry;
-    const next = items.map((el) => center(el));
-    geometry = next;
-    return next;
-  }
-
-  function focusLost(): boolean {
-    const focused = document.activeElement;
-    return focused === null || focused === document.body || !focused.isConnected;
-  }
-
-  function focusContainer(): void {
+  // After every render (membership or layout may have changed): forget geometry, and if the focused
+  // target vanished, hand focus to the surviving tab stop (placed by the hook's own layout effect,
+  // which runs first), else to the grid itself.
+  useLayoutEffect(() => {
+    const s = state.current;
+    s.geometry = null;
+    const container = gridRef.current;
+    const lost = s.lastFocused;
+    if (!enabled || container === null || lost === null || lost.isConnected) return;
+    s.lastFocused = null;
+    const doc = container.ownerDocument;
+    const focused = doc.activeElement;
+    if (focused !== null && focused !== doc.body && focused.isConnected) return;
+    const stop = items().find((el) => el.getAttribute("tabindex") === "0");
+    if (stop !== undefined) {
+      stop.focus();
+      return;
+    }
     if (!container.isConnected) return;
     if (!container.hasAttribute("tabindex")) {
       container.setAttribute("tabindex", "-1");
-      addedContainerTabindex = true;
+      s.addedContainerTabindex = true;
     }
     container.focus();
-  }
+  });
 
-  function targetOf(event: Event): HTMLElement | null {
-    const origin = event.target;
-    if (origin === null || typeof (origin as Element).closest !== "function") return null;
-    const item = (origin as Element).closest<HTMLElement>(itemSelector);
-    return item !== null && container.contains(item) ? item : null;
-  }
-
-  function indexOf(item: HTMLElement): number {
-    let index = items.indexOf(item);
-    if (index < 0) {
-      refresh();
-      index = items.indexOf(item);
-    }
-    return index;
-  }
-
-  function onKeydown(event: KeyboardEvent): void {
-    const origin = targetOf(event);
-    if (origin === null) return;
-
-    const direction = ARROW_DIRECTION[event.key];
-    if (direction !== undefined) {
-      // Consume every arrow from a target so the shared linear handler never runs.
-      event.stopPropagation();
-      event.preventDefault();
-      const from = indexOf(origin);
-      if (from < 0) return;
-      const chosen = nearest(measure(), from, direction);
-      if (chosen !== null) roving.setActive(chosen);
-      return;
-    }
-
-    // Native buttons synthesize a click for Enter/Space, which `onClick` activates exactly once.
-    if ((event.key === "Enter" || event.key === " ") && origin.tagName !== "BUTTON") {
-      const id = origin.getAttribute(TARGET_ID_ATTRIBUTE);
-      if (id === null || id === "") return;
-      event.preventDefault();
-      onActivate(id);
-    }
-  }
-
-  function onClick(event: MouseEvent): void {
-    const origin = targetOf(event);
-    if (origin === null) return;
-    const id = origin.getAttribute(TARGET_ID_ATTRIBUTE);
-    if (id === null || id === "") return;
-    const index = indexOf(origin);
-    // Pointer selection moves the tab stop first so the drawer has a deterministic return target.
-    // An already-active, focused target (keyboard Enter/Space) needs no tabindex rewrite or refocus.
-    if (index >= 0 && !(roving.activeIndex() === index && document.activeElement === origin)) roving.setActive(index);
-    onActivate(id);
-  }
-
-  function refresh(): void {
-    if (released) return;
-    const prior = activeElement();
-    roving.refresh();
-    items = query();
-    geometry = null;
-    if (prior === null || items.includes(prior) || !focusLost()) return;
-    // The focused target vanished: fall back to the shared surviving item, else the container.
-    const survivor = roving.activeIndex();
-    if (survivor >= 0) roving.setActive(survivor);
-    else focusContainer();
-  }
-
-  function focus(id: string): void {
-    if (released) return;
-    const index = items.findIndex((el) => el.getAttribute(TARGET_ID_ATTRIBUTE) === id);
-    if (index >= 0) roving.setActive(index);
-  }
-
-  function activeId(): string | null {
-    if (released) return null;
-    const el = activeElement();
-    const id = el === null ? null : el.getAttribute(TARGET_ID_ATTRIBUTE);
-    return id === null || id === "" ? null : id;
-  }
-
-  function release(): void {
-    if (released) return;
-    released = true;
-    container.removeEventListener("keydown", onKeydown, true);
-    container.removeEventListener("click", onClick);
-    if (observer !== null) {
-      try {
-        observer.disconnect();
-      } catch {
-        // Nothing left to detach.
-      }
-    }
-    if (addedContainerTabindex) container.removeAttribute("tabindex");
-    geometry = null;
-    items = [];
-    roving.release();
-  }
-
-  container.addEventListener("keydown", onKeydown, true);
-  container.addEventListener("click", onClick);
-
-  return { activeId, focus, refresh, release };
+  return {
+    activeId: () => {
+      if (!state.current.mounted) return null;
+      const id = items().find((el) => el.getAttribute("tabindex") === "0")?.getAttribute(TARGET_ID_ATTRIBUTE);
+      return id === undefined || id === null || id === "" ? null : id;
+    },
+    focus: (id) => {
+      if (!state.current.mounted) return;
+      items()
+        .find((el) => el.getAttribute(TARGET_ID_ATTRIBUTE) === id)
+        ?.focus();
+    },
+  };
 }
 
 /** Construct a `ResizeObserver` if the environment provides a working one, else `null`. */

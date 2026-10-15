@@ -443,30 +443,6 @@ export type OverviewSurfaceState =
     };
 
 // ---------------------------------------------------------------------------------------------
-// Spatial navigation
-// ---------------------------------------------------------------------------------------------
-
-/** Spatial arrow-key navigation over grid target triggers. */
-export interface SpatialGridController {
-  /** Return the target id owning the roving tab stop, or null when none. */
-  readonly activeId: () => string | null;
-  /** Move the roving tab stop and DOM focus to `id`. */
-  focus(id: string): void;
-  /** Re-query items and invalidate cached geometry after layout/membership changes. */
-  refresh(): void;
-  /** Detach listeners and observers; called once on unmount. */
-  release(): void;
-}
-
-/** Options for `createSpatialGridController`. */
-export interface SpatialGridOptions {
-  /** CSS selector matching every roving target trigger. */
-  readonly itemSelector: string;
-  /** Invoked with the target id when a trigger is activated. */
-  readonly onActivate: (id: string) => void;
-}
-
-// ---------------------------------------------------------------------------------------------
 // Kiosk paging
 // ---------------------------------------------------------------------------------------------
 

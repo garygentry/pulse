@@ -261,6 +261,28 @@ describeUi("@/ui hooks", () => {
     });
   });
 
+  describe("useListNavigation (grid.move: caller-picked 2-D moves)", () => {
+    it("focuses the index move returns, claims a stay-put, and leaves the key on null", () => {
+      const calls: string[] = [];
+      const move = (intent: string, index: number): number | null => {
+        calls.push(`${intent}@${index}`);
+        if (index < 0) return null;
+        if (intent === "move-right") return 2; // "alpha → charlie" on some layout
+        if (intent === "move-left") return index; // an edge: stay, but claim the arrow
+        return null;
+      };
+      render(<Fixture keys="arrows" scope="element" grid={{ move }} />);
+      act(() => screen.getByRole("link", { name: "alpha" }).focus());
+      expect(press("ArrowRight")).toBe(true);
+      expect(active()).toBe("charlie");
+      expect(press("ArrowLeft")).toBe(true);
+      expect(active()).toBe("charlie");
+      expect(press("ArrowDown")).toBe(false);
+      expect(active()).toBe("charlie");
+      expect(calls).toEqual(["move-right@0", "move-left@2", "move-next@2"]);
+    });
+  });
+
   describe("useListNavigation (element scope, arrows)", () => {
     it("handles keys only inside the container", () => {
       render(<Fixture keys="arrows" scope="element" />);
