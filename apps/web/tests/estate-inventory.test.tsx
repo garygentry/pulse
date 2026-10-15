@@ -9,7 +9,7 @@ import type {
   WebEstateHostV2,
   WebEstateServiceV2,
 } from "@pulse/renderer";
-import type { AvailabilitySection, DataAvailability, EstatePayload } from "@pulse/web-data/wire";
+import type { AvailabilitySection, DataAvailability, EstatePayload, EstateTargetState } from "@pulse/web-data/wire";
 
 import {
   buildTreeRows,
@@ -25,6 +25,7 @@ import {
   absentSection,
   currentAvailability,
   makeEstatePayloadFixture,
+  makeLiveTarget,
   presentSection,
 } from "./factories/estate-payload.js";
 
@@ -293,6 +294,28 @@ describeUi("estate: inventory tree", () => {
     for (const row of hostRows()) {
       expect(indicator(row, "live").getAttribute("data-status")).not.toBe("ok");
       expect(indicator(row, "live").textContent).toMatch(/^Live /);
+    }
+  });
+
+  test("the live badge names each live state once, never 'Live Live …' (#41)", () => {
+    const base = makeEstatePayloadFixture();
+    const withHostA = (target: EstateTargetState | null): EstatePayload["liveTargets"] => [
+      ...base.liveTargets.filter((t) => t.target.id !== "host:hostA-managed"),
+      ...(target === null ? [] : [target]),
+    ];
+    const at = (state: DataAvailability["state"]): EstateTargetState =>
+      makeLiveTarget({ availability: currentAvailability({ state }) });
+    const cases: [EstatePayload["liveTargets"], string][] = [
+      [withHostA(at("current")), "Live OK"],
+      [withHostA(at("stale")), "Live state is stale"],
+      [withHostA(at("unavailable")), "Live state unavailable"],
+      [withHostA(at("not-configured")), "Live state not configured"],
+      [withHostA(null), "Live state not configured"],
+    ];
+    for (const [liveTargets, label] of cases) {
+      const view = render(<Inventory {...propsFrom(base, { liveTargets })} />);
+      expect(indicator(hookOf(item("hostA-managed")), "live").textContent).toBe(label);
+      view.unmount();
     }
   });
 

@@ -163,7 +163,7 @@ function LiveBadge(props: {
       tone={tone}
       icon={icon}
       variant="dot"
-      label={`Live ${staleNote ?? STATUS_LABEL[status]}`}
+      label={staleNote ?? `Live ${STATUS_LABEL[status]}`}
       data-indicator="live"
       data-status={status}
     />

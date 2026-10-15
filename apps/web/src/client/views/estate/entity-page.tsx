@@ -416,15 +416,29 @@ function ArtifactList(props: {
   );
 }
 
-/** Summarize one declared endpoint-alert config (a config, not a runtime alert instance). */
-function describeEndpointAlert(a: WebEndpointAlert): string {
-  const parts: string[] = [];
-  if (a.enabled !== undefined) parts.push(a.enabled ? "enabled" : "disabled");
-  if (a.failureThreshold !== undefined) parts.push(`fails after ${a.failureThreshold}`);
-  if (a.successThreshold !== undefined) parts.push(`recovers after ${a.successThreshold}`);
-  if (a.sendOnResolved !== undefined) parts.push(a.sendOnResolved ? "notifies on resolve" : "silent on resolve");
-  if (a.description !== undefined) parts.push(a.description);
-  return parts.length > 0 ? `${a.type} — ${parts.join(", ")}` : a.type;
+/** Gatus `GatusCheckFailed` rule defaults (F, S) — mirror `GATUS_CHECKS` in
+ *  stack/alerting/src/constants.ts and docs/operator/alerting.md. */
+const DEFAULT_FAILURE_THRESHOLD = 3;
+const DEFAULT_SUCCESS_THRESHOLD = 2;
+
+const checks = (n: number, word: string): string => `${n} ${word} check${n === 1 ? "" : "s"}`;
+
+/**
+ * Summarize one declared endpoint-alert binding as the vmalert `GatusCheckFailed` rule it renders
+ * (a config, not a runtime alert instance; docs/operator/alerting.md). `type` and `sendOnResolved`
+ * have no effect since the Gatus push provider was retired (resolve notifications follow each
+ * Alertmanager receiver's `send_resolved`), so neither is shown. Only the first enabled binding
+ * renders a rule; later enabled ones are ignored.
+ */
+function describeEndpointAlert(a: WebEndpointAlert, i: number, all: readonly WebEndpointAlert[]): string {
+  const rule =
+    a.enabled === false
+      ? "disabled, no alert rule"
+      : all.findIndex((b) => b.enabled !== false) !== i
+        ? "ignored, only the first enabled binding pages"
+        : `fires after ${checks(a.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD, "failed")}, ` +
+          `resolves after ${checks(a.successThreshold ?? DEFAULT_SUCCESS_THRESHOLD, "passing")}`;
+  return a.description !== undefined ? `${a.description} — ${rule}` : rule.charAt(0).toUpperCase() + rule.slice(1);
 }
 
 function MonitoringArtifacts(props: { readonly joined: JoinedEntity }): ReactElement {

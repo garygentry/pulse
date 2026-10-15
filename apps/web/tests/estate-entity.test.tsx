@@ -330,7 +330,9 @@ describeUi("estate entity page", () => {
 
     const svc = renderPage(seed(makeEstatePayloadFixture(), ...serviceRoute("hostA-managed", "grafana")));
     expect(within(byTestId("estate-entity-gatus")!).getByRole("listitem").textContent).toContain("hostA-managed/grafana");
-    expect(textOf("estate-entity-declared-alerts")).toContain("gatus");
+    expect(within(byTestId("estate-entity-declared-alerts")!).getByRole("listitem").textContent).toBe(
+      "grafana health — fires after 3 failed checks, resolves after 2 passing checks",
+    );
     expect(textOf("estate-entity-rendered-artifacts")).toContain("gatus/grafana.yml");
     svc.unmount();
 
@@ -339,6 +341,32 @@ describeUi("estate entity page", () => {
     const gatus = byTestId("estate-entity-gatus")!;
     expect(gatus.textContent).toContain("None declared.");
     expect(within(gatus).queryByRole("list") === null).toBe(true);
+  });
+
+  test("declared endpoint alerts describe the GatusCheckFailed rule, not the retired push provider (#30)", () => {
+    const payload = makeEstatePayloadFixture();
+    const services = payload.estate.services.map((svc) =>
+      svc.name !== "grafana"
+        ? svc
+        : {
+            ...svc,
+            alerts: [
+              { type: "custom", enabled: false, description: "off", sendOnResolved: true },
+              { type: "custom", sendOnResolved: false },
+              { type: "custom", failureThreshold: 1, successThreshold: 5, description: "second" },
+            ],
+          },
+    );
+    renderPage(seed({ ...payload, estate: { ...payload.estate, services } }, ...serviceRoute("hostA-managed", "grafana")));
+    const items = within(byTestId("estate-entity-declared-alerts")!)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(items).toEqual([
+      "off — disabled, no alert rule",
+      "Fires after 3 failed checks, resolves after 2 passing checks",
+      "second — ignored, only the first enabled binding pages",
+    ]);
+    expect(textOf("estate-entity-declared-alerts")).not.toMatch(/on resolve|custom/);
   });
 
   test("attributed alerts: a card List, one row per fingerprint, severity unknown, no age, deep-link", async () => {
