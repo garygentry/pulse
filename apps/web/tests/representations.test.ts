@@ -380,7 +380,7 @@ function envelopeModel(): WebEstateModelV2 {
       addresses: [addr],
       artifacts: [],
       suppressed: null,
-      scrapeTargets: [{ job: "node", instance: `${addr}:9100` }],
+      scrapeTargets: [{ job: "managed-linux", instance: `${addr}:9100` }],
     } as WebEstateHostV2);
     for (let k = 0; k < 3; k += 1) {
       const sname = `svc-${String(i).padStart(3, "0")}-${k}`;

@@ -72,7 +72,7 @@ function buildHosts(): WebEstateHostV2[] {
       expectedChurn: false,
       scrapeIntervalClass: "fast",
       provenance: prov("hosts/hostA.yml", "hosts[0].name"),
-      scrapeTargets: [{ job: "node", instance: "10.0.0.1:9100" }],
+      scrapeTargets: [{ job: "managed-linux", instance: "10.0.0.1:9100" }],
       artifacts: ["scrape/hostA.yml"],
       detail: {
         exporterPorts: [9100],

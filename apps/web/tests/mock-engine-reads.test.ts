@@ -10,12 +10,17 @@ import { mkdir, copyFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 
+import { readFileSync } from "node:fs";
+
+import type { WebEstateModelV2 } from "@pulse/renderer";
+import { bindCuratedQuery, scrapeSeriesIdentity } from "@pulse/web-data/queries";
 import { createAlertmanagerClient, createGatusClient, createVmClient } from "@pulse/web-data/sources";
 
 import { loadServerConfig } from "../src/server/config.js";
 import { MOCK_BASE_URLS, MOCK_ENV, SCENARIO_NAMES, createMockEngine } from "../src/server/dev/mock-engine.js";
 import { DEFAULT_SCENARIO_DIR, MockScenarioError, loadScenario } from "../src/server/dev/scenario.js";
 import { createServerRuntime } from "../src/server/refresh.js";
+import { mockRangeBody } from "../src/server/dev/history.js";
 
 const REFERENCE_MODEL = resolve(import.meta.dir, "../../../examples/reference/rendered/web-estate-model.json");
 const CLOCK = Date.parse("2026-10-08T12:00:00.000Z");
@@ -109,7 +114,7 @@ describe("history reads", () => {
       alertname: "HypervisorUnreachable",
       severity: "critical",
       host: "harbor-hv-01",
-      instance: "harbor-hv-01:9633",
+      instance: "https://harbor-hv-01.nimbus.example/api",
     });
     // Fired 19 minutes before the scenario start: firing samples cover only the last 19 minutes.
     expect(hv.samples[0]!.timestampMs).toBeGreaterThanOrEqual(CLOCK - 19 * 60_000);
@@ -120,20 +125,28 @@ describe("history reads", () => {
     const vm = await vmFor("degraded-mix");
     const down = await vm.queryRange({
       ...range,
-      promql: 'min((up{instance="harbor-hv-01:9633"} or pulse_agent_up{instance="harbor-hv-01:9633"})) or vector(0/0)',
+      promql:
+        'min(up{job="hypervisor-api",instance="https://harbor-hv-01.nimbus.example/api"}) or vector(0/0)',
     });
     if (!down.ok) throw new Error("liveness failed");
     expect(down.data.series[0]!.samples.every((s) => s.value === 0)).toBe(true);
 
     const cpu = await vm.queryRange({
       ...range,
-      promql: 'avg(100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle",instance="harbor-web-01:9100"}[5m]))))',
+      promql: 'avg(100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle",job="managed-linux",instance="harbor-web-01"}[5m]))))',
     });
     if (!cpu.ok) throw new Error("cpu failed");
     const values = cpu.data.series[0]!.samples.map((s) => s.value!);
     expect(values.length).toBe(61);
     expect(Math.min(...values)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...values)).toBeLessThanOrEqual(100);
+
+    // A host metric bound to the pre-relabel address:port selects nothing the fixture stores.
+    const stale = await vm.queryRange({
+      ...range,
+      promql: 'avg(100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle",job="managed-linux",instance="10.20.0.11:9100"}[5m]))))',
+    });
+    expect(stale.ok && stale.data.series.length).toBe(0);
 
     const never = await vm.queryRange({ ...range, promql: 'up{instance="__pulse_no_target__"}' });
     expect(never.ok && never.data.series.length).toBe(0);
@@ -157,6 +170,44 @@ describe("history reads", () => {
     expect(result.data.results.map((r) => r.success)).toEqual([true, false]);
     expect((await gatus.endpointHistory("estate_dns-nimbus-example")).ok).toBe(true);
     expect((await gatus.endpointHistory("no-such_endpoint")).ok).toBe(false);
+  });
+});
+
+describe("host liveness reads the main job only (issue #69)", () => {
+  test("a down auxiliary exporter on a healthy host does not draw the host down", () => {
+    const sample = (job: string, value: string) => ({
+      metric: { __name__: "up", job, instance: "harbor-web-01", host: "harbor-web-01" },
+      value: [CLOCK / 1000, value] as [number, string],
+    });
+    const vmBody = {
+      status: "success" as const,
+      data: { resultType: "vector" as const, result: [sample("managed-linux", "1"), sample("cadvisor", "0"), sample("process-exporter", "0")] },
+    };
+    const model = JSON.parse(readFileSync(REFERENCE_MODEL, "utf8")) as WebEstateModelV2;
+    const bound = bindCuratedQuery("estate.liveness", { kind: "host", id: "host:harbor-web-01" }, null, model);
+    if (!bound.ok) throw new Error(bound.error.code);
+    const body = mockRangeBody(bound.query.promql, { start: CLOCK / 1000 - 600, end: CLOCK / 1000, step: 60 }, { vm: vmBody, alertmanager: [] }, CLOCK);
+    expect(body.data.result).toHaveLength(1);
+    expect(body.data.result[0]!.values.every(([, v]) => v === "1")).toBe(true);
+  });
+});
+
+describe("VM fixtures follow the scrape relabel contract (issue #69)", () => {
+  test("every estate-host sample carries the post-relabel job/instance the model's targets produce", async () => {
+    const model = JSON.parse(readFileSync(REFERENCE_MODEL, "utf8")) as WebEstateModelV2;
+    for (const scenario of SCENARIO_NAMES) {
+      const { base } = await loadScenario(DEFAULT_SCENARIO_DIR, scenario);
+      let checked = 0;
+      for (const sample of base.vm.data?.result ?? []) {
+        const host = model.hosts.find((h) => h.name === sample.metric.host);
+        if (host === undefined || sample.metric.__name__ === "pulse_deep_health_up") continue;
+        const allowed = host.scrapeTargets.map((t) => scrapeSeriesIdentity(host.name, t));
+        const own = { job: sample.metric.job ?? "", instance: sample.metric.instance ?? "" };
+        expect(allowed, `${scenario}: ${JSON.stringify(sample.metric)}`).toContainEqual(own);
+        checked += 1;
+      }
+      expect(checked, scenario).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -203,6 +254,22 @@ describe("round trip through createServerRuntime", () => {
       });
       if (!cpu.ok) throw new Error(`cpu history: ${cpu.error.code}`);
       expect(cpu.data.series.length).toBe(1);
+
+      // Host liveness binds on the stored job/instance identity (issue #69): the down hypervisor
+      // draws a 0 line, healthy managed and NAS hosts draw a 1 line.
+      for (const [id, expected] of [
+        ["host:harbor-hv-01", 0],
+        ["host:harbor-app-02", 1],
+        ["host:harbor-web-01", 1],
+        ["host:harbor-nas-01", 1],
+      ] as const) {
+        const live = await history.query({ queryId: "estate.liveness", target: { kind: "host", id }, range: "1h" });
+        if (!live.ok) throw new Error(`${id} liveness: ${live.error.code}`);
+        expect(live.data.series.length, id).toBe(1);
+        const values = live.data.series[0]!.points.map(([, v]) => v);
+        expect(values.length, id).toBeGreaterThan(0);
+        expect(values.every((v) => v === expected), id).toBe(true);
+      }
 
       const engineSeries = await history.query({ queryId: "engine.active-series", target: null, range: "6h" });
       expect(engineSeries.ok).toBe(true);
