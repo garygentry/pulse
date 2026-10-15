@@ -91,7 +91,10 @@ export function timeoutAbortReason(): DOMException {
  * `SERVER_TIMEOUT` (the caller's deadline aborted it), or `REQUEST_CANCELLED` (the caller aborted
  * it for any other reason; never an operator-facing failure). A body stream cut off mid-read is
  * classified the same way. A 502/503 without a Pulse error envelope (a reverse proxy reporting
- * Pulse down) is `SERVER_UNREACHABLE` and a 504 `SERVER_TIMEOUT`, at the real status. A complete
+ * Pulse down) is `SERVER_UNREACHABLE` and a 504 `SERVER_TIMEOUT`, at the real status. An auth
+ * proxy answering in Pulse's place because the sign-in session expired is `SESSION_EXPIRED`: a
+ * redirect (requests never follow one, so a cross-origin login redirect is detectable instead of a
+ * CORS `TypeError`), a 2xx HTML page, or a 401/403 without a Pulse error envelope. A complete
  * response that is not valid JSON, or carries an unknown or client-only code, is a bounded
  * `INTERNAL_ERROR`.
  */
@@ -216,6 +219,27 @@ function gatewayError(code: ClientTransportErrorCode, httpStatus: number): ApiFe
   return { status: "error", error: { code, message: CLIENT_TRANSPORT_MESSAGES[code] }, httpStatus };
 }
 
+/**
+ * Whether `res` is a redirect. Requests use `redirect: "manual"`, so a browser hands back an
+ * `opaqueredirect` response (status 0, no readable headers) for ANY redirect, same- or cross-origin,
+ * and a non-browser fetch returns the raw 3xx. The Pulse API never redirects, so a redirect is an
+ * auth proxy sending the browser to its login page.
+ */
+function isRedirect(res: Response): boolean {
+  return res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400 && res.status !== 304);
+}
+
+/**
+ * Whether a 2xx is a page rather than a Pulse API answer: an HTML body (a login page served in
+ * place of the API), or a response a fetch implementation reached by following a redirect. Every
+ * Pulse API 2xx is `application/json`.
+ */
+function isLoginPage(res: Response): boolean {
+  if (res.redirected) return true;
+  const type = (res.headers.get("content-type") ?? "").toLowerCase();
+  return type.startsWith("text/html") || type.startsWith("application/xhtml+xml");
+}
+
 /** The `res.text()` outcome: the body text, or the transport failure that cut the stream off. */
 type BodyText = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly error: ApiFetchErrorResult };
 
@@ -264,15 +288,18 @@ function toErrorEnvelope(body: unknown): ErrorEnvelope | null {
 }
 
 /**
- * Classify a non-2xx (non-304) response. A valid Pulse envelope keeps its server code and status.
- * Without one, a 502/503 is a reverse proxy reporting that Pulse is down (`SERVER_UNREACHABLE`) and
- * a 504 that it did not answer in time (`SERVER_TIMEOUT`); Pulse itself only answers 503 with a
- * `NOT_READY` envelope. Any other status without an envelope is a bounded `INTERNAL_ERROR`.
+ * Classify a non-2xx (non-304) response. A valid Pulse envelope keeps its server code and status
+ * (including a Pulse 403 such as a mutation refusal). Without one, a 401/403 is an auth proxy
+ * refusing an expired session (`SESSION_EXPIRED`), a 502/503 a reverse proxy reporting that Pulse
+ * is down (`SERVER_UNREACHABLE`) and a 504 that it did not answer in time (`SERVER_TIMEOUT`); Pulse
+ * itself only answers 503 with a `NOT_READY` envelope. Any other status without an envelope is a
+ * bounded `INTERNAL_ERROR`.
  */
 async function readErrorResult(res: Response, signal: AbortSignal | undefined): Promise<ApiFetchErrorResult> {
   const body = await readBodyText(res, signal);
   const envelope = body.ok ? toErrorEnvelope(parseJson(body.text)) : null;
   if (envelope !== null) return { status: "error", error: envelope, httpStatus: res.status };
+  if (res.status === 401 || res.status === 403) return gatewayError("SESSION_EXPIRED", res.status);
   if (res.status === 502 || res.status === 503) return gatewayError("SERVER_UNREACHABLE", res.status);
   if (res.status === 504) return gatewayError("SERVER_TIMEOUT", res.status);
   if (!body.ok) return body.error; // the error body itself was cut off: a transport failure
@@ -314,11 +341,17 @@ async function requestOnce<T>(
     res = await fetchImpl(path, {
       headers,
       cache: "no-store",
+      // Never follow: the Pulse API does not redirect, so a redirect is an auth proxy's login hop.
+      // Following a cross-origin one would surface only as an indistinguishable CORS TypeError.
+      redirect: "manual",
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
   } catch {
     return transportError(options?.signal); // network/timeout/abort — bounded, never an uncaught throw
   }
+
+  // A redirect — an auth proxy sending an expired session to its login page.
+  if (isRedirect(res)) return gatewayError("SESSION_EXPIRED", res.status);
 
   // 304 — conditional reuse. Accept only with a retained validator AND valid 304 metadata; an
   // invalid 304 (or one without a retained validator) is never empty success — retry unconditionally.
@@ -335,6 +368,9 @@ async function requestOnce<T>(
   if (!res.ok) {
     return readErrorResult(res, options?.signal);
   }
+
+  // A 2xx login page served in place of the API (checked before cycle metadata, which it lacks).
+  if (isLoginPage(res)) return gatewayError("SESSION_EXPIRED", res.status);
 
   // 200 on a cycle route — validate ETag/payload-id/observation BEFORE touching the body.
   if (cycle) {

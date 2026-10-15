@@ -77,7 +77,7 @@ export function toDeliveryState(raw: unknown, payload: EstatePayload | null): Es
   if (adapted !== null) return adapted;
 
   const failure = raw["failure"];
-  // A transport failure (Pulse unreachable or too slow) with a retained estate keeps that estate on
+  // A transport failure (Pulse unreachable or too slow, or the auth proxy's session expired) with a retained estate keeps that estate on
   // screen: the phase branch below renders it, and readEstate marks it app-stale with the transport
   // problem named, as engine/timeline and the shell's stale callout do. Only a first load with
   // nothing to show falls through to the full error state.
@@ -147,8 +147,9 @@ export function classifyAvailability<T>(
 /** The note a section carries when the payload says `current` but the app itself is not. */
 export const APP_STALE_MESSAGE = "Not refreshed from the Pulse server; showing the last delivered estate.";
 
-/** Client transport failure codes: the Pulse server was unreachable or did not answer in time. */
-const TRANSPORT_FAILURE_CODES: ReadonlySet<unknown> = new Set(["SERVER_UNREACHABLE", "SERVER_TIMEOUT"]);
+/** Client transport failure codes: the Pulse server was unreachable or did not answer in time, or
+ *  an auth proxy answered in its place because the sign-in session expired. */
+const TRANSPORT_FAILURE_CODES: ReadonlySet<unknown> = new Set(["SERVER_UNREACHABLE", "SERVER_TIMEOUT", "SESSION_EXPIRED"]);
 
 function isTransportFailureCode(code: unknown): boolean {
   return TRANSPORT_FAILURE_CODES.has(code);

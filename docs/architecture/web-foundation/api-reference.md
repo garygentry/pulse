@@ -30,11 +30,11 @@ if (currentBuild !== null) console.log(currentBuild);
 
 ### `apiFetch<T>(path, options?, fetchImpl?): Promise<ApiFetchResult<T>>`
 
-Performs a same-origin JSON GET with `Accept: application/json` and `cache: "no-store"`. It never throws or rejects; every outcome is a discriminated `ApiFetchResult<T>`:
+Performs a same-origin JSON GET with `Accept: application/json`, `cache: "no-store"` and `redirect: "manual"`. It never throws or rejects; every outcome is a discriminated `ApiFetchResult<T>`:
 
 - `{ status: "ok", value, etag, identity, observation }`: a 200. Cycle routes (`/api/overview`, `/api/alerts`, `/api/estate`, `/api/engine`, `/api/timeline`) must carry a valid ETag, payload id and observation; other routes report them as `null`.
 - `{ status: "not-modified", etag, identity, observation }`: a valid 304 to a conditional cycle request (`options.etag` is sent as `If-None-Match`). An invalid 304 triggers one unconditional retry.
-- `{ status: "error", error, httpStatus }`: `error` is a validated server `ErrorEnvelope` at the real status, or a client transport code. `SERVER_UNREACHABLE` covers a network failure, a body cut off mid-read, or a proxy 502/503 without a Pulse envelope. `SERVER_TIMEOUT` covers `options.signal` aborted with `timeoutAbortReason()` or `AbortSignal.timeout()`, or a proxy 504. Any other abort is `REQUEST_CANCELLED`. A complete but invalid body, or an unknown or client-only code, is `INTERNAL_ERROR`. `httpStatus` is `0` when no response arrived.
+- `{ status: "error", error, httpStatus }`: `error` is a validated server `ErrorEnvelope` at the real status, or a client transport code. `SERVER_UNREACHABLE` covers a network failure, a body cut off mid-read, or a proxy 502/503 without a Pulse envelope. `SERVER_TIMEOUT` covers `options.signal` aborted with `timeoutAbortReason()` or `AbortSignal.timeout()`, or a proxy 504. Any other abort is `REQUEST_CANCELLED`. `SESSION_EXPIRED` covers an auth proxy answering for an expired sign-in session: any redirect (the Pulse API never redirects, and not following lets a cross-origin login redirect be told apart from a CORS failure), a 2xx HTML page or followed redirect, or a 401/403 without a Pulse envelope. A Pulse 403 envelope keeps its server code. A complete but invalid body, or an unknown or client-only code, is `INTERNAL_ERROR`. `httpStatus` is `0` when no response arrived.
 
 `apiFetch` has no deadline of its own. The live-state machine bounds every view GET, body download included, with `VIEW_FETCH_TIMEOUT_MS`.
 

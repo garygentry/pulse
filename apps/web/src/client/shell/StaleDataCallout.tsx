@@ -7,13 +7,20 @@
 // governing observation is `stale` or `unavailable`; `not-configured`/`current` never warn. The
 // last-good time shown is the source's `lastSuccess` (or the cycle's `observedAt` for the app line),
 // never a payload's material `generatedAt`.
+//
+// Session expiry (#64): when any view GET came back `SESSION_EXPIRED` (an auth proxy redirecting to
+// its login page or refusing the request), the warning says so and offers a reload, in place of the
+// misleading "app server unreachable" line. A live SSE stream opened before the expiry keeps ticking,
+// so this shows whatever the connection phase is.
 import type { ReactElement } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
 
-import type { SourceId } from "@pulse/web-data/wire";
+import { CLIENT_TRANSPORT_MESSAGES, type SourceId } from "@pulse/web-data/wire";
 
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { Callout } from "@/ui/patterns/callout";
+// ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
+import { Button } from "@/ui/primitives/button";
 
 import type { AppStore } from "../store/index.js";
 import type { ConnectionState } from "../store/types.js";
@@ -26,6 +33,15 @@ export interface StaleDataWarningProps {
   connection: ConnectionState;
   /** Estate-timezone clock for last-good formatting; `null` until the first snapshot. */
   clock: EstateClock | null;
+  /** Reload action for the session-expired line. Default `() => location.reload()`. */
+  reload?: () => void;
+}
+
+/** Whether any view's latest fetch failed because the auth proxy's sign-in session expired. */
+export function isSessionExpired(connection: ConnectionState): boolean {
+  const views: Readonly<Record<string, { readonly failure: { readonly code: string } | null } | undefined>> =
+    connection.views;
+  return Object.values(views).some((view) => view?.failure?.code === "SESSION_EXPIRED");
 }
 
 /** The three operator-facing source groups, each backed by its governing observation source id
@@ -47,9 +63,20 @@ export function StaleDataWarning(props: StaleDataWarningProps): ReactElement | n
     isoUtc === null ? "never" : clock ? clock.format(isoUtc) : isoUtc;
 
   const lines: ReactElement[] = [];
+  const sessionExpired = isSessionExpired(connection);
 
-  // (a) Refresh failure — the app server itself is unreachable past the stale window.
-  if (connection.phase === "stale") {
+  // (0) Session expiry — the auth proxy, not Pulse, answered; a reload signs the operator in again.
+  if (sessionExpired) {
+    lines.push(
+      <p className="font-medium" data-source="session" key="session">
+        {CLIENT_TRANSPORT_MESSAGES.SESSION_EXPIRED}
+      </p>,
+    );
+  }
+
+  // (a) Refresh failure — the app server itself is unreachable past the stale window. Under a
+  // session expiry the server is reachable; the line above already explains the stale data.
+  if (connection.phase === "stale" && !sessionExpired) {
     const lastGood =
       connection.lastGoodAt !== null ? fmt(new Date(connection.lastGoodAt).toISOString()) : "never";
     const showing = observation
@@ -78,8 +105,23 @@ export function StaleDataWarning(props: StaleDataWarningProps): ReactElement | n
 
   if (lines.length === 0) return null;
 
+  const reload = props.reload ?? ((): void => location.reload());
   return (
-    <Callout tone="danger" title="Showing stale data" data-status="critical" data-stale-warning="">
+    <Callout
+      tone="danger"
+      title={sessionExpired ? "Session expired" : "Showing stale data"}
+      data-status="critical"
+      data-stale-warning=""
+      {...(sessionExpired
+        ? {
+            action: (
+              <Button type="button" variant="outline" size="sm" onClick={reload}>
+                Reload page
+              </Button>
+            ),
+          }
+        : {})}
+    >
       <div className="grid gap-1">{lines}</div>
     </Callout>
   );

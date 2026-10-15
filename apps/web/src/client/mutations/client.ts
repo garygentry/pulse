@@ -6,8 +6,10 @@ import type { ProposalState } from "@pulse/core/proposals";
 
 /** A refusal or failure as seen by the client (REQ-UX-02). */
 export class MutationClientError extends Error {
-  /** Bounded reason from details.reason, or a transport-level classification. */
-  readonly reason: MutationReason | "network" | "malformed-response";
+  /** Bounded reason from details.reason, or a transport-level classification. `session-expired`
+   *  is an auth proxy answering in Pulse's place (redirect, 2xx HTML page, or 401/403 without a
+   *  Pulse refusal envelope): the request never reached Pulse. */
+  readonly reason: MutationReason | "network" | "malformed-response" | "session-expired";
   /** HTTP status, or 0 for a network failure. */
   readonly status: number;
   /** Server request id (details.requestId, else the X-Request-Id header), when present. */
@@ -37,6 +39,22 @@ function isSuccess(v: unknown): v is MutationSuccess<unknown> {
 }
 
 /**
+ * Whether `res` is a redirect: requests use `redirect: "manual"`, so a browser returns an
+ * `opaqueredirect` response for any redirect and a non-browser fetch the raw 3xx. The Pulse API
+ * never redirects, so this is an auth proxy sending an expired session to its login page.
+ */
+function isRedirect(res: Response): boolean {
+  return res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400);
+}
+
+/** Whether a 2xx is an HTML page (a login page) or was reached through a followed redirect. */
+function isLoginPage(res: Response): boolean {
+  if (res.redirected) return true;
+  const type = (res.headers.get("content-type") ?? "").toLowerCase();
+  return type.startsWith("text/html") || type.startsWith("application/xhtml+xml");
+}
+
+/**
  * POST a mutation. Resolves the success body or throws MutationClientError.
  * Never exposes a raw response body: the refusal `message` (catalog text) is ignored. For example,
  * SOURCE_TIMEOUT's catalog text refers to history, so only `details.reason` is used.
@@ -45,7 +63,9 @@ function isSuccess(v: unknown): v is MutationSuccess<unknown> {
  * @param body - JSON-serializable body (a per-endpoint body type from shared/mutations).
  * @param idempotencyKey - Key from newIdempotencyKey(), reused per logical action.
  * @param fetchImpl - Optional 4th parameter for tests; the 3-arg call shape is unaffected.
- * @throws MutationClientError on network failure, a non-JSON/ill-shaped body, or any non-2xx.
+ * @throws MutationClientError on network failure, a non-JSON/ill-shaped body, or any non-2xx. An auth
+ *   proxy answering for an expired session (a redirect, a 2xx HTML page, or a 401/403 without a
+ *   Pulse refusal `details.reason`) is `session-expired`; Pulse's own 403 refusals keep their reason.
  */
 export async function postMutation<R>(
   path: `/api/mutations/${string}`,
@@ -59,6 +79,9 @@ export async function postMutation<R>(
       method: "POST",
       credentials: "same-origin",
       cache: "no-store",
+      // Never follow: a followed login redirect would turn this POST into a GET of the login page,
+      // or a cross-origin one into an indistinguishable CORS TypeError.
+      redirect: "manual",
       headers: {
         "content-type": "application/json",
         accept: "application/json",
@@ -69,12 +92,16 @@ export async function postMutation<R>(
   } catch {
     throw new MutationClientError("network", 0, null, []);
   }
+  if (isRedirect(res) || (res.ok && isLoginPage(res))) {
+    throw new MutationClientError("session-expired", res.status, null, []);
+  }
   const headerId = res.headers.get("x-request-id");
+  const proxyRefusal = res.status === 401 || res.status === 403;
   let json: unknown;
   try {
     json = await res.json();
   } catch {
-    throw new MutationClientError("malformed-response", res.status, headerId, []);
+    throw new MutationClientError(proxyRefusal ? "session-expired" : "malformed-response", res.status, headerId, []);
   }
   if (res.ok) {
     if (isSuccess(json)) return json as MutationSuccess<R>;
@@ -83,7 +110,9 @@ export async function postMutation<R>(
   const details = (typeof json === "object" && json !== null
     ? (json as { details?: unknown }).details
     : undefined) as Record<string, unknown> | undefined;
-  const reason = isMutationReason(details?.["reason"]) ? details["reason"] : "malformed-response";
+  const reason = isMutationReason(details?.["reason"])
+    ? details["reason"]
+    : proxyRefusal ? "session-expired" : "malformed-response";
   const requestId = typeof details?.["requestId"] === "string" ? details["requestId"] : headerId;
   const rawFields = details?.["fields"];
   const fields = typeof rawFields === "string" && rawFields !== "" ? rawFields.split(",") : [];
@@ -139,6 +168,7 @@ export const REASON_TEXT: Readonly<Record<MutationClientError["reason"], string>
   "upstream-disabled": "Alertmanager writes are not configured on this server.",
   network: "The server could not be reached. Check your connection and try again.",
   "malformed-response": "The server returned an unexpected response.",
+  "session-expired": "Your session has expired, so nothing was changed. Reload the page to sign in again.",
 };
 
 /** Failure line shown and announced: fixed text plus the request id (a server UUID) for support. */

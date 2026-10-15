@@ -41,6 +41,22 @@ proxy in front of it:
 - Do not switch `PULSE_WEB_AUTH_MODE` to `proxy-header` until the forward-auth proxy is live and
   is the only way to reach `web:8080`.
 
+### When the proxy session expires
+
+Once the proxy's sign-in session expires, the proxy answers the page's background requests
+instead of Pulse: it redirects them to its login page, serves that page directly, or replies 401
+or 403. The page recognises all of these. The web app keeps the data it last received on screen,
+marked stale, and the warning under the top bar reads "Your session has expired. Reload the page
+to sign in again." with a **Reload page** button. A view that never loaded shows the same message
+as its error. A write attempted in this state is refused with the same advice, and nothing is
+changed.
+
+The live update stream (`/api/events`) cannot report why it failed. Browsers close an
+`EventSource` on a redirect to another origin, a non-stream response or a 401/403, so the page
+falls back to polling. The next poll then shows the session message. A stream opened before the
+session expired can keep delivering updates, but each view refresh it triggers goes through the
+proxy and reports the expiry.
+
 ## Environment
 
 | Env | Default (proxy-header) | Validation | On invalid |
