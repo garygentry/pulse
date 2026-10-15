@@ -549,7 +549,7 @@ describeDom("timeline keyboard — RangeSelector, view shortcuts and hints (item
   const cleanups: (() => void)[] = [];
 
   beforeAll(() => {
-    // Effects (the roving-tabindex install) flush inside act().
+    // Effects flush inside act().
   });
 
   afterEach(() => {
@@ -750,7 +750,7 @@ describeDom("timeline keyboard — lane tree (item 019)", (dom) => {
   const axes: TimeAxisController[] = [];
 
   beforeAll(() => {
-    // Effects (the roving-tabindex install and refresh) flush inside act().
+    // Effects (the roving tab stop) flush inside act().
   });
 
   afterEach(() => {

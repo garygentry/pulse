@@ -309,8 +309,11 @@ tree's rows show provenance as plain text and the provenance copy button lives o
 The keyboard path there is Enter on a host or service row, and the tree's visible keyboard help
 (its `aria-describedby`) says so.
 
-**Overview grid.** The desk host grid stays bespoke (a 2-D `role="grid"` with spatial roving focus and
-change markers) and is restyled with token classes. Its cells use `React.memo` with an explicit
+**Overview grid.** The desk host grid is a 2-D `role="grid"` with change markers, restyled with
+token classes. Its keyboard is `useListNavigation` (`views/overview/grid/navigation.ts`,
+`useSpatialGrid`): `rovingTabIndex` keeps it one Tab stop, and the hook's `grid.move` option asks
+the view for each move's target, which it picks from the measured centers of the targets (groups wrap
+to different column counts, so no column count describes the layout). Its cells use `React.memo` with an explicit
 equality function, so a live update re-renders only the cells that changed. Rebuilding it on
 `CardGrid` was evaluated and rejected: `CardGrid`'s one-dimensional, one-target-per-item model does
 not fit a card holding a host target plus independently selectable service chips, and it would add
@@ -500,9 +503,9 @@ suffix keeps them out of `bun test`, which collects `*.spec.*`.
   classes built by concatenation or returned from a helper are not seen;
 - list keyboards through `useListNavigation`: no new hand-rolled `ArrowUp`/`ArrowDown` or `j`/`k`
   handler (`.key`/`.code` comparisons, inline key lists, case-folded keys), vertical or 2-D
-  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The overview grid is
-  a listed exemption with its reason (it migrates after the kiosk redesign, issue #37), as is the
-  command palette's pre-load key buffer, which swallows keys but moves nothing.
+  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. No list keyboard is
+  exempt (issue #37 moved the last ones); the command palette's pre-load key buffer, which swallows
+  keys but moves nothing, is the one listed exemption.
 
 `tests/views-page-structure.test.tsx` renders every registered view on every route it owns (tabs and
 deep routes included), loaded, before data and after a render fault, and checks the

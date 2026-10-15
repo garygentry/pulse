@@ -2,7 +2,7 @@
 // (07 §9, REQ-A11Y-02, tech-spec §3.10).
 //
 // `0`, `l`, `[` and `]` go through the shared a11y registry; the plot, swimlane, lane-tree and range
-// selector keys are handled by their own components (06 PlotOverlay, 07 §5.2/§7.5, rovingTabindex, SegmentedControl).
+// selector keys are handled by their own components (06 PlotOverlay, 07 §5.2/§7.5, useListNavigation, SegmentedControl).
 // The registry splits combos on "+", so `+`/`=`/`-` live in PlotOverlay, not here. This is a .ts
 // module (alerts precedent), so the hints are built with `h` rather than JSX.
 import { createElement } from "react";

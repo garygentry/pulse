@@ -5,7 +5,7 @@
 // deep-health, backup age, command signals, checks or a sparkline. `rollupEvidence`
 // governs the card's effective status. The card itself is not a button: its trigger and each service
 // chip are separate native buttons (gridcells) so nothing nests interactively. Like ServiceChip, the
-// trigger binds no activation handler; the grid's spatial controller owns the single click path.
+// trigger binds no activation handler; the grid's spatial navigation (navigation.ts) owns the single click path.
 
 import type { ReactElement } from "react";
 

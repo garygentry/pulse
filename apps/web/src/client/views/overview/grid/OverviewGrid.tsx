@@ -3,17 +3,17 @@
 //
 // One labelled `role="grid"`; each OverviewGroup is a `rowgroup` whose header row holds a real
 // heading and a native collapse button, and each visible host is a `row` of gridcell buttons. The
-// spatial controller (navigation.ts) owns tab stops, arrow movement and the single click activation
+// spatial grid hook (navigation.ts, on useListNavigation) owns tab stops, arrow movement and the single click activation
 // path; wallboard composition suppresses selection there. Groups arrive already ordered — this
 // module never re-sorts, re-groups or reads status beyond what HostCell/ServiceChip render.
 
-import type { RefObject, ReactElement } from "react";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef } from "react";
+import type { ReactElement } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 
 import { Button, EmptyState, cn } from "@/ui";
-import type { ChangeTracker, OverviewGroup, OverviewModel, SpatialGridController } from "../model.js";
+import type { ChangeTracker, OverviewGroup, OverviewModel } from "../model.js";
 import { HostCell } from "./HostCell.js";
-import { createSpatialGridController } from "./navigation.js";
+import { useSpatialGrid } from "./navigation.js";
 
 /** Props for the complete grouped host/service composite grid. */
 export interface OverviewGridProps {
@@ -80,40 +80,6 @@ function hostsClass(wallboard: boolean): string {
       ? "grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))]"
       : "grid-cols-[repeat(auto-fit,minmax(min(100%,13.75rem),1fr))]",
   );
-}
-
-/**
- * Mount one spatial controller on `gridRef` while `mounted`, release it exactly once, and refresh it
- * after every commit that may change target membership.
- */
-function useSpatialGrid(
-  gridRef: RefObject<HTMLElement | null>,
-  mounted: boolean,
-  onActivate: (drilldownId: string) => void,
-  membership: readonly unknown[],
-): void {
-  const activateRef = useRef(onActivate);
-  activateRef.current = onActivate;
-  const controllerRef = useRef<SpatialGridController | null>(null);
-
-  useLayoutEffect(() => {
-    const element = gridRef.current;
-    if (!mounted || element === null) return undefined;
-    const controller = createSpatialGridController(element, {
-      itemSelector: OVERVIEW_TARGET_SELECTOR,
-      onActivate: (id) => activateRef.current(id),
-    });
-    controllerRef.current = controller;
-    return () => {
-      controllerRef.current = null;
-      controller.release();
-    };
-  }, [gridRef, mounted]);
-
-  useLayoutEffect(() => {
-    controllerRef.current?.refresh();
-    // `membership` is the caller-supplied dependency list.
-  }, membership);
 }
 
 /** Forget tracker state for ids no longer in the accepted model. */
@@ -200,7 +166,7 @@ export function OverviewGrid(props: OverviewGridProps): ReactElement {
     if (!current.wallboard) current.onSelect(drilldownId);
   }, []);
 
-  useSpatialGrid(gridRef, hasHosts, select, [model.groups, collapsedGroupIds]);
+  useSpatialGrid(gridRef, { itemSelector: OVERVIEW_TARGET_SELECTOR, onActivate: select, enabled: hasHosts });
   useRetainTargets(changeTracker, model);
 
   if (!hasHosts) return <NoHosts />;
