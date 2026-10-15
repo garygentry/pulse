@@ -37,9 +37,16 @@ const ROUTES: readonly { path: string; nav: string }[] = [
 ];
 
 /** The wallboards checked for a kiosk side gutter, and the least gutter they keep (the wallboard
- *  `p-4` is 20px; 16px is the desk outlet's). /estate is not listed yet: its kiosk page has the
- *  same gap, a follow-up outside #48. */
-const KIOSK_ROUTES = ["/overview", "/alerts", "/timeline", "/engine"] as const;
+ *  `p-4` is 20px; 16px is the desk outlet's). The estate entity pages share the estate page root. */
+const KIOSK_ROUTES = [
+  "/overview",
+  "/alerts",
+  "/timeline",
+  "/engine",
+  "/estate",
+  "/estate/host/harbor-hv-01",
+  "/estate/service/harbor-web-01/portal-web",
+] as const;
 const KIOSK_GUTTER_PX = 16;
 
 const MODES = [
@@ -130,7 +137,7 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
   }
 
   // Kiosk drops the shell's outlet padding (full-bleed page fit), so each wallboard page brings its
-  // own side gutter. A view that forgets it sits flush at x=0 (GitHub #48: the alerts wallboard).
+  // own side gutter. A view that forgets it sits flush at x=0 (GitHub #48: alerts; #58: estate).
   test("kiosk: every wallboard page keeps a side gutter at 1920px", async () => {
     const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
     contexts.push(context);
@@ -138,6 +145,8 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
     const flush: string[] = [];
     for (const path of KIOSK_ROUTES) {
       await visit(page, `${path}?kiosk=1`);
+      // An entity route measures its rendered entity page, not a loading or not-found stand-in.
+      if (path.startsWith("/estate/")) await page.waitForSelector('[data-testid="estate-entity"]', { timeout: 30_000 });
       const edges = await page.evaluate(() => {
         const root = document.querySelector<HTMLElement>('main [data-slot$="-page"]')!;
         const r = root.getBoundingClientRect();

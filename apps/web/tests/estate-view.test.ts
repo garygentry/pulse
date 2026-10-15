@@ -327,6 +327,30 @@ describeDom("estate view: URL-synced landing state", () => {
 
 describeDom("estate view: delivery gate", () => {
   withUiStubs();
+  test("?kiosk=1: the page root is the kiosk page on the landing, an entity page and while loading (#58)", async () => {
+    const payload = makeEstatePayloadFixture();
+    const host = payload.estate.hosts[0]!;
+    const cases: readonly [EstatePayload | null, string, Record<string, string>][] = [
+      [payload, "/estate", {}],
+      [payload, `/estate/host/${host.name}`, { name: host.name }],
+      [null, "/estate", {}],
+    ];
+    for (const [data, path, params] of cases) {
+      for (const query of [{ kiosk: "1" }, {}]) {
+        const { router } = makeRouter();
+        const { container, unmount } = await renderWithStore(EstateView, { store: seed(data, path, params, query), router });
+        try {
+          // The outermost estate-page root is the one the kiosk outlet leaves unpadded.
+          const root = container.querySelector('[data-slot="estate-page"]');
+          expect(root?.getAttribute("data-testid")).toBe("estate-view");
+          expect(root?.getAttribute("data-kiosk")).toBe(query.kiosk === "1" ? "1" : "0");
+        } finally {
+          unmount();
+        }
+      }
+    }
+  });
+
   test("no payload → loading degrade state, no surfaces (landing)", async () => {
     const { router } = makeRouter();
     const store = seed(null, "/estate");
