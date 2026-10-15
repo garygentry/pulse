@@ -10,6 +10,7 @@ import { createAppStore } from "../src/client/store/index.js";
 import type { AppStore } from "../src/client/store/index.js";
 import { startLiveState } from "../src/client/store/live-state.js";
 import type { PathRouter } from "../src/client/router.js";
+import type { ViewRotationContext } from "../src/shared/registry.js";
 import EstateView from "../src/client/views/estate/view.js";
 import { APP_STALE_MESSAGE } from "../src/client/views/estate/delivery.js";
 import { describeDom, renderWithStore } from "./dom.js";
@@ -347,6 +348,24 @@ describeDom("estate view: delivery gate", () => {
         } finally {
           unmount();
         }
+      }
+    }
+  });
+
+  test("an active rotation makes the page root the kiosk page without ?kiosk=1 (#58)", async () => {
+    const { createElement } = await import("react");
+    const rotation: ViewRotationContext = { entry: { viewId: "estate", dwellMs: 30_000 }, index: 1, total: 3, epoch: 4 };
+    for (const [rot, expected] of [
+      [rotation, "1"],
+      [null, "0"],
+    ] as const) {
+      const { router } = makeRouter();
+      const store = seed(makeEstatePayloadFixture(), "/estate");
+      const { container, unmount } = await renderWithStore(createElement(EstateView, { store, router, rotation: rot }));
+      try {
+        expect(container.querySelector('[data-slot="estate-page"]')?.getAttribute("data-kiosk")).toBe(expected);
+      } finally {
+        unmount();
       }
     }
   });

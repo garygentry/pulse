@@ -250,10 +250,11 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
       <PageHeader title="Alerts" />
       {/* Controlled by the URL: a tab change navigates, and the route re-selects the tab. */}
       <Tabs value={tab} onValueChange={onTabChange} className="min-w-0 gap-4">
-        {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). */}
+        {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). The bar is
+            hidden so a classic scrollbar can't squeeze the fixed-height tabs; a clipped tab shows the overflow. */}
         <TabsList
           aria-label="Alert triage views"
-          className="max-w-full justify-start overflow-x-auto"
+          className="max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
         >
           {TABS.map((t) => (
             <TabsTrigger key={t.id} value={t.id} data-tab={t.id} onFocus={revealTab}>

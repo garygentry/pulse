@@ -104,10 +104,11 @@ function Landing({ store, router, payload }: LandingProps): ReactElement {
       {/* Manual activation: arrows move focus, Enter/Space/click select (each selection is a navigation). */}
       <Tabs value={query.tab} onValueChange={onTabChange} activationMode="manual" className="min-w-0 gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). */}
+          {/* Scrolls inside itself at phone widths instead of overflowing the page (see revealTab). The bar is
+              hidden so a classic scrollbar can't squeeze the fixed-height tabs; a clipped tab shows the overflow. */}
           <TabsList
             aria-label="Estate sections"
-            className="max-w-full justify-start overflow-x-auto"
+            className="max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
           >
             {TAB_ITEMS.map((item) => (
               <TabsTrigger key={item.id} value={item.id} onFocus={revealTab}>

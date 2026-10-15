@@ -217,6 +217,46 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
     expect(overflow, overflow.join("\n")).toEqual([]);
   }, 120_000);
 
+  // Headless Chromium hides scrollbars by default, which hides what a classic (always-visible)
+  // scrollbar does to the scrollable tab list: a stray vertical bar from the triggers' invisible
+  // underline, and a horizontal bar squeezing the fixed-height tabs. Launch with scrollbars shown.
+  test("classic scrollbars: the tab list grows no scrollbar and its tabs keep their height", async () => {
+    const { chromium } = await import("playwright-core");
+    const visible = await chromium.launch({ headless: true, ignoreDefaultArgs: ["--hide-scrollbars"] });
+    try {
+      const problems: string[] = [];
+      for (const { width, path } of [
+        { width: 1280, path: "/estate" },
+        { width: 1280, path: "/alerts" },
+        { width: 768, path: "/estate?kiosk=1" },
+        { width: 320, path: "/estate" },
+        { width: 320, path: "/alerts?kiosk=1" },
+      ] as const) {
+        const page = await (await visible.newContext({ viewport: { width, height: 800 } })).newPage();
+        await visit(page, path);
+        await page.waitForSelector('main [role="tablist"]', { timeout: 30_000 });
+        const m = await page.evaluate(() => {
+          const list = document.querySelector<HTMLElement>('main [role="tablist"]')!;
+          const tabs = [...list.querySelectorAll<HTMLElement>('[role="tab"]')].map((t) => t.getBoundingClientRect().height);
+          return {
+            barX: list.offsetHeight - list.clientHeight - 2 * list.clientTop,
+            barY: list.offsetWidth - list.clientWidth - 2 * list.clientLeft,
+            minTab: Math.min(...tabs),
+            // The list's own box less its padding: a horizontal bar would sit inside this.
+            listInner: list.offsetHeight - parseFloat(getComputedStyle(list).paddingTop) * 2,
+          };
+        });
+        if (m.barX !== 0 || m.barY !== 0) problems.push(`${path} at ${width}px: tab list scrollbar ${JSON.stringify(m)}`);
+        // Each tab fills the list's box (h-[calc(100%-1px)]), not the sliver a horizontal bar leaves.
+        if (m.minTab < m.listInner - 1.5) problems.push(`${path} at ${width}px: tabs squeezed ${JSON.stringify(m)}`);
+        await page.context().close();
+      }
+      expect(problems, problems.join("\n")).toEqual([]);
+    } finally {
+      await visible.close();
+    }
+  }, 120_000);
+
   test("keyboard: the skip link leads to <main>, and the nav routes by keyboard", async () => {
     const page = await open(MODES[0]);
     await visit(page, "/overview");
