@@ -193,6 +193,12 @@ describe("cardinality — folds are pure with zero recurring source calls (AC2)"
     // Envelope estate carries all 100 hosts through the estate/overview folds (no truncation).
     expect(env.overview.hosts.length).toBe(100);
     expect(env.estate.liveTargets.length).toBeGreaterThanOrEqual(100);
+    // The envelope is an all-live estate: every host with a metrics liveness job is live, so the
+    // budget and cardinality evidence is measured on the healthy-path shape.
+    const managed = envelopeModel().hosts.filter((h) => h.collectionClass === "managed-linux").map((h) => h.name);
+    expect(managed.length).toBeGreaterThan(0);
+    const live = new Set(env.overview.hosts.filter((h) => h.live === true).map((h) => h.name));
+    for (const name of managed) expect(live.has(name), `${name} live`).toBe(true);
     // Purity: a repeated fold is byte-identical.
     expect(JSON.stringify(foldCurrentViews(envelopeInputs()))).toBe(JSON.stringify(env));
   });

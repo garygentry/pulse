@@ -211,13 +211,9 @@ describe("scrape series identity contract (issue #69)", () => {
     expect([...ENGINE_SCRAPE_JOBS].sort()).toEqual(staticJobs.sort());
   });
 
-  test("host liveness jobs are wired file_sd jobs and managed-linux matches the HostDown rule", () => {
+  test("host liveness jobs are wired file_sd jobs and are exactly the HostDown rule's jobs", () => {
     for (const job of Object.values(HOST_LIVENESS_JOB)) expect(fileSdJobByName.has(job), job).toBe(true);
-    const rules = parseYaml(readFileSync(AVAILABILITY_RULES, "utf8")) as {
-      groups: Array<{ rules: Array<{ alert?: string; expr?: string }> }>;
-    };
-    const hostDown = rules.groups.flatMap((g) => g.rules).find((r) => r.alert === "HostDown");
-    expect(hostDown?.expr).toContain(`up{job="${HOST_LIVENESS_JOB["managed-linux"]}"}`);
+    expect([...hostDownRule().jobs].sort()).toEqual(Object.values(HOST_LIVENESS_JOB).sort());
   });
 
   test("node_exporter jobs are exactly the wired jobs that scrape :9100", () => {
@@ -300,27 +296,49 @@ describe("scrape series identity contract (issue #69)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Host liveness contract (issue #72): live folds, history and HostDown read one series
+// Host liveness contract (issues #72, #74): live folds, history and HostDown read one series
 // ---------------------------------------------------------------------------
+
+/** The job whose own scrape failing makes every hypervisor-api scrape fail with it (scrape.yml §1c). */
+const HYPERVISOR_RELAY_JOB = "pve-exporter";
 
 /**
  * The HostDown rule, parsed from availability.yml and evaluated the way vmalert does over an instant
- * sample set: `label_replace(up{job="J"}, "host", "$1", "instance", "(.*)") == 0` fires for the
- * `host` the label_replace derives from each zero `up{job="J"}` series. The test fails loudly if the
- * expression stops having this shape, so a rule edit forces this contract to be revisited.
+ * sample set (issue #74):
+ *
+ *   up{job=~"J1|J2|…"} == 0
+ *     unless on(job) label_replace(up{job="pve-exporter"} == 0, "job", "hypervisor-api", "job", ".*")
+ *
+ * fires for the `host` label of each zero `up` series of a listed job, except hypervisor-api series
+ * while pve-exporter's own scrape is failing. The alert names the host by the rendered file_sd
+ * `host` label, never `instance` (for hypervisor-api that is the API URL). The test fails loudly if
+ * the expression stops having this shape, so a rule edit forces this contract to be revisited.
  */
-function hostDownRule(): { readonly job: string; readonly firing: (samples: readonly MetricSample[]) => ReadonlySet<string> } {
+function hostDownRule(): {
+  readonly jobs: readonly string[];
+  readonly relayed: string;
+  readonly firing: (samples: readonly MetricSample[]) => readonly string[];
+} {
   const rules = parseYaml(readFileSync(AVAILABILITY_RULES, "utf8")) as {
     groups: Array<{ rules: Array<{ alert?: string; expr?: string }> }>;
   };
-  const expr = rules.groups.flatMap((g) => g.rules).find((r) => r.alert === "HostDown")?.expr?.trim() ?? "";
-  const m = /^label_replace\(up\{job="([^"]+)"\}, "host", "\$1", "instance", "\(\.\*\)"\) == 0$/.exec(expr);
+  const expr = (rules.groups.flatMap((g) => g.rules).find((r) => r.alert === "HostDown")?.expr ?? "").replace(/\s+/g, " ").trim();
+  const m = new RegExp(
+    String.raw`^up\{job=~"([a-z|-]+)"\} == 0 unless on\(job\) label_replace\(up\{job="${HYPERVISOR_RELAY_JOB}"\} == 0, "job", "([a-z-]+)", "job", "\.\*"\)$`,
+  ).exec(expr);
   if (m === null) throw new Error(`HostDown expression changed shape; revisit the liveness contract: ${expr}`);
-  const job = m[1]!;
+  const jobs = m[1]!.split("|");
+  const relayed = m[2]!;
   return {
-    job,
-    firing: (samples) =>
-      new Set(samples.filter((s) => s.projection === "up" && s.metric.job === job && s.value === 0).map((s) => s.metric.instance!)),
+    jobs,
+    relayed,
+    firing: (samples) => {
+      const relayDown = samples.some((s) => s.projection === "up" && s.metric.job === HYPERVISOR_RELAY_JOB && s.value === 0);
+      return samples
+        .filter((s) => s.projection === "up" && jobs.includes(s.metric.job ?? "") && s.value === 0)
+        .filter((s) => !(relayDown && s.metric.job === relayed))
+        .map((s) => s.metric.host!);
+    },
   };
 }
 
@@ -358,11 +376,18 @@ function upSample(labels: Record<string, string>, value: number): MetricSample {
   return { projection: "up", metric: labels, value, timestampMs: Date.parse(AT) };
 }
 
-describe("host liveness contract (issue #72)", () => {
+describe("host liveness contract (issues #72, #74)", () => {
   const hostDown = hostDownRule();
 
-  test("the HostDown job is the managed-linux liveness job", () => {
-    expect(HOST_LIVENESS_JOB["managed-linux"]).toBe(hostDown.job);
+  test("HostDown watches exactly the main liveness job of every class that has one", () => {
+    expect([...hostDown.jobs].sort()).toEqual(Object.values(HOST_LIVENESS_JOB).sort());
+    // The relay exemption names the hypervisor liveness job, and only that job.
+    expect(hostDown.relayed).toBe(HOST_LIVENESS_JOB["hypervisor-api"]!);
+  });
+
+  test("every host class with a liveness job is exercised by a bundle", () => {
+    const covered = new Set<string>(bundles.flatMap((b) => b.model.hosts.map((h) => h.collectionClass)));
+    for (const cls of Object.keys(HOST_LIVENESS_JOB)) expect(covered.has(cls), cls).toBe(true);
   });
 
   for (const bundle of bundles) {
@@ -391,11 +416,14 @@ describe("host liveness contract (issue #72)", () => {
         const up = [upSample(mainLabels, 1), ...auxLabels.map((l) => upSample(l, 0))];
         expect(liveVerdicts(bundle.model, host.name, up), `${bundle.name} ${host.name} main up`).toEqual({ overview: true, estate: "healthy" });
 
-        if (host.collectionClass === "managed-linux") {
-          // HostDown fires for exactly the case the overview draws as not live, and is silent for
-          // the case it draws as live: the same series, the same host identity.
-          expect([...hostDown.firing(down)]).toEqual([host.name]);
-          expect([...hostDown.firing(up)]).toEqual([]);
+        // HostDown fires for exactly the case the overview draws as not live, and is silent for
+        // the case it draws as live: the same series, the same host identity, for every class.
+        expect(hostDown.firing(down), `${bundle.name} ${host.name} HostDown on main down`).toEqual([host.name]);
+        expect(hostDown.firing(up), `${bundle.name} ${host.name} HostDown on main up`).toEqual([]);
+        if (host.collectionClass === "hypervisor-api") {
+          // A dead pve-exporter fails every hypervisor scrape at once: AncillaryDown, not HostDown.
+          const relay = upSample({ job: HYPERVISOR_RELAY_JOB, instance: "pve-exporter:9221" }, 0);
+          expect(hostDown.firing([...down, relay]), `${bundle.name} ${host.name} relay down`).toEqual([]);
         }
         checked += 1;
       }

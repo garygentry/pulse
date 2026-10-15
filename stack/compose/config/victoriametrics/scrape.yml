@@ -74,7 +74,9 @@ scrape_configs:
       - source_labels: [host]
         target_label: instance
 
-  # 1c. hypervisor-api — RELABEL-THROUGH pve-exporter (REQ-EXP-01/03).
+  # 1c. hypervisor-api — RELABEL-THROUGH pve-exporter (REQ-EXP-01/03). Its `up` is the
+  #     hypervisor's liveness for HostDown (issue #74); the alert names the host by the file_sd
+  #     `host` label, because `instance` here is the API URL.
   #     The rendered target is the PVE *API* endpoint; VM must NOT connect to it directly.
   #     It passes the endpoint to pve-exporter as ?target=, and scrapes the exporter instead.
   - job_name: hypervisor-api

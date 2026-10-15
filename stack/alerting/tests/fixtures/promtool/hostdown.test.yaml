@@ -1,22 +1,36 @@
 # stack/alerting/tests/fixtures/promtool/hostdown.test.yaml
-# Availability family (02 §HostDown, REQ-AVAIL-01): a managed host is DOWN after three consecutive
-# missed 30s scrapes (for: 90s). `up` is driven to 0 (scrape failure); a value that fails for < 90s
-# does NOT fire, and one that fails for ≥ 90s fires `critical`. All names fictional (CON-05); the
+# Availability family (02 §HostDown, REQ-AVAIL-01): a monitored host is DOWN after three consecutive
+# missed 30s scrapes (for: 90s) of its MAIN collection job — managed-linux, nas-api or hypervisor-api
+# (issue #74). `up` is driven to 0 (scrape failure); a value that fails for < 90s does NOT fire, and
+# one that fails for ≥ 90s fires `critical`. Every series carries the rendered file_sd labels
+# (`host`, `collection_class`) the way VictoriaMetrics stores them; for hypervisor-api `instance` is
+# the API URL, so the alert names the host by the `host` label. All names fictional (CON-05); the
 # estate label is set explicitly on the fixture (engine-injected at runtime).
 rule_files:
   - availability.yml
 evaluation_interval: 30s
 tests:
+  # 1. One host of each class goes down at t=90s; all three fire at ≥ 90s, none before.
   - interval: 30s
     input_series:
-      - series: 'up{job="managed-linux", instance="host-alpha", estate="fixture-estate"}'
+      - series: 'up{job="managed-linux", instance="host-alpha", host="host-alpha", collection_class="managed-linux", estate="fixture-estate"}'
         values: "1 1 1 0 0 0 0 0" # healthy, then scrape fails from t=90s
+      - series: 'up{job="nas-api", instance="nas-alpha", host="nas-alpha", collection_class="nas-api", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0"
+      - series: 'up{job="hypervisor-api", instance="https://pve-alpha:8006", host="pve-alpha", collection_class="hypervisor-api", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0"
+      # The relay exporter itself stays up, so the hypervisor failure is the hypervisor's own.
+      - series: 'up{job="pve-exporter", instance="pve-exporter:9221", estate="fixture-estate"}'
+        values: "1 1 1 1 1 1 1 1"
+      # An auxiliary job on the same host failing never counts as the host being down.
+      - series: 'up{job="cadvisor", instance="host-beta", host="host-beta", collection_class="managed-linux", estate="fixture-estate"}'
+        values: "0 0 0 0 0 0 0 0"
     alert_rule_test:
       # t=150s: failing 60s (< for:90s) → NOT yet firing
       - eval_time: 2m30s
         alertname: HostDown
         exp_alerts: []
-      # t=210s: failing ≥90s → critical firing
+      # t=210s: failing ≥90s → critical firing for each main-job class
       - eval_time: 3m30s
         alertname: HostDown
         exp_alerts:
@@ -25,8 +39,58 @@ tests:
               host: host-alpha
               instance: host-alpha
               job: managed-linux
+              collection_class: managed-linux
               estate: fixture-estate
             exp_annotations:
               runbook_url: "https://runbooks.pulse.local/availability"
               summary: "Host host-alpha is DOWN (critical)"
-              description: "No successful metric scrape from managed host host-alpha for at least 90s (three consecutive missed 30s scrapes). The host agent is unreachable or the host is down. Missing data is treated as failure, never as healthy."
+              description: "No successful metric scrape from host host-alpha (job managed-linux) for at least 90s (three consecutive missed 30s scrapes). The host or its collection endpoint is unreachable, or the host is down. Missing data is treated as failure, never as healthy."
+          - exp_labels:
+              severity: critical
+              host: nas-alpha
+              instance: nas-alpha
+              job: nas-api
+              collection_class: nas-api
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Host nas-alpha is DOWN (critical)"
+              description: "No successful metric scrape from host nas-alpha (job nas-api) for at least 90s (three consecutive missed 30s scrapes). The host or its collection endpoint is unreachable, or the host is down. Missing data is treated as failure, never as healthy."
+          - exp_labels:
+              severity: critical
+              host: pve-alpha
+              instance: "https://pve-alpha:8006"
+              job: hypervisor-api
+              collection_class: hypervisor-api
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Host pve-alpha is DOWN (critical)"
+              description: "No successful metric scrape from host pve-alpha (job hypervisor-api) for at least 90s (three consecutive missed 30s scrapes). The host or its collection endpoint is unreachable, or the host is down. Missing data is treated as failure, never as healthy."
+
+  # 2. pve-exporter itself is down: every hypervisor-api scrape fails with it, but that is the
+  #    exporter's fault (AncillaryDown), so HostDown stays silent for hypervisors while still
+  #    firing for a managed host that is genuinely down at the same time.
+  - interval: 30s
+    input_series:
+      - series: 'up{job="hypervisor-api", instance="https://pve-alpha:8006", host="pve-alpha", collection_class="hypervisor-api", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0"
+      - series: 'up{job="pve-exporter", instance="pve-exporter:9221", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0"
+      - series: 'up{job="managed-linux", instance="host-alpha", host="host-alpha", collection_class="managed-linux", estate="fixture-estate"}'
+        values: "1 1 1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 3m30s
+        alertname: HostDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              host: host-alpha
+              instance: host-alpha
+              job: managed-linux
+              collection_class: managed-linux
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Host host-alpha is DOWN (critical)"
+              description: "No successful metric scrape from host host-alpha (job managed-linux) for at least 90s (three consecutive missed 30s scrapes). The host or its collection endpoint is unreachable, or the host is down. Missing data is treated as failure, never as healthy."

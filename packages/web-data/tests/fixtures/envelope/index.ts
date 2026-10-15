@@ -269,8 +269,10 @@ export function envelopeMetrics(): readonly MetricSample[] {
     if (isProbeOnly(i)) continue;
     const addr = `10.${Math.floor(i / 254)}.${i % 254}.10`;
     const instance = `${addr}:9100`;
-    samples.push(metric("up", { host: hostName(i), instance }, 1));
-    samples.push(metric("pulse_agent_up", { host: hostName(i), instance }, 1));
+    // `up` of the host's main job (managed-linux) is its liveness (wire/host-liveness.ts), so the
+    // job label keeps the envelope an all-live estate.
+    samples.push(metric("up", { job: "managed-linux", host: hostName(i), instance }, 1));
+    samples.push(metric("pulse_agent_up", { job: "managed-linux-heartbeat", host: hostName(i), instance }, 1));
   }
   // Engine instant projections (job=web); uptime derives from process-start.
   const engineLabels = { job: "web" };
