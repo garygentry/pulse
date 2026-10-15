@@ -9,7 +9,9 @@ import type { ActiveAlert, AlertHistoryLane, IntervalHistoryPayload } from "@pul
 import type { ReactElement } from "react";
 import { buildLanes, deriveDomain, isAlertOwnLane } from "../src/client/views/alerts/detail/history-model.js";
 import { firingRows } from "../src/client/views/alerts/model.js";
+import { createEstateClock } from "../src/client/format.js";
 import { describeDom } from "./dom.js";
+import { within } from "./rtl.js";
 import {
   FIXTURE_FINGERPRINTS,
   FIXTURE_NOW,
@@ -19,6 +21,8 @@ import {
 } from "./alerts-fixtures.js";
 
 const payload = makeAlertsPayload({ scenario: "mixed" });
+/** An estate zone no runner's local zone or UTC shares, so a browser-local time can't pass for it. */
+const CLOCK = createEstateClock({ name: "", timezone: "Asia/Kathmandu", tzFallback: false });
 function byFp(fp: string): ActiveAlert {
   const a = firingRows(payload).find((x) => x.fingerprint === fp);
   if (a === undefined) throw new Error(`fixture alert ${fp} missing`);
@@ -172,7 +176,7 @@ describeDom("History", (dom) => {
   async function mountHistory(alert: ActiveAlert): Promise<{ container: HTMLElement; unmount(): void }> {
     const { createElement: h } = await import("react");
     const { History } = await import("../src/client/views/alerts/detail/History.js");
-    return dom.mount(h(History, { alert }) as unknown as ReactElement);
+    return dom.mount(h(History, { clock: CLOCK, alert }) as unknown as ReactElement);
   }
 
   function stateOf(c: HTMLElement): string | null {
@@ -241,7 +245,7 @@ describeDom("History", (dom) => {
     const { container, unmount } = await mountHistory(hostDown);
     await waitFor(() => calls.length === 1);
     // Re-open with a different historyRef: the prior request is aborted before the next one is issued.
-    render(h(History, { alert: backupAge }) as unknown as ReactElement, container as unknown as Element);
+    render(h(History, { clock: CLOCK, alert: backupAge }) as unknown as ReactElement, container as unknown as Element);
     await waitFor(() => calls.length === 2);
     expect(calls[0]!.signal?.aborted).toBe(true);
     await settle();
@@ -261,7 +265,7 @@ describeDom("History", (dom) => {
     for (let cycle = 0; cycle < 3; cycle++) {
       const next = structuredClone(hostDown) as ActiveAlert;
       expect(next.historyRef).not.toBe(hostDown.historyRef);
-      render(h(History, { alert: next }) as unknown as ReactElement, container as unknown as Element);
+      render(h(History, { clock: CLOCK, alert: next }) as unknown as ReactElement, container as unknown as Element);
       expect(stateOf(container)).toBe("ready");
       await settle();
       expect(stateOf(container)).toBe("ready");
@@ -280,17 +284,17 @@ describeDom("History", (dom) => {
     await waitFor(() => stateOf(container) === "ready");
     expect(calls.length).toBe(1);
 
-    render(h(History, { alert: hostDown, range: "6h" }) as unknown as ReactElement, container as unknown as Element);
+    render(h(History, { clock: CLOCK, alert: hostDown, range: "6h" }) as unknown as ReactElement, container as unknown as Element);
     await waitFor(() => calls.length === 2);
     expect(calls[1]!.url).toBe("/api/history/alerts?range=6h");
     expect(calls[0]!.signal?.aborted).toBe(true);
     await waitFor(() => stateOf(container) === "ready");
 
-    render(h(History, { alert: backupAge, range: "6h" }) as unknown as ReactElement, container as unknown as Element);
+    render(h(History, { clock: CLOCK, alert: backupAge, range: "6h" }) as unknown as ReactElement, container as unknown as Element);
     await waitFor(() => calls.length === 3);
     await waitFor(() => stateOf(container) === "ready");
 
-    render(h(History, { alert: loadHigh, range: "6h" }) as unknown as ReactElement, container as unknown as Element);
+    render(h(History, { clock: CLOCK, alert: loadHigh, range: "6h" }) as unknown as ReactElement, container as unknown as Element);
     await waitFor(() => stateOf(container) === "no-ref");
     await settle();
     expect(calls.length).toBe(3);
@@ -345,5 +349,50 @@ describeDom("History", (dom) => {
     );
     expect(container.querySelector(TIMELINE)).toBeNull();
     unmount();
+  });
+
+  test("#51: interval times read in the estate zone (the estate clock), not the browser's", async () => {
+    stubFetch(() => Promise.resolve(makeHistoryPayload({ kind: "unmatched" })));
+    const { container, unmount } = await mountHistory(hostDown);
+    await waitFor(() => stateOf(container) === "ready");
+    const items = [...container.querySelectorAll('[data-slot="status-timeline-text"] li li')].map((li) => li.textContent ?? "");
+    expect(items.length).toBeGreaterThan(0);
+    const { lanes } = makeHistoryPayload({ kind: "unmatched" });
+    const first = lanes[0]!.intervals[0]!;
+    expect(items[0]).toContain(`${CLOCK.format(first.start)} to `);
+    for (const item of items) expect(item).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT\+5:45 to /);
+    unmount();
+  });
+
+  test("#51: the chart scroller is a named, focusable region only while the chart overflows it", async () => {
+    stubFetch(() => Promise.resolve(makeHistoryPayload({ kind: "unmatched" })));
+    const { container, unmount } = await mountHistory(hostDown);
+    await waitFor(() => stateOf(container) === "ready");
+    const view = within(container);
+    // happy-dom lays nothing out (every width is 0): the chart fits, so no extra tab stop.
+    expect(view.queryByRole("region", { name: "Firing history chart" })).toBeNull();
+    expect(container.querySelector('[data-slot="scroll-region"]')!.hasAttribute("tabindex")).toBe(false);
+    unmount();
+
+    // A pane narrower than the fixed-width SVG: the scroller is reachable by keyboard.
+    const proto = window.HTMLElement.prototype;
+    const narrow = (el: HTMLElement, wide: number, box: number): number => (el.getAttribute("data-slot") === "scroll-region" ? wide : box);
+    const scroll = Object.getOwnPropertyDescriptor(proto, "scrollWidth");
+    const client = Object.getOwnPropertyDescriptor(proto, "clientWidth");
+    Object.defineProperty(proto, "scrollWidth", { configurable: true, get(this: HTMLElement) { return narrow(this, 480, 0); } });
+    Object.defineProperty(proto, "clientWidth", { configurable: true, get(this: HTMLElement) { return narrow(this, 300, 0); } });
+    try {
+      const wide = await mountHistory(hostDown);
+      await waitFor(() => stateOf(wide.container) === "ready");
+      const region = within(wide.container).getByRole("region", { name: "Firing history chart" });
+      expect(region.getAttribute("tabindex")).toBe("0");
+      expect(within(region).getByRole("group", { name: /^Firing history for / })).toBeTruthy();
+      wide.unmount();
+    } finally {
+      if (scroll !== undefined) Object.defineProperty(proto, "scrollWidth", scroll);
+      else delete (proto as { scrollWidth?: number }).scrollWidth;
+      if (client !== undefined) Object.defineProperty(proto, "clientWidth", client);
+      else delete (proto as { clientWidth?: number }).clientWidth;
+    }
   });
 });

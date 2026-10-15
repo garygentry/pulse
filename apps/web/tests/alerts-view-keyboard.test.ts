@@ -216,6 +216,48 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
+  test("a pending focus retry yields to a newer move to a far, unrendered row, which gets its own retry", async () => {
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
+    const originalRaf = globalThis.requestAnimationFrame;
+    const frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    }) as typeof requestAnimationFrame;
+    const hn = await setup(many);
+    try {
+      hn.selectedIndex.value = 3999;
+      press("j"); // → 4000, not rendered: scroll there, retry held
+      await eventually(() => expect(rendered(hn)).toContain("virtual-4000"));
+      const stale = frames.splice(0);
+      expect(stale).toHaveLength(1);
+      hn.selectedIndex.value = 1;
+      press("k"); // → 0: far from the window around 4000, so not rendered either
+      expect(hn.selectedIndex.value).toBe(0);
+      expect(rendered(hn)).not.toContain("virtual-0");
+      expect(hn.scrolls).toEqual([4000, 0]);
+      expect(frames).toHaveLength(1); // the far row's own retry
+      // The stale retry runs while row 4000 is still rendered; the cursor moved on, so it must yield.
+      expect(rendered(hn)).toContain("virtual-4000");
+      stale[0]!(0);
+      expect(focusedFp()).not.toBe("virtual-4000");
+      expect(hn.container.querySelector('[data-triage-open="virtual-4000"][aria-current]')).toBeNull();
+      // The far row renders once the viewport reports the scroll; its retry focuses it.
+      await eventually(() => expect(rendered(hn)).toContain("virtual-0"));
+      frames.shift()!(0);
+      expect(focusedFp()).toBe("virtual-0");
+      expect([...hn.container.querySelectorAll("[aria-current]")].map((e) => e.getAttribute("data-triage-open"))).toEqual([
+        "virtual-0",
+      ]);
+    } finally {
+      if (originalRaf === undefined) delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
+      else globalThis.requestAnimationFrame = originalRaf;
+      hn.dispose();
+      hn.unmount();
+      restoreViewport();
+    }
+  });
+
   test("k from an unset cursor lands on row 0", async () => {
     const hn = await setup();
     try {

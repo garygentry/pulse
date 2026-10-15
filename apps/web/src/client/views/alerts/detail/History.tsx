@@ -8,8 +8,10 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 
 import { announce } from "../../../a11y/index.js";
-import { ALERT_INTERVAL, EmptyState, Section, Skeleton, StatusTimeline, formatTimestamp } from "@/ui";
+import { ALERT_INTERVAL, EmptyState, Section, Skeleton, StatusTimeline } from "@/ui";
 import type { ActiveAlert, RangeId } from "@pulse/web-data/wire";
+import type { EstateClock } from "../../../format.js";
+import { ScrollRegion } from "../../_shared/scroll-region.js";
 import { DEFAULT_HISTORY_RANGE } from "../taxonomy.js";
 import { fetchAlertHistory } from "./history-client.js";
 import { buildLanes, deriveDomain } from "./history-model.js";
@@ -21,6 +23,8 @@ export interface HistoryProps {
   readonly alert: ActiveAlert;
   /** Range window for the strip. Defaults to DEFAULT_HISTORY_RANGE ("24h"). */
   readonly range?: RangeId;
+  /** The estate clock: the strip's interval times read in the estate zone, as on the timeline. */
+  readonly clock: EstateClock;
 }
 
 /** The selected alert's firing-history strip, inside its "Firing history" section. */
@@ -103,16 +107,17 @@ function HistoryBody(props: HistoryProps): ReactElement {
           data-history-state="ready"
           data-stale={String(state.payload.stale)}
         >
-          <StatusTimeline
-            lanes={lanes}
-            statusMap={ALERT_INTERVAL}
-            formatTime={(t) => formatTimestamp(new Date(t).toISOString())}
-            domainStart={domainStart}
-            domainEnd={domainEnd}
-            ariaLabel={`Firing history for ${props.alert.name} over the last ${range}`}
-            // The chart is a fixed-size SVG: scroll it in a narrow pane rather than widen the page.
-            className="max-w-full overflow-x-auto"
-          />
+          {/* The chart is a fixed-size SVG: scroll it in a narrow pane rather than widen the page. */}
+          <ScrollRegion label="Firing history chart">
+            <StatusTimeline
+              lanes={lanes}
+              statusMap={ALERT_INTERVAL}
+              formatTime={(t) => props.clock.format(new Date(t).toISOString())}
+              domainStart={domainStart}
+              domainEnd={domainEnd}
+              ariaLabel={`Firing history for ${props.alert.name} over the last ${range}`}
+            />
+          </ScrollRegion>
           {hasUnmatched ? (
             <p className="text-sm text-muted-foreground" data-history-note="unmatched">
               Some lanes could not be attributed to a rendered target (shown, labeled “unmatched”).

@@ -5,7 +5,8 @@
 // without a DialogTrigger, so the pane records what had focus on open (the row-open control) and
 // returns focus there on close.
 import type { ReactElement } from "react";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
+import { useSignals } from "@preact/signals-react/runtime";
 
 import {
   Button,
@@ -19,6 +20,7 @@ import {
   cssEscape,
 } from "@/ui";
 import type { AppStore } from "../../../store/index.js";
+import { FALLBACK_ESTATE, createEstateClock } from "../../../format.js";
 import type { ActiveAlert, AlertsPayload } from "@pulse/web-data/wire";
 import { AckInfo } from "../../../mutations/AckInfo.js";
 import { resolveSelected } from "../url-state.js";
@@ -63,7 +65,11 @@ function returnTarget(el: HTMLElement | null): HTMLElement | null {
  * renders a distinct "no longer firing" EmptyState INSIDE the Sheet — never a blank pane or an error.
  */
 export function DetailPane(props: DetailPaneProps): ReactElement {
+  useSignals();
   const selected = props.selected;
+  // The estate clock, as the timeline and overview views format times (one zone across the app).
+  const estate = props.store.snapshot.value?.estate ?? FALLBACK_ESTATE;
+  const clock = useMemo(() => createEstateClock(estate), [estate.timezone, estate.tzFallback]);
   const open = selected !== null;
   const alert: ActiveAlert | null =
     open && props.payload !== null ? resolveSelected(props.payload, selected) : null;
@@ -132,7 +138,7 @@ export function DetailPane(props: DetailPaneProps): ReactElement {
                 <LabelsAnnotations alert={alert} />
                 <Routing alert={alert} />
                 <Silences alert={alert} payload={props.payload} store={props.store} />
-                <History alert={alert} />
+                <History alert={alert} clock={clock} />
                 <Related
                   payload={props.payload}
                   alert={alert}
