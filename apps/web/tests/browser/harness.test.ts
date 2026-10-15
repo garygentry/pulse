@@ -14,6 +14,7 @@ import type { Browser, Page } from "playwright-core";
 import {
   browserDescribe,
   buildFixturePage,
+  createSharedBrowser,
   FIXTURE_ENTRY,
   renderFixtureShell,
   type FixturePage,
@@ -41,6 +42,62 @@ describe("harness: renderFixtureShell (unit, Chromium-free)", () => {
     const html = renderFixtureShell("a.js", null, "dark");
     expect(html).not.toContain("<link");
     expect(html).toContain(`<script type="module" src="/a.js"></script>`);
+  });
+});
+
+describe("harness: createSharedBrowser (unit, Chromium-free)", () => {
+  class FakeBrowser {
+    connected = true;
+    private readonly listeners: (() => void)[] = [];
+    isConnected(): boolean {
+      return this.connected;
+    }
+    on(_event: "disconnected", listener: () => void): this {
+      this.listeners.push(listener);
+      return this;
+    }
+    crash(): void {
+      this.connected = false;
+      for (const listener of this.listeners) listener();
+    }
+  }
+
+  test("shares one launch, and relaunches once the browser disconnects (a crash)", async () => {
+    const launched: FakeBrowser[] = [];
+    let relaunches = 0;
+    const get = createSharedBrowser(
+      async () => {
+        const browser = new FakeBrowser();
+        launched.push(browser);
+        return browser;
+      },
+      () => {
+        relaunches += 1;
+      },
+    );
+    const first = await get();
+    expect(await get()).toBe(first);
+    expect(launched.length).toBe(1);
+
+    first.crash();
+    const second = await get();
+    expect(second).not.toBe(first);
+    expect(second.isConnected()).toBe(true);
+    expect(await get()).toBe(second);
+    expect(launched.length).toBe(2);
+    expect(relaunches).toBe(1);
+  });
+
+  test("a failed launch is not cached: the next call launches again", async () => {
+    let calls = 0;
+    const get = createSharedBrowser(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("launch failed");
+      return new FakeBrowser();
+    });
+    await expect(get()).rejects.toThrow("launch failed");
+    expect((await get()).isConnected()).toBe(true);
+    expect(calls).toBe(2);
   });
 });
 

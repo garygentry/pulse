@@ -374,8 +374,9 @@ suffix keeps them out of `bun test`, which collects `*.spec.*`.
     They re-render the same frozen data, and `toHaveScreenshot` waits for two identical
     consecutive captures.
   - **Rendering:** animations are disabled and fonts are awaited. The timezone and locale are
-    pinned. The build-id-bearing app version on the engine page is masked. Workbench inner
-    scrollers are pinned to the top.
+    pinned. The build-id-bearing app version on the engine page is pinned to a fixed one-line box
+    (the width of its grid cell, not of its text) and masked, so engine baselines do not change
+    with the bundle hash. Workbench inner scrollers are pinned to the top.
   - **Comparison:** per-pixel `threshold: 0.1`, and no pixel may exceed it.
 - **CI only:** font rasterisation differs between hosts, so baselines are made and checked only on
   the CI Linux image. Locally the specs skip unless `UPDATE_VISUALS=1` is set. With it set, they

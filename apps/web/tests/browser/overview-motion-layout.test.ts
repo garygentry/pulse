@@ -10,7 +10,8 @@
 //   Layout — the 4-host fixture scales its host cells up under wallboard density at the same
 //     viewport; the 100-host/300-service envelope keeps grouped, headed cards with no table; kiosk
 //     paging under a 4 s rotation dwell shows every host exactly once across one page cycle, repeats a
-//     split group's heading, starts every page before the dwell elapses, and starts at page 1.
+//     split group's heading, starts every page before the dwell elapses, and starts at page 1 — timed
+//     on a paused fake clock, so the bounds measure page time, not host load (GitHub #33).
 // Computed styles, layout boxes and real timers are engine properties happy-dom cannot provide.
 //
 // SELF-SKIPS when Chromium is not provisioned (_harness.browserDescribe); THROWS at collection under
@@ -22,6 +23,7 @@ import type { Browser, Page } from "playwright-core";
 import { browserDescribe, type FixturePage, type FixtureTheme } from "./_harness.js";
 import {
   buildOverviewFixtures,
+  drainTasks,
   launchOverviewBrowser,
   openOverviewPage,
   OVERVIEW_MARKED,
@@ -40,7 +42,9 @@ const GROUP_BY = "[data-control=group-by] [role=radio]";
 const MODE_LABEL = { status: "Status", name: "Name" } as const;
 
 const KIOSK_DWELL_MS = 4_000;
-const KIOSK_POLL_MS = 25;
+/** Fake-clock step between kiosk observations; page starts are measured to within one step. */
+const KIOSK_STEP_MS = 25;
+/** Fake-time bound for seeing every page (page time, independent of host load — GitHub #33). */
 const KIOSK_DEADLINE_MS = KIOSK_DWELL_MS + 3_000;
 const KIOSK_PAGE = '[data-slot="overview-kiosk-page"]:not([aria-hidden="true"])';
 
@@ -343,9 +347,12 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
       dwell: KIOSK_DWELL_MS,
       viewport: { width: 1920, height: 1080 },
       reducedMotion: "reduce",
+      pausedClock: true,
     });
     try {
       const { page } = handle;
+      // Page time: the clock is paused, so it advances only through runFor below.
+      const pageNow = (): Promise<number> => page.evaluate(() => performance.now());
       const first = await observeKioskPage(page);
       const total = first.total;
       expect(total, `kiosk indicator unreadable: ${JSON.stringify(first)}`).not.toBeNull();
@@ -358,7 +365,7 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
       let start: number | null = null;
       let last = first;
       for (;;) {
-        const now = performance.now();
+        const now = await pageNow();
         const obs = last;
         if (obs.index !== null && !seen.has(obs.index)) {
           if (start === null) start = now;
@@ -371,7 +378,9 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
         if (start !== null && now - start > KIOSK_DEADLINE_MS) {
           throw new Error(`kiosk saw ${seen.size}/${total} pages within ${KIOSK_DEADLINE_MS}ms:\n${log.join("\n")}`);
         }
-        await page.waitForTimeout(KIOSK_POLL_MS);
+        if (start === null) throw new Error(`kiosk shows no page index: ${JSON.stringify(obs)}`);
+        await page.clock.runFor(KIOSK_STEP_MS);
+        await drainTasks(page);
         last = await observeKioskPage(page);
       }
       const detail = log.join("\n");
