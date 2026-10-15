@@ -72,7 +72,7 @@ name, and `--ignore-missing` skips the ones you did not download.
 through Bun, with no compiled binary:
 
 ```bash
-gh repo clone garygentry/pulse -- --branch "$TAG" && cd pulse && bun install
+gh repo clone garygentry/pulse -- --branch "$TAG" && cd pulse && bun install && bun run typecheck
 printf '#!/bin/sh\nexec bun run %s/apps/cli/src/index.ts "$@"\n' "$(pwd)" > pulse-cli
 chmod +x pulse-cli && export PULSE_BIN="$(pwd)/pulse-cli"
 ```

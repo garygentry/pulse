@@ -57,6 +57,7 @@ script:
 ```bash
 # on the release tag, from the repo root:
 bun install --frozen-lockfile
+bun run typecheck   # builds the workspace packages build:bin imports
 (cd apps/cli && PULSE_BUILD_VERSION=0.2.0 bun run build:bin)
 (cd apps/cli/dist/build && sha256sum -c SHA256SUMS)   # all four lines must print OK
 apps/cli/dist/build/pulse-linux-x64 --version          # on a glibc x64 host: pulse 0.2.0
