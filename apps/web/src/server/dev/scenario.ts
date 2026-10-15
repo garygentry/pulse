@@ -9,6 +9,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { createAlertmanagerClient as createDataAlertmanagerClient } from "@pulse/web-data/sources";
+
 import { WebAppError } from "../../shared/errors.js";
 import {
   parseAlerts,
@@ -21,6 +23,7 @@ import {
 } from "../sources/index.js";
 import type {
   MockSource,
+  AmSilencesResponse,
   ScenarioBase,
   Timeline,
   TimelineOp,
@@ -28,12 +31,13 @@ import type {
   VmalertRulesResponse,
 } from "./timeline.js";
 
-/** File names inside a scenario directory. `timeline.json` is optional. */
+/** File names inside a scenario directory. `silences.json` and `timeline.json` are optional. */
 export const SCENARIO_FILES = {
   vm: "vm.json",
   alertmanager: "alertmanager.json",
   gatus: "gatus.json",
   vmalert: "vmalert.json",
+  silences: "silences.json",
   timeline: "timeline.json",
 } as const;
 
@@ -44,7 +48,7 @@ export const DEFAULT_SCENARIO_DIR = resolve(import.meta.dir, "../../../tests/fix
 export interface LoadedScenario {
   /** The scenario directory name (as passed to `loadScenario`). */
   name: string;
-  /** The three parsed fixture bodies, before any timeline step is applied. */
+  /** The parsed fixture bodies, before any timeline step is applied. */
   base: ScenarioBase;
   /** Empty when `timeline.json` is absent. */
   timeline: Timeline;
@@ -134,11 +138,36 @@ export async function loadScenario(fixturesDir: string, name: string): Promise<L
     (body) => validateVmalertRules(body),
   );
 
+  // Silences are optional (GitHub #32): an absent file is no silences.
+  const silences = (await tryRead(scenarioDir, SCENARIO_FILES.silences)) === null
+    ? []
+    : await loadSilences(scenarioDir, name, invalidPrefix);
+
   const timelineRaw = await tryRead(scenarioDir, SCENARIO_FILES.timeline);
   const timeline = timelineRaw === null ? { steps: [] } : parseTimeline(name, timelineRaw, invalidPrefix);
 
-  const base: ScenarioBase = { vm, alertmanager, gatus, vmalert };
+  const base: ScenarioBase = { vm, alertmanager, silences, gatus, vmalert };
   return { name, base, timeline };
+}
+
+/**
+ * Read `silences.json` and validate it through the real `@pulse/web-data` silences client (the one
+ * the refresh cycle reads the mock with), fed the fixture body by an in-memory fetch.
+ */
+async function loadSilences(dir: string, scenario: string, invalidPrefix: string): Promise<AmSilencesResponse> {
+  const file = SCENARIO_FILES.silences;
+  const body = await loadSource(dir, file, scenario, invalidPrefix, (raw) => raw);
+  const fetchImpl = (async () => Response.json(body)) as unknown as typeof fetch;
+  const parsed = await createDataAlertmanagerClient("http://alertmanager.mock.invalid", { fetchImpl }).silences();
+  if (!parsed.ok) {
+    throw new MockScenarioError(
+      "MOCK_SCENARIO_INVALID",
+      scenario,
+      `${invalidPrefix}${file} was rejected by the source parser — ${parsed.error.kind}`,
+      { file },
+    );
+  }
+  return body as AmSilencesResponse;
 }
 
 async function isDirectory(path: string): Promise<boolean> {

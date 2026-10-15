@@ -626,47 +626,39 @@ export function checkManifestInvariants(
 }
 
 /**
- * Snapshot the output directory before a build so a failure can be rolled back to it.
+ * Snapshot the output directory before a build so a failure can be rolled back to it: the names of
+ * the regular files already there.
  */
-function snapshotDir(dir: string): Map<string, number> {
-  const snapshot = new Map<string, number>();
+function snapshotDir(dir: string): Set<string> {
+  const snapshot = new Set<string>();
   if (!existsSync(dir)) return snapshot;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    try {
-      snapshot.set(entry.name, statSync(resolve(dir, entry.name)).mtimeMs);
-    } catch {
-      // unreadable — skip
-    }
+    if (entry.isFile()) snapshot.add(entry.name);
   }
   return snapshot;
 }
 
 /**
- * Roll back partial outputs after a failed build (§6.5). Removes any regular file in `dir` that is
- * either absent from `snapshot` or has a different mtime than the snapshot, except `index.html` and
- * MANIFEST_FILENAME (owned by the previous build). Returns any unlink error messages.
+ * Roll back partial outputs after a failed build (§6.5). Removes every regular file in `dir` whose
+ * name is absent from `snapshot`, except `index.html` and MANIFEST_FILENAME (owned by the previous
+ * build). Returns any unlink error messages.
+ *
+ * Deletion is keyed on names, not mtimes (#29). Every output name carries a content hash, so a
+ * name already on disk before the build holds the same bytes. Bun rewrites unchanged outputs on
+ * every clean:false build, which gives the stable-name fonts and chunks that the previous manifest
+ * still references a new mtime; an mtime check deleted them and brought the #8 404s back.
  */
-function rollbackDir(dir: string, snapshot: Map<string, number>): string[] {
+function rollbackDir(dir: string, snapshot: ReadonlySet<string>): string[] {
   if (!existsSync(dir)) return [];
   const errors: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     if (entry.name === "index.html" || entry.name === MANIFEST_FILENAME) continue;
-    const full = resolve(dir, entry.name);
-    let current: number;
+    if (snapshot.has(entry.name)) continue;
     try {
-      current = statSync(full).mtimeMs;
-    } catch {
-      continue;
-    }
-    const prior = snapshot.get(entry.name);
-    if (prior === undefined || prior !== current) {
-      try {
-        unlinkSync(full);
-      } catch (e) {
-        errors.push(`rollback: unlink ${entry.name} failed: ${(e as Error).message}`);
-      }
+      unlinkSync(resolve(dir, entry.name));
+    } catch (e) {
+      errors.push(`rollback: unlink ${entry.name} failed: ${(e as Error).message}`);
     }
   }
   return errors;
@@ -722,7 +714,7 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
   const clientRoot = dirname(entryAbs);
 
   // Step 0/1 — clean or snapshot.
-  let snapshot: Map<string, number>;
+  let snapshot: Set<string>;
   if (opts.clean) {
     try {
       rmSync(outdirAbs, { recursive: true, force: true });
@@ -733,7 +725,7 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
         durationMs: Math.round(performance.now() - startedAt),
       };
     }
-    snapshot = new Map();
+    snapshot = new Set();
   } else {
     snapshot = snapshotDir(outdirAbs);
   }
@@ -811,6 +803,9 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
   for (const key of omitted) {
     const outPath = isAbsolute(key) ? resolve(key) : resolve(outdirAbs, key);
     for (const path of [outPath, `${outPath}.map`]) {
+      // A name the previous build left on disk may be in its manifest; the prune after a
+      // successful publish removes it, and a failed build leaves it (#29).
+      if (snapshot.has(basename(path))) continue;
       try {
         if (existsSync(path)) unlinkSync(path);
       } catch (e) {
@@ -853,40 +848,53 @@ export async function buildClient(opts: ClientBuildOptions): Promise<ClientBuild
   ]);
   const manifest: ClientManifest = { buildId, ...classified };
 
-  // Step 7 — prune previous outputs on clean:false.
-  const keep = emittedFiles(output.outputs, metafile, omitted);
-  const pruneErrs = opts.clean ? [] : pruneDir(outdirAbs, keep);
-
-  // Step 8 — copy index.html, and record the CSP hash of each inline executable script it carries
+  // Step 7 — copy index.html, and record the CSP hash of each inline executable script it carries
   // (the pre-paint theme stamp). The shell's `script-src` allows exactly these, so editing the
   // inline script and rebuilding ships the matching hash; nothing is hand-maintained (issue #2).
+  // A publish-step failure rolls back like any other late failure, and runs before the prune so the
+  // previous manifest and every file it references stay intact (#29).
+  const shellPath = resolve(outdirAbs, "index.html");
+  let previousShell: string | null = null;
+  let shellTouched = false;
+  // The previous manifest's CSP hashes match the previous shell, so a failure puts it back.
+  const fail = (message: string): ClientBuildResult => {
+    const errors = [message, ...rollbackDir(outdirAbs, snapshot)];
+    try {
+      if (shellTouched && previousShell === null) rmSync(shellPath, { force: true });
+      else if (shellTouched && previousShell !== null) writeFileSync(shellPath, previousShell, "utf8");
+    } catch (e) {
+      errors.push(`rollback: restore index.html failed: ${(e as Error).message}`);
+    }
+    return { ok: false, errors, durationMs: Math.round(performance.now() - startedAt) };
+  };
+  try {
+    previousShell = existsSync(shellPath) ? readFileSync(shellPath, "utf8") : null;
+  } catch (e) {
+    return fail(`index.html read failed: ${(e as Error).message}`);
+  }
   try {
     const shellHtml = readFileSync(resolve(clientRoot, "index.html"), "utf8");
-    await Bun.write(resolve(outdirAbs, "index.html"), shellHtml);
+    shellTouched = true;
+    await Bun.write(shellPath, shellHtml);
     manifest.inlineScriptHashes = inlineScriptHashes(shellHtml);
   } catch (e) {
-    return {
-      ok: false,
-      errors: [`index.html copy failed: ${(e as Error).message}`],
-      durationMs: Math.round(performance.now() - startedAt),
-    };
+    return fail(`index.html copy failed: ${(e as Error).message}`);
   }
 
-  // Step 9 — atomic manifest publication (REQ-CONC-02).
+  // Step 8 — atomic manifest publication (REQ-CONC-02).
   const manifestPath = resolve(outdirAbs, MANIFEST_FILENAME);
   const tmpPath = `${manifestPath}.tmp`;
   try {
     writeFileSync(tmpPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     renameSync(tmpPath, manifestPath);
   } catch (e) {
-    return {
-      ok: false,
-      errors: [`manifest publish failed: ${(e as Error).message}`],
-      durationMs: Math.round(performance.now() - startedAt),
-    };
+    return fail(`manifest publish failed: ${(e as Error).message}`);
   }
 
-  // Emit any prune warnings to stderr (non-fatal).
+  // Step 9 — prune previous outputs on clean:false, now that nothing references them. Prune
+  // warnings go to stderr (non-fatal).
+  const keep = emittedFiles(output.outputs, metafile, omitted);
+  const pruneErrs = opts.clean ? [] : pruneDir(outdirAbs, keep);
   for (const w of pruneErrs) console.error(w);
 
   return {

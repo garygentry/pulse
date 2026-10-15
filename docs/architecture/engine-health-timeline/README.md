@@ -15,7 +15,7 @@ bun run dev:web --mock
 
 Open `http://127.0.0.1:8080/engine` and `http://127.0.0.1:8080/timeline`.
 
-The mock engine serves only instant queries. The history routes therefore answer `SOURCE_UNAVAILABLE`, so under `--mock` the engine trends, timeline lanes, and swimlane show the "Metrics source unavailable." failure state with a Retry button. This is the intended degraded rendering, not a bug. To see real charts, run against an engine:
+The mock engine derives range-query and check-history answers from the scenario (`apps/web/src/server/dev/history.ts`), so under `--mock` the engine trends, timeline lanes, and swimlane draw plausible synthetic data. A VM outage step (`--mock degraded-mix` at 30–60 s) still shows the "Metrics source unavailable." state. To see real charts, run against an engine:
 
 ```bash
 bun run dev:web --engine \

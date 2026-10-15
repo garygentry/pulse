@@ -141,10 +141,12 @@ my-scenario/
 ├── vm.json
 ├── alertmanager.json
 ├── gatus.json
+├── vmalert.json
+├── silences.json        # optional; Alertmanager GET /api/v2/silences body, absent → none
 └── timeline.json        # optional
 ```
 
-The three required files must use the real upstream wire shapes because `loadScenario()` validates them with production source parsers.
+The source files must use the real upstream wire shapes because `loadScenario()` validates them with production source parsers. `silences.json` is checked by the `@pulse/web-data` silences client the refresh cycle uses. Without silences the mock would answer `/api/v2/silences` with a 404, and `/alerts` would report Alertmanager unreachable (GitHub #32).
 
 Author every timestamp relative to the fixture anchor `2026-01-01T00:00:00Z` (`FIXTURE_ANCHOR` in `src/server/dev/timeline.ts`), treating it as the scenario start. An alert-fire step's `startsAt` is the anchor plus its `atMs`. The mock engine keeps each timestamp's offset from the anchor and moves it onto the real scenario start. Go's zero time `0001-01-01T00:00:00Z` is left as-is.
 

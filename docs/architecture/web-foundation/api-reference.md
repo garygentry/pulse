@@ -353,7 +353,7 @@ Sources: `apps/web/src/server/dev/scenario.ts`, `timeline.ts`, and `mock-engine.
 
 ### `loadScenario(fixturesDir, name): Promise<LoadedScenario>`
 
-Loads and validates the three source fixtures plus optional timeline. It throws `MockScenarioError` with code `MOCK_SCENARIO_UNKNOWN` or `MOCK_SCENARIO_INVALID`.
+Loads and validates the four source fixtures plus the optional `silences.json` and timeline. It throws `MockScenarioError` with code `MOCK_SCENARIO_UNKNOWN` or `MOCK_SCENARIO_INVALID`.
 
 ```typescript
 import { loadScenario } from "./src/server/dev/scenario.js";
@@ -381,9 +381,9 @@ import { freshenGatus } from "./src/server/dev/timeline.js";
 const currentChecks = freshenGatus(scenario.base.gatus, Date.now());
 ```
 
-### `rebaseAlertmanager(body, scenarioStartMs)`, `rebaseVmalert(body, scenarioStartMs)`, `rebaseVm(body, scenarioStartMs)`
+### `rebaseAlertmanager(body, scenarioStartMs)`, `rebaseSilences(body, scenarioStartMs)`, `rebaseVmalert(body, scenarioStartMs)`, `rebaseVm(body, scenarioStartMs)`
 
-Return copies with every authored timestamp shifted by `scenarioStartMs - FIXTURE_ANCHOR_MS`. Each timestamp keeps its offset from the fixture anchor, now measured from the scenario start. The shifted fields are Alertmanager `startsAt`/`endsAt`/`updatedAt`, vmalert group and rule `lastEvaluation` plus rule `alerts[].activeAt`, and VictoriaMetrics instant `value[0]`. Zero-time, pre-epoch, and unparseable values pass through unchanged. The output depends only on the scenario start, so a pinned `--clock` stays byte-identical.
+Return copies with every authored timestamp shifted by `scenarioStartMs - FIXTURE_ANCHOR_MS`. Each timestamp keeps its offset from the fixture anchor, now measured from the scenario start. The shifted fields are Alertmanager alert and silence `startsAt`/`endsAt`/`updatedAt`, vmalert group and rule `lastEvaluation` plus rule `alerts[].activeAt`, and VictoriaMetrics instant `value[0]`. Zero-time, pre-epoch, and unparseable values pass through unchanged. The output depends only on the scenario start, so a pinned `--clock` stays byte-identical.
 
 ```typescript
 import { rebaseAlertmanager } from "./src/server/dev/timeline.js";
@@ -400,6 +400,8 @@ const engine = await createMockEngine({ scenario: "degraded-mix" });
 const response = await engine.fetchImpl(`${MOCK_BASE_URLS.vmUrl}/api/v1/query`);
 console.log(response.status, engine.state().appliedSteps);
 ```
+
+Beside the four `MOCK_PATHS`, the engine serves `MOCK_EXTRA_PATHS`: Alertmanager `/api/v2/silences`, VictoriaMetrics `/api/v1/query_range`, and Gatus `/api/v1/endpoints/{key}/statuses`. The history reads are derived from the current scenario fold by `src/server/dev/history.ts`. Every path follows its source's outage steps.
 
 `listScenarios(dir?): Promise<string[]>` returns sorted valid scenario-directory names and returns an empty list for an unreadable root.
 

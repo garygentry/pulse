@@ -36,7 +36,7 @@ curl -s 'localhost:8080/api/history/target/svc%3Aweb%2Fapp/service.deep-health' 
 curl -N localhost:8080/api/events          # SSE: retry, heartbeats, ticks
 ```
 
-The mock engine serves only instant queries and the statuses page. Under `--mock`, history routes answer `SOURCE_UNAVAILABLE`.
+Under `--mock`, the history routes answer with data the mock engine derives from the scenario (`apps/web/src/server/dev/history.ts`). Alert history has one firing lane per current alert. Liveness holds the current VM value over the range, and the curated host, endpoint, and engine metrics draw a deterministic wave. Check history returns the endpoint's Gatus fixture rows. Other queries return no series.
 
 In server code, use the package through its subpath exports:
 

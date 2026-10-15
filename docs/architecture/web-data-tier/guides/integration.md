@@ -5,7 +5,7 @@ This guide covers consuming the web data tier from a view, extending it on the s
 ## Run It Locally
 
 ```bash
-bun run dev:web --mock                       # in-process mock engine; history → SOURCE_UNAVAILABLE
+bun run dev:web --mock                       # in-process mock engine; history derived from the scenario
 bun run dev:web --mock degraded-mix          # degraded source scenarios
 bun run dev:web --engine <vm>,<am>,<gatus>,<vmalert>
 ```

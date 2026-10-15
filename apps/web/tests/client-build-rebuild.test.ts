@@ -11,7 +11,15 @@
 // previous build's stale entry was pruned.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 import type { ClientManifest } from "../src/server/assets.js";
@@ -64,7 +72,7 @@ afterAll(() => {
   if (root) rmSync(root, { recursive: true, force: true });
 });
 
-function build(clean: boolean): ClientManifest {
+function runBuild(clean: boolean): { exitCode: number | null; stderr: string } {
   const proc = Bun.spawnSync({
     cmd: [
       process.execPath,
@@ -80,9 +88,12 @@ function build(clean: boolean): ClientManifest {
     stdout: "pipe",
     stderr: "pipe",
   });
-  if (proc.exitCode !== 0) {
-    throw new Error(`build-client.ts exited ${proc.exitCode}\nstderr=${proc.stderr.toString()}`);
-  }
+  return { exitCode: proc.exitCode, stderr: proc.stderr.toString() };
+}
+
+function build(clean: boolean): ClientManifest {
+  const { exitCode, stderr } = runBuild(clean);
+  if (exitCode !== 0) throw new Error(`build-client.ts exited ${exitCode}\nstderr=${stderr}`);
   return JSON.parse(readFileSync(join(outdir, MANIFEST_FILENAME), "utf8")) as ClientManifest;
 }
 
@@ -134,6 +145,38 @@ describe("clean:false rebuilds keep every emitted file (#8)", () => {
         expect(onDisk.has(`${stale}.map`), `stale ${stale}.map not pruned`).toBe(false);
         previousEntry = entry;
       }
+    },
+    BUILD_TIMEOUT_MS,
+  );
+});
+
+describe("a late build failure rolls back to the previous build (#29)", () => {
+  test(
+    "a failed publish keeps the previous manifest and every file it references; new outputs go",
+    () => {
+      writeFileSync(join(root, "src", "main.ts"), mainSource(10));
+      const previous = build(true);
+      expectCompleteOutput(previous);
+      const previousManifest = readFileSync(join(outdir, MANIFEST_FILENAME), "utf8");
+      const previousFiles = new Set(readdirSync(outdir));
+
+      // Bun.build succeeds and rewrites every output (new mtimes on the unchanged font, lazy chunk
+      // and maps), then the index.html copy, a publish step, fails.
+      writeFileSync(join(root, "src", "main.ts"), mainSource(11));
+      const shell = join(root, "src", "index.html");
+      renameSync(shell, `${shell}.away`);
+      try {
+        const failed = runBuild(false);
+        expect(failed.exitCode).not.toBe(0);
+        expect(failed.stderr).toContain("index.html copy failed");
+      } finally {
+        renameSync(`${shell}.away`, shell);
+      }
+
+      expect(readFileSync(join(outdir, MANIFEST_FILENAME), "utf8")).toBe(previousManifest);
+      expectCompleteOutput(previous);
+      // Exactly the previous build's files remain: nothing pruned, nothing new left behind.
+      expect(new Set(readdirSync(outdir))).toEqual(previousFiles);
     },
     BUILD_TIMEOUT_MS,
   );
