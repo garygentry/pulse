@@ -241,6 +241,7 @@ export function KioskStatStrip(props: StatHeaderProps): ReactElement {
       className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1"
       aria-label="Estate statistics"
       data-surface={surface.status}
+      data-slot="overview-stat-strip"
       data-stat-strip=""
     >
       <StripGroup stat="hosts" label="Hosts">

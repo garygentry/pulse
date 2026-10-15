@@ -174,6 +174,7 @@ function KioskRibbon(props: FiringRibbonProps): ReactElement {
     <section
       className="flex min-w-0 items-center gap-x-4 gap-y-1 overflow-hidden text-sm whitespace-nowrap max-sm:flex-wrap"
       aria-label="Firing alerts summary"
+      data-slot="overview-kiosk-ribbon"
       data-ribbon="kiosk"
       data-kiosk="true"
       data-alerts-current={String(alertsCurrent)}
