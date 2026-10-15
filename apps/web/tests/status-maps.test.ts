@@ -10,7 +10,6 @@ import type {
   HealthState,
   RuleState,
   ScrapeJobState,
-  StatusInterval,
   TargetStatus,
 } from "@pulse/web-data/wire";
 
@@ -23,7 +22,6 @@ import {
   FINDING_SEVERITY_STATUS,
   HEALTH_STATUS,
   HEALTH_TO_STATUS,
-  INTERVAL_STATUS,
   PROPOSAL_STATE_STATUS,
   RULE_HEALTH_STATUS,
   SCRAPE_HEALTH_STATUS,
@@ -59,7 +57,6 @@ const CASES: readonly MapCase[] = [
   { name: "DIFF_STATUS", map: DIFF_STATUS, keys: domain<DeclaredScrapeComparison["state"]>()(["matched", "missing", "unexpected", "unknown"]) },
   { name: "FINDING_SEVERITY_STATUS", map: FINDING_SEVERITY_STATUS, keys: domain<FindingSeverity>()(["error", "warning", "info"]) },
   { name: "SEVERITY_STATUS", map: SEVERITY_STATUS, keys: ["critical", "warning", "info"] },
-  { name: "INTERVAL_STATUS", map: INTERVAL_STATUS, keys: domain<StatusInterval["state"]>()(["firing", "failed"]) },
   { name: "RULE_HEALTH_STATUS", map: RULE_HEALTH_STATUS, keys: domain<RuleState["health"]>()(["healthy", "unhealthy", "unknown"]) },
   { name: "SWIM_ROW_STATUS", map: SWIM_ROW_STATUS, keys: domain<SwimSeverity>()(["critical", "warning", "info", "unknown"]) },
   { name: "ACTION_STATE_STATUS", map: ACTION_STATE_STATUS, keys: domain<ActionState>()(["acked", "pending", "failed"]) },

@@ -8,7 +8,7 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 
 import { announce } from "../../../a11y/index.js";
-import { EmptyState, Section, Skeleton, StatusTimeline, TARGET_STATUS, formatTimestamp } from "@/ui";
+import { ALERT_INTERVAL, EmptyState, Section, Skeleton, StatusTimeline, formatTimestamp } from "@/ui";
 import type { ActiveAlert, RangeId } from "@pulse/web-data/wire";
 import { DEFAULT_HISTORY_RANGE } from "../taxonomy.js";
 import { fetchAlertHistory } from "./history-client.js";
@@ -105,7 +105,7 @@ function HistoryBody(props: HistoryProps): ReactElement {
         >
           <StatusTimeline
             lanes={lanes}
-            statusMap={TARGET_STATUS}
+            statusMap={ALERT_INTERVAL}
             formatTime={(t) => formatTimestamp(new Date(t).toISOString())}
             domainStart={domainStart}
             domainEnd={domainEnd}
