@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { firingRows } from "../src/client/views/alerts/model.js";
 import type { DataTableHandle } from "@/ui";
+import type { TriageKeyboardOptions } from "../src/client/views/alerts/keyboard.js";
 import { describeDom } from "./dom.js";
 import { COMPACT_ROW_ESTIMATE, eventually, stubVirtualViewport } from "./alerts-dom-helpers.js";
 import { makeAlertsPayload } from "./alerts-fixtures.js";
@@ -27,11 +28,12 @@ describeDom("triage keyboard", (dom) => {
     unmount: () => void;
   }
 
-  async function setup(tableRows: readonly ActiveAlert[] = rows): Promise<Harness> {
+  /** `awaitScroll`: hand the keyboard the handle's scroll promise, as the view does. */
+  async function setup(tableRows: readonly ActiveAlert[] = rows, awaitScroll = false): Promise<Harness> {
     const { createElement: h, createRef } = await import("react");
     const { signal } = await import("@preact/signals-core");
     const { TriageTable } = await import("../src/client/views/alerts/table/TriageTable.js");
-    const { installTriageKeyboard } = await import("../src/client/views/alerts/keyboard.js");
+    const { useTriageKeyboard } = await import("../src/client/views/alerts/keyboard.js");
     const selectedIndex = signal(-1);
     const containerRef = createRef<HTMLDivElement>();
     const tableRef = createRef<DataTableHandle>();
@@ -56,13 +58,19 @@ describeDom("triage keyboard", (dom) => {
       unmount,
     };
     liveDoc = container.ownerDocument;
-    hn.dispose = installTriageKeyboard({
+    // The keyboard hook mounts in a root of its own, so `dispose` can take it away on its own.
+    const Keyboard = (props: { opts: TriageKeyboardOptions }): null => {
+      useTriageKeyboard(props.opts);
+      return null;
+    };
+    const opts: TriageKeyboardOptions = {
       selectedIndex,
       rows: () => tableRows,
       container: () => containerRef.current,
       scrollToIndex: (index) => {
         hn.scrolls.push(index);
-        tableRef.current?.scrollToIndex(index);
+        const settled = tableRef.current?.scrollToIndex(index);
+        return awaitScroll ? settled : undefined;
       },
       isFiringTabActive: () => hn.state.firing,
       isPaneOpen: () => hn.state.paneOpen,
@@ -70,7 +78,9 @@ describeDom("triage keyboard", (dom) => {
       closePane: () => {
         hn.closes += 1;
       },
-    });
+    };
+    const keyboard = await dom.mount(h(Keyboard, { opts }) as unknown as ReactElement);
+    hn.dispose = keyboard.unmount;
     return hn;
   }
 
@@ -289,6 +299,69 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
+  test("↓/↑ step and End/Home, G/gg jump over every row of a virtualized table, focusing far rows once rendered", async () => {
+    const restoreViewport = stubVirtualViewport(COMPACT_ROW_ESTIMATE);
+    const hn = await setup(many, true);
+    try {
+      expect(press("ArrowDown").defaultPrevented).toBe(true);
+      expect(hn.selectedIndex.value).toBe(0);
+      expect(focusedFp()).toBe("virtual-0");
+      press("End");
+      expect(hn.selectedIndex.value).toBe(4999);
+      expect(rendered(hn)).not.toContain("virtual-4999"); // far row: scrolled in, focused later
+      await eventually(() => expect(focusedFp()).toBe("virtual-4999"));
+      press("ArrowUp");
+      await eventually(() => expect(focusedFp()).toBe("virtual-4998"));
+      press("Home");
+      expect(hn.selectedIndex.value).toBe(0);
+      await eventually(() => expect(focusedFp()).toBe("virtual-0"));
+      press("G");
+      expect(hn.selectedIndex.value).toBe(4999);
+      press("g");
+      press("g");
+      expect(hn.selectedIndex.value).toBe(0);
+      await eventually(() => expect(focusedFp()).toBe("virtual-0"));
+      expect(hn.scrolls).toContain(4999);
+      expect(rendered(hn).length).toBeLessThan(300);
+    } finally {
+      hn.dispose();
+      hn.unmount();
+      restoreViewport();
+    }
+  });
+
+  test("moves stand aside while focus is inside a dialog (the detail Sheet) or on another control", async () => {
+    const hn = await setup();
+    const doc = hn.container.ownerDocument;
+    const sheet = doc.createElement("div");
+    sheet.setAttribute("role", "dialog");
+    const link = doc.createElement("a");
+    link.href = "#runbook";
+    sheet.appendChild(link);
+    const chip = doc.createElement("button");
+    chip.type = "button";
+    doc.body.append(sheet, chip);
+    try {
+      link.focus();
+      for (const key of ["j", "ArrowDown", "End"]) expect(pressOn(link, key).defaultPrevented).toBe(false);
+      expect(hn.selectedIndex.value).toBe(-1);
+      expect(doc.activeElement).toBe(link);
+      chip.focus();
+      expect(pressOn(chip, "j").defaultPrevented).toBe(false);
+      expect(hn.selectedIndex.value).toBe(-1);
+      // A row's own open button is part of the list: j moves on from it.
+      const row0 = hn.container.querySelector<HTMLElement>(`[data-triage-open="${rows[0]!.fingerprint}"]`)!;
+      row0.focus();
+      expect(pressOn(row0, "j").defaultPrevented).toBe(true);
+      expect(focusedFp()).toBe(rows[0]!.fingerprint); // the cursor was unset: the first move lands on row 0
+    } finally {
+      sheet.remove();
+      chip.remove();
+      hn.dispose();
+      hn.unmount();
+    }
+  });
+
   test("k from an unset cursor lands on row 0", async () => {
     const hn = await setup();
     try {
@@ -472,7 +545,7 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
-  test("the disposer removes all four shortcuts", async () => {
+  test("unmounting removes every key: j/k, Enter and Escape", async () => {
     const hn = await setup();
     hn.state.paneOpen = true;
     hn.dispose();
@@ -490,14 +563,14 @@ describeDom("triage keyboard", (dom) => {
     }
   });
 
-  test("registers every combo with allowInInput: false; Enter/Escape without preventDefault", () => {
+  test("j/k go through useListNavigation; Enter/Escape are registry combos with allowInInput: false and no preventDefault", () => {
     const src = readFileSync(
       fileURLToPath(new URL("../src/client/views/alerts/keyboard.ts", import.meta.url)),
       "utf8",
     );
+    expect(src).toContain("useListNavigation({");
     const combos = [...src.matchAll(/registerShortcut\(\s*"([^"]+)"/g)].map((m) => m[1]);
-    expect(combos).toEqual(["j", "k", "enter", "escape"]);
-    expect(src.match(/\{ allowInInput: false(, preventDefault: false)? \}/g)).toHaveLength(4);
+    expect(combos).toEqual(["enter", "escape"]);
     // Enter/Escape must not cancel native activation of buttons/links (the registry listens on document).
     expect(src.match(/\{ allowInInput: false, preventDefault: false \}/g)).toHaveLength(2);
   });

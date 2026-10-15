@@ -387,7 +387,7 @@ describeDom("AlertsView (integrated)", (dom) => {
     expect(m.container.innerHTML).toBe(afterUnmount);
   });
 
-  test("installTriageKeyboard is live while mounted and disposed on unmount", async () => {
+  test("the triage keyboard is live while mounted and disposed on unmount", async () => {
     const m = await setup("?sel=" + FIXTURE_FINGERPRINTS.hostDown);
     press(m, "Escape");
     await flush();

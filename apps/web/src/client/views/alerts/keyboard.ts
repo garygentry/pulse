@@ -1,16 +1,20 @@
 // src/client/views/alerts/keyboard.ts — j/k/Enter/Escape keyboard triage loop.
 //
-// Registers four shortcuts on the shared a11y registry and returns one disposer that removes them
-// all (view.tsx installs on mount, disposes on unmount). j/k/Enter no-op off the Firing tab so the
-// catalog/silences tabs keep the Tabs roving-tabindex arrow navigation.
+// `useTriageKeyboard` drives the cursor with `useListNavigation` (vim keys: j/k and ↑/↓ step,
+// Home/End and gg/G jump) over EVERY firing row through its `virtual` option, so a move reaches
+// rows the virtualized DataTable has not rendered: the cursor is the `selectedIndex` signal, and a
+// row outside the window is scrolled in and focused on a later frame (`focusRow`). Moves no-op off
+// the Firing tab (the catalog/silences tabs keep their own keys) and from inside a dialog (the
+// detail Sheet). Enter and Escape stay on the shared a11y registry (document level, never
+// preventDefault), so they coexist with native button activation and the Sheet's own Escape.
 // TriageKeyboardHints lives here next to the handlers it documents; this is a .ts module, so the
 // hint row is built with `createElement` rather than JSX.
-import { createElement } from "react";
+import { createElement, useEffect, useRef } from "react";
 import type { ReactElement } from "react";
 import type { Signal } from "@preact/signals-core";
 
 import { registerShortcut } from "../../a11y/index.js";
-import { Kbd } from "@/ui";
+import { Kbd, useListNavigation } from "@/ui";
 import type { ActiveAlert } from "@pulse/web-data/wire";
 
 export interface TriageKeyboardOptions {
@@ -21,9 +25,11 @@ export interface TriageKeyboardOptions {
   /** The TriageTable container element (getter) for focus queries; null before mount. */
   readonly container: () => HTMLElement | null;
   /** Scroll row `index` into view — the triage DataTable handle's `scrollToIndex`, which renders a
-   *  virtualized-out row first so it can be focused afterwards. */
-  readonly scrollToIndex: (index: number) => void;
-  /** True iff the Firing tab is active — gates j/k/Enter. */
+   *  virtualized-out row first so it can be focused afterwards. When it returns a promise (the
+   *  handle's settles once the row is in place), the row is focused then too, which a far jump
+   *  (End, G) needs when the window takes longer than the frame retries to move. */
+  readonly scrollToIndex: (index: number) => void | Promise<void>;
+  /** True iff the Firing tab is active — gates the moves and Enter. */
   readonly isFiringTabActive: () => boolean;
   /** True iff the detail pane is open (`sel` present) — gates Escape. */
   readonly isPaneOpen: () => boolean;
@@ -33,26 +39,47 @@ export interface TriageKeyboardOptions {
   readonly closePane: () => void;
 }
 
-/** Register j/k/Enter/Escape; returns a disposer that removes all four (fired on view unmount). */
-export function installTriageKeyboard(opts: TriageKeyboardOptions): () => void {
-  const move = (delta: number): void => {
-    if (!opts.isFiringTabActive()) return;
-    const n = opts.rows().length;
-    if (n === 0) return;
-    const cur = opts.selectedIndex.value;
-    const next = cur < 0 ? 0 : Math.min(n - 1, Math.max(0, cur + delta)); // clamp; self-heals stale idx
-    opts.selectedIndex.value = next;
-    focusRow(opts, next);
-  };
+/** The row-open controls: one per rendered row, matched by fingerprint. */
+const ROW_OPEN_SELECTOR = "[data-triage-open]";
 
+/** The triage keyboard for the alerts page, installed for the component's lifetime. Options are
+ *  getters read at key time, so data changes never re-install anything. */
+export function useTriageKeyboard(opts: TriageKeyboardOptions): void {
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+
+  useListNavigation({
+    keys: "vim",
+    getItems: () => optsRef.current.container()?.querySelectorAll<HTMLElement>(ROW_OPEN_SELECTOR) ?? [],
+    virtual: {
+      // Zero items is "nothing to move over": the key is left alone.
+      count: () => {
+        const o = optsRef.current;
+        return o.isFiringTabActive() && !focusInDialog(o.container()) ? o.rows().length : 0;
+      },
+      activeIndex: () => optsRef.current.selectedIndex.value,
+      focus: (index) => {
+        const o = optsRef.current;
+        o.selectedIndex.value = index;
+        focusRow(o, index);
+      },
+    },
+    // Enter belongs to the registry handler below and to native activation of the focused control.
+    onActivate: () => false,
+  });
+
+  useEffect(() => installTriageShortcuts(optsRef), []);
+}
+
+/** Register Enter/Escape; returns a disposer that removes both. */
+function installTriageShortcuts(optsRef: { readonly current: TriageKeyboardOptions }): () => void {
   const disposers = [
-    registerShortcut("j", () => move(1), { allowInInput: false }),
-    registerShortcut("k", () => move(-1), { allowInInput: false }),
     // Enter/Escape never preventDefault: the registry listens on `document`, so cancelling would
     // suppress native Enter activation of every button/link on the page (and the Sheet's own Escape).
     registerShortcut(
       "enter",
       (event) => {
+        const opts = optsRef.current;
         if (!opts.isFiringTabActive()) return;
         if (isInteractiveTarget(event)) return; // native activation handles the focused control
         if (isInsideDialog(event)) return; // the open detail Sheet (or any dialog) owns its own keys
@@ -64,6 +91,7 @@ export function installTriageKeyboard(opts: TriageKeyboardOptions): () => void {
     registerShortcut(
       "escape",
       (event) => {
+        const opts = optsRef.current;
         // The detail Sheet handles its own Escape (and cancels the event): one key, one close.
         if (event.defaultPrevented) return;
         if (opts.isPaneOpen()) opts.closePane();
@@ -75,6 +103,17 @@ export function installTriageKeyboard(opts: TriageKeyboardOptions): () => void {
   return () => {
     for (const dispose of disposers) dispose();
   };
+}
+
+/** True when focus is inside a dialog (the detail Sheet): list moves leave its keys alone. */
+function focusInDialog(container: HTMLElement | null): boolean {
+  const active = (container?.ownerDocument ?? globalThis.document)?.activeElement as { closest?: unknown } | null;
+  return (
+    active !== null &&
+    active !== undefined &&
+    typeof active.closest === "function" &&
+    (active as Element).closest('[role="dialog"], [role="alertdialog"]') !== null
+  );
 }
 
 /** Controls whose native Enter activation must win over the triage Enter shortcut. */
@@ -116,7 +155,7 @@ function focusRow(opts: TriageKeyboardOptions, index: number): void {
     const container = opts.container();
     if (container === null) return null;
     return (
-      Array.from(container.querySelectorAll<HTMLElement>("[data-triage-open]")).find(
+      Array.from(container.querySelectorAll<HTMLElement>(ROW_OPEN_SELECTOR)).find(
         (el) => el.getAttribute("data-triage-open") === row.fingerprint,
       ) ?? null
     );
@@ -137,7 +176,14 @@ function focusRow(opts: TriageKeyboardOptions, index: number): void {
     focus(el);
     return;
   }
-  opts.scrollToIndex(index);
+  const settled = opts.scrollToIndex(index);
+  if (settled !== undefined) {
+    void settled.then(() => {
+      if (opts.selectedIndex.value !== index) return; // the cursor moved on: that move owns focus
+      const found = find();
+      if (found !== null && found.ownerDocument.activeElement !== found) focus(found);
+    });
+  }
   const raf =
     (globalThis as { requestAnimationFrame?: (cb: FrameRequestCallback) => number }).requestAnimationFrame ??
     ((cb: FrameRequestCallback) => (cb(0), 0)); // happy-dom / SSR fallback

@@ -1241,14 +1241,10 @@ const LIST_NAV_INFRA = new Set([
   "src/client/a11y/roving-tabindex.ts",
 ]);
 
-/** Bespoke list keyboards that predate the rule. Only shrinks; a stale entry fails. Follow-up: migrate
- *  the first two once useListNavigation can drive a virtualized cursor and a roving tab stop (what
- *  each lacks is in its reason); until then a migration would change behaviour. */
+/** Bespoke list keyboards that predate the rule. Only shrinks; a stale entry fails. The alerts triage
+ *  keyboard and the timeline lane tree moved onto useListNavigation (`virtual`, `rovingTabIndex`) in
+ *  #37; the overview grid follows once the kiosk redesign (#6) lands. */
 const BESPOKE_LIST_KEYBOARDS: Readonly<Record<string, string>> = {
-  "src/client/views/alerts/keyboard.ts":
-    "j/k triage cursor over a virtualized DataTable: a signal cursor that scrolls a virtualized-out row into view and retries focus, aria-current, Firing-tab gating, document-level registry so Enter/Escape coexist with the detail Sheet. useListNavigation focuses only mounted items.",
-  "src/client/views/timeline/lanes.tsx":
-    "lane tree: rovingTabindex keeps ONE tab stop starting at the selected lane, plus →/← parent/child moves. useListNavigation has no roving tabindex, so migrating would change the Tab order.",
   "src/client/views/overview/grid/navigation.ts":
     "the overview host grid: a 2-D spatial role=grid with change markers, documented as bespoke in docs/architecture/ui.md (Overview grid).",
 };

@@ -42,12 +42,13 @@ Keyboard shortcuts on the Firing tab:
 
 | Key | Action |
 |---|---|
-| `J` | Move to the next firing row |
-| `K` | Move to the previous firing row |
+| `J` / `↓` | Move to the next firing row |
+| `K` / `↑` | Move to the previous firing row |
+| `Home` / `End` (or `gg` / `G`) | Move to the first / last firing row |
 | `Enter` | Open the selected row |
 | `Escape` | Close the detail sheet |
 
-The shortcuts do not override native input or interactive-control behavior.
+The shortcuts do not override native input or interactive-control behavior: moves stand aside while focus is on a form control, a button other than a row's name button, or inside the detail sheet.
 
 ## Key Concepts
 

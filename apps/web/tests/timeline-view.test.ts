@@ -1133,6 +1133,18 @@ describeDom("timeline lanes — LaneTree, LaneEvidenceStatus and LaneDecorations
     });
   }
 
+  test("REQ-A11Y-02: the lane tree's single tab stop starts at the selected lane (row 0 with none)", async () => {
+    const hosts = fixtureTree();
+    const { blocks, evidence } = laneInputs({ hosts });
+    const stops = (c: HTMLElement): (string | null)[] =>
+      Array.from(c.querySelectorAll<HTMLElement>('[role="treeitem"][tabindex="0"]')).map((r) => r.getAttribute("data-lane-key"));
+    const picked = await mount(treeVNode({ blocks, evidence, selected: targetKey(hosts[2]!.target) }));
+    expect(stops(picked)).toEqual([targetKey(hosts[2]!.target)]);
+    expect(picked.querySelectorAll('[role="treeitem"][tabindex="-1"]').length).toBe(3);
+    const none = await mount(treeVNode({ blocks, evidence, selected: null }));
+    expect(stops(none)).toEqual([targetKey(hosts[0]!.target)]);
+  });
+
   test("REQ-LANE-01/REQ-LANE-04: collapsed hosts render a role=tree of treeitems with level/setsize/posinset, expanded and selected state and one tab stop", async () => {
     const hosts = fixtureTree();
     const { blocks, evidence } = laneInputs({ hosts });

@@ -261,6 +261,16 @@ limitations: the browser's find (Ctrl/Cmd-F) only finds rendered rows, printing 
 rendered window, and the 70vh scroll region uses `overscroll-contain`, so on a phone a swipe that
 reaches its end does not scroll the page; swipe outside the tree to scroll the page.
 
+**List keyboards beyond the rendered rows.** Pulse's `useListNavigation` (divergence notes in
+`ui/VENDORED.json`) extends deck's in three ways that matter here. `virtual` runs moves over a list's full count, not
+only its rendered items: the alerts triage keyboard (`views/alerts/keyboard.ts`) drives its
+`selectedIndex` cursor across the virtualized table this way and focuses a far row once the table
+has rendered it. `rovingTabIndex` makes a list one Tab stop that follows focus, without
+re-rendering the list: the timeline lane tree starts it at the selected lane. And an item handler
+(`onActivate`, `onExpand`, `onCollapse`, `onToggle`) can return `false` to leave the key unclaimed,
+so the browser or another handler gets it (Enter on a triage row's button stays native activation;
+Enter and Space on a lane tree domain row do nothing).
+
 **Shell, palette and kiosk.** The shell is deck's frame: a collapsible sidebar (a Sheet below
 `md`), a sticky top bar and a single `<main id="main">` reached from the skip link. The shell
 renders no `h1`; each view's `PageHeader` supplies it. The sidebar's view links are one Tab stop
@@ -433,9 +443,9 @@ suffix keeps them out of `bun test`, which collects `*.spec.*`.
   classes built by concatenation or returned from a helper are not seen;
 - list keyboards through `useListNavigation`: no new hand-rolled `ArrowUp`/`ArrowDown` or `j`/`k`
   handler (`.key`/`.code` comparisons, inline key lists, case-folded keys), vertical or 2-D
-  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The alerts triage
-  keyboard, the timeline lane tree and the overview grid are listed exemptions, each with its reason, as is
-  the command palette's pre-load key buffer, which swallows keys but moves nothing.
+  `rovingTabindex`, or `j`/`k` shortcut (alone or with Shift) outside the hook. The overview grid is
+  a listed exemption with its reason (it migrates after the kiosk redesign, issue #37), as is the
+  command palette's pre-load key buffer, which swallows keys but moves nothing.
 
 `tests/views-page-structure.test.tsx` renders every registered view on every route it owns (tabs and
 deep routes included), loaded, before data and after a render fault, and checks the

@@ -260,14 +260,14 @@ interface TriageKeyboardOptions {
   closePane: () => void;
 }
 
-function installTriageKeyboard(options: TriageKeyboardOptions): () => void;
+function useTriageKeyboard(options: TriageKeyboardOptions): void;
 function TriageKeyboardHints(): ReactElement;
 ```
 
-Always invoke the returned disposer on unmount.
+A hook: call it once from the view. The options are getters read at key time, so data changes never re-install anything; the keys go away when the view unmounts.
 
 ```typescript
-useEffect(() => installTriageKeyboard(options), []);
+useTriageKeyboard(options);
 ```
 
 ## Detail and History
