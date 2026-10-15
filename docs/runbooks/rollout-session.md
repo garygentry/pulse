@@ -195,7 +195,7 @@ docker compose run --rm --entrypoint sh alertmanager -c \
 
 `pulse-deadman`, `BackupNoData` and `synthetic-checks-loaded` appearing in the responses proves the
 override wired the artifacts into the running engine — state, not the `up --wait` exit code. Without
-the `synthetic.yml` mount, `SyntheticRulesNotLoaded` fires after 10 minutes.
+the `synthetic.yml` mount, `SyntheticRulesNotLoaded` fires after about 10–15 minutes.
 
 **Rollback:** `rm stack/compose/docker-compose.override.yml && cd stack/compose && docker
 compose up --wait` (or remove just these two `services:` blocks if the file also carries your

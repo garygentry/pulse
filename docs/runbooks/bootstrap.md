@@ -174,7 +174,9 @@ it.
 > declarations into real delivery is a separate, deliberate step: run the alerting-activation
 > flow in the [rollout session](/rollout-session/) (transform the rendered routing into a native
 > Alertmanager config, resolve its secrets, and remount it). Until then the deadman and every
-> channel are inert by design.
+> channel are inert by design. Expect `SyntheticRulesNotLoaded` to fire on this fresh stack after
+> about 10 minutes: no rendered `synthetic.yml` is mounted yet. It clears once the rollout session
+> mounts it.
 
 **Rollback:** `docker compose down` — **never `docker compose down -v`.** The `-v` flag
 destroys the durable named volumes `victoria-metrics-data` and `grafana-data`, taking all

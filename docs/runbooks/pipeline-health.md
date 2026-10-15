@@ -25,7 +25,9 @@ built from the vmalert/Alertmanager self-monitoring series.
 - **AlertRemoteWriteBacklog** (warning) — `increase(vmalert_remotewrite_packets_dropped_total[10m]) > 0`:
   ALERTS/recording series are not being persisted; self-monitoring and downstream views lag.
 - **SyntheticRulesNotLoaded** (warning) — `absent(pulse:synthetic_checks_bound)` for 10m: vmalert has
-  not loaded the rendered `synthetic.yml`, so **no Gatus check can page**. The alerting transform
+  not loaded the rendered `synthetic.yml`, so **no Gatus check can page**. It fires about 10–15
+  minutes after the mount goes missing: 10m of `for:`, plus up to VictoriaMetrics' 5-minute lookback
+  when the marker series stops on a running stack. The alerting transform
   always writes this marker into `synthetic.yml`, so its absence means the file is not mounted or
   was rendered before the marker existed.
 
@@ -120,11 +122,12 @@ cd stack/compose && docker compose up -d --wait vmalert
 ```
 
 **Verify (content):** vmalert lists the marker group, and one `GatusCheckFailed` rule for each bound
-check:
+check. The grep matches the exact `"name":"…"` field, because each rule's expression also mentions
+`GatusCheckFailed`:
 
 ```bash
 docker compose run --rm --entrypoint sh alertmanager -c \
-  "wget -qO- http://vmalert:8880/api/v1/rules" | grep -o 'synthetic-checks-loaded\|GatusCheckFailed' | sort | uniq -c
+  "wget -qO- http://vmalert:8880/api/v1/rules" | grep -o '"name":"synthetic-checks-loaded"\|"name":"GatusCheckFailed"' | sort | uniq -c
 ```
 
 The alert resolves on vmalert's next evaluation once the marker series is back. See

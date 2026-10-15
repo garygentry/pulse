@@ -23,4 +23,4 @@ tests:
             exp_annotations:
               runbook_url: "https://runbooks.pulse.local/pipeline-health"
               summary: "Synthetic-check (Gatus) rules are not loaded in vmalert (warning)"
-              description: "vmalert has not evaluated the synthetic-check marker pulse:synthetic_checks_bound for 10m, so rendered/vmalert/rules/synthetic.yml is not mounted (or is stale). Gatus checks with an alerts: binding CANNOT page until it is: re-run the alerting transform and mount synthetic.yml into /etc/vmalert/rules/ (mount it even when no service has a binding)."
+              description: "The synthetic-check marker pulse:synthetic_checks_bound has been absent for 10m (about 10-15m after the mount went missing), so rendered/vmalert/rules/synthetic.yml is not mounted (or is stale). Gatus checks with an alerts: binding CANNOT page until it is: re-run the alerting transform and mount synthetic.yml into /etc/vmalert/rules/ (mount it even when no service has a binding)."

@@ -169,9 +169,14 @@ Pulse now makes it loud:
   binding. The group holds one recording rule, `pulse:synthetic_checks_bound`, whose value is the
   number of `GatusCheckFailed` rules in the file (it can be 0).
 - **A static rule watches for it.** The always-mounted `pipeline-health` family carries
-  **`SyntheticRulesNotLoaded`** (`absent(pulse:synthetic_checks_bound)`, `for: 10m`, warning). If
-  vmalert has not evaluated the marker for 10 minutes, the alert fires through the warning route
-  and links to the [pipeline-health runbook](/pipeline-health/).
+  **`SyntheticRulesNotLoaded`** (`absent(pulse:synthetic_checks_bound)`, `for: 10m`, warning). Once
+  the marker series is absent for 10 minutes, the alert fires through the warning route and links
+  to the [pipeline-health runbook](/pipeline-health/).
+- **Expect it about 10–15 minutes after the mount goes missing.** On a stack that never had the
+  file, the series never existed, so the alert fires about 10–11 minutes after vmalert starts. If
+  the mount is dropped from a running stack, VictoriaMetrics keeps returning the last marker sample
+  for its 5-minute lookback (vmalert's `-datasource.queryStep=5m`). `absent()` only turns true
+  after that, so the alert fires about 15 minutes after the drop.
 
 The alert fires when:
 
@@ -180,16 +185,19 @@ The alert fires when:
 - the mounted file was rendered before the marker existed, so it predates this check (re-run
   `bun run alerting:render`);
 - vmalert's remote-write to VictoriaMetrics is failing, so the recorded marker never lands
-  (`AlertRemoteWriteBacklog` fires too).
+  (`AlertRemoteWriteBacklog` may fire too; if VictoriaMetrics is unreachable, the query itself
+  errors and you see `AlertRuleEvalErrors` instead).
 
 To check by hand, look for the marker and the check rules in vmalert's loaded rules:
 
 ```bash
 docker compose run --rm --entrypoint sh alertmanager -c \
-  "wget -qO- http://vmalert:8880/api/v1/rules" | grep -o 'synthetic-checks-loaded\|GatusCheckFailed' | sort | uniq -c
+  "wget -qO- http://vmalert:8880/api/v1/rules" | grep -o '"name":"synthetic-checks-loaded"\|"name":"GatusCheckFailed"' | sort | uniq -c
 ```
 
-`synthetic-checks-loaded` must appear once, and `GatusCheckFailed` once for each bound check.
+`synthetic-checks-loaded` must appear once, and `GatusCheckFailed` once for each bound check. The
+grep matches the exact `"name":"…"` field: a bare `GatusCheckFailed` would also match each rule's
+own expression (it reads `ALERTS{alertname="GatusCheckFailed"}`) and count every check twice.
 
 Limits:
 
@@ -198,8 +206,11 @@ Limits:
   Compare `pulse:synthetic_checks_bound` with the number of enabled bindings after every estate
   change, or re-render and re-mount as part of the change.
 - The base compose tree (`stack/compose` with no override) does not mount any rendered rule file,
-  so `SyntheticRulesNotLoaded` fires there after 10 minutes. That is correct: in that state no
+  so `SyntheticRulesNotLoaded` fires there after about 10 minutes. That is correct: in that state no
   Gatus check can page.
+- `absent()` has no estate filter. If several estates' vmalerts write to one shared
+  VictoriaMetrics (not a supported topology), one estate's marker hides another estate's missing
+  mount.
 
 > **BREAKING for existing deployments: upgrading from the Gatus push provider.** Earlier revisions
 > paged Gatus checks through a Gatus `custom` alerting provider posting straight to Alertmanager.
