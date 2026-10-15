@@ -1,4 +1,4 @@
-import type { ActiveAlert, AlertHistoryLane } from "@pulse/web-data/wire";
+import type { ActiveAlert, AlertHistoryLane, StatusInterval } from "@pulse/web-data/wire";
 import { defineStatusMap } from "@/ui/lib/status";
 
 /** The normalized alert severities; free-form wire values resolve through `alertSeverityOf`. */
@@ -31,4 +31,20 @@ export const ALERT_STATE = defineStatusMap<AlertStateStatus>({
 /** The {@link ALERT_STATE} key for an alert's delivery state and free-form severity. */
 export function alertStateOf(state: ActiveAlert["state"], severity: string): AlertStateStatus {
   return state === "firing" ? alertSeverityOf(severity) : "suppressed";
+}
+
+/** A firing-history interval's status: a firing interval takes its lane's severity (matching the
+ *  timeline swimlane's bars), and a `failed` (gatus incident) interval is its own state. */
+export type AlertIntervalStatus = AlertSeverity | "failed";
+
+/** Alert firing-history interval presentation, keyed by {@link alertIntervalStatusOf}. Firing entries
+ *  are the severity's; failed is a hatched neutral outline, so it never reads as warning amber. */
+export const ALERT_INTERVAL = defineStatusMap<AlertIntervalStatus>({
+  ...ALERT_SEVERITY,
+  failed: { tone: "neutral", icon: "circle-x", label: "Failed", variant: "outline" },
+});
+
+/** The {@link ALERT_INTERVAL} key for an interval's state on a lane of the given severity. */
+export function alertIntervalStatusOf(state: StatusInterval["state"], severity: AlertSeverity): AlertIntervalStatus {
+  return state === "firing" ? severity : "failed";
 }

@@ -280,13 +280,15 @@ export function Shell(props: ShellProps): ReactElement {
   const outlet = (
     // isolate: the content's own stacking context, so a view's sticky elements stay under the
     // sticky top bar and the portalled overlays.
-    // Kiosk keeps the full width and height for the wallboard page fit: no outlet padding.
+    // Kiosk keeps the full width and height for the wallboard page fit: no outlet padding. Each page
+    // root brings its own wallboard gutter; anything else here (the view chunk's loading/error
+    // state, an error fallback in place of the page) gets the same `p-4` from the outlet (#48).
     <main
       id={MAIN_ID}
       tabIndex={-1}
       className={
         kioskOn
-          ? "isolate w-full min-w-0 flex-1 outline-none"
+          ? "isolate w-full min-w-0 flex-1 outline-none [&>:not([data-slot$=-page])]:p-4 [&>[data-state=error]]:p-4"
           : "isolate w-full min-w-0 flex-1 px-4 py-6 outline-none md:px-6"
       }
     >

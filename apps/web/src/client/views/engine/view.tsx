@@ -130,7 +130,7 @@ function EngineViewBody({ store, router, rotation }: ViewProps): ReactElement {
   });
   const presentation = presentVerdict(verdict, clock.format);
 
-  if (verdict.kind === "loading") return <EngineLoading text={presentation.headline} />;
+  if (verdict.kind === "loading") return <EngineLoading text={presentation.headline} kiosk={kiosk} />;
 
   return (
     <div
@@ -210,9 +210,15 @@ const ENGINE_PAGE_TITLE = "Monitoring engine";
 
 /** Pre-first-payload layout. The skeletons are aria-hidden; the visible status text carries the
  *  meaning, and aria-busy marks the region. The page keeps its one h1 while it loads. */
-function EngineLoading({ text }: { readonly text: string }): ReactElement {
+function EngineLoading({ text, kiosk }: { readonly text: string; readonly kiosk: boolean }): ReactElement {
   return (
-    <div data-slot="engine-page" data-region="loading" className="flex min-w-0 flex-col gap-6">
+    <div
+      data-slot="engine-page"
+      data-region="loading"
+      // The loaded page's kiosk gutter, so the wallboard does not jump when the payload lands.
+      className={kiosk ? "flex min-w-0 flex-col gap-6 p-4" : "flex min-w-0 flex-col gap-6"}
+      data-kiosk={kiosk ? "1" : "0"}
+    >
       <PageHeader title={ENGINE_PAGE_TITLE} />
       <LoadingState label={text} preset="cards" rows={6} />
     </div>

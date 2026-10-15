@@ -15,7 +15,7 @@ apps/web/src/client/
     patterns/     composites: StatusBadge, DataTable, FilterBar, TreeView, PageHeader, CommandPalette, …
     hooks/        useListNavigation, useFacetFilters, useDocumentTitle, useNow, …
     lib/          cn(), icons.ts (curated Lucide set; icons-shell.ts the eager part), status.ts (tones), format.ts, filters.ts, tree.ts
-    status/       pulse status maps: TARGET_STATUS, ALERT_SEVERITY, MUTATION_STATE
+    status/       pulse status maps: TARGET_STATUS, ALERT_SEVERITY, ALERT_INTERVAL, MUTATION_STATE
     viz/          charts: Sparkline, StatusTimeline, Gauge (deck's), TimeSeriesChart (pulse, lazy uPlot)
     index.ts      the public barrel: code outside ui/ imports from "@/ui"
     VENDORED.md   the deck commit the library was copied from, every pulse divergence, the sync procedure
@@ -106,6 +106,7 @@ carries an icon and a label, so status is never shown by colour alone. Pulse's m
 | `TARGET_STATUS` | ok → `ok`, warning → `warn`, critical → `danger`, unknown → `neutral`, suppressed → `neutral` with an outline variant and its own icon |
 | `ALERT_SEVERITY` | critical, warning, info (its own `info` tone), unknown; free-form severities go through `alertSeverityOf` |
 | `ALERT_STATE` | a delivered alert's state badge: firing takes its severity's entry (so firing info is `info`, never `unknown`), silenced and inhibited are `suppressed` (outline, bell); keyed by `alertStateOf(state, severity)` |
+| `ALERT_INTERVAL` | an alert firing-history interval: firing takes its lane's severity entry (as the timeline swimlane does), failed is a hatched neutral outline so it never reads as warning; keyed by `alertIntervalStatusOf(state, severity)` |
 | `MUTATION_STATE` | acked, pending, failed, applied, rejected |
 
 Render a state with `<StatusBadge {...TARGET_STATUS[status]} />` or
@@ -226,7 +227,7 @@ style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--
 `--chart-5` for series by index, and `--status-<tone>-fg` for a series that carries a status.
 Suppressed marks are hatched or dashed on the neutral tone. `StatusTimeline` draws each segment
 from its status map: `TARGET_STATUS` for targets, or another vocabulary's map (the alert swimlane passes each bar's severity with `ALERT_SEVERITY`, so info bars take
-the info tone). An outline entry is hatched. `TimeSeriesChart` takes optional `splitYTicks` and
+the info tone, and the alert-detail firing history uses `ALERT_INTERVAL` for the same colours). An outline entry is hatched. `TimeSeriesChart` takes optional `splitYTicks` and
 `formatYTicks`; `SyncedChart` passes `axisSplits` and `formatAxisTicks` (`chart-data.ts`), so y
 ticks fall on steps that are round in the display unit (`5.2 GiB`, `30 min`, `99.5 %`) and use the
 same unit rule (`displayScale`) as the cursor readout. The timeline view's lanes, overlay and swimlane stay in that view; they are not

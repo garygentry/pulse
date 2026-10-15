@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_HISTORY_RANGE, SEVERITY_TAXONOMY } from "../src/client/views/alerts/taxonomy.js";
-import { INTERVAL_STATUS, severityToStatus } from "../src/client/status/target-status.js";
+import { severityToStatus } from "../src/client/status/target-status.js";
+import { ALERT_INTERVAL, ALERT_SEVERITY, alertIntervalStatusOf } from "../src/client/ui/status/index.js";
 import { ACTION_SLOTS } from "../src/client/views/alerts/constants.js";
 
 const SOURCE_PATH = fileURLToPath(
@@ -39,8 +40,13 @@ describe("alerts severity taxonomy", () => {
     expect(severityToStatus("toString")).toBe("unknown");
   });
 
-  test("INTERVAL_STATUS covers both interval states; history default is 24h", () => {
-    expect(INTERVAL_STATUS).toEqual({ firing: "critical", failed: "warning" });
+  test("history intervals: firing takes the lane severity, failed is its own hatched neutral; default is 24h", () => {
+    for (const sev of ["critical", "warning", "info", "unknown"] as const) {
+      expect(alertIntervalStatusOf("firing", sev)).toBe(sev);
+      expect(ALERT_INTERVAL[sev]).toEqual(ALERT_SEVERITY[sev]);
+    }
+    expect(alertIntervalStatusOf("failed", "warning")).toBe("failed");
+    expect(ALERT_INTERVAL.failed).toEqual({ tone: "neutral", icon: "circle-x", label: "Failed", variant: "outline" });
     expect(DEFAULT_HISTORY_RANGE).toBe("24h");
     expect(ACTION_SLOTS).toEqual(["silence", "ack"]);
   });
