@@ -354,6 +354,28 @@ browserDescribe()("browser: overview motion markers and grid/envelope/kiosk layo
       const { page } = handle;
       // Page time: the clock is paused, so it advances only through runFor below.
       const pageNow = (): Promise<number> => page.evaluate(() => performance.now());
+      // Let layout settle first (web fonts, chrome above the wall): page 1 must hold exactly the
+      // columns × rows the region now fits, so a late re-measure cannot restart the sequence mid-run.
+      // Polled from the test side in real time: the page's own timers are on the paused clock.
+      const settled = (): Promise<boolean> =>
+        page.evaluate(() => {
+          const region = document.querySelector<HTMLElement>('[data-slot="overview-kiosk-region"]');
+          const list = document.querySelector<HTMLElement>('[data-slot="overview-kiosk-page"] ul[role="list"]');
+          if (region === null || list === null) return false;
+          const style = getComputedStyle(list);
+          const columns = style.gridTemplateColumns.split(" ").filter((t) => t.endsWith("px")).length;
+          const row = Number.parseFloat(style.gridAutoRows);
+          const gap = Number.parseFloat(style.rowGap) || 0;
+          const rows = Math.max(1, Math.floor((region.getBoundingClientRect().height + gap) / (row + gap)));
+          return list.children.length === columns * rows;
+        });
+      const settleBy = Date.now() + 10_000;
+      while (!(await settled())) {
+        if (Date.now() > settleBy) throw new Error("kiosk layout never settled to columns × rows tiles");
+        await drainTasks(page);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await drainTasks(page);
       const first = await observeKioskPage(page);
       const total = first.total;
       expect(total, `kiosk indicator unreadable: ${JSON.stringify(first)}`).not.toBeNull();
