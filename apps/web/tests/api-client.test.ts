@@ -285,6 +285,96 @@ describe("apiFetch — error responses and bounded failure", () => {
   });
 });
 
+describe("apiFetch — #64 auth proxy session expiry", () => {
+  const EXPIRED = { code: "SESSION_EXPIRED", message: "Your session has expired. Reload the page to sign in again." } as const;
+  const loginPage = (status = 200): Response =>
+    new Response("<!doctype html><title>Sign in</title>", { status, headers: { "content-type": "text/html; charset=utf-8" } });
+
+  test("requests never follow a redirect", async () => {
+    let init: RequestInit | undefined;
+    const fetchImpl = (async (_input: RequestInfo | URL, i?: RequestInit) => {
+      init = i;
+      return new Response(JSON.stringify({ identity: null, authMode: "none", capabilities: {} }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await apiFetch("/api/session", undefined, fetchImpl);
+    expect(init?.redirect).toBe("manual");
+  });
+
+  test("a browser opaque redirect (same- or cross-origin login hop) is SESSION_EXPIRED", async () => {
+    const opaque = { type: "opaqueredirect", status: 0, ok: false, redirected: false, headers: new Headers() } as unknown as Response;
+    const { fetchImpl } = queuedFetch([opaque]);
+    const result = await apiFetch("/api/estate", { etag: HASH_A }, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error).toEqual(EXPIRED);
+    expect(result.httpStatus).toBe(0);
+  });
+
+  test("a raw 3xx redirect is SESSION_EXPIRED at its status", async () => {
+    for (const status of [301, 302, 303, 307, 308]) {
+      const { fetchImpl } = queuedFetch([new Response(null, { status, headers: { location: "https://login.example/" } })]);
+      const result = await apiFetch("/api/overview", undefined, fetchImpl);
+      if (result.status !== "error") throw new Error("unreachable");
+      expect(result.error).toEqual(EXPIRED);
+      expect(result.httpStatus).toBe(status);
+    }
+  });
+
+  test("a 2xx HTML login page is SESSION_EXPIRED on cycle and non-cycle routes, not INTERNAL_ERROR", async () => {
+    for (const path of ["/api/estate", "/api/overview", "/api/session", "/api/history/alerts?range=1h"]) {
+      const { fetchImpl } = queuedFetch([loginPage()]);
+      const result = await apiFetch(path, undefined, fetchImpl);
+      if (result.status !== "error") throw new Error("unreachable");
+      expect(result.error).toEqual(EXPIRED);
+      expect(result.httpStatus).toBe(200);
+    }
+  });
+
+  test("a 2xx reached through a followed redirect is SESSION_EXPIRED", async () => {
+    const followed = new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    Object.defineProperty(followed, "redirected", { value: true });
+    const { fetchImpl } = queuedFetch([followed]);
+    const result = await apiFetch("/api/session", undefined, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("SESSION_EXPIRED");
+  });
+
+  test("a 401/403 without a Pulse envelope is SESSION_EXPIRED at its status", async () => {
+    for (const status of [401, 403]) {
+      for (const res of [loginPage(status), new Response(JSON.stringify({ error: "forbidden" }), { status }), new Response(null, { status })]) {
+        const { fetchImpl } = queuedFetch([res]);
+        const result = await apiFetch("/api/alerts", undefined, fetchImpl);
+        if (result.status !== "error") throw new Error("unreachable");
+        expect(result.error).toEqual(EXPIRED);
+        expect(result.httpStatus).toBe(status);
+      }
+    }
+  });
+
+  test("a genuine Pulse 403 envelope keeps its server code", async () => {
+    const { fetchImpl } = queuedFetch([
+      new Response(JSON.stringify({ code: "INVALID_REQUEST", message: "The request is invalid.", details: { reason: "untrusted-identity" } }), { status: 403 }),
+    ]);
+    const result = await apiFetch("/api/proposals?kind=host&id=h", undefined, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("INVALID_REQUEST");
+    expect(result.httpStatus).toBe(403);
+  });
+
+  test("a server must never send SESSION_EXPIRED: in an envelope it is INTERNAL_ERROR", async () => {
+    const { fetchImpl } = queuedFetch([new Response(JSON.stringify(EXPIRED), { status: 500 })]);
+    const result = await apiFetch("/api/estate", undefined, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+  });
+
+  test("a 2xx non-HTML body that is not JSON is still INTERNAL_ERROR", async () => {
+    const { fetchImpl } = queuedFetch([new Response("not json", { status: 200, headers: { "content-type": "application/json" } })]);
+    const result = await apiFetch("/api/session", undefined, fetchImpl);
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.error.code).toBe("INTERNAL_ERROR");
+  });
+});
+
 /** A fetch that never answers on its own: it rejects with the signal's reason once aborted. */
 const hangingFetch = ((_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
   new Promise<Response>((_resolve, reject) => {
