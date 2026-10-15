@@ -1,0 +1,18 @@
+# stack/alerting/tests/fixtures/promtool/synthetic-mount-loaded.test.yaml
+# Issue #23, mounted case: the static pipeline-health family PLUS the synthetic.yml the transform
+# renders (copied into the workspace by rules.promtool.test.ts — once for the multi-service fixture,
+# once for an estate with NO alerts: binding, whose file holds only the marker). The marker
+# recording rule pulse:synthetic_checks_bound is evaluated, so SyntheticRulesNotLoaded stays silent.
+rule_files:
+  - pipeline-health.yml
+  - SYNTHETIC_FILE
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'up{job="vmalert", instance="vmalert:8880", estate="fixture-estate"}'
+        values: "1+0x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: SyntheticRulesNotLoaded
+        exp_alerts: []
