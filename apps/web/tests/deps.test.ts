@@ -126,3 +126,22 @@ describe("PINNED_DEPS — exact versions and licences (REQ-DEPS-01/02)", () => {
     }
   });
 });
+
+describe("one version per @radix-ui package (as deck's lockfile guard)", () => {
+  test("bun.lock resolves every @radix-ui/* package to a single version", () => {
+    const lock = readFileSync(resolve(REPO_ROOT, "bun.lock"), "utf8");
+    // Each resolved package entry reads `["@radix-ui/<name>@<version>", …]`; two versions of one
+    // package would put two Radix contexts on the page, and a primitive from one would not see the
+    // provider of the other.
+    const versions = new Map<string, Set<string>>();
+    for (const [, name, version] of lock.matchAll(/\["(@radix-ui\/[a-z0-9-]+)@([^"]+)"/g)) {
+      const seen = versions.get(name!) ?? new Set<string>();
+      seen.add(version!);
+      versions.set(name!, seen);
+    }
+    expect(versions.size).toBeGreaterThan(0);
+    const duplicated = [...versions].filter(([, seen]) => seen.size > 1).map(([name, seen]) => `${name}: ${[...seen].join(", ")}`);
+    expect(duplicated).toEqual([]);
+    expect([...(versions.get("@radix-ui/react-radio-group") ?? [])]).toEqual(["1.4.7"]);
+  });
+});

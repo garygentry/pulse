@@ -9,8 +9,8 @@ const ITEM_FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabinde
 export interface CardGridProps {
   /** Optional group heading; the grid becomes a `section` named by it. */
   heading?: ReactNode;
-  /** Heading level: 2 (default), 3 or 4. */
-  level?: 2 | 3 | 4;
+  /** Heading level: 2 (default) to 5. */
+  level?: 2 | 3 | 4 | 5;
   /** Item count shown beside the heading. */
   count?: number;
   description?: ReactNode;

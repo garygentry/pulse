@@ -69,7 +69,8 @@ describe("design token contrast", () => {
   it("authors every token as a literal oklch() colour, so this suite can read it", () => {
     for (const mode of MODES) {
       for (const [token, value] of Object.entries(THEME_TOKENS[mode])) {
-        if (token === "--radius") continue;
+        // Not colours: the radius, and the destructive control's dark-mode background alpha (a percentage).
+        if (token === "--radius" || token === "--destructive-control-alpha") continue;
         expect(value, `${mode} ${token}`).toMatch(/^oklch\([^)]*\)$/);
       }
     }

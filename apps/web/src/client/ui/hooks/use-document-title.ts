@@ -1,16 +1,16 @@
 import { useEffect } from "react";
-import { formatDocumentTitle } from "@/ui/lib/document-title";
+import { APP_TITLE, formatDocumentTitle } from "@/ui/lib/document-title";
 
 /**
- * Set `document.title` to `"{page} · Pulse"` while the calling page is mounted,
- * and restore the previous title on unmount.
+ * Set `document.title` to `"{page} · {app}"` (`app` defaults to "Pulse") while the calling
+ * page is mounted, and restore the previous title on unmount.
  */
-export function useDocumentTitle(page: string | null | undefined): void {
+export function useDocumentTitle(page: string | null | undefined, app: string = APP_TITLE): void {
   useEffect(() => {
     const previous = document.title;
-    document.title = formatDocumentTitle(page);
+    document.title = formatDocumentTitle(page, app);
     return () => {
       document.title = previous;
     };
-  }, [page]);
+  }, [page, app]);
 }

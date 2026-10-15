@@ -20,7 +20,7 @@ const ROW_COUNT = 5000;
 /** Where focus is, and whether its row sits fully inside the viewport below the sticky header. */
 async function focusState(page: Page): Promise<{ link: string | null; visible: boolean; scrollTop: number; rendered: number }> {
   return page.evaluate(() => {
-    const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+    const viewport = document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
     const active = document.activeElement;
     const row = active?.closest("tr") ?? null;
     // The header cells are sticky (the thead element itself scrolls away).
@@ -69,7 +69,7 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
   /** Scroll back to the top and focus the first row link. */
   async function focusFirst(p: Page): Promise<void> {
     await p.evaluate(() => {
-      document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!.scrollTop = 0;
+      document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!.scrollTop = 0;
     });
     await p.waitForSelector('[data-row-link="host-0"]');
     await p.focus('[data-row-link="host-0"]');
@@ -83,7 +83,7 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
         rowcount: table.getAttribute("aria-rowcount"),
         rendered: rows.length,
         first: rows[0]?.getAttribute("aria-rowindex"),
-        scrollHeight: document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!.scrollHeight,
+        scrollHeight: document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!.scrollHeight,
       };
     });
     expect(info.rowcount).toBe(String(ROW_COUNT + 1));
@@ -97,7 +97,7 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
   test("measures taller rows: each rendered row starts where the real rows above it end", async () => {
     const p = page();
     const result = await p.evaluate(async () => {
-      const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+      const viewport = document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
       const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const heights = new Map<string, number>();
       // Walk the first 400 rows in steps shorter than the viewport, recording each row's height.
@@ -139,7 +139,7 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
     test(`scrollToIndex(${index}, align: "${align}") lands the row on the ${edge} edge past taller rows`, async () => {
       const p = page();
       await p.evaluate(() => {
-        document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!.scrollTop = 0;
+        document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!.scrollTop = 0;
       });
       await p.waitForSelector('[data-row-link="host-0"]');
       await p.evaluate(
@@ -155,7 +155,7 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
       // Let the rows the scroll rendered be measured and the table re-aim.
       await p.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
       const edges = await p.evaluate((i) => {
-        const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+        const viewport = document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
         const row = document.querySelector(`[data-row-link="host-${i}"]`)!.closest("tr")!.getBoundingClientRect();
         return {
           // The header cells are sticky (the thead element itself scrolls away).
@@ -236,7 +236,7 @@ browserDescribe()("browser: @/ui DataTable virtualized (5,000 rows)", () => {
     expect((await focusState(p)).link).toBe(`host-${steps}`);
     await p.waitForFunction(() => {
       const row = document.activeElement?.closest("tr")?.getBoundingClientRect();
-      const viewport = document.querySelector<HTMLElement>('[data-slot="data-table-viewport"]')!;
+      const viewport = document.querySelector<HTMLElement>('[data-slot="data-table"][data-virtualized]')!;
       return row !== undefined && row.bottom <= viewport.getBoundingClientRect().bottom - viewport.clientTop + 0.5;
     });
     expect((await focusState(p)).visible).toBe(true);

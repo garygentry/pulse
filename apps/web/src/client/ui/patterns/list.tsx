@@ -16,16 +16,17 @@ export interface ListProps {
   children?: ReactNode;
 }
 
+// Spacing tokens (theme.css), which the operator's compact density tightens.
 const LIST_CLASS: Record<ListVariant, string> = {
-  plain: "flex flex-col gap-1",
+  plain: "flex flex-col gap-(--list-gap)",
   divided: "flex flex-col divide-y rounded-md border",
-  card: "flex flex-col gap-2",
+  card: "flex flex-col gap-(--list-card-gap)",
 };
 
 const ITEM_CLASS: Record<ListVariant, string> = {
-  plain: "rounded-md px-2 py-1.5",
-  divided: "px-3 py-2",
-  card: "rounded-lg border bg-card px-4 py-3 text-card-foreground",
+  plain: "rounded-md px-2 py-(--list-item-py)",
+  divided: "px-3 py-(--list-divided-item-py)",
+  card: "rounded-lg border bg-card px-(--list-card-item-px) py-(--list-card-item-py) text-card-foreground",
 };
 
 /** A semantic list of {@link ListItem}s. */
@@ -191,7 +192,7 @@ export function ListGroup({ heading, level = 2, count, description, id, classNam
   const headingId = `${useId().replace(/[^a-zA-Z0-9_-]/g, "")}-heading`;
   const Heading = `h${level}` as const;
   return (
-    <section data-slot="list-group" id={id} aria-labelledby={headingId} className={cn("flex flex-col gap-2", className)}>
+    <section data-slot="list-group" id={id} aria-labelledby={headingId} className={cn("flex flex-col gap-(--list-group-gap)", className)}>
       <div className="flex flex-col gap-0.5">
         <Heading id={headingId} className="flex items-center gap-2 text-sm font-semibold">
           {heading}

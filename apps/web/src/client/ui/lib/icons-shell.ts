@@ -6,7 +6,7 @@
  * An icon belongs here when entry code (the shell, the router, the view
  * registry and the library modules they import) can render it before any view
  * has loaded: nav icons, the theme menu, the health region, and the icons of
- * the patterns the shell renders (Callout, ErrorState, Button's spinner). The
+ * the patterns the shell renders (Callout, ErrorState). The
  * build budget test fails if an icon token in an initial-route module is
  * missing from this map. Aliases of a shell icon are listed too: they cost
  * nothing once the component ships.

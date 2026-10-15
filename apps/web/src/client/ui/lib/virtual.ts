@@ -1,5 +1,5 @@
 /**
- * Shared `@tanstack/react-virtual` helpers for the virtualized patterns (`DataTable`, `TreeView`).
+ * `@tanstack/react-virtual` helpers for the virtualized `DataTable`.
  */
 
 /**

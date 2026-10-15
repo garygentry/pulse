@@ -5,8 +5,8 @@
 
 import type { ReactElement } from "react";
 
-import type { CheckSummary } from "@pulse/web-data/wire";
-import { Section, StatusTimeline, type TimelineLane } from "@/ui";
+import type { CheckSummary, TargetStatus } from "@pulse/web-data/wire";
+import { Section, StatusTimeline, TARGET_STATUS, type TimelineLane } from "@/ui";
 import type { EstateClock } from "../../../format.js";
 import { formatInstant } from "../stats/format.js";
 import { DRAWER_EMPTY_CLASS, DRAWER_LIST_CLASS, DRAWER_ROW_CLASS } from "./classes.js";
@@ -19,7 +19,7 @@ export const OBSERVATION_TIME_UNAVAILABLE_TEXT = "Observation time unavailable";
 export const CHECK_TIMELINE_LABEL = "Recent check outcomes";
 
 /** Shared domain spanning every lane segment, or null when no segment exists. */
-export function checkTimelineDomain(lanes: readonly TimelineLane[]): { readonly start: number; readonly end: number } | null {
+export function checkTimelineDomain(lanes: readonly TimelineLane<TargetStatus>[]): { readonly start: number; readonly end: number } | null {
   let start = Infinity;
   let end = -Infinity;
   for (const lane of lanes) {
@@ -58,7 +58,7 @@ function CheckRow(props: { readonly check: CheckSummary; readonly clock: EstateC
 /** Render snapshot-backed recent outcomes; this component never performs I/O. */
 export function CheckHistory(props: {
   readonly checks: readonly CheckSummary[];
-  readonly lanes: readonly TimelineLane[];
+  readonly lanes: readonly TimelineLane<TargetStatus>[];
   readonly clock: EstateClock;
 }): ReactElement {
   const domain = checkTimelineDomain(props.lanes);
@@ -70,7 +70,14 @@ export function CheckHistory(props: {
         <>
           {domain !== null ? (
             <div data-slot="drawer-timeline" className="min-w-0 overflow-x-auto">
-              <StatusTimeline lanes={props.lanes} domainStart={domain.start} domainEnd={domain.end} ariaLabel={CHECK_TIMELINE_LABEL} />
+              <StatusTimeline
+                lanes={props.lanes}
+                statusMap={TARGET_STATUS}
+                formatTime={(t) => props.clock.format(new Date(t).toISOString())}
+                domainStart={domain.start}
+                domainEnd={domain.end}
+                ariaLabel={CHECK_TIMELINE_LABEL}
+              />
             </div>
           ) : null}
           <ul className={DRAWER_LIST_CLASS}>

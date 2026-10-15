@@ -8,7 +8,7 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 
 import { announce } from "../../../a11y/index.js";
-import { EmptyState, Section, Skeleton, StatusTimeline } from "@/ui";
+import { EmptyState, Section, Skeleton, StatusTimeline, TARGET_STATUS, formatTimestamp } from "@/ui";
 import type { ActiveAlert, RangeId } from "@pulse/web-data/wire";
 import { DEFAULT_HISTORY_RANGE } from "../taxonomy.js";
 import { fetchAlertHistory } from "./history-client.js";
@@ -105,10 +105,13 @@ function HistoryBody(props: HistoryProps): ReactElement {
         >
           <StatusTimeline
             lanes={lanes}
+            statusMap={TARGET_STATUS}
+            formatTime={(t) => formatTimestamp(new Date(t).toISOString())}
             domainStart={domainStart}
             domainEnd={domainEnd}
             ariaLabel={`Firing history for ${props.alert.name} over the last ${range}`}
-            className="max-w-full"
+            // The chart is a fixed-size SVG: scroll it in a narrow pane rather than widen the page.
+            className="max-w-full overflow-x-auto"
           />
           {hasUnmatched ? (
             <p className="text-sm text-muted-foreground" data-history-note="unmatched">

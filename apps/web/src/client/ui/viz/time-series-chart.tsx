@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
-import type { TargetStatus } from "@pulse/web-data/wire";
 import { LoadingState } from "@/ui/patterns/loading-state";
 import { cn } from "@/ui/lib/utils";
+import type { VizMarkSource } from "@/ui/viz/status-marks";
 
 /** One plotted series aligned to the chart's `timestamps`. */
 export interface TimeSeriesSeries {
@@ -9,8 +9,11 @@ export interface TimeSeriesSeries {
   label: string;
   /** y-values aligned index-for-index with `timestamps`; null is a gap. */
   data: readonly (number | null)[];
-  /** Strokes the series with the status tone (suppressed dashed); otherwise `--chart-N` by index. */
-  status?: TargetStatus;
+  /**
+   * A status-map entry (`MAP[state]`): strokes the series with its tone, dashed for an outline
+   * entry (suppressed); otherwise `--chart-N` by index.
+   */
+  status?: VizMarkSource;
 }
 
 /** A canvas time-series chart (uPlot), loaded on first render. */

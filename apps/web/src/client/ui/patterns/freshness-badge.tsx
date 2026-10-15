@@ -72,18 +72,18 @@ export function FreshnessBadge({
       </>
     );
 
-  const { tone, icon, label, role } = FRESHNESS_STATUS[freshness.state];
+  // The whole map entry applies (variant included), with `StatusBadge.fromMap`'s precedence.
+  const entry = FRESHNESS_STATUS[freshness.state];
   return (
     <StatusBadge
       data-slot="freshness-badge"
       data-freshness={freshness.state}
-      tone={tone}
-      icon={icon}
-      label={label}
-      role={role}
+      {...entry}
       detail={detail}
       title={tooltip ? freshnessTitle(freshness) : undefined}
       {...props}
+      label={props.label ?? entry.label}
+      variant={props.variant ?? entry.variant}
     />
   );
 }

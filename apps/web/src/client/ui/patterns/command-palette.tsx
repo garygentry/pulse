@@ -21,18 +21,24 @@ import {
 } from "@/ui/primitives/command";
 
 export interface CommandPaletteItem {
-  /** Unique across the whole palette (it is cmdk's item value). */
+  /** Unique across the whole palette: it keys the item and the highlighted row. */
   id: string;
   label: string;
   /** Extra terms that match when typed but are not shown. */
   keywords?: string[];
   icon?: IconName;
-  /** Secondary text shown at the end of the row; also matched when typed. */
+  /**
+   * Secondary text shown at the end of the row (an address, a kind); also matched when typed.
+   * It is plain muted text, not status: a hint carries no tone or icon, so don't put a health or
+   * state value here.
+   */
   hint?: string;
   onSelect: () => void;
 }
 
 export interface CommandPaletteGroup {
+  /** Keys the group. Give one when headings can repeat; otherwise the index and heading are used. */
+  id?: string;
   heading: string;
   items: CommandPaletteItem[];
 }
@@ -48,12 +54,17 @@ export interface CommandPaletteProps {
   placeholder?: string;
   emptyText?: string;
   className?: string;
-  /** Controlled search text. Pair with `onSearchChange`; uncontrolled when omitted. */
-  search?: string;
-  onSearchChange?: (search: string) => void;
+  /**
+   * Search text. With `onSearchChange` it is controlled; without it, it only seeds the field each
+   * time the palette opens and the field stays editable.
+   */
+  search?: string | undefined;
+  /** Called with the field's text on every change. */
+  onSearchChange?: ((search: string) => void) | undefined;
   /**
    * `false` hands filtering and ordering to the caller: every item in `groups` is shown, in the
-   * order given (for a caller that ranks and caps its own results). Default `true` (cmdk filters).
+   * order given (for a caller that ranks and caps its own results). Default `true`: the palette
+   * keeps the items whose label, hint or keywords match, best first, using cmdk's scoring.
    */
   shouldFilter?: boolean;
   /**
@@ -65,27 +76,55 @@ export interface CommandPaletteProps {
 }
 
 /**
- * Matches the typed text against an item's label, hint and keywords, never its
- * id: ids only keep cmdk's values unique (two services may share a name).
+ * Scores an item against the typed text by its label, hint and keywords, never its id: ids only
+ * keep items unique (two services may share a name). 0 means no match.
  */
-function filterItem(_value: string, search: string, keywords?: string[]): number {
-  const [label = "", ...rest] = keywords ?? [];
-  return defaultFilter(label, search, rest);
+function scoreItem(item: CommandPaletteItem, search: string): number {
+  return defaultFilter(item.label, search, [...(item.hint !== undefined ? [item.hint] : []), ...(item.keywords ?? [])]);
+}
+
+/**
+ * The matching items, best first, and the groups ordered by their best match (cmdk's own order).
+ * The palette filters here rather than in cmdk: cmdk re-reads an item's search terms only when its
+ * value changes, so an item whose label, hint or keywords change under a stable id would keep
+ * matching its old text.
+ */
+function rankGroups(groups: readonly CommandPaletteGroup[], search: string): CommandPaletteGroup[] {
+  return groups
+    .map((group, index) => {
+      const scored = group.items
+        .map((item) => ({ item, score: scoreItem(item, search) }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score);
+      return {
+        group: { ...group, id: groupKey(group, index), items: scored.map((entry) => entry.item) },
+        best: scored[0]?.score ?? 0,
+      };
+    })
+    .filter((entry) => entry.best > 0)
+    .sort((a, b) => b.best - a.best)
+    .map((entry) => entry.group);
+}
+
+/** A group's React key: its `id`, else its position and heading (headings can repeat). */
+function groupKey(group: CommandPaletteGroup, index: number): string {
+  return group.id ?? `${index}:${group.heading}`;
 }
 
 /**
  * A search-and-jump dialog over data-driven groups. Router-agnostic: each item
  * carries its own `onSelect`. Choosing an item runs it, then closes the dialog.
- * Opening focuses the search field, caret at the end of any text already in it; closing returns focus to whatever had it
- * before opening (Radix only does that for a `DialogTrigger`, and the palette is
- * usually opened by a shortcut or an outside button).
+ * Opening focuses the search field, caret at the end of any text already in it;
+ * closing returns focus to whatever had it before opening (Radix only does that for
+ * a `DialogTrigger`, and the palette is usually opened by a shortcut or an outside
+ * button). Escape, a click outside or the labelled Close button dismisses it.
  */
 export function CommandPalette({
   open,
   onOpenChange,
   groups,
   title = "Command palette",
-  description = "Search for a page, host, service or alert",
+  description = "Search for a page or command",
   placeholder = "Type to search…",
   emptyText = "No results found.",
   className,
@@ -118,17 +157,11 @@ export function CommandPalette({
     target.focus();
   };
 
-  const select = (item: CommandPaletteItem) => {
-    item.onSelect();
-    onOpenChange(false);
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-slot="command-palette"
         className={cn("overflow-hidden p-0", className)}
-        showCloseButton={false}
         onOpenAutoFocus={onOpenAutoFocus}
         onCloseAutoFocus={onCloseAutoFocus}
       >
@@ -136,100 +169,95 @@ export function CommandPalette({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <Command
-          label={title}
-          filter={filterItem}
+        <PaletteBody
+          onOpenChange={onOpenChange}
+          groups={groups}
+          title={title}
+          placeholder={placeholder}
+          emptyText={emptyText}
+          search={search}
+          onSearchChange={onSearchChange}
           shouldFilter={shouldFilter}
-          className="**:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]]:px-2 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3"
-        >
-          <CommandInput
-            ref={inputRef}
-            placeholder={placeholder}
-            {...(search !== undefined ? { value: search } : {})}
-            {...(onSearchChange !== undefined ? { onValueChange: onSearchChange } : {})}
-          />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            {groups.map((group) =>
-              group.items.length === 0 ? null : (
-                <CommandGroup key={group.heading} heading={group.heading}>
-                  {group.items.map((item) => (
-                    <CommandItem
-                      key={item.id}
-                      value={item.id}
-                      keywords={[item.label, ...(item.hint !== undefined ? [item.hint] : []), ...(item.keywords ?? [])]}
-                      onSelect={() => select(item)}
-                    >
-                      {item.icon !== undefined ? <Icon name={item.icon} /> : null}
-                      <span className="truncate">{item.label}</span>
-                      {item.hint !== undefined ? (
-                        <CommandShortcut className="tracking-normal">{item.hint}</CommandShortcut>
-                      ) : null}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ),
-            )}
-          </CommandList>
-        </Command>
+          inputRef={inputRef}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
-/** The shape of a command-index entry; the shell's index entries satisfy it as they are. */
-export interface CommandIndexEntry {
-  kind: "view" | "host" | "service" | "alert";
-  id: string;
-  label: string;
-  sublabel?: string;
-  navPath: string;
-}
-
-const INDEX_GROUPS: readonly { kind: CommandIndexEntry["kind"]; heading: string; icon: IconName }[] = [
-  { kind: "view", heading: "Views", icon: "layout-grid" },
-  { kind: "host", heading: "Hosts", icon: "server" },
-  { kind: "service", heading: "Services", icon: "boxes" },
-  { kind: "alert", heading: "Alerts", icon: "bell" },
-];
-
-export interface CommandGroupsOptions {
-  /**
-   * `"kind"` (default): groups in the fixed order views, hosts, services, alerts.
-   * `"entries"`: groups in the order their first entry appears, so a ranked entry
-   * list keeps its best match first.
-   */
-  groupOrder?: "kind" | "entries";
-}
+type PaletteBodyProps = Required<
+  Pick<CommandPaletteProps, "onOpenChange" | "groups" | "title" | "placeholder" | "emptyText" | "shouldFilter">
+> &
+  Pick<CommandPaletteProps, "search" | "onSearchChange"> & { inputRef: React.Ref<HTMLInputElement> };
 
 /**
- * Turns command-index entries into palette groups (views, hosts, services,
- * alerts; empty groups dropped; entry order kept). Selecting an item calls
- * `navigate` with the entry's path.
+ * The searchable list. It mounts each time the dialog opens, so its search text and highlighted
+ * row start fresh on every open.
  */
-export function commandGroupsFromIndex(
-  entries: readonly CommandIndexEntry[],
-  navigate: (path: string) => void,
-  options: CommandGroupsOptions = {},
-): CommandPaletteGroup[] {
-  const groupKinds =
-    options.groupOrder === "entries"
-      ? [...new Set(entries.map((entry) => entry.kind))].map(
-          (kind) => INDEX_GROUPS.find((group) => group.kind === kind)!,
-        )
-      : INDEX_GROUPS;
-  return groupKinds.flatMap(({ kind, heading, icon }) => {
-    const items = entries
-      .filter((entry) => entry.kind === kind)
-      .map(
-        (entry): CommandPaletteItem => ({
-          id: `${entry.kind}:${entry.id}`,
-          label: entry.label,
-          icon,
-          ...(entry.sublabel !== undefined ? { hint: entry.sublabel } : {}),
-          onSelect: () => navigate(entry.navPath),
-        }),
-      );
-    return items.length === 0 ? [] : [{ heading, items }];
-  });
+function PaletteBody({
+  onOpenChange,
+  groups,
+  title,
+  placeholder,
+  emptyText,
+  search,
+  onSearchChange,
+  shouldFilter,
+  inputRef,
+}: PaletteBodyProps) {
+  // Controlled only when the caller both passes `search` and listens for changes; `search` alone
+  // seeds the field.
+  const [ownSearch, setOwnSearch] = React.useState(search ?? "");
+  const controlled = search !== undefined && onSearchChange !== undefined;
+  const searchText = controlled ? search : ownSearch;
+  const changeSearch = (next: string) => {
+    if (!controlled) setOwnSearch(next);
+    onSearchChange?.(next);
+  };
+
+  // Ranked from the current groups on every render, so changed text is searchable at once. cmdk
+  // still owns the highlight, keyed by item id, which survives an item's text changing.
+  const shown =
+    shouldFilter && searchText !== ""
+      ? rankGroups(groups, searchText)
+      : groups.map((group, index) => ({ ...group, id: groupKey(group, index) }));
+
+  const select = (item: CommandPaletteItem) => {
+    item.onSelect();
+    onOpenChange(false);
+  };
+
+  return (
+    <Command
+      label={title}
+      shouldFilter={false}
+      className="**:data-[slot=command-input-wrapper]:h-12 **:data-[slot=command-input-wrapper]:pr-10 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]]:px-2 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3"
+    >
+      <CommandInput ref={inputRef} placeholder={placeholder} value={searchText} onValueChange={changeSearch} />
+      <CommandList>
+        <CommandEmpty>{emptyText}</CommandEmpty>
+        {shown.map((group) =>
+          group.items.length === 0 ? null : (
+            <CommandGroup key={group.id} heading={group.heading}>
+              {group.items.map((item) => (
+                <CommandItem
+                  key={item.id}
+                  value={item.id}
+                  // Name the option "label, hint" so the two aren't announced as one run-together word.
+                  {...(item.hint !== undefined ? { "aria-label": `${item.label}, ${item.hint}` } : {})}
+                  onSelect={() => select(item)}
+                >
+                  {item.icon !== undefined ? <Icon name={item.icon} /> : null}
+                  <span className="truncate">{item.label}</span>
+                  {item.hint !== undefined ? (
+                    <CommandShortcut className="tracking-normal">{item.hint}</CommandShortcut>
+                  ) : null}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ),
+        )}
+      </CommandList>
+    </Command>
+  );
 }

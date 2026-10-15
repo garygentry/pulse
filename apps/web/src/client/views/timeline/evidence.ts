@@ -47,7 +47,7 @@ export interface LaneEvidenceInput {
 export type SegmentCause = "ok" | "alert" | "check" | "no-data";
 
 /** A lane segment: a viz TimelineSegment plus its cause and contributing alert names. */
-export interface LaneSegment extends TimelineSegment {
+export interface LaneSegment extends TimelineSegment<TargetStatus> {
   /** Why this segment has its status. */ readonly cause: SegmentCause;
   /** Distinct alert names firing in this segment (incl. info-severity, which does not change status). */ readonly alertnames: readonly string[];
 }

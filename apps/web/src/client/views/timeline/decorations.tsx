@@ -4,6 +4,7 @@
 // only from StatusTimeline's timelineSegmentRect; colours come from token classes and dash patterns
 // from the constants below. Text elsewhere carries every meaning (REQ-A11Y-01).
 import type { ReactElement } from "react";
+import type { TargetStatus } from "@pulse/web-data/wire";
 import { timelineHeight, timelineSegmentRect, type TimelineLayoutOpts, type TimelineRect, type TimelineSegment } from "@/ui";
 
 /** One view-owned mark. Lane indexes are 0-based within the StatusTimeline it overlays. */
@@ -63,6 +64,7 @@ function inset(r: TimelineRect): TimelineRect {
     y: r.y + INSET,
     width: Math.max(0, r.width - 2 * INSET),
     height: Math.max(0, r.height - 2 * INSET),
+    widened: r.widened,
   };
 }
 
@@ -76,10 +78,10 @@ export function LaneDecorations(props: LaneDecorationsProps): ReactElement | nul
   const { width, laneHeight, laneGap, domainStart, domainEnd } = props;
   const height = timelineHeight(props.laneCount, laneHeight, laneGap);
   const opts: TimelineLayoutOpts = { domainStart, domainEnd, width, laneHeight, laneGap };
-  const wholeLane: TimelineSegment = { status: "unknown", start: domainStart, end: domainEnd };
+  const wholeLane: TimelineSegment<TargetStatus> = { status: "unknown", start: domainStart, end: domainEnd };
 
   const children = props.marks.map((mark, i): ReactElement | null => {
-    const seg: TimelineSegment =
+    const seg: TimelineSegment<TargetStatus> =
       mark.kind === "unmatched-interval" || mark.kind === "active-interval"
         ? { status: "unknown", start: mark.start, end: mark.end }
         : wholeLane;

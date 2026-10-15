@@ -14,6 +14,7 @@ export { Icon, type IconProps } from "./patterns/icon";
 export { formatAge, formatRelative, formatTimestamp } from "./lib/format";
 export {
   TONES,
+  TONE_ICON,
   defineStatusMap,
   type StatusMap,
   type StatusPresentation,
@@ -49,7 +50,7 @@ export * from "./primitives/toggle-group";
 export * from "./primitives/toggle";
 export * from "./primitives/tooltip";
 
-// §C Page scaffolding & feedback
+// Page scaffolding & feedback
 export { slugify, pageHeadingId } from "./lib/dom-id";
 export { usePageHeadingId } from "./hooks/use-page-heading-id";
 export { PageHeader, type PageHeaderProps, type BreadcrumbEntry } from "./patterns/page-header";
@@ -61,7 +62,7 @@ export { Callout, calloutRole, type CalloutProps, type CalloutRole } from "./pat
 export { PageErrorBoundary, type PageErrorBoundaryProps } from "./patterns/page-error-boundary";
 export { FragmentBoundary, type FragmentBoundaryProps } from "./patterns/fragment-boundary";
 
-// §G Interaction hooks
+// Interaction hooks
 export {
   isHandledIntent,
   nearestSurvivor,
@@ -81,7 +82,7 @@ export { useListNavigation, type UseListNavigationOptions } from "./hooks/use-li
 export { hashTargetId, useScrollToHash, type UseScrollToHashOptions } from "./hooks/use-scroll-to-hash";
 export { useDocumentTitle } from "./hooks/use-document-title";
 
-// §D Content & data display
+// Content & data display
 export {
   EmptyValue,
   KeyValue,
@@ -111,7 +112,7 @@ export {
 } from "./patterns/show-more";
 export { useShowMore, type ShowMoreState, type UseShowMoreOptions } from "./hooks/use-show-more";
 
-// §A Foundations (remainder) + §B Status
+// Foundations (remainder) + Status
 export { useNow } from "./hooks/use-now";
 export { useDisposable } from "./hooks/use-disposable";
 export { VisuallyHidden, type VisuallyHiddenProps } from "./patterns/visually-hidden";
@@ -134,10 +135,10 @@ export {
 export type { FreshnessStamp, FreshnessState } from "./lib/freshness";
 export { HealthPill, type HealthPillProps } from "./patterns/health-pill";
 
-// §E Collections
+// Collections
 export {
-  DataTable,
   DATA_TABLE_VIRTUALIZE_DEFAULTS,
+  DataTable,
   ROW_LINK_ATTRIBUTE,
   ROW_LINK_SELECTOR,
   type DataTableHandle,
@@ -177,7 +178,7 @@ export {
   type VisibleTreeRow,
 } from "./lib/tree";
 
-// §F Filtering & search
+// Filtering & search
 export {
   applyFilters,
   countActiveCriteria,
@@ -203,6 +204,13 @@ export {
 } from "./hooks/use-facet-filters";
 export { SearchInput, type SearchInputProps } from "./patterns/search-input";
 export { FacetFilter, type FacetFilterProps, type FacetOption } from "./patterns/facet-filter";
+export {
+  CommandPalette,
+  type CommandPaletteGroup,
+  type CommandPaletteItem,
+  type CommandPaletteProps,
+} from "./patterns/command-palette";
+export { commandGroupsFromIndex, type CommandGroupsOptions, type CommandIndexEntry } from "./lib/command-groups";
 export { ActiveFilters, type ActiveFiltersProps } from "./patterns/active-filters";
 export { ResultCount, type ResultCountProps } from "./patterns/result-count";
 export { FilterBar, type FilterBarProps } from "./patterns/filter-bar";
@@ -211,16 +219,23 @@ export {
   type SegmentedControlProps,
   type SegmentedOption,
 } from "./patterns/segmented-control";
-export {
-  CommandPalette,
-  commandGroupsFromIndex,
-  type CommandGroupsOptions,
-  type CommandIndexEntry,
-  type CommandPaletteGroup,
-  type CommandPaletteItem,
-  type CommandPaletteProps,
-} from "./patterns/command-palette";
-export * from "./status";
 
-// Viz (pulse)
-export * from "./viz";
+// Viz: dependency-free SVG charts
+export { Gauge, type GaugeProps } from "./viz/gauge";
+export { Sparkline, type SparklineProps, type SparklineSample } from "./viz/sparkline";
+export {
+  StatusTimeline,
+  timelineHeight,
+  timelineSegmentRect,
+  type StatusTimelineProps,
+  type TimelineLane,
+  type TimelineLayoutOpts,
+  type TimelineRect,
+  type TimelineSegment,
+} from "./viz/status-timeline";
+// Pulse: TimeSeriesChart is a Suspense wrapper whose uPlot implementation loads through a dynamic
+// import. Never re-export a value from ./viz/uplot-chart here.
+export { TimeSeriesChart, type TimeSeriesChartProps, type TimeSeriesSeries } from "./viz/time-series-chart";
+
+// Pulse status maps (TARGET_STATUS, ALERT_SEVERITY, ALERT_STATE, MUTATION_STATE)
+export * from "./status";

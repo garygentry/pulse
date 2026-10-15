@@ -126,12 +126,18 @@ browserDescribe()("browser: timeline view grayscale-distinct status, both themes
     test(`REQ-A11Y-01: lane plots name each lane's worst status in words; partial/unmatched get dashed outlines (${theme})`, async () => {
       const page = session.page("incident", theme);
       const read = await page.evaluate(() => {
-        const lanes = Array.from(
-          document.querySelectorAll('[data-slot="timeline-lanes"] svg[role="img"] g[data-lane][role="group"]'),
-        ).map((g) => ({
-          label: g.getAttribute("aria-label") ?? "",
-          statuses: Array.from(new Set(Array.from(g.querySelectorAll("rect[data-status]")).map((r) => r.getAttribute("data-status")))),
-        }));
+        // Each StatusTimeline names its lanes in its screen-reader list, index for index with its
+        // drawn lanes (`g[data-lane]`).
+        const lanes = Array.from(document.querySelectorAll('[data-slot="timeline-lanes"] [data-slot="status-timeline"]')).flatMap(
+          (timeline) => {
+            const groups = Array.from(timeline.querySelectorAll("svg g[data-lane]"));
+            const names = Array.from(timeline.querySelectorAll('[data-slot="status-timeline-text"] > li > span'));
+            return groups.map((g, i) => ({
+              label: names[i]?.textContent ?? "",
+              statuses: Array.from(new Set(Array.from(g.querySelectorAll("rect[data-status]")).map((r) => r.getAttribute("data-status")))),
+            }));
+          },
+        );
         const rowTitles = Array.from(document.querySelectorAll("[data-tree-row][data-status]")).map((r) => ({
           status: r.getAttribute("data-status"),
           title: r.getAttribute("title") ?? "",
@@ -148,7 +154,7 @@ browserDescribe()("browser: timeline view grayscale-distinct status, both themes
         };
       });
       const msg = JSON.stringify(read);
-      // Every plotted lane is a named group whose name carries its worst-in-view status in words.
+      // Every plotted lane is named, and its name carries its worst-in-view status in words.
       expect(read.lanes.length, msg).toBeGreaterThan(0);
       for (const lane of read.lanes) expect(lane.label, msg).toMatch(/worst in view \S/);
       // Every tree row's title repeats that worded status (the visible, colour-free lane reading).

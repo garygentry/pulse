@@ -83,3 +83,16 @@ export function focusIsLost(): boolean {
   const active = document.activeElement;
   return active === null || active === document.body || !active.isConnected;
 }
+
+/**
+ * Move focus to `el` without scrolling it. An element that cannot take focus
+ * (a heading, a section) gets a temporary `tabindex="-1"`, removed again on
+ * blur so it does not linger in DOM that React or the page owns.
+ */
+export function focusElement(el: HTMLElement): void {
+  if (el.tabIndex < 0 && !el.hasAttribute("tabindex")) {
+    el.setAttribute("tabindex", "-1");
+    el.addEventListener("blur", () => el.removeAttribute("tabindex"), { once: true });
+  }
+  el.focus({ preventScroll: true });
+}

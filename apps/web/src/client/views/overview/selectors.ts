@@ -636,7 +636,7 @@ function median(values: readonly number[]): number {
  * observation; the final one ends at newest + median positive adjacent delta (or +1 ms).
  * `success` maps true → ok, false → critical, null → unknown.
  */
-export function buildCheckTimeline(checks: readonly CheckSummary[]): readonly TimelineLane[] {
+export function buildCheckTimeline(checks: readonly CheckSummary[]): readonly TimelineLane<TargetStatus>[] {
   const byEndpoint = new Map<string, { at: number; status: TargetStatus }[]>();
   for (const check of checks) {
     const at = check.observedAt === null ? Number.NaN : Date.parse(check.observedAt);
@@ -668,10 +668,10 @@ export function buildCheckTimeline(checks: readonly CheckSummary[]): readonly Ti
 
   return lanes
     .sort((a, b) => textCompare(a.endpoint, b.endpoint))
-    .map(({ endpoint, points }): TimelineLane => ({
+    .map(({ endpoint, points }): TimelineLane<TargetStatus> => ({
       id: endpoint,
       label: endpoint,
-      segments: points.map((point, i): TimelineSegment => ({
+      segments: points.map((point, i): TimelineSegment<TargetStatus> => ({
         status: point.status,
         start: point.at,
         end: points[i + 1]?.at ?? domainEnd,

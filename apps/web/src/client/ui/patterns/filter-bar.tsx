@@ -1,5 +1,3 @@
-// Pulse divergence from deck: the result count's wrapper is `min-w-0` (deck: `shrink-0`), so a long
-// count wraps inside the bar instead of widening the page at 320px.
 import type * as React from "react";
 import { cn } from "@/ui/lib/utils";
 

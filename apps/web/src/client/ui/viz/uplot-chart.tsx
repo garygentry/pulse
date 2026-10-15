@@ -7,7 +7,8 @@ import "uplot/dist/uPlot.min.css";
 
 import { attachChunkStyles } from "@/store/chunk-css";
 import { cn } from "@/ui/lib/utils";
-import { MARK_DASH, toneFgVar, vizStatusMark } from "@/ui/viz/status-marks";
+import type { Tone } from "@/ui/lib/status";
+import { MARK_DASH, presentationMark } from "@/ui/viz/status-marks";
 import {
   TIME_SERIES_DEFAULT_HEIGHT,
   type TimeSeriesChartProps,
@@ -29,10 +30,15 @@ export interface ThemeColors {
 /** Non-status series cycle through the chart palette. */
 const CHART_TOKENS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"] as const;
 
+/** The status foreground token for a tone (`--status-{tone}-fg`), which the canvas resolves to a colour. */
+export function toneFgVar(tone: Tone): string {
+  return `--status-${tone}-fg`;
+}
+
 /** The CSS custom property a series strokes with. */
 export function seriesColorVar(series: TimeSeriesSeries, index: number): string {
   return series.status !== undefined
-    ? toneFgVar(vizStatusMark(series.status).tone)
+    ? toneFgVar(series.status.tone)
     : CHART_TOKENS[index % CHART_TOKENS.length]!;
 }
 
@@ -117,7 +123,7 @@ export function buildOptions(
       // The x (time) series has no stroke; uPlot draws it as the time axis.
       {},
       ...props.series.map((s, i) => {
-        const dash = s.status !== undefined ? MARK_DASH[vizStatusMark(s.status).pattern] : null;
+        const dash = s.status !== undefined ? MARK_DASH[presentationMark(s.status).pattern] : null;
         return {
           label: s.label,
           stroke: colors.strokes[i] ?? colors.text,

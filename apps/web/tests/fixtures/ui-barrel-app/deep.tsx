@@ -2,7 +2,7 @@
 // from its own file, so no other library module can reach the build.
 import { createRoot } from "react-dom/client";
 
-import { Button } from "../../../src/client/ui/primitives/button.js";
+import { Badge } from "../../../src/client/ui/primitives/badge.js";
 
 const mount = globalThis.document?.getElementById("app");
-if (mount) createRoot(mount).render(<Button>ok</Button>);
+if (mount) createRoot(mount).render(<Badge>ok</Badge>);

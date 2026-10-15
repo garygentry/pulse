@@ -250,7 +250,7 @@ describe("the @/ui barrel is tree-shaken", () => {
   // through the barrel and from its own file; their initial routes must carry the same library code.
   const BARREL_ENTRY = resolve(import.meta.dir, "fixtures/ui-barrel-app/barrel.tsx");
   const DEEP_ENTRY = resolve(import.meta.dir, "fixtures/ui-barrel-app/deep.tsx");
-  /** Split-chunk overhead the barrel build may add over the single-file deep build (measured 609 B). */
+  /** Split-chunk overhead the barrel build may add over the single-file deep build (measured 609 B with Button before deck v0.5.0; 991 B with Badge). */
   const BARREL_OVERHEAD_BYTES = 2 * 1024;
   const builds = {} as Record<"barrel" | "deep", { dir: string; manifest: ClientManifest }>;
 
@@ -282,13 +282,13 @@ describe("the @/ui barrel is tree-shaken", () => {
   });
 
   test("the fixtures import the same component, through the barrel and from its own file", () => {
-    expect(readFileSync(BARREL_ENTRY, "utf8")).toMatch(/import \{ Button \} from "[./]+\/src\/client\/ui\/index\.js"/);
-    expect(readFileSync(DEEP_ENTRY, "utf8")).toMatch(/import \{ Button \} from "[./]+\/src\/client\/ui\/primitives\/button\.js"/);
+    expect(readFileSync(BARREL_ENTRY, "utf8")).toMatch(/import \{ Badge \} from "[./]+\/src\/client\/ui\/index\.js"/);
+    expect(readFileSync(DEEP_ENTRY, "utf8")).toMatch(/import \{ Badge \} from "[./]+\/src\/client\/ui\/primitives\/badge\.js"/);
   });
 
   test("a barrel import bundles no @/ui module the deep import does not", () => {
     const deep = initialRoute("deep").uiModules;
-    expect(deep).toContain("src/client/ui/primitives/button.tsx"); // detection is not vacuous
+    expect(deep).toContain("src/client/ui/primitives/badge.tsx"); // detection is not vacuous
     expect(initialRoute("barrel").uiModules).toEqual(deep);
   });
 

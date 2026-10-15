@@ -6,8 +6,16 @@
  * - Motion tokens for the few animated state changes.
  * - Inline monospace size (`--code-font-size`) for code/kbd/samp/pre in running text.
  *
- * Keep colours here as references to theme.css tokens: no literal colour values.
+ * Keep colours here as references to theme.css tokens: no literal colour values, except the one
+ * below that restates a theme.css value.
  */
+
+/* deck's theme.css (v0.5.0) sets --destructive-control-foreground in `:root` only, so dark mode
+   inherits the light value. Restated here with the same value, so every light colour has a dark
+   value (tests/ui-guardrails.test.ts); a `.dark[data-theme-preset]` block still wins over it. */
+.dark {
+  --destructive-control-foreground: oklch(1 0 0);
+}
 
 :root[data-density="wallboard"] {
   --spacing: 0.3125rem;

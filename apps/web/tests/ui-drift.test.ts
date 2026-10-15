@@ -48,7 +48,12 @@ describe("the repository's vendored @/ui manifest", () => {
       ...manifest.scope.upstream,
     ];
     expect(paths.filter((p) => p.startsWith("/") || p.includes(".."))).toEqual([]);
-    expect(manifest.files.every((f) => f.local.startsWith("apps/web/") && f.upstream.startsWith("apps/web/"))).toBe(true);
+    expect(manifest.files.filter((f) => !f.local.startsWith("apps/web/")).map((f) => f.local)).toEqual([]);
+    // Upstream paths sit in deck's web app, or are one of the other files in scope (deck's
+    // `@deck/sdk/tailwind/theme.css`, the token utilities its own stylesheet imports).
+    const inScope = (p: string) => manifest.scope.upstream.some((s) => (s.endsWith("/") ? p.startsWith(s) : p === s));
+    expect(manifest.files.filter((f) => !inScope(f.upstream)).map((f) => f.upstream)).toEqual([]);
+    expect(manifest.scope.upstream.filter((s) => !s.startsWith("apps/web/") && !s.startsWith("packages/"))).toEqual([]);
   });
 });
 

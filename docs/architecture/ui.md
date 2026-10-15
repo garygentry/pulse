@@ -16,7 +16,7 @@ apps/web/src/client/
     hooks/        useListNavigation, useFacetFilters, useDocumentTitle, useNow, …
     lib/          cn(), icons.ts (curated Lucide set; icons-shell.ts the eager part), status.ts (tones), format.ts, filters.ts, tree.ts
     status/       pulse status maps: TARGET_STATUS, ALERT_SEVERITY, MUTATION_STATE
-    viz/          pulse charts: Sparkline, StatusTimeline, Gauge, TimeSeriesChart (lazy uPlot)
+    viz/          charts: Sparkline, StatusTimeline, Gauge (deck's), TimeSeriesChart (pulse, lazy uPlot)
     index.ts      the public barrel: code outside ui/ imports from "@/ui"
     VENDORED.md   the deck commit the library was copied from, every pulse divergence, the sync procedure
     VENDORED.json the same record, machine-readable: per-file blob ids and divergence notes (ui:drift)
@@ -197,7 +197,7 @@ loads each client module that imports one of these barrels through a plugin that
 into imports from the modules that own each name. Source code is unchanged: feature code still
 imports from `@/ui`. The plugin drops `type` specifiers and fails the build on a name the barrel
 does not export or on any other form of barrel import (namespace, re-export, dynamic), so nothing
-falls back to the barrel. An `export *` of a nested barrel (`ui/status`, `ui/viz`) is followed to
+falls back to the barrel. An `export *` of a nested barrel (`ui/status`) is followed to
 the modules that own its names. Rewritten imports name modules by package subpath or `@/ui/…` path,
 never by absolute path: sourcemaps carry the rewritten source, and the bundle is public. The cost
 is more, smaller chunks, which compress less well as separate
@@ -210,31 +210,37 @@ fetches them in parallel with the entry instead of after parsing it.
 **Scoped Radix.** Import Radix from the scoped `@radix-ui/react-*` packages, never the
 `radix-ui` umbrella. Through the umbrella, `Bun.build` puts every Radix package used anywhere onto
 the initial route. A new primitive adds its scoped package to `apps/web/package.json` and to the
-exact-version pin table in `tests/deps.test.ts`. Re-apply this edit after every deck sync or
-`shadcn add`.
+exact-version pin table in `tests/deps.test.ts`. Deck imports the scoped packages too since
+v0.5.0; check again after `shadcn add`, which writes the umbrella import.
 
-**Bespoke viz.** `ui/viz/` holds `Sparkline`, `StatusTimeline`, `Gauge` and `TimeSeriesChart`.
-`TimeSeriesChart` loads uPlot through `React.lazy`, so uPlot never ships on the initial route.
+**Viz.** `ui/viz/` holds deck's dependency-free SVG charts, `Sparkline`, `StatusTimeline` and
+`Gauge` (vendored since deck v0.5.0, which took them from pulse), and pulse's `TimeSeriesChart`.
+Each takes its status as a status-map entry, `status={TARGET_STATUS[s]}`, never a bare state:
+the entry's tone colours the mark and an outline entry draws hatched or dashed. `Gauge` is a
+`meter` and needs an `ariaLabel`; it shows the entry's label under the value. `StatusTimeline`
+needs a `statusMap` and a `formatTime` (the estate clock, or `formatTimestamp`) for its
+screen-reader list of intervals; its root is a named `group`. `TimeSeriesChart` loads uPlot through `React.lazy`, so uPlot never ships on the initial route.
 Colours come only from the tone and chart tokens. uPlot draws to a `<canvas>`, which cannot
 resolve `var()`, so `ui/viz/uplot-chart.tsx` reads the theme tokens from the chart root's computed
 style: `--border` for the axes and grid, `--muted-foreground` for tick text, `--chart-1` to
 `--chart-5` for series by index, and `--status-<tone>-fg` for a series that carries a status.
 Suppressed marks are hatched or dashed on the neutral tone. `StatusTimeline` draws each segment
-from a status map: `TARGET_STATUS` by default, or the caller's own `statusMap` for another
-vocabulary (the alert swimlane passes each bar's severity with `ALERT_SEVERITY`, so info bars take
+from its status map: `TARGET_STATUS` for targets, or another vocabulary's map (the alert swimlane passes each bar's severity with `ALERT_SEVERITY`, so info bars take
 the info tone). An outline entry is hatched. `TimeSeriesChart` takes optional `splitYTicks` and
 `formatYTicks`; `SyncedChart` passes `axisSplits` and `formatAxisTicks` (`chart-data.ts`), so y
 ticks fall on steps that are round in the display unit (`5.2 GiB`, `30 min`, `99.5 %`) and use the
 same unit rule (`displayScale`) as the cursor readout. The timeline view's lanes, overlay and swimlane stay in that view; they are not
 library patterns.
 
-**DataTable `virtualize`.** An opt-in prop on the vendored `DataTable`, backed by
-`@tanstack/react-virtual`. It switches on at a row threshold (300 by default), keeps the focused
-row rendered by id, exposes `aria-rowcount` and `aria-rowindex`, and offers a ref handle with
-`scrollToIndex`. Rows are measured as they render (`virtualize.rowHeight` is the estimate and
-each row's minimum height), so rows that grow a second line, such as the alert catalog's rule
-errors, keep the spacers, the scrollbar and `scrollToIndex` exact. Below the threshold the output
-is deck's. The alerts triage table and catalog, the estate inventory, coverage and entity pages,
+**DataTable `virtualize`.** An opt-in prop on the vendored `DataTable` (deck's since v0.5.0),
+backed by `@tanstack/react-virtual`. It switches on at a row threshold (300 by default), keeps the
+focused row and its neighbours rendered by id, exposes `aria-rowcount` and `aria-rowindex`, and
+offers a ref handle: `scrollToIndex` (a promise that settles once the row is in place) and
+`focusIndex`. The root is the scroll region on both paths. Rows take their height from the density
+tokens and are measured as they render, so rows that grow a second line, such as the alert
+catalog's rule errors, keep the spacers, the scrollbar and `scrollToIndex` exact. A list driven by
+`useListNavigation` reaches the unrendered first and last rows through its `focusEdge` option
+wired to `focusIndex`. The alerts triage table and catalog, the estate inventory, coverage and entity pages,
 and the `/_ui` workbench use it.
 `focusable={false}` drops the scroll region's tab stop where nobody interacts (the kiosk engine
 tables).
@@ -261,8 +267,9 @@ renders no `h1`; each view's `PageHeader` supplies it. The sidebar's view links 
 move between them through `useListNavigation`, on the icon rail and in the mobile sheet alike.
 Ctrl/Cmd-B toggles the sidebar, except while focus is in a text field (`isTextEntryTarget`). The top bar's health region shows the
 estate name, the live and staleness pill, the theme menu and the density control. A stale-data
-`Callout` with `role="alert"` sits under it. `CommandPalette` is a Pulse pattern on shadcn
-`Command` inside `Dialog`. The shell loads it as a lazy chunk (prefetched when idle), registers
+`Callout` with `role="alert"` sits under it. `CommandPalette` is deck's pattern on shadcn
+`Command` inside `Dialog` (vendored since v0.5.0), fed groups by pulse's `commandGroupsFromIndex`
+(`ui/lib/command-groups.ts`) with filtering left to the caller (`shouldFilter={false}`). The shell loads it as a lazy chunk (prefetched when idle), registers
 `mod+k` through `a11y/shortcuts.ts`, and ranks results with the pure `shell/command-index.ts`. If
 Ctrl/Cmd-K lands before the chunk, the palette opens on a loading state and keys typed meanwhile
 are captured into the query (printable keys including Alt/AltGr characters, and pasted text;

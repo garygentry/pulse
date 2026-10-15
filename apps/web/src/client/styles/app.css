@@ -8,9 +8,9 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @import "./theme.css";
+/* The token utilities and the dark variant (deck's `@deck/sdk/tailwind/theme.css`, vendored). */
+@import "./tailwind-theme.css";
 @import "./theme-pulse.css";
 
 /* `source("..")` on the import above roots Tailwind's source detection at the client source

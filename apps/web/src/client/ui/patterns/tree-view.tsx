@@ -1,7 +1,7 @@
-// Pulse divergences from deck: `renderMeta` output is the treeitem's accessible description; opt-in
-// row virtualization (`virtualize`, over `@tanstack/react-virtual`); `*` expands every sibling and
-// printable keys jump by label (type-ahead); the row wraps, so a caller's meta can drop to a line of
-// its own at narrow widths.
+// Pulse divergences from deck: opt-in row virtualization (`virtualize`, over
+// `@tanstack/react-virtual`); `*` expands every sibling and printable keys jump by label
+// (type-ahead); the row wraps and the meta wrapper is `contents` (deck: `inline-flex`), so a
+// caller's meta can drop to a line of its own at narrow widths.
 import { defaultRangeExtractor, observeElementOffset, useVirtualizer } from "@tanstack/react-virtual";
 import {
   useId,
@@ -72,9 +72,11 @@ export interface TreeViewProps<T> {
   selectBranches?: boolean;
   /** The row glyph; default folder / open folder / file. Must be decorative (`aria-hidden`). */
   renderIcon?: (node: T, state: TreeNodeState) => ReactNode;
-  /** Trailing row content (a count, a badge). Plain text or badges only; never interactive. It is
-   *  the treeitem's accessible description, read after the label. The row wraps: give the meta
-   *  `basis-full` (e.g. under a container query) to put it on a line of its own. */
+  /**
+   * Trailing row content (a count, a badge). Plain text or badges only; never interactive. It is
+   * the treeitem's accessible description, read after the label. The row wraps: give the meta
+   * `basis-full` (e.g. under a container query) to put it on a line of its own.
+   */
   renderMeta?: (node: T, state: TreeNodeState) => ReactNode;
   /**
    * Filter: text (case-insensitive substring of the label) or a predicate. A

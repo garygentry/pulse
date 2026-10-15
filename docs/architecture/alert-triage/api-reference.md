@@ -204,7 +204,6 @@ const visible = payload.alerts.filter((alert) =>
 Sources: `table/TriageTable.tsx` and `table/columns.tsx`.
 
 ```typescript
-const TRIAGE_ROW_HEIGHT: number = DATA_TABLE_VIRTUALIZE_DEFAULTS.rowHeight.compact;
 type TriageColumn = ColumnDef<ActiveAlert> & { readonly id: string };
 const triageColumns: TriageColumn[];
 

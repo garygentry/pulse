@@ -404,7 +404,7 @@ export function rowTitle(v: RowView): string {
   return parts.join(", ");
 }
 
-/** `TimelineLane.label`, which StatusTimeline puts on each lane's `<g aria-label>`. */
+/** `TimelineLane.label`, which StatusTimeline puts in its screen-reader list of each lane's intervals. */
 export function laneAccessibleLabel(v: RowView): string {
   let label = `${rowAccessibleName(v.row)}, worst in view ${v.worst.text}`;
   if (v.partial) label += `, ${PARTIAL_EVIDENCE_TEXT}`;

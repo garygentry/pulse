@@ -1417,7 +1417,7 @@ describeDom("timeline keyboard — mounted TimelineView (item 023)", (dom) => {
     expect(chartOverlays().length).toBe(HOST_CHART_QUERIES.length);
     const callsBefore = m.stub.calls.length;
     const rects = (sel: string): string =>
-      all(c.querySelector(sel)!, 'svg[role="img"] rect').map((r) => `${r.getAttribute("x")},${r.getAttribute("width")}`).join(" ");
+      all(c.querySelector(sel)!, '[data-slot="status-timeline"] g[data-lane] rect').map((r) => `${r.getAttribute("x")},${r.getAttribute("width")}`).join(" ");
     const hostBlockBefore = rects("[data-block]");
     const swimBefore = rects("[data-slot=timeline-swimlane]");
     expect(hostBlockBefore).not.toBe("");

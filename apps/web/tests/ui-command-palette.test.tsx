@@ -168,7 +168,7 @@ describeUi("commandGroupsFromIndex", () => {
   it("drives the palette: selecting an adapted entry navigates to its path", async () => {
     const navigate = mock((_path: string) => {});
     render(<CommandPalette open onOpenChange={() => {}} groups={commandGroupsFromIndex(index, navigate)} />);
-    await userEvent.click(await screen.findByRole("option", { name: "DiskFull db-01" }));
+    await userEvent.click(await screen.findByRole("option", { name: "DiskFull, db-01" }));
     expect(navigate).toHaveBeenCalledWith("/alerts/fp1");
   });
 });
@@ -214,7 +214,7 @@ describeUi("CommandPalette with caller-owned filtering", () => {
     // Nothing matches "zz" by cmdk's filter, but the caller owns filtering: every item stays, in order.
     expect(optionNames()).toEqual(["apiweb-01", "api-v2web-02", "api-gwOK"]);
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: "api web-01" })).toHaveAttribute("aria-selected", "true"),
+      expect(screen.getByRole("option", { name: "api, web-01" })).toHaveAttribute("aria-selected", "true"),
     );
   });
 });

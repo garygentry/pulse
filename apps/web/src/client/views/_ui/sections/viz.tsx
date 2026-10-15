@@ -3,7 +3,9 @@ import {
   Gauge,
   Sparkline,
   StatusTimeline,
+  TARGET_STATUS,
   TimeSeriesChart,
+  formatTimestamp,
   type SparklineSample,
   type TimelineLane,
   type TimeSeriesSeries,
@@ -24,7 +26,7 @@ const GAPPED: SparklineSample[] = WAVE.map((value, i) => ({
   value: i >= 14 && i < 19 ? null : value,
 }));
 
-const LANES: TimelineLane[] = [
+const LANES: TimelineLane<TargetStatus>[] = [
   {
     id: "nas-01",
     label: "nas-01",
@@ -63,8 +65,8 @@ const SERIES: TimeSeriesSeries[] = [
 ];
 
 const STATUS_SERIES: TimeSeriesSeries[] = [
-  { label: "latency (critical)", status: "critical", data: TIMESTAMPS.map((_, i) => 80 + ((i * 11) % 30)) },
-  { label: "latency (suppressed)", status: "suppressed", data: TIMESTAMPS.map((_, i) => 40 + ((i * 5) % 20)) },
+  { label: "latency (critical)", status: TARGET_STATUS.critical, data: TIMESTAMPS.map((_, i) => 80 + ((i * 11) % 30)) },
+  { label: "latency (suppressed)", status: TARGET_STATUS.suppressed, data: TIMESTAMPS.map((_, i) => 40 + ((i * 5) % 20)) },
 ];
 
 function Viz() {
@@ -73,7 +75,7 @@ function Viz() {
       <Specimen label="Sparkline: every status (suppressed is dashed)">
         {STATUSES.map((status) => (
           <span key={status} className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
-            <Sparkline values={WAVE} status={status} ariaLabel={`CPU trend, ${status}`} />
+            <Sparkline values={WAVE} status={TARGET_STATUS[status]} ariaLabel={`CPU trend, ${status}`} />
             {status}
           </span>
         ))}
@@ -85,15 +87,18 @@ function Viz() {
       <Specimen label="StatusTimeline: lanes, suppressed hatched, unknown solid">
         <StatusTimeline
           lanes={LANES}
+          statusMap={TARGET_STATUS}
+          formatTime={(t) => formatTimestamp(new Date(t).toISOString())}
           domainStart={START}
           domainEnd={START + 24 * HOUR}
           width={560}
           ariaLabel="Host status over 24 hours"
+          className="max-w-full overflow-x-auto"
         />
       </Specimen>
-      <Specimen label="Gauge: every status, label, custom range">
+      <Specimen label="Gauge: every status (its label under the value), custom range">
         {STATUSES.map((status, i) => (
-          <Gauge key={status} value={20 + i * 18} status={status} label={status} ariaLabel={`Disk ${status}`} />
+          <Gauge key={status} value={20 + i * 18} status={TARGET_STATUS[status]} ariaLabel={`Disk ${status}`} />
         ))}
         <Gauge value={750} min={0} max={1000} size={96} thickness={10} label="ms" ariaLabel="Latency 750 ms" />
       </Specimen>

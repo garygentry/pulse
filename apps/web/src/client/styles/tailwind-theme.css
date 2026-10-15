@@ -1,0 +1,75 @@
+/*
+ * deck's Tailwind theme: the utilities its design tokens become. deck's own stylesheet
+ * (apps/web/src/styles/app.css) and every runtime module's (through @deck/sdk/tailwind)
+ * import this one file, so a module's `bg-card` or `rounded-md` is deck's.
+ *
+ * Each colour is `inline`: a utility reads the token's CSS variable itself (`var(--card)`),
+ * which deck's stylesheet defines per light/dark mode and theme preset, so module styles follow
+ * both. The values live in deck's theme.css; only the mapping is here.
+ */
+
+/* deck's dark mode is the `.dark` class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-status-ok-fg: var(--status-ok-fg);
+  --color-status-ok-bg: var(--status-ok-bg);
+  --color-status-ok-border: var(--status-ok-border);
+  --color-status-warn-fg: var(--status-warn-fg);
+  --color-status-warn-bg: var(--status-warn-bg);
+  --color-status-warn-border: var(--status-warn-border);
+  --color-status-danger-fg: var(--status-danger-fg);
+  --color-status-danger-bg: var(--status-danger-bg);
+  --color-status-danger-border: var(--status-danger-border);
+  --color-status-info-fg: var(--status-info-fg);
+  --color-status-info-bg: var(--status-info-bg);
+  --color-status-info-border: var(--status-info-border);
+  --color-status-pending-fg: var(--status-pending-fg);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-pending-border: var(--status-pending-border);
+  --color-status-neutral-fg: var(--status-neutral-fg);
+  --color-status-neutral-bg: var(--status-neutral-bg);
+  --color-status-neutral-border: var(--status-neutral-border);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-xs: var(--corner-xs);
+  --radius-sm: var(--corner-sm);
+  --radius-md: var(--corner-md);
+  --radius-lg: var(--corner-lg);
+  --radius-xl: var(--corner-xl);
+}
