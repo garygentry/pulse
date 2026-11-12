@@ -1,8 +1,8 @@
 // packages/web-data/src/sources/vm.ts — the VictoriaMetrics source client
 // (03-source-clients-and-validation.md §5). Supports exactly four operations:
 //
-//   - statusSignals()  one GET /api/v1/query with the fixed status union plus the seven
-//                      engine projections, each aliased and joined with `or on (__name__)`;
+//   - statusSignals()  one GET /api/v1/query with the fixed status union plus the
+//                      engine projections, each aliased, all arguments of one MetricsQL `union()`;
 //   - targets()        one GET /api/v1/targets;
 //   - buildInfo()      one GET /api/v1/status/buildinfo;
 //   - queryRange(req)  one cancellable GET /api/v1/query_range built only from the closed

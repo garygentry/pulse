@@ -123,3 +123,13 @@ describe("heartbeat (deadman) is not a firing problem (F4/F11)", () => {
     expect(heartbeatState({ ...base, alertmanager: { ...base.alertmanager, state: "unavailable" } })).toBe("absent");
   });
 });
+
+test("the heartbeat's detail still resolves (palette and deep links), though it is not a table row", async () => {
+  const { resolveSelected } = await import("../src/client/views/alerts/url-state.js");
+  const base = makeAlertsPayload();
+  const rule = base.rules.find((r) => r.deadman)!;
+  const heartbeat = { ...base.alerts[0]!, fingerprint: "e".repeat(16), name: rule.name };
+  const p = { ...base, alerts: [...base.alerts, heartbeat] } as typeof base;
+  expect(firingRows(p).some((a) => a.fingerprint === heartbeat.fingerprint)).toBe(false);
+  expect(resolveSelected(p, heartbeat.fingerprint)?.name).toBe(rule.name);
+});

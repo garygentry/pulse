@@ -143,6 +143,8 @@ interface FoldContext {
   readonly now: Date;
   readonly staleSeconds: number;
   readonly grafanaOrigin: string | null;
+  /** Silenced/inhibited (non-firing) alerts matched to targets: a muted target's down evidence is not escalated. */
+  readonly muted?: MatchedAlerts;
 }
 
 /** Affirmative-liveness for a host (null when the governing source is unreachable). */
@@ -170,7 +172,12 @@ function observedHostDown(host: WebEstateHostV2, ctx: FoldContext): boolean {
   const cls: CollectionClass = host.collectionClass;
   const job = hostLivenessJob(cls);
   if (job !== null) {
-    return ctx.metricsOk && ctx.liveSeries.some((s) =>
+    if (!ctx.metricsOk) return false;
+    // Every hypervisor-api scrape goes through pve-exporter: while it is down, hypervisor liveness
+    // is unknown, not failed (HypervisorExporterDown inhibits HostDown for the same reason, #74).
+    if (cls === "hypervisor-api" && ctx.liveSeries.some((s) =>
+      s.projection === "up" && s.metric["job"] === "pve-exporter" && s.value === 0)) return false;
+    return ctx.liveSeries.some((s) =>
       s.projection === "up" && s.metric["job"] === job && s.metric["host"] === host.name && s.value === 0);
   }
   if (cls === "probe-only") {
@@ -225,6 +232,8 @@ function resolveStatus(p: {
   readonly live: boolean | null;
   /** Current evidence explicitly says down (observedHostDown / observedServiceDown). */
   readonly down: boolean;
+  /** A silenced or inhibited alert is attributed to this target. */
+  readonly muted: boolean;
 }): TargetStatus {
   if (p.suppressed) return "suppressed";
   if (!p.alertsAvailable) return "unknown";
@@ -234,10 +243,12 @@ function resolveStatus(p: {
     if (rank > worst) worst = rank;
   }
   if (worst === SEVERITY_ORDER.indexOf("critical")) return "critical";
-  // F8: current evidence that says DOWN is critical even before (or without) an alert; unknown is
-  // reserved for missing or stale evidence.
-  if (p.down && p.live !== true) return "critical";
   if (worst === SEVERITY_ORDER.indexOf("warning")) return "warning";
+  // F8: current evidence that says DOWN is never "unknown" (that is reserved for missing or stale
+  // evidence), but it is only a WARNING until the matching alert fires: the alert's own severity and
+  // `for:` window then decide, so a single missed scrape never flips a cell critical, and the cell
+  // never outranks (or disagrees with) the alert. A silenced or inhibited target is not escalated.
+  if (p.down && p.live !== true && !p.muted) return "warning";
   return p.live === true ? "ok" : "unknown";
 }
 
@@ -432,6 +443,7 @@ function buildService(
     alerts: activeAlerts,
     live,
     down: observedServiceDown(service, ctx),
+    muted: (ctx.muted?.byService.get(key)?.length ?? 0) > 0,
   });
   const statusAvailability = suppressed !== null
     ? renderedAvailability(inputs)
@@ -480,6 +492,7 @@ function buildHost(
     alerts: activeAlerts,
     live,
     down: observedHostDown(host, ctx),
+    muted: (ctx.muted?.byHost.get(host.name)?.length ?? 0) > 0,
   });
   const contributingServices = services.filter((s) => s.suppressed === null);
   const contributing = contributingServices.map((s) => s.status);
@@ -766,7 +779,9 @@ export function foldOverview(inputs: FoldInputs, engine: EnginePayload = foldEng
   const matched = matchFiringAlerts(inputs, firingAlerts);
   const checks = matchChecks(inputs, effectiveChecks);
 
-  const hosts = model.hosts.map((host) => buildHost(host, ctx, inputs, matched, checks));
+  const muted = matchFiringAlerts(inputs, effectiveAlerts.filter((a) => a.state !== "firing"));
+  const statusCtx: FoldContext = { ...ctx, muted };
+  const hosts = model.hosts.map((host) => buildHost(host, statusCtx, inputs, matched, checks));
 
   // Per-target liveness availability, keyed by drilldown id, for the additive signals.
   const hostAvailability = new Map<string, DataAvailability>();

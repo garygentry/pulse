@@ -33,13 +33,27 @@ export const HYPERVISOR_EXPORTER_INHIBIT: Readonly<AmInhibitRule> = Object.freez
 });
 
 /**
+ * A host that is down takes its per-host deep-health prober with it (F6): HostDown (critical) already
+ * pages for the host, so the prober's own DeepHealthProberDown (warning) is held back for the same
+ * host instead of paging twice. Equal on `estate` and `host`. Mirrored in the bootstrap config.
+ */
+export const HOST_DOWN_PROBER_INHIBIT: Readonly<AmInhibitRule> = Object.freeze({
+  source_matchers: ['alertname="HostDown"'],
+  target_matchers: ['alertname="DeepHealthProberDown"'],
+  equal: ["estate", "host"],
+});
+
+/**
  * The product-static inhibit rules every generated config carries, independent of the estate,
  * as fresh mutable copies. Merged after the estate-derived rules by `buildAlertmanagerConfig`
  * (routing.ts) via `withProductStaticInhibits`.
  */
 export function productStaticInhibitRules(): AmInhibitRule[] {
-  const r = HYPERVISOR_EXPORTER_INHIBIT;
-  return [{ source_matchers: [...r.source_matchers], target_matchers: [...r.target_matchers], equal: [...(r.equal ?? [])] }];
+  return [HYPERVISOR_EXPORTER_INHIBIT, HOST_DOWN_PROBER_INHIBIT].map((r) => ({
+    source_matchers: [...r.source_matchers],
+    target_matchers: [...r.target_matchers],
+    equal: [...(r.equal ?? [])],
+  }));
 }
 
 /** Estate-derived rules plus the product-static ones, in the same stable order buildInhibitRules uses. */

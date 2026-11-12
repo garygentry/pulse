@@ -110,7 +110,6 @@ function integrationProjection(
   return found ? out : null;
 }
 
-/** Current uptime seconds for a job from its process-start projection sample, or null. */
 /** vmalert's validated `short_version` (e.g. "v1.102.1") from the current series, or null (F31). */
 function vmalertVersion(series: readonly MetricSample[]): string | null {
   for (const sample of series) {
@@ -121,6 +120,7 @@ function vmalertVersion(series: readonly MetricSample[]): string | null {
   return null;
 }
 
+/** Current uptime seconds for a job from its process-start projection sample, or null. */
 function uptimeSeconds(series: readonly MetricSample[], job: string, nowMs: number): number | null {
   for (const sample of series) {
     if (sample.projection !== PROJECTION.processStartSeconds) continue;

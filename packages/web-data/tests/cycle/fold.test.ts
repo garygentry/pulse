@@ -382,21 +382,42 @@ describe("foldOverview — compatibility + additive fields", () => {
     expect(ov.engine.availability.state).toBe("current");
   });
 
-  test("F8: current evidence that says DOWN is critical; missing evidence stays unknown", () => {
-    const status = (samples: MetricSample[]) => {
-      const ov = foldOverview(inputs({ records: records({ "victoriametrics-signals": ok(samples) }) }));
+  test("F8: current DOWN evidence is a warning until its alert fires; missing evidence stays unknown", () => {
+    const status = (samples: MetricSample[], alerts: AlertmanagerAlert[] = []) => {
+      const ov = foldOverview(inputs({ records: records({
+        "victoriametrics-signals": ok(samples),
+        "alertmanager-alerts": ok<readonly AlertmanagerAlert[]>(alerts),
+      }) }));
       const host = ov.hosts.find((item) => item.name === "hostA")!;
       return { host: host.status, service: host.services.find((svc) => svc.name === "grafana")!.status };
     };
-    // Host up == 0 → critical; deep-health up == 0 → critical (no alert needed).
-    expect(status([metric("up", "hostA", 0), metric("pulse_deep_health_up", "hostA", 0, { service: "grafana" })]))
-      .toEqual({ host: "critical", service: "critical" });
-    // Affirmative evidence → ok.
+    const down = [metric("up", "hostA", 0), metric("pulse_deep_health_up", "hostA", 0, { service: "grafana" })];
+    // Down evidence, no alert yet (inside its `for:` window): warning, never unknown and never
+    // above the rule's own severity (DeepHealthProbeFailed is a warning).
+    expect(status(down)).toEqual({ host: "warning", service: "warning" });
+    // The alert fired: its severity decides.
+    const hostDown = amAlert({ name: "HostDown", labels: { alertname: "HostDown", severity: "critical", host: "hostA" } });
+    expect(status(down, [hostDown]).host).toBe("critical");
+    // A silenced/inhibited alert for the target: not escalated by the raw evidence.
+    expect(status(down, [{ ...hostDown, state: "silenced" }]).host).toBe("unknown");
+    expect(status(down, [{ ...hostDown, state: "inhibited" }]).host).toBe("unknown");
+    // Affirmative evidence → ok; no samples at all → unknown, never down.
     expect(status([metric("up", "hostA", 1), metric("pulse_deep_health_up", "hostA", 1, { service: "grafana" })]))
       .toEqual({ host: "ok", service: "ok" });
-    // No samples at all (e.g. the prober is down, so its series are gone) → unknown, never critical.
     expect(status([metric("up", "hostA", 1)])).toEqual({ host: "ok", service: "unknown" });
     expect(status([])).toEqual({ host: "unknown", service: "unknown" });
+  });
+
+  test("F8: a hypervisor reads unknown, not down, while pve-exporter (the relay) is down", () => {
+    const hypervisor = model({ hosts: [{ ...model().hosts[0]!, collectionClass: "hypervisor-api" }] as never });
+    const fold = (exporterUp: number) => foldOverview(inputs({ model: hypervisor, records: records({
+      "victoriametrics-signals": ok<readonly MetricSample[]>([
+        metric("up", "hostA", 0, { job: "hypervisor-api" }),
+        metric("up", "pve-exporter", exporterUp, { job: "pve-exporter" }),
+      ]),
+    }) })).hosts.find((item) => item.name === "hostA")!.status;
+    expect(fold(0)).toBe("unknown");
+    expect(fold(1)).toBe("warning");
   });
 
   test("the engine summary carries the Engine verdict's problems, so the views agree (F5)", () => {
