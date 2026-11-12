@@ -63,6 +63,36 @@ process.once("exit", () => {
   void closeAlertsBrowser();
 });
 
+const OPEN_ATTEMPTS = 3;
+
+/** Chromium's view of a loopback server that stopped answering. */
+function refused(err: unknown): boolean {
+  const text = String(err);
+  return text.includes("ERR_CONNECTION_REFUSED") || text.includes("chrome-error://");
+}
+
+/**
+ * Open a new page on the built fixture for job `i`, rebinding a fresh loopback server for the same
+ * (memoised) bundle when the served port refuses Chromium. On CI, with the whole browser directory in
+ * one process, the shared alerts servers were seen refusing a later suite (net::ERR_CONNECTION_REFUSED
+ * on the same port in alerts-axe and alerts-reflow) — the clash engine-browser.ts already guards.
+ */
+async function openFixturePage(context: BrowserContext, built: FixturePage[], i: number): Promise<Page> {
+  for (let attempt = 1; ; attempt += 1) {
+    const page = await context.newPage();
+    try {
+      await page.goto(built[i]!.url, { waitUntil: "load" });
+      return page;
+    } catch (err) {
+      await page.close();
+      if (attempt >= OPEN_ATTEMPTS || !refused(err)) throw err;
+      built[i]!.stop();
+      const { def, theme } = jobs[i]!;
+      built[i] = await buildFixturePage(alertsFixtureEntry(def.id), { theme });
+    }
+  }
+}
+
 /**
  * Build every alerts fixture page (BEFORE launching Chromium, as the harness requires), launch
  * Chromium, and open each (fixture × theme) at `viewport`. `prepare` runs on each page after it
@@ -80,8 +110,7 @@ export async function openAlertsPages(opts: {
   const pages = new Map<string, Page>();
   for (let i = 0; i < jobs.length; i += 1) {
     const { def, theme } = jobs[i]!;
-    const page = await context.newPage();
-    await page.goto(built[i]!.url, { waitUntil: "load" });
+    const page = await openFixturePage(context, built, i);
     await page.waitForSelector("html[data-fixture-ready]");
     await page.waitForSelector(def.ready);
     if (opts.prepare !== undefined) await opts.prepare(page);
