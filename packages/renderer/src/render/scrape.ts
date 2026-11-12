@@ -10,6 +10,7 @@ import { FINDING_CODES } from "@pulse/core";
 import { compareString, COLLECTION_CLASSES } from "../order.js";
 import { toCanonicalJson } from "../format.js";
 import type { EmitResult } from "./emit-result.js";
+import { hasCentralProbes } from "./prober.js";
 import { renderSecretRef } from "./secrets.js";
 import type { CredentialSite } from "./secrets.js";
 
@@ -135,8 +136,20 @@ export function emitScrape(model: EstateModel): EmitResult {
     });
   }
 
+  // The central deep-health prober (`prober:9120`, the profile-gated in-stack service) is a target
+  // only when it has central probes to run; otherwise the `prober` job has no targets (F6).
+  if (hasCentralProbes(model)) {
+    files.push({
+      path: CENTRAL_PROBER_FILE_SD,
+      contents: toCanonicalJson([{ targets: [`prober:${PROBER_PORT}`], labels: {} }]),
+    });
+  }
+
   return { files, findings };
 }
+
+/** The central prober's file_sd file (stack-core's `prober` scrape job). */
+export const CENTRAL_PROBER_FILE_SD = "scrape/file_sd/prober.json";
 
 function addEntry(groups: Map<string, FileSdEntry[]>, group: string, entry: FileSdEntry): void {
   const entries = groups.get(group);

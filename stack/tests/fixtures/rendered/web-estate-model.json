@@ -1,5 +1,5 @@
 {
-  "bundleId": "sha256:001318933516f6d71e613de990a22c683b1507e1c8dccfe159e64fd9f9b934ba",
+  "bundleId": "sha256:558962072419eb4acf0c82a900e0c196df3615de70d8b48b7f837c6506c7812f",
   "channels": [
     {
       "credential": {
@@ -56,7 +56,8 @@
       "artifacts": [
         "gatus/config.yaml",
         "prober/config.yaml",
-        "scrape/file_sd/probe-only.json"
+        "scrape/file_sd/probe-only.json",
+        "scrape/file_sd/prober.json"
       ],
       "collectionClass": "probe-only",
       "detail": {
@@ -236,7 +237,8 @@
     {
       "alerts": [],
       "artifacts": [
-        "prober/config.yaml"
+        "prober/config.yaml",
+        "scrape/file_sd/prober.json"
       ],
       "backupFreshness": {
         "hasCommand": false,
@@ -264,7 +266,8 @@
       "alerts": [],
       "artifacts": [
         "gatus/config.yaml",
-        "prober/config.yaml"
+        "prober/config.yaml",
+        "scrape/file_sd/prober.json"
       ],
       "backupFreshness": null,
       "deepHealth": true,

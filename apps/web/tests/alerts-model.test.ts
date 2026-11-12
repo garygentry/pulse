@@ -7,6 +7,7 @@ import {
   buildRuleFamilyIndex,
   facetValues,
   firingRows,
+  heartbeatState,
   hostServiceValue,
   readAlerts,
   relatedByTarget,
@@ -98,5 +99,27 @@ describe("alerts model", () => {
     expect(related).toEqual(p.alerts.filter((a) => a.target?.kind === "host" && a.target.id === "host:web-01"));
     expect(related.length).toBeGreaterThan(1);
     expect(relatedByTarget(p, null)).toEqual([]);
+  });
+});
+
+describe("heartbeat (deadman) is not a firing problem (F4/F11)", () => {
+  test("the heartbeat alert leaves the firing rows and facets, and shows as its own state", () => {
+    const base = makeAlertsPayload();
+    const heartbeatRule = base.rules.find((r) => r.deadman)!;
+    const template = base.alerts[0]!;
+    const heartbeat = { ...template, fingerprint: "f".repeat(16), name: heartbeatRule.name, severity: "none" };
+    const p = { ...base, alerts: [...base.alerts, heartbeat] } as typeof base;
+    expect(firingRows(p)).toEqual(base.alerts);
+    expect(firingRows(p).some((a) => a.name === heartbeatRule.name)).toBe(false);
+    expect(facetValues(p)).toEqual(facetValues(base));
+    expect(heartbeatState(p)).toBe("firing");
+  });
+
+  test("a configured heartbeat that is not firing is 'silent'; no heartbeat rule is 'absent'", () => {
+    const base = makeAlertsPayload();
+    expect(heartbeatState(base)).toBe("silent");
+    expect(heartbeatState({ ...base, rules: base.rules.filter((r) => !r.deadman && r.name !== "DeadMansSwitch") })).toBe("absent");
+    // Alertmanager unreachable: no alerts to read, so no verdict (never a false "missing").
+    expect(heartbeatState({ ...base, alertmanager: { ...base.alertmanager, state: "unavailable" } })).toBe("absent");
   });
 });

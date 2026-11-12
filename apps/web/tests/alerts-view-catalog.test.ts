@@ -243,3 +243,18 @@ describeDom("CatalogTab", (dom) => {
     expect(c.textContent ?? "").not.toContain("No rows");
   });
 });
+
+test("F18: with the estate clock, Last evaluation is estate time with its age, not raw RFC 3339", async () => {
+  const { catalogColumns, CATALOG_COLUMNS } = await import("../src/client/views/alerts/catalog/CatalogTab.js");
+  const { createEstateClock } = await import("../src/client/format.js");
+  const clock = createEstateClock({ name: "e", timezone: "America/New_York", tzFallback: false });
+  expect(catalogColumns(undefined)).toBe(CATALOG_COLUMNS);
+  const columns = catalogColumns(clock);
+  expect(columns.map((c) => c.id)).toEqual(CATALOG_COLUMNS.map((c) => c.id));
+  const lastEval = columns.find((c) => c.id === "lastEval")!;
+  const at = "2026-11-12T03:05:01.242224917Z";
+  const cell = (lastEval.cell as (ctx: unknown) => { props: { dateTime: string; children: string } })({ row: { original: { lastEvaluationAt: at } } });
+  expect(cell.props.dateTime).toBe(at);
+  expect(cell.props.children).toBe(clock.absoluteWithRelative(at));
+  expect(cell.props.children).not.toContain("T03:05:01");
+});

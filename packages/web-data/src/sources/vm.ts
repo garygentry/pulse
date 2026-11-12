@@ -106,8 +106,8 @@ export interface VmClient {
 // §5 Fixed instant status/engine union
 // ---------------------------------------------------------------------------
 
-/** The existing status selectors preserved at the head of the instant union. */
-const STATUS_UNION = "up or pulse_agent_up or pulse_deep_health_up" as const;
+/** The status selectors at the head of the instant union. */
+const STATUS_SELECTORS = ["up", "pulse_agent_up", "pulse_deep_health_up"] as const;
 
 /** One aliased engine projection folded into the fixed instant union. */
 interface EngineProjection {
@@ -117,21 +117,32 @@ interface EngineProjection {
   readonly expr: string;
 }
 
-/** The seven current engine projections from §5, in fixed order. */
+/** The current engine projections from §5 (plus the vmalert version, F31), in fixed order. */
 const ENGINE_PROJECTIONS: readonly EngineProjection[] = [
   { alias: "pulse_web_engine_ingestion_rows_per_second", expr: 'sum(rate(vm_rows_inserted_total{job="victoriametrics"}[5m]))' },
   { alias: "pulse_web_engine_hourly_active_series", expr: 'sum(vm_cache_entries{job="victoriametrics",type="storage/hour_metric_ids"})' },
   { alias: "pulse_web_engine_data_bytes", expr: 'sum(vm_data_size_bytes{job="victoriametrics"})' },
   { alias: "pulse_web_engine_free_disk_bytes", expr: 'min(vm_free_disk_space_bytes{job="victoriametrics"})' },
-  { alias: "pulse_web_engine_notification_failures_per_second", expr: 'sum by (integration) (rate(alertmanager_notifications_failed_total{job="alertmanager"}[5m]))' },
+  // Only integrations that have ever sent a notification: Alertmanager exports a zero counter for
+  // every integration type it supports (discord, wechat, …), which is not the estate's channel set.
+  { alias: "pulse_web_engine_notification_failures_per_second", expr: 'sum by (integration) (rate(alertmanager_notifications_failed_total{job="alertmanager"}[5m])) and on (integration) (sum by (integration) (alertmanager_notifications_total{job="alertmanager"}) > 0)' },
   { alias: "pulse_web_engine_notification_latency_p95_seconds", expr: 'histogram_quantile(0.95, sum by (le, integration) (rate(alertmanager_notification_latency_seconds_bucket{job="alertmanager"}[5m])))' },
   { alias: "pulse_web_engine_process_start_seconds", expr: 'process_start_time_seconds{job=~"victoriametrics|vmalert|alertmanager|gatus"}' },
+  // F31: vmalert has no buildinfo source; its `vm_app_version` carries the `short_version` label.
+  { alias: "pulse_web_engine_vmalert_version", expr: 'vm_app_version{job="vmalert"}' },
 ];
 
 /**
- * Build the fixed instant union: the status selectors followed by each engine projection
- * wrapped in `label_replace((EXPR), "__name__", "ALIAS", "job", ".*")`, joined with
- * `or on (__name__)`. Exported for evidence that the union is exact and complete.
+ * Build the fixed instant union: the status selectors, the declared overview metrics, then each
+ * engine projection wrapped in `label_replace((EXPR), "__name__", "ALIAS", "job", ".*")`, all as
+ * arguments of one MetricsQL `union(…)`. Exported for evidence that the union is exact and complete.
+ *
+ * `union()` keeps every series whose full label set (metric name included) is distinct. The former
+ * `a or on (__name__) b` joins were wrong on VictoriaMetrics, which ignores `__name__` in `on()`, so
+ * the whole right-hand side was dropped whenever `up` returned anything: every engine projection,
+ * `pulse_agent_up` and every declared deep-health/backup metric were silently missing (F28/F29/F24).
+ * Plain `or` is wrong too: it matches on labels WITHOUT the name, so the label-less projections
+ * (and `pulse_agent_up`, which shares `up`'s labels) would shadow one another.
  */
 export function buildStatusUnionQuery(additionalMetrics: readonly string[] = []): string {
   const projections = ENGINE_PROJECTIONS.map(
@@ -139,9 +150,9 @@ export function buildStatusUnionQuery(additionalMetrics: readonly string[] = [])
   );
   const metrics = [...new Set(additionalMetrics)]
     .filter((metric) => /^[a-zA-Z_:][a-zA-Z0-9_:]*$/.test(metric))
-    .filter((metric) => !["up", "pulse_agent_up", "pulse_deep_health_up"].includes(metric))
+    .filter((metric) => !(STATUS_SELECTORS as readonly string[]).includes(metric))
     .sort();
-  return [STATUS_UNION, ...metrics, ...projections].join(" or on (__name__) ");
+  return `union(${[...STATUS_SELECTORS, ...metrics, ...projections].join(", ")})`;
 }
 
 // ---------------------------------------------------------------------------

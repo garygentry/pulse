@@ -352,6 +352,35 @@ describe("buildAlertIntervals (§10.2)", () => {
     expect(Date.parse(intervals[1]!.end)).toBe(MS + STEP * 5000);
   });
 
+  test("a series that stopped more than two steps before range end is resolved, not firing until now (F17)", () => {
+    // A resolved alert's ALERTS series just stops: no non-firing sample ever arrives.
+    const r = ok(buildAlertIntervals(
+      [series({ alertname: "X", severity: "critical", host: "hostA" }, [
+        [MS, 1],
+        [MS + STEP * 1000, 1],
+      ])] as never,
+      model(),
+      "24h",
+      fetchedAt(STEP * 1000 * 180), // range end three hours after the last firing sample
+      STEP,
+    ));
+    const intervals = laneById(r.data)[0]!.intervals as Array<{ start: string; end: string }>;
+    expect(intervals.length).toBe(1);
+    expect(Date.parse(intervals[0]!.end)).toBe(MS + STEP * 1000 * 2); // last sample + one step
+  });
+
+  test("a series still sampled within two steps of range end stays open to range end", () => {
+    const r = ok(buildAlertIntervals(
+      [series({ alertname: "X", severity: "critical", host: "hostA" }, [[MS, 1], [MS + STEP * 1000, 1]])] as never,
+      model(),
+      "1h",
+      fetchedAt(STEP * 1000 * 3), // exactly two steps after the last sample
+      STEP,
+    ));
+    const intervals = laneById(r.data)[0]!.intervals as Array<{ start: string; end: string }>;
+    expect(Date.parse(intervals[0]!.end)).toBe(MS + STEP * 1000 * 3);
+  });
+
   test("lanes are ordered by lane id and empty (never-firing) tuples are dropped", () => {
     const r = ok(buildAlertIntervals(
       [

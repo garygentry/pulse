@@ -8,9 +8,10 @@
 // trigger binds no activation handler; the grid's spatial navigation (navigation.ts) owns the single click path.
 
 import type { ReactElement } from "react";
+import type { EstateClock } from "../../../format.js";
 
 import type { HostStatus } from "@pulse/web-data/wire";
-import { cellLabel } from "../../../a11y/index.js";
+import { cellLabel, rollupReason } from "../../../a11y/index.js";
 import { ALERT_SEVERITY, Badge, StatusBadge, cn } from "@/ui";
 import { effectiveStatus } from "../freshness.js";
 import type { ChangeTracker } from "../model.js";
@@ -28,6 +29,8 @@ export { lastGoodText } from "./evidence.js";
 export interface HostCellProps {
   /** Current immutable host from the coherent model. */
   readonly host: HostStatus;
+  /** Estate clock for evidence times (F41); raw UTC is shown only without one. */
+  readonly clock?: EstateClock;
   /** Canonical selected target id, or null. */
   readonly selectedTargetId: string | null;
   /** Shared accepted-status transition tracker. */
@@ -65,9 +68,11 @@ function HostCellView(props: HostCellProps): ReactElement {
   const live = livenessText(host.live);
 
   // Render-only projection so the shared helper phrases the effective (not nominal) rollup.
-  const parts = [cellLabel({ ...host, rollup: status }), live];
+  const effective = { ...host, rollup: status };
+  const reason = rollupReason(effective);
+  const parts = [cellLabel(effective), live];
   if (alertCount > 0) parts.push(alertCountText(alertCount));
-  if (unknown) parts.push(lastGoodText(evidence));
+  if (unknown) parts.push(lastGoodText(evidence, props.clock));
   const alertSeverity = highestColouredSeverity(host.activeAlerts);
 
   // The card also carries `data-target-id` (tests address a whole card by it); only
@@ -96,6 +101,12 @@ function HostCellView(props: HostCellProps): ReactElement {
           {host.name}
         </span>
         <TargetStatusBadge status={status} />
+        {reason !== null ? (
+          // F9/F46: the cell shows the roll-up, so say when it comes from services, not the host.
+          <span className="text-xs text-muted-foreground" data-slot="overview-host-rollup-reason">
+            {reason}
+          </span>
+        ) : null}
         <span
           className="text-xs text-muted-foreground"
           data-live={host.live === null ? "unknown" : String(host.live)}
@@ -120,7 +131,7 @@ function HostCellView(props: HostCellProps): ReactElement {
         ) : null}
         {unknown ? (
           <span className={TARGET_EVIDENCE_CLASS} data-slot="overview-target-evidence">
-            {lastGoodText(evidence)}
+            {lastGoodText(evidence, props.clock)}
             {evidence.message !== null ? <span className="ms-1">{evidence.message}</span> : null}
           </span>
         ) : null}
@@ -140,6 +151,7 @@ function HostCellView(props: HostCellProps): ReactElement {
               changeTracker={changeTracker}
               reducedMotion={reducedMotion}
               onSelect={onSelect}
+              {...(props.clock !== undefined ? { clock: props.clock } : {})}
             />
           ))}
         </div>
@@ -161,7 +173,8 @@ function sameHostCellProps(a: Readonly<HostCellProps>, b: Readonly<HostCellProps
     selectionWithin(a.host, a.selectedTargetId) === selectionWithin(b.host, b.selectedTargetId) &&
     a.changeTracker === b.changeTracker &&
     a.reducedMotion === b.reducedMotion &&
-    a.onSelect === b.onSelect
+    a.onSelect === b.onSelect &&
+    a.clock === b.clock
   );
 }
 

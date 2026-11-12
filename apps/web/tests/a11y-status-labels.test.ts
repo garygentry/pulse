@@ -3,7 +3,7 @@
 // assert the KNOWN example strings from the spec §7.1 / original source, plus that the overview shim
 // re-exports the SAME function identities.
 import { expect, test, describe } from "bun:test";
-import { STATUS_LABEL, cellLabel, serviceLabel } from "../src/client/a11y/status-labels.js";
+import { STATUS_LABEL, cellLabel, rollupReason, serviceLabel } from "../src/client/a11y/status-labels.js";
 import { cellLabel as shimCellLabel } from "../src/client/views/overview/a11y.js";
 import { hostStatus, serviceStatus } from "./factories.js";
 
@@ -79,5 +79,23 @@ describe("serviceLabel", () => {
 describe("overview shim", () => {
   test("re-exports the same cellLabel function identity", () => {
     expect(shimCellLabel).toBe(cellLabel);
+  });
+});
+
+describe("rollupReason (F9/F46)", () => {
+  const services = [
+    serviceStatus({ name: "camera", status: "unknown" }),
+    serviceStatus({ name: "b", status: "ok" }),
+  ];
+  test("names the services that make the roll-up worse than the host itself", () => {
+    expect(rollupReason(hostStatus({ name: "host-a", status: "ok", rollup: "unknown", services }))).toBe("1 of 2 services unknown");
+  });
+  test("is null when the roll-up is the host's own status, ok, or the host is suppressed", () => {
+    expect(rollupReason(hostStatus({ status: "unknown", rollup: "unknown", services }))).toBeNull();
+    expect(rollupReason(hostStatus({ status: "ok", rollup: "ok", services }))).toBeNull();
+    expect(rollupReason(hostStatus({
+      status: "suppressed", rollup: "unknown", services,
+      suppressed: { class: "excluded", rationale: "x" },
+    }))).toBeNull();
   });
 });

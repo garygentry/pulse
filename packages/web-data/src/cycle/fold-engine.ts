@@ -42,6 +42,7 @@ const PROJECTION = {
   freeDiskBytes: "pulse_web_engine_free_disk_bytes",
   notificationFailuresPerSecond: "pulse_web_engine_notification_failures_per_second",
   notificationLatencyP95Seconds: "pulse_web_engine_notification_latency_p95_seconds",
+  vmalertVersion: "pulse_web_engine_vmalert_version",
   processStartSeconds: "pulse_web_engine_process_start_seconds",
 } as const;
 
@@ -110,6 +111,16 @@ function integrationProjection(
 }
 
 /** Current uptime seconds for a job from its process-start projection sample, or null. */
+/** vmalert's validated `short_version` (e.g. "v1.102.1") from the current series, or null (F31). */
+function vmalertVersion(series: readonly MetricSample[]): string | null {
+  for (const sample of series) {
+    if (sample.projection !== PROJECTION.vmalertVersion) continue;
+    const version = sample.metric["short_version"];
+    if (version !== undefined && /^v?\d+(\.\d+){1,3}[\w.+-]{0,32}$/.test(version)) return version;
+  }
+  return null;
+}
+
 function uptimeSeconds(series: readonly MetricSample[], job: string, nowMs: number): number | null {
   for (const sample of series) {
     if (sample.projection !== PROJECTION.processStartSeconds) continue;
@@ -174,7 +185,7 @@ function buildComponents(
       metadataVersion(records["victoriametrics-buildinfo"], (v) => v.version),
       uptimeSeconds(liveSeries, "victoriametrics", nowMs),
     ),
-    buildComponent("vmalert", vmalertAvail, null, uptimeSeconds(liveSeries, "vmalert", nowMs)),
+    buildComponent("vmalert", vmalertAvail, vmalertVersion(liveSeries), uptimeSeconds(liveSeries, "vmalert", nowMs)),
     buildComponent(
       "alertmanager",
       amAvail,

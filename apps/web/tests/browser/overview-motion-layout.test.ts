@@ -48,8 +48,8 @@ const KIOSK_BASE_CYCLE_MS = 30_000;
 /** Fake-clock step between kiosk observations; page starts are measured to within one step. */
 const KIOSK_STEP_MS = 250;
 const KIOSK_PAGE = '[data-slot="overview-kiosk-page"]';
-/** Worst-first rank of a tile's `data-status` (OVERVIEW_STATUS_ORDER). */
-const STATUS_RANK: Readonly<Record<string, number>> = { critical: 0, warning: 1, unknown: 2, suppressed: 3, ok: 4 };
+/** Worst-first rank of a tile's `data-status` (OVERVIEW_SORT_ORDER: suppressed after ok, F10/F16). */
+const STATUS_RANK: Readonly<Record<string, number>> = { critical: 0, warning: 1, unknown: 2, ok: 3, suppressed: 4 };
 
 interface MarkedState {
   readonly count: number;

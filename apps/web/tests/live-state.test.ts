@@ -311,6 +311,8 @@ describe("poll transport", () => {
     expect(store.connection.peek().views.overview.phase).toBe("initial");
     expect(store.connection.peek().failingSince).not.toBeNull();
     expect(store.connection.peek().seq).toBe(0);
+    // F2: the rejection is the overview's recorded failure, so the surface can say so.
+    expect(store.connection.peek().views.overview.failure?.code).toBe("RESPONSE_INVALID");
   });
 
   test("a malformed overview refresh retains the last accepted body and marks delivery stale", async () => {

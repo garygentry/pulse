@@ -29,6 +29,13 @@ export function Routing(props: { alert: ActiveAlert }): ReactElement {
             { label: "Webhook mirror", value: intent.webhookMirror ?? "—" },
           ]}
         />
+      ) : intent.severity === "deadman" ? (
+        // F20: the heartbeat is deliberately outside the severity taxonomy; say so instead of
+        // reading like a misconfiguration of the most important route in the system.
+        <p className="text-sm text-muted-foreground" data-routing="heartbeat">
+          This is the heartbeat. It is not routed by severity: it goes to the external deadman
+          receiver, which raises the alarm when the heartbeat stops arriving.
+        </p>
       ) : (
         <p className="text-sm text-muted-foreground" data-routing="unmatched">
           No routing policy defined for severity <code>{intent.severity}</code> in the vendored

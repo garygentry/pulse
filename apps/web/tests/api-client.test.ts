@@ -367,11 +367,12 @@ describe("apiFetch — #64 auth proxy session expiry", () => {
     expect(result.error.code).toBe("INTERNAL_ERROR");
   });
 
-  test("a 2xx non-HTML body that is not JSON is still INTERNAL_ERROR", async () => {
+  test("a 2xx non-HTML body that is not JSON is RESPONSE_INVALID, not a server error (F51)", async () => {
     const { fetchImpl } = queuedFetch([new Response("not json", { status: 200, headers: { "content-type": "application/json" } })]);
     const result = await apiFetch("/api/session", undefined, fetchImpl);
     if (result.status !== "error") throw new Error("unreachable");
-    expect(result.error.code).toBe("INTERNAL_ERROR");
+    expect(result.error).toEqual({ code: "RESPONSE_INVALID", message: "The Pulse server's response could not be read." });
+    expect(result.httpStatus).toBe(200);
   });
 });
 

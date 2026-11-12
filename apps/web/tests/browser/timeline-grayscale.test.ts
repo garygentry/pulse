@@ -101,10 +101,10 @@ browserDescribe()("browser: timeline view grayscale-distinct status, both themes
       for (const text of items) expect(text.length, JSON.stringify(items)).toBeGreaterThan(0);
       expect(new Set(items).size, `legend items repeat: ${JSON.stringify(items)}`).toBe(items.length);
       const dots = await readBadges(page, 'ul[aria-label="Status lane legend"] > li:has([data-slot="status-badge"])');
-      expect(dots.length, JSON.stringify(dots)).toBe(4);
+      expect(dots.length, JSON.stringify(dots)).toBe(5);
       expectGlyphAndLabel(dots);
       expectDistinctPerStatus(dots);
-      for (const status of ["ok", "warning", "critical", "unknown"]) {
+      for (const status of ["ok", "warning", "critical", "unknown", "suppressed"]) {
         expect(dots.some((d) => d.status === status), `legend missing ${status}: ${JSON.stringify(dots)}`).toBe(true);
       }
     }, 60_000);

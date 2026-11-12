@@ -121,6 +121,16 @@ describe("targetKey (05 §3.2)", () => {
 });
 
 describe("buildLaneTree (05 §3.3)", () => {
+  test("F34: an excluded host and its services are suppressed lanes; others are not", () => {
+    const snapshot = workedSnapshot();
+    const [first, ...rest] = snapshot.hosts;
+    const excluded = { ...snapshot, hosts: [{ ...first!, collectionClass: "excluded" as const }, ...rest] };
+    const tree = buildLaneTree(excluded, workedIndex());
+    expect(tree.hosts[0]!.suppressed).toBe(true);
+    expect(tree.hosts[0]!.children.every((child) => child.suppressed === true)).toBe(true);
+    expect(tree.hosts.slice(1).every((host) => host.suppressed === undefined)).toBe(true);
+  });
+
   test("REQ-LANE-01: reproduces the 05 §3.3 worked example exactly", () => {
     expect(buildLaneTree(workedSnapshot(), workedIndex())).toEqual({
       domains: [],

@@ -487,6 +487,20 @@ describe("deriveLaneSegments", () => {
     lane("BackupInfo", "info", T, [[1500, 1600]]),
   ];
 
+  test("F34: a suppressed lane's quiet time is suppressed, never silent green; problems still show", () => {
+    const r = deriveLaneSegments({
+      window: W, alerts: [lane("HostDown", "critical", T, [[1300, 1350]])], checks: [], checksNotLoaded: false,
+      noData: [{ start: 1900, end: 2000 }], suppressed: true,
+    });
+    expect(rows(r.segments)).toEqual([
+      [1000, 1300, "suppressed", "suppressed", []],
+      [1300, 1350, "critical", "alert", ["HostDown"]],
+      [1350, 1900, "suppressed", "suppressed", []],
+      [1900, 2000, "unknown", "no-data", []],
+    ]);
+    expect(r.segments.some((segment) => segment.status === "ok")).toBe(false);
+  });
+
   test("REQ-LANE-02/03: reproduces the 05 §5.9.4 worked example exactly", () => {
     const r = deriveLaneSegments({ window: W, alerts: EXAMPLE, checks: [], checksNotLoaded: true, noData: [{ start: 1900, end: 2000 }] });
     expect(rows(r.segments)).toEqual([

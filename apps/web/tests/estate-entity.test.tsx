@@ -22,6 +22,7 @@ import type { EntityRouteTarget } from "../src/client/views/estate/entity-model.
 import { describeUi, render, screen, userEvent, waitFor, within } from "./rtl.js";
 import {
   currentAvailability,
+  makeComparison,
   makeEstatePayloadFixture,
   makeLiveTarget,
   setEstateConnection,
@@ -171,6 +172,59 @@ describeUi("estate entity page", () => {
     return render(<EntityPage store={store} router={router} target={targetFromRoute(store)} />);
   }
 
+  test("F21: a host page lists its services (each opens its page) and links to its Timeline lane", async () => {
+    const payload = makeEstatePayloadFixture();
+    const hostServices = payload.estate.services.filter((svc) => svc.host === "hostA-managed");
+    const { router, calls } = makeRouter();
+    renderPage(seed(payload, ...hostRoute("hostA-managed")), router);
+    const list = screen.getByRole("list", { name: "Services on this host" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(hostServices.length);
+    expect(hostServices.length).toBeGreaterThan(0);
+    await userEvent.click(within(list).getAllByRole("button")[0]!);
+    expect(calls.at(-1)).toBe(`/estate/service/hostA-managed/${encodeURIComponent(hostServices[0]!.name)}`);
+    const related = screen.getByRole("list", { name: "Related views" });
+    await userEvent.click(within(related).getByRole("button", { name: /Timeline/ }));
+    expect(calls.at(-1)).toBe(`/timeline?sel=${encodeURIComponent("host:hostA-managed")}`);
+  });
+
+  test("F24: the live state shows the evidence behind the verdict; a missing sample is never 0", () => {
+    const store = seed(makeEstatePayloadFixture(), ...hostRoute("hostA-managed"));
+    const availability = { state: "current", source: "victoriametrics-signals", lastGoodAt: null, message: null } as const;
+    store.snapshot.value = {
+      signals: [
+        { target: { kind: "host", id: "host:hostA-managed" }, id: "a", label: "hostA liveness", unit: "state", value: true, availability },
+        { target: { kind: "host", id: "host:hostA-managed" }, id: "b", label: "fps", unit: "scalar", value: null, availability: { ...availability, state: "stale" } },
+        { target: { kind: "host", id: "host:other" }, id: "c", label: "not mine", unit: "scalar", value: 1, availability },
+      ],
+      hosts: [],
+    } as never;
+    renderPage(store);
+    const evidence = byTestId("estate-entity-evidence")!;
+    expect(evidence.textContent).toContain("hostA liveness");
+    expect(evidence.textContent).toContain("up");
+    expect(evidence.textContent).toContain("No current sample");
+    expect(evidence.textContent).toContain("Evidence stale");
+    expect(evidence.textContent).not.toContain("not mine");
+  });
+
+  test("F22: a host's scrape targets show their health (down is critical, undiscovered unknown)", () => {
+    const base = makeEstatePayloadFixture();
+    const [first] = base.estate.hosts.find((h) => h.name === "hostA-managed")!.scrapeTargets;
+    const payload = {
+      ...base,
+      declaredVersusScraped: {
+        ...base.declaredVersusScraped,
+        value: [makeComparison({ scrapeTarget: first!.instance, job: first!.job, health: "down" })],
+      },
+    } as EstatePayload;
+    renderPage(seed(payload, ...hostRoute("hostA-managed")));
+    const badges = [...document.querySelectorAll<HTMLElement>("[data-scrape-health]")];
+    expect(badges[0]!.dataset["status"]).toBe("critical");
+    expect(badges[0]!.textContent).toContain("Down");
+    expect(badges.slice(1).every((b) => b.dataset["status"] !== "ok")).toBe(true);
+  });
+
   test("a host page: one h1 + breadcrumbs, the four level-2 sections, the live badge in the header", () => {
     renderPage(seed(makeEstatePayloadFixture(), ...hostRoute("hostA-managed")));
     const page = byTestId("estate-entity")!;
@@ -187,6 +241,8 @@ describeUi("estate entity page", () => {
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
       "Declared",
       "Live state",
+      "Services",
+      "Related",
       "Monitoring artifacts",
       "Attributed alerts",
     ]);

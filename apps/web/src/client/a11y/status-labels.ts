@@ -27,17 +27,22 @@ export function cellLabel(host: HostStatus): string {
     return `${base} — ${host.suppressed.class}: ${host.suppressed.rationale}`;
   }
 
-  // Hint only when the roll-up is a non-ok state DRIVEN by services (the host's own status differs).
-  if (host.rollup !== "ok" && host.rollup !== "suppressed" && host.status !== host.rollup) {
-    const contributing = host.services.filter(
-      (svc) => svc.suppressed === null && svc.status === host.rollup,
-    );
-    if (contributing.length > 0) {
-      return `${base} — ${contributing.length} of ${host.services.length} services ${STATUS_LABEL[host.rollup]}`;
-    }
-  }
+  const reason = rollupReason(host);
+  return reason === null ? base : `${base} — ${reason}`;
+}
 
-  return base;
+/**
+ * Why a host's roll-up differs from its own status, e.g. "1 of 7 services unknown", or null when it
+ * does not (the roll-up is ok/suppressed, equals the host's own status, or the host is suppressed).
+ * The ONE phrasing every surface uses, so a host that reads Unknown on the grid and OK in its drawer
+ * always says why (F9/F46).
+ */
+export function rollupReason(host: HostStatus): string | null {
+  if (host.suppressed !== null) return null;
+  if (host.rollup === "ok" || host.rollup === "suppressed" || host.status === host.rollup) return null;
+  const contributing = host.services.filter((svc) => svc.suppressed === null && svc.status === host.rollup);
+  if (contributing.length === 0) return null;
+  return `${contributing.length} of ${host.services.length} services ${STATUS_LABEL[host.rollup]}`;
 }
 
 /** Accessible name for a service indicator: `"<host> / <service>, <status>"`, with the suppression

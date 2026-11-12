@@ -369,6 +369,7 @@ function buildDeclaredVersusScraped(
     /** Rendered `address:port` to check against the scrape URL, or null for address-sourced jobs. */
     readonly address: string | null;
     readonly rendered: string;
+    readonly renderedJob: string;
     readonly drilldownId: string;
   }
   const declaredRows = new Map<string, Declared>();
@@ -382,6 +383,7 @@ function buildDeclaredVersusScraped(
         instance: identity.instance,
         address: scrapeInstanceSource(target.job) === "host" ? normalizeRenderedAddress(target.instance) : null,
         rendered: target.instance,
+        renderedJob: target.job,
         drilldownId: host.drilldownId,
       });
     }
@@ -407,6 +409,7 @@ function buildDeclaredVersusScraped(
     job: target.job,
     instance: target.instance,
     address: scrapeUrlAddress(target.scrapeUrl),
+    health: target.health,
   }));
   const matches = (d: (typeof discovered)[number], r: Declared): boolean =>
     d.job === r.job &&
@@ -414,8 +417,13 @@ function buildDeclaredVersusScraped(
     (r.address === null || d.address === null || d.address === r.address);
   const declared = [...declaredRows.values()];
   const rows: DeclaredScrapeComparison[] = [];
+  const HEALTH_RANK = { down: 0, unknown: 1, up: 2 } as const;
   for (const r of declared) {
-    const matched = discovered.some((d) => matches(d, r));
+    const hits = discovered.filter((d) => matches(d, r));
+    const matched = hits.length > 0;
+    // F22: carry the matched target's scrape health (worst of several) for the entity page.
+    const health = hits.reduce<"up" | "down" | "unknown" | null>(
+      (worst, d) => (worst === null || HEALTH_RANK[d.health] < HEALTH_RANK[worst] ? d.health : worst), null);
     rows.push({
       drilldownId: r.drilldownId,
       scrapeTarget: r.rendered,
@@ -423,6 +431,8 @@ function buildDeclaredVersusScraped(
       message: matched
         ? `Declared scrape target ${r.rendered} (job ${r.job}) was discovered.`
         : `Declared scrape target ${r.rendered} (job ${r.job}) was not discovered.`,
+      job: r.renderedJob,
+      ...(health !== null ? { health } : {}),
     });
   }
   const reported = new Set<string>();

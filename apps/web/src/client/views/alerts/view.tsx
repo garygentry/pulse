@@ -26,15 +26,17 @@ import type { ViewProps } from "../../../shared/registry.js";
 import { routeKey } from "../../router.js";
 import { isKiosk } from "../../shell/kiosk.js";
 
-import { facetValues, firingRows, readAlerts } from "./model.js";
+import { facetValues, firingRows, heartbeatState, readAlerts } from "./model.js";
 import { FACET_DELIMITER, QUERY_KEYS, TARGET_ALIAS_KEY, decodeTriageRoute, encodeTriageState } from "./url-state.js";
 import type { FacetSelection } from "./url-state.js";
 import { matchesFacets } from "./facets.js";
 import { TAB_QUERY_KEY, tabFromQuery } from "./view-model.js";
 import type { TriageTabId } from "./view-model.js";
 import { FacetBar } from "./facet-bar.js";
-import { SourceStatusBanners } from "./degraded.js";
+import { HeartbeatIndicator, SourceStatusBanners } from "./degraded.js";
 import { useEstateClock } from "./estate-clock.js";
+import { PendingView } from "../_shared/pending-view.js";
+import { refetchView } from "../../store/live-state.js";
 import { TriageTable } from "./table/TriageTable.js";
 import { TriageKeyboardHints, useTriageKeyboard } from "./keyboard.js";
 import { DetailPane } from "./detail/DetailPane.js";
@@ -206,15 +208,24 @@ function AlertsViewBody({ store, router, rotation }: ViewProps): ReactElement {
   let panel: ReactElement;
   if (payload === null) {
     // Pre-first-cycle: never a crash.
-    panel = <LoadingState label="Loading alerts…" preset="table" />;
+    // F49: a failed first fetch is an error with Retry (never an endless spinner).
+    panel = (
+      <PendingView
+        delivery={store.connection.value.views.alerts}
+        failureTitle="The alerts could not be loaded"
+        loading={<LoadingState label="Loading alerts…" preset="table" />}
+        onRetry={() => refetchView(store, "alerts")}
+      />
+    );
   } else if (tab === "catalog") {
-    panel = <CatalogTab rules={payload.rules} />;
+    panel = <CatalogTab rules={payload.rules} clock={clock} />;
   } else if (tab === "silences") {
     panel = <SilencesTab silences={payload.silences} rowAction={(s) => <ExpireButton silence={s} store={store} />} />;
   } else {
     panel = (
       <>
         <SourceStatusBanners payload={payload} clock={clock} />
+        <HeartbeatIndicator state={heartbeatState(payload)} />
         <FacetBar
           values={facetValues(payload)}
           selection={url.value.facets}

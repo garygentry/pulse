@@ -7,7 +7,8 @@
 // never an Alertmanager fingerprint — so distinct target/severity tuples stay distinct and a
 // lane id is reproducible from its attribution alone. Positive firing samples open a half-open
 // interval; a non-firing sample or a gap greater than two effective steps closes it, and a
-// still-open interval resolves deterministically at range end. Attribution resolves each tuple
+// still-open interval resolves deterministically at range end unless its samples stopped more
+// than two steps before it (a resolved alert), in which case it closes at the last one + step. Attribution resolves each tuple
 // against the captured model by exact equality (unique match → matched target; removed/unknown/
 // ambiguous → null, unmatched, retaining only the safe tuple). Gatus incidents coalesce
 // consecutive failures with the same gap rule. Every §9 lane/interval/label bound rejects the
@@ -67,7 +68,9 @@ function makeInterval(raw: RawInterval, state: StatusInterval["state"], provenan
  * active samples opens one interval; a non-active sample closes it at that sample's time; a
  * gap greater than two effective steps closes it at the last contiguous sample plus one step
  * (never implying continuous activity across the gap); a run still open at the end resolves at
- * `rangeEndMs`. `stepMs <= 0` disables gap closure (an irregular series with no derivable step).
+ * `rangeEndMs` only when its last active sample is within two steps of it, and otherwise closes
+ * at that sample plus one step (the same gap rule applied to the trailing edge). `stepMs <= 0`
+ * disables gap closure (an irregular series with no derivable step).
  */
 function coalesceIntervals(
   samples: readonly TimestampedSample<boolean>[],
@@ -93,8 +96,12 @@ function coalesceIntervals(
     }
   }
   if (openStart !== null && lastActive !== null) {
+    // The trailing edge obeys the same gap rule (F17): a resolved alert's series simply stops, so
+    // a last active sample more than two steps before range end closes at that sample plus one
+    // step instead of being extended to "now" as still firing.
     const stepFloor = lastActive + (stepMs > 0 ? stepMs : 1);
-    intervals.push({ startMs: openStart, endMs: Math.max(rangeEndMs, stepFloor) });
+    const trailingGap = stepMs > 0 && rangeEndMs - lastActive > 2 * stepMs;
+    intervals.push({ startMs: openStart, endMs: trailingGap ? stepFloor : Math.max(rangeEndMs, stepFloor) });
   }
   return intervals;
 }

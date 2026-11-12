@@ -71,6 +71,24 @@ groups:
             values are STALE and must not be read as healthy (see DeepHealthProbeStale).
           runbook_url: "https://runbooks.pulse.local/availability"
 
+      # F6: the deep-health PROBER itself is unreachable. Its pulse_deep_health* series then vanish,
+      # so neither DeepHealthProbeFailed (_up == 0) nor DeepHealthProbeStale (needs a last-scrape
+      # series) can fire, and every deep-health service it covers goes silently unknown. Keys on
+      # up==0 of the prober scrape jobs: the per-host agent prober (managed-linux-prober) and the
+      # central in-stack prober (prober, only scraped when the deep-health profile is on).
+      - alert: DeepHealthProberDown
+        expr: up{job=~"managed-linux-prober|prober"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deep-health prober {{ $labels.instance }} is unreachable (warning)"
+          description: >-
+            The deep-health prober scrape target {{ $labels.instance }} (job {{ $labels.job }}) has
+            been unreachable for at least 2m. Every deep-health service it probes has no current
+            evidence, so its status is unknown, never healthy (REQ-RULE-05). Restore the prober.
+          runbook_url: "https://runbooks.pulse.local/availability"
+
       # REQ-AVAIL-03 / REQ-RULE-05 (safe-mode trap): a silently-failing probe leaves the mapped
       # value stale-but-present. Age of the last SUCCESSFUL probe > 5m ⇒ stale, even if _up is
       # itself stale. Closes the gap a value-only functional rule would miss.

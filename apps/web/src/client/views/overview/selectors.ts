@@ -20,7 +20,7 @@ import { effectiveStatus } from "./freshness.js";
 import {
   KIOSK_ALERT_NAME_LIMIT,
   OVERVIEW_COLLATOR,
-  OVERVIEW_STATUS_ORDER,
+  OVERVIEW_SORT_ORDER,
   type AlertSeverityCounts,
   type CoverageStat,
   type EngineOkStat,
@@ -233,7 +233,7 @@ function coverageStat(section: OverviewSnapshotV2["coverage"]): CoverageStat {
 function engineStat(section: OverviewSnapshotV2["engine"]): EngineOkStat {
   const { availability, value } = section;
   if (value !== null && typeof value.ok === "boolean") {
-    return { status: "available", ok: value.ok, availability };
+    return { status: "available", ok: value.ok, problems: value.problems ?? [], availability };
   }
   return { status: "unavailable", availability };
 }
@@ -276,9 +276,10 @@ function textCompare(left: string, right: string): number {
   return OVERVIEW_COLLATOR.compare(left, right) || codeUnitCompare(left, right);
 }
 
+/** Sort rank, worst first (OVERVIEW_SORT_ORDER: suppressed after ok, F10/F16). */
 function statusRank(status: TargetStatus): number {
-  const index = OVERVIEW_STATUS_ORDER.indexOf(status);
-  return index === -1 ? OVERVIEW_STATUS_ORDER.length : index;
+  const index = OVERVIEW_SORT_ORDER.indexOf(status);
+  return index === -1 ? OVERVIEW_SORT_ORDER.length : index;
 }
 
 function hostComparator(sortBy: SortMode, rank: ReadonlyMap<HostStatus, number>) {
@@ -309,7 +310,11 @@ interface GroupDraft {
 function groupDraftFor(groupBy: GroupMode, host: HostStatus, status: TargetStatus): Omit<GroupDraft, "hosts"> {
   switch (groupBy) {
     case "class":
-      return { id: `class:${host.collectionClass}`, label: host.collectionClass, order: 0, text: host.collectionClass };
+      // The excluded class (nothing collected) is the last group (F10).
+      return {
+        id: `class:${host.collectionClass}`, label: host.collectionClass,
+        order: host.collectionClass === "excluded" ? 1 : 0, text: host.collectionClass,
+      };
     case "status":
       return { id: `status:${status}`, label: STATUS_LABEL[status], order: statusRank(status), text: "" };
     case "name":
@@ -386,7 +391,11 @@ function reuseCoverage(next: CoverageStat, prior: CoverageStat | undefined): Cov
 
 function reuseEngine(next: EngineOkStat, prior: EngineOkStat | undefined): EngineOkStat {
   if (prior === undefined || prior.status !== next.status || !sameAvailability(prior.availability, next.availability)) return next;
-  if (next.status === "available" && prior.status === "available") return prior.ok === next.ok ? prior : next;
+  if (next.status === "available" && prior.status === "available") {
+    const same = prior.ok === next.ok && prior.problems.length === next.problems.length &&
+      prior.problems.every((problem, i) => problem === next.problems[i]);
+    return same ? prior : next;
+  }
   return prior;
 }
 
@@ -508,7 +517,7 @@ function buildTargetIndex(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Every host of `groups` as one flat list, worst effective status first (OVERVIEW_STATUS_ORDER),
+ * Every host of `groups` as one flat list, worst effective status first (OVERVIEW_SORT_ORDER),
  * then class, then name and id. The kiosk ignores the desk grouping/sort preferences: its tiles
  * carry their class label, so one flat worst-first wall replaces the grouped sections. Returns
  * `previous` itself when the order and every host reference are unchanged.

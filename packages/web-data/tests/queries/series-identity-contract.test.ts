@@ -55,7 +55,15 @@ interface ScrapeJob {
 const scrapeJobs: readonly ScrapeJob[] = (
   parseYaml(readFileSync(SCRAPE_YML, "utf8")) as { scrape_configs: ScrapeJob[] }
 ).scrape_configs;
-const fileSdJobs = scrapeJobs.filter((job) => (job.file_sd_configs ?? []).length > 0);
+/**
+ * Stack-owned jobs that take their target from a rendered file_sd file but are NOT estate targets:
+ * the central prober, whose `prober:9120` target is rendered only when the estate declares central
+ * probes (F6). They are engine jobs, like the static ones.
+ */
+const STACK_FILE_SD_JOBS = new Set(["prober"]);
+const isStackJob = (job: ScrapeJob): boolean =>
+  (job.file_sd_configs ?? []).length === 0 || STACK_FILE_SD_JOBS.has(job.job_name);
+const fileSdJobs = scrapeJobs.filter((job) => !isStackJob(job));
 const fileSdJobByName = new Map(fileSdJobs.map((job) => [job.job_name, job]));
 
 /**
@@ -206,9 +214,10 @@ describe("scrape series identity contract (issue #69)", () => {
     expect(expand("$h", m)).toBe("node");
   });
 
-  test("engine scrape jobs are exactly scrape.yml's static (non-file_sd) jobs", () => {
-    const staticJobs = scrapeJobs.filter((job) => (job.file_sd_configs ?? []).length === 0).map((job) => job.job_name);
-    expect([...ENGINE_SCRAPE_JOBS].sort()).toEqual(staticJobs.sort());
+  test("engine scrape jobs are exactly scrape.yml's stack jobs (static, plus stack-owned file_sd)", () => {
+    const stackJobs = scrapeJobs.filter(isStackJob).map((job) => job.job_name);
+    expect([...ENGINE_SCRAPE_JOBS].sort()).toEqual(stackJobs.sort());
+    for (const job of STACK_FILE_SD_JOBS) expect(stackJobs, job).toContain(job);
   });
 
   test("host liveness jobs are wired file_sd jobs and are exactly the HostDown rule's jobs", () => {

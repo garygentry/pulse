@@ -8,6 +8,7 @@
 // its own — a second handler would double-select.
 
 import type { ReactElement } from "react";
+import type { EstateClock } from "../../../format.js";
 
 import type { ServiceStatus } from "@pulse/web-data/wire";
 import { serviceLabel } from "../../../a11y/index.js";
@@ -25,6 +26,8 @@ import { TARGET_CHANGED_CLASS, TARGET_EVIDENCE_CLASS, TARGET_TRIGGER_CLASS, stat
 export interface ServiceChipProps {
   /** Current immutable service from its owning host. */
   readonly service: ServiceStatus;
+  /** Estate clock for evidence times (F41). */
+  readonly clock?: EstateClock;
   /** Whether this exact canonical service is selected. */
   readonly selected: boolean;
   /** Shared accepted-status transition tracker. */
@@ -45,7 +48,7 @@ function ServiceChipView(props: ServiceChipProps): ReactElement {
 
   // Render-only projection so the shared helper phrases the effective (not nominal) status.
   const parts = [serviceLabel({ ...service, status })];
-  if (unknown) parts.push(lastGoodText(evidence));
+  if (unknown) parts.push(lastGoodText(evidence, props.clock));
 
   return (
     <button
@@ -67,7 +70,7 @@ function ServiceChipView(props: ServiceChipProps): ReactElement {
       <TargetStatusBadge status={status} />
       {unknown ? (
         <span className={TARGET_EVIDENCE_CLASS} data-slot="overview-target-evidence">
-          {lastGoodText(evidence)}
+          {lastGoodText(evidence, props.clock)}
           {evidence.message !== null ? <span className="ms-1">{evidence.message}</span> : null}
         </span>
       ) : null}

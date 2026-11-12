@@ -184,8 +184,12 @@ export const ERROR_MESSAGES: Readonly<Record<ApiErrorCode, string>> = {
  * (`INTERNAL_ERROR`), mark a caller-cancelled request so it is never shown as a failure, and name
  * an auth proxy that answered in Pulse's place because the sign-in session expired
  * (`SESSION_EXPIRED`: a redirect, a 2xx HTML login page, or a 401/403 without a Pulse envelope).
+ * `RESPONSE_INVALID` is a 2xx body the browser could not use (truncated or invalid JSON, or a body
+ * the view's validator rejected): the server did not report an error, so it is never shown as one
+ * (F51).
  */
-export type ClientTransportErrorCode = "SERVER_UNREACHABLE" | "SERVER_TIMEOUT" | "REQUEST_CANCELLED" | "SESSION_EXPIRED";
+export type ClientTransportErrorCode =
+  | "SERVER_UNREACHABLE" | "SERVER_TIMEOUT" | "REQUEST_CANCELLED" | "SESSION_EXPIRED" | "RESPONSE_INVALID";
 
 /** Every failure code a browser API call can resolve with: a server envelope code or a transport code. */
 export type ClientFetchErrorCode = ApiErrorCode | ClientTransportErrorCode;
@@ -196,6 +200,7 @@ export const CLIENT_TRANSPORT_MESSAGES: Readonly<Record<ClientTransportErrorCode
   SERVER_TIMEOUT: "The Pulse server did not respond in time.",
   REQUEST_CANCELLED: "The request was cancelled.",
   SESSION_EXPIRED: "Your session has expired. Reload the page to sign in again.",
+  RESPONSE_INVALID: "The Pulse server's response could not be read.",
 };
 
 /** Exact default text for every bounded source-failure category. */

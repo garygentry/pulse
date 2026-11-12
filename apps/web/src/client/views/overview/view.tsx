@@ -398,6 +398,7 @@ function OverviewPage(props: OverviewCompositionProps): ReactElement {
       reducedMotion,
       onToggleGroup,
       onSelect,
+      clock,
     };
     body = (
       <>

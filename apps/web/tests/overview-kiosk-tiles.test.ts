@@ -11,7 +11,7 @@ import { act, render } from "./react-render.js";
 
 import type { HostStatus, OverviewSnapshotV2 } from "@pulse/web-data/wire";
 import { TARGET_STATUS } from "@/ui";
-import { OVERVIEW_STATUS_ORDER, DEFAULT_OVERVIEW_PREFERENCES, type OverviewModel } from "../src/client/views/overview/model.js";
+import { OVERVIEW_SORT_ORDER, OVERVIEW_STATUS_ORDER, DEFAULT_OVERVIEW_PREFERENCES, type OverviewModel } from "../src/client/views/overview/model.js";
 import { effectiveStatus } from "../src/client/views/overview/freshness.js";
 import { STATUS_CHANGE_MARKER_WINDOW_MS, createChangeTracker } from "../src/client/views/overview/grid/change-marker.js";
 import { NO_HOSTS_TITLE } from "../src/client/views/overview/grid/OverviewGrid.js";
@@ -35,7 +35,7 @@ function modelOf(snapshot: OverviewSnapshotV2, previous?: OverviewModel): Overvi
 }
 
 function rank(host: HostStatus): number {
-  return OVERVIEW_STATUS_ORDER.indexOf(effectiveStatus(host.rollupEvidence));
+  return OVERVIEW_SORT_ORDER.indexOf(effectiveStatus(host.rollupEvidence));
 }
 
 describe("deriveKioskHosts — one flat worst-first list", () => {

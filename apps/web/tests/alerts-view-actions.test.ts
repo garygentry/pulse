@@ -142,7 +142,9 @@ describeDom("ActionSlots", (dom) => {
     assertEmptySlot(c, "ack");
     expect(c.querySelectorAll("button, a, input").length).toBe(0);
     // A plain note (never a disabled control) says nothing is available.
-    expect(c.querySelector("[data-actions-none]")?.textContent).toBe("No actions are available in this session.");
+    // F19: this fixture's session runs with auth mode "none", so the note says why.
+    expect(c.querySelector("[data-actions-none]")?.textContent).toContain("No actions are available");
+    expect(c.querySelector("[data-actions-none]")?.textContent).toContain("auth mode “none”");
   });
 
   test("regions are emitted even with no session (deny-by-default)", async () => {

@@ -48,6 +48,8 @@ export interface RouteState {
   view: string;
   params: Readonly<Record<string, string>>;
   query: Readonly<Record<string, string>>;
+  /** The requested path when it matched no route and the fallback was shown instead (F12). */
+  redirectedFrom?: string;
 }
 
 /** Session identity (REQ-STORE-01). `null` on the store until `web-data-tier` ships the session

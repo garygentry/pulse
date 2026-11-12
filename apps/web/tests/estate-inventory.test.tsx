@@ -256,6 +256,15 @@ describeUi("estate: inventory tree", () => {
     expect(within(hosts).getByRole("status").textContent).toContain("No matching hosts or services");
   });
 
+  test("F26: a search that matched nothing hides the unsearched Relationships lists", () => {
+    const payload = makeEstatePayloadFixture();
+    const { unmount } = render(<Inventory {...propsFrom(payload, { matchedIds: new Set(["nothing"]) })} />);
+    expect(screen.queryByRole("region", { name: "Relationships" })).toBeNull();
+    unmount();
+    render(<Inventory {...propsFrom(payload)} />);
+    expect(screen.getByRole("region", { name: "Relationships" })).toBeDefined();
+  });
+
   test("a host with zero services is a leaf (no aria-expanded); ArrowRight is a no-op", async () => {
     const user = userEvent.setup();
     render(<Inventory {...propsFrom(makeEstatePayloadFixture())} />);
@@ -293,7 +302,7 @@ describeUi("estate: inventory tree", () => {
     render(<Inventory {...propsFrom(makeEstatePayloadFixture({ liveTargets: [] }))} />);
     for (const row of hostRows()) {
       expect(indicator(row, "live").getAttribute("data-status")).not.toBe("ok");
-      expect(indicator(row, "live").textContent).toMatch(/^Live /);
+      expect(indicator(row, "live").textContent).toMatch(/^(Live |Suppressed$)/); // F23: suppressed never reads "Live"
     }
   });
 

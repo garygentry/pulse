@@ -56,8 +56,9 @@ export { HOST_LIVENESS_JOB, hostLivenessJob, isHostLivenessSample } from "../wir
 export const NODE_EXPORTER_JOBS: ReadonlySet<string> = new Set(["managed-linux", "nas-api"]);
 
 /**
- * The stack's own static scrape jobs in `scrape.yml` (engine self-observability, the central
- * prober and the web app). They are expected on every stack and are never estate targets, so the
+ * The stack's own scrape jobs in `scrape.yml` (engine self-observability, the central prober and
+ * the web app): the static jobs plus the central prober, whose target is rendered file_sd only
+ * when the estate declares central probes. They are expected on every stack and are never estate targets, so the
  * declared-versus-scraped comparison classifies them as `engine`, not `unexpected`.
  */
 export const ENGINE_SCRAPE_JOBS: ReadonlySet<string> = new Set([

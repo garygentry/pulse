@@ -2,6 +2,6 @@
 export { announce, mountAnnouncer } from "./announcer.js";
 export { SkipLink } from "./skip-link.js"; // skip-link.tsx compiles to .js
 export { registerShortcut, ShortcutRegistry } from "./shortcuts.js";
-export { STATUS_LABEL, cellLabel, serviceLabel } from "./status-labels.js";
+export { STATUS_LABEL, cellLabel, rollupReason, serviceLabel } from "./status-labels.js";
 export type { Politeness } from "./announcer.js";
 export type { ShortcutHandler, KeyCombo } from "./shortcuts.js";

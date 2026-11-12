@@ -29,6 +29,12 @@ export interface DeclaredScrapeComparison {
    */
   readonly state: "matched" | "missing" | "unexpected" | "engine" | "unknown";
   /** Human-readable explanation. */ readonly message: string;
+  /** Rendered scrape job of a declared row (absent on discovered-only rows). */ readonly job?: string;
+  /**
+   * Scrape health of the discovered target(s) a `matched` row matched — the worst when several
+   * match — so an entity page can show target health (F22). Absent on non-matched rows.
+   */
+  readonly health?: "up" | "down" | "unknown";
 }
 
 /** The estate view payload: rendered model, live target joins, and optional artifacts. */

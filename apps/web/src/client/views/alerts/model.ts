@@ -56,7 +56,34 @@ export function readAlerts(store: AppStore): AlertsPayload | null {
  * @returns `payload.alerts` by reference — no copy, no sort.
  */
 export function firingRows(payload: AlertsPayload): readonly ActiveAlert[] {
-  return payload.alerts;
+  const heartbeat = heartbeatNames(payload);
+  // F4/F11: the always-firing heartbeat is not a problem; it is shown as its own indicator, and the
+  // Firing count matches the Overview's (which also leaves it out).
+  return payload.alerts.some((a) => heartbeat.has(a.name)) ? payload.alerts.filter((a) => !heartbeat.has(a.name)) : payload.alerts;
+}
+
+/** The deadman/canary heartbeat alert name used when the catalog flags none. */
+export const HEARTBEAT_ALERTNAME = "DeadMansSwitch";
+
+/** Names of the deadman/heartbeat rules: catalog rules flagged `deadman`, else DeadMansSwitch. */
+function heartbeatNames(payload: AlertsPayload): ReadonlySet<string> {
+  const names = new Set(payload.rules.filter((r) => r.deadman).map((r) => r.name));
+  if (names.size === 0) names.add(HEARTBEAT_ALERTNAME);
+  return names;
+}
+
+/**
+ * The heartbeat (deadman) state for its indicator: `firing` (the alert path works — the healthy
+ * state), `silent` (a configured heartbeat is NOT firing, so the alert path may be broken), or
+ * `absent` (no heartbeat rule is configured).
+ */
+export function heartbeatState(payload: AlertsPayload): "firing" | "silent" | "absent" {
+  const names = heartbeatNames(payload);
+  if (payload.alerts.some((a) => names.has(a.name))) return "firing";
+  // Without current Alertmanager evidence there are no alerts to look at: that is not a stopped
+  // heartbeat (the source banner already says Alertmanager is unavailable).
+  if (payload.alertmanager.state !== "current") return "absent";
+  return payload.rules.some((r) => r.deadman || r.name === HEARTBEAT_ALERTNAME) ? "silent" : "absent";
 }
 
 /** The vmalert rule catalog in the data tier's rule order (group/family → name, REQ-CATALOG-02).
@@ -117,7 +144,7 @@ export function facetValues(payload: AlertsPayload): FacetValues {
   const ack = new Set<string>();
   const familyIndex = buildRuleFamilyIndex(payload);
 
-  for (const a of payload.alerts) {
+  for (const a of firingRows(payload)) {
     severity.add(a.severity);
     state.add(a.state);
     if (a.group !== null) group.add(a.group);

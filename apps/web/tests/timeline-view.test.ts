@@ -34,6 +34,7 @@ import {
 } from "../src/client/views/_shared/timeseries/readout-model.js";
 import type { ReadoutSource } from "../src/client/views/_shared/timeseries/readout-model.js";
 import { CHECK_HISTORY_UNAVAILABLE_TEXT } from "../src/client/views/timeline/evidence.js";
+import { STATUS_LABEL } from "../src/client/a11y/status-labels.js";
 import type { LaneEvidenceResult } from "../src/client/views/timeline/evidence.js";
 import { toChartData } from "../src/client/views/_shared/timeseries/chart-data.js";
 import {
@@ -908,6 +909,20 @@ describe("timeline lanes — pure helpers (item 019)", () => {
     expect(worstInView([seg("ok", 0, 3_400), seg("unknown", 3_400, 3_600)], view, 60).status).toBe("unknown"); // longer gap is real
     expect(worstInView([seg("unknown", 0, 3_600)], view, 60).status).toBe("unknown"); // nothing but tail
     expect(worstInView([seg("critical", 0, 100), seg("ok", 100, 3_570), seg("unknown", 3_570, 3_600)], view, 60).status).toBe("critical");
+  });
+
+  test("worstInView ignores a live-edge tail split into several no-data segments (F35)", () => {
+    const view = { start: 0, end: 3_600 };
+    const split = [seg("ok", 0, 3_570), { ...seg("unknown", 3_570, 3_571), alertnames: ["X"] }, seg("unknown", 3_571, 3_600)];
+    expect(worstInView(split, view, 60).status).toBe("ok");
+    expect(worstInView(split, view).status).toBe("unknown"); // not live: the tail still counts
+  });
+
+  test("worstInView labels a suppressed lane suppressed, below real problems (F34)", () => {
+    const view = { start: 0, end: 3_600 };
+    expect(worstInView([seg("suppressed", 0, 3_600, "suppressed")], view)).toEqual({ status: "suppressed", text: STATUS_LABEL.suppressed });
+    expect(worstInView([seg("suppressed", 0, 1_800, "suppressed"), seg("critical", 1_800, 3_600)], view).status).toBe("critical");
+    expect(worstInView([seg("suppressed", 0, 1_800, "suppressed"), seg("unknown", 1_800, 3_600)], view).status).toBe("unknown");
   });
 
   test("REQ-LANE-01: lanes.tsx exports its constants (LANE_GAP_PX 2, DEFAULT_ROW_PX 18, MIN_PLOT_WIDTH_PX 320, LANE_READOUT_ORDER 0)", () => {

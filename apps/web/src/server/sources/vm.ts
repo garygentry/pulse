@@ -39,7 +39,9 @@ export interface VmClient {
 }
 
 /** The frozen liveness union expression (REQ-STATE-05). */
-const LIVENESS_QUERY = "up or pulse_agent_up or pulse_deep_health_up" as const;
+// MetricsQL union(): plain `or` matches label sets without the metric name, so `pulse_agent_up`
+// (same labels as its `up`) would be dropped (F28 root cause; see web-data sources/vm.ts).
+const LIVENESS_QUERY = "union(up, pulse_agent_up, pulse_deep_health_up)" as const;
 
 /**
  * Construct a `VmClient` bound to an injected VictoriaMetrics base URL (REQ-PKG-02).

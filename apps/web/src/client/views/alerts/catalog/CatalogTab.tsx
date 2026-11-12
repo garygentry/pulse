@@ -8,6 +8,7 @@ import { useMemo, type ReactElement } from "react";
 import type { RuleState } from "@pulse/web-data/wire";
 import { Badge, DataTable, EmptyState, StatusBadge, TARGET_STATUS } from "@/ui";
 import type { ColumnDef } from "@/ui";
+import type { EstateClock } from "../../../format.js";
 import { catalogRowKeys, ruleHealthStatus } from "./catalog-model.js";
 
 /** Props for {@link CatalogTab}. The slice is `AlertsPayload.rules`, passed by view.tsx in the data
@@ -16,6 +17,8 @@ export interface CatalogTabProps {
   /** Every vmalert rule the data tier projected — incl. inactive and deadman/canary rules. Rendered
    *  one row per element, in received order. */
   readonly rules: readonly RuleState[];
+  /** Estate clock: "Last evaluation" in estate time with its age (F18), not a raw UTC string. */
+  readonly clock?: EstateClock;
 }
 
 /** Placeholder for a null timestamp / missing value. */
@@ -62,6 +65,18 @@ export const CATALOG_COLUMNS: CatalogColumn[] = [
   },
 ];
 
+/** The catalog columns with "Last evaluation" in estate time (F18) when a clock is given. */
+export function catalogColumns(clock: EstateClock | undefined): CatalogColumn[] {
+  if (clock === undefined) return CATALOG_COLUMNS;
+  return CATALOG_COLUMNS.map((column) => column.id !== "lastEval" ? column : {
+    ...column,
+    cell: ({ row }) => {
+      const at = row.original.lastEvaluationAt;
+      return at === null ? EMPTY_CELL : <time dateTime={at}>{clock.absoluteWithRelative(at)}</time>;
+    },
+  });
+}
+
 /** Health → StatusBadge labelled with the rule's own health word. On `unhealthy`, a non-null
  *  `lastError` is shown beneath it (truncated; `title` carries the full text). */
 function healthCell(r: RuleState): ReactElement {
@@ -94,7 +109,8 @@ function healthCell(r: RuleState): ReactElement {
  * Read-only. Renders a catalog-specific `EmptyState` when the slice is empty. The tabpanel wrapper is
  * view.tsx's; this component renders the panel content only.
  */
-export function CatalogTab({ rules }: CatalogTabProps): ReactElement {
+export function CatalogTab({ rules, clock }: CatalogTabProps): ReactElement {
+  const columns = useMemo(() => catalogColumns(clock), [clock]);
   // Row ids key the virtualized table's measured row heights (its size cache is keyed by row id
   // and never pruned: an entry per id ever seen, a few bytes each, accepted).
   const rowKeys = useMemo(() => catalogRowKeys(rules), [rules]);
@@ -106,7 +122,7 @@ export function CatalogTab({ rules }: CatalogTabProps): ReactElement {
     <DataTable<RuleState>
       caption="Alert rules"
       captionHidden
-      columns={CATALOG_COLUMNS}
+      columns={columns}
       data={rules}
       getRowId={(_rule, index) => rowKeys[index]!}
       virtualize

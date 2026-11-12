@@ -29,6 +29,10 @@ import type { GatusEndpointState, GatusCheckResult } from "../sources/gatus.js";
 import type { WebEstateHostV2, WebEstateServiceV2 } from "@pulse/renderer";
 import type { FoldInputs } from "./records.js";
 import { hostLivenessJob, isHostLivenessSample } from "../wire/host-liveness.js";
+import { capRecentChecks } from "../wire/overview.js";
+import { ENGINE_MAX_PROBLEMS, engineProblems } from "../wire/engine-verdict.js";
+import type { EnginePayload } from "../wire/engine.js";
+import { foldEngine } from "./fold-engine.js";
 import {
   DEFAULT_GATUS_STALE_SECONDS,
   effectiveData,
@@ -115,6 +119,18 @@ function gatusAlive(
   return latest.success && isFresh(latest.timestamp, now, staleSeconds);
 }
 
+/** Endpoint's latest fresh result is an explicit failure (a current "down" reading, not missing evidence). */
+function gatusFailing(
+  endpoints: readonly GatusEndpointState[],
+  name: string,
+  now: Date,
+  staleSeconds: number,
+): boolean {
+  const ep = endpoints.find((e) => e.name === name);
+  const latest = ep === undefined ? null : latestResult(ep);
+  return latest !== null && !latest.success && isFresh(latest.timestamp, now, staleSeconds);
+}
+
 /** Governing-source flags and data captured once for the whole fold. */
 interface FoldContext {
   readonly metricsOk: boolean;
@@ -143,6 +159,38 @@ function evaluateHostLiveness(host: WebEstateHostV2, ctx: FoldContext): boolean 
     return gatusAlive(ctx.liveCheckStates, `host:${host.name}`, ctx.now, ctx.staleSeconds);
   }
   return null; // "excluded" — no signal by design.
+}
+
+/**
+ * True when the host's current liveness evidence explicitly says DOWN (`up == 0` of its main job, or
+ * a fresh failing probe for a probe-only host). Missing or stale evidence is never "down" (F8: that
+ * stays unknown).
+ */
+function observedHostDown(host: WebEstateHostV2, ctx: FoldContext): boolean {
+  const cls: CollectionClass = host.collectionClass;
+  const job = hostLivenessJob(cls);
+  if (job !== null) {
+    return ctx.metricsOk && ctx.liveSeries.some((s) =>
+      s.projection === "up" && s.metric["job"] === job && s.metric["host"] === host.name && s.value === 0);
+  }
+  if (cls === "probe-only") {
+    return ctx.checksOk && gatusFailing(ctx.liveCheckStates, `host:${host.name}`, ctx.now, ctx.staleSeconds);
+  }
+  return false;
+}
+
+/** True when the service's current liveness evidence explicitly says DOWN (see observedHostDown). */
+function observedServiceDown(service: WebEstateServiceV2, ctx: FoldContext): boolean {
+  if (service.deepHealth) {
+    return ctx.metricsOk && ctx.liveSeries.some((s) =>
+      s.projection === "pulse_deep_health_up" && s.metric["host"] === service.host &&
+      s.metric["service"] === service.name && s.value === 0);
+  }
+  if (service.ingressUrl !== undefined) {
+    return ctx.checksOk &&
+      gatusFailing(ctx.liveCheckStates, `${service.host}/${service.name}`, ctx.now, ctx.staleSeconds);
+  }
+  return false;
 }
 
 /** Affirmative-liveness for a service; deep-health takes precedence over ingress freshness. */
@@ -175,6 +223,8 @@ function resolveStatus(p: {
   readonly alertsAvailable: boolean;
   readonly alerts: readonly OverviewAlertSummary[];
   readonly live: boolean | null;
+  /** Current evidence explicitly says down (observedHostDown / observedServiceDown). */
+  readonly down: boolean;
 }): TargetStatus {
   if (p.suppressed) return "suppressed";
   if (!p.alertsAvailable) return "unknown";
@@ -184,6 +234,9 @@ function resolveStatus(p: {
     if (rank > worst) worst = rank;
   }
   if (worst === SEVERITY_ORDER.indexOf("critical")) return "critical";
+  // F8: current evidence that says DOWN is critical even before (or without) an alert; unknown is
+  // reserved for missing or stale evidence.
+  if (p.down && p.live !== true) return "critical";
   if (worst === SEVERITY_ORDER.indexOf("warning")) return "warning";
   return p.live === true ? "ok" : "unknown";
 }
@@ -378,6 +431,7 @@ function buildService(
     alertsAvailable: ctx.alertsOk,
     alerts: activeAlerts,
     live,
+    down: observedServiceDown(service, ctx),
   });
   const statusAvailability = suppressed !== null
     ? renderedAvailability(inputs)
@@ -425,6 +479,7 @@ function buildHost(
     alertsAvailable: ctx.alertsOk,
     alerts: activeAlerts,
     live,
+    down: observedHostDown(host, ctx),
   });
   const contributingServices = services.filter((s) => s.suppressed === null);
   const contributing = contributingServices.map((s) => s.status);
@@ -568,7 +623,7 @@ function buildSignals(
   return signals;
 }
 
-/** Build every retained attributed Gatus outcome, sorted by endpoint then observation time. */
+/** Build the newest retained attributed Gatus outcomes (bounded), sorted by endpoint then time. */
 function buildRecentChecks(inputs: FoldInputs, endpoints: readonly GatusEndpointState[]): CheckSummary[] {
   const checks: CheckSummary[] = [];
   for (const endpoint of endpoints) {
@@ -589,13 +644,16 @@ function buildRecentChecks(inputs: FoldInputs, endpoints: readonly GatusEndpoint
       });
     }
   }
-  return checks.sort((a, b) =>
-    a.endpoint.localeCompare(b.endpoint) || (a.observedAt ?? "").localeCompare(b.observedAt ?? ""),
-  );
+  // Keep the newest results per endpoint within the shared client bound (F1); also sorts by
+  // endpoint, then observation time.
+  return capRecentChecks(checks);
 }
 
-/** Build the compact engine summary without treating transport contact as health. */
-function buildEngineSummary(inputs: FoldInputs): OverviewSnapshotV2["engine"] {
+/**
+ * Build the compact engine summary without treating transport contact as health. Health uses the
+ * same payload derivation as the Engine verdict (`engineProblems`), so the views agree (F5).
+ */
+function buildEngineSummary(inputs: FoldInputs, engine: EnginePayload): OverviewSnapshotV2["engine"] {
   const ids = [
     "victoriametrics-signals", "victoriametrics-targets", "victoriametrics-buildinfo",
     "alertmanager-alerts", "alertmanager-status", "vmalert-rules", "gatus-statuses",
@@ -604,12 +662,13 @@ function buildEngineSummary(inputs: FoldInputs): OverviewSnapshotV2["engine"] {
   if (failed !== undefined) {
     return { availability: sourceAvailability(inputs.records[failed], failed), value: null };
   }
+  const problems = engineProblems(engine).slice(0, ENGINE_MAX_PROBLEMS);
   return {
     availability: sourceAvailability(
       inputs.records["victoriametrics-signals"],
       "victoriametrics-signals",
     ),
-    value: { ok: true },
+    value: { ok: problems.length === 0, problems },
   };
 }
 
@@ -673,9 +732,11 @@ function buildCoverage(inputs: FoldInputs): AvailabilitySection<CoverageSummary>
  * ids) and pure — no source or history call. `generatedAt` is body materialization time.
  *
  * @param inputs - The captured model/artifacts, source records, and stamping metadata.
+ * @param engine - This cycle's engine payload, whose problems decide the engine summary
+ *   (folded from `inputs` when omitted).
  * @returns The materialized {@link OverviewSnapshotV2}.
  */
-export function foldOverview(inputs: FoldInputs): OverviewSnapshotV2 {
+export function foldOverview(inputs: FoldInputs, engine: EnginePayload = foldEngine(inputs)): OverviewSnapshotV2 {
   const { model, records } = inputs;
 
   const metricsRecord = records["victoriametrics-signals"];
@@ -742,7 +803,7 @@ export function foldOverview(inputs: FoldInputs): OverviewSnapshotV2 {
     alerts: strip,
     signals: buildSignals(hosts, inputs, hostAvailability, serviceAvailability),
     recentChecks: buildRecentChecks(inputs, effectiveChecks),
-    engine: buildEngineSummary(inputs),
+    engine: buildEngineSummary(inputs, engine),
     alertCounts: buildAlertCounts(effectiveAlerts),
     coverage: buildCoverage(inputs),
   };

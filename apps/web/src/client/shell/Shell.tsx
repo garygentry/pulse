@@ -13,6 +13,8 @@ import { useDocumentTitle } from "@/ui/hooks/use-document-title";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { loadIconSet } from "@/ui/lib/icon-registry";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
+import { Callout } from "@/ui/patterns/callout";
+// ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { ErrorState } from "@/ui/patterns/error-state";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { LoadingState } from "@/ui/patterns/loading-state";
@@ -35,6 +37,42 @@ import { CommandPalette } from "./CommandPalette.js";
 import { StaleDataCallout } from "./StaleDataCallout.js";
 import { Topbar } from "./Topbar.js";
 import { createKioskRotation, parseRotate } from "./kiosk.js";
+
+/** Frames to wait for a lazily rendered page heading after a navigation. */
+const ROUTE_FOCUS_FRAMES = 30;
+
+/**
+ * F45: after an in-app navigation that leaves focus nowhere (on `<body>`, because the focused element
+ * was unmounted), move it to the new page's `h1` (else `<main>`), so keyboard and screen-reader users
+ * land on the page they opened. A view that placed focus itself (a detail pane, a restored row) is
+ * left alone. The initial page load keeps the browser default (only a path CHANGE moves focus).
+ */
+function useRouteFocus(path: string): void {
+  // The previous path, not a "first render" flag: StrictMode re-runs effects on mount, and a flag
+  // would treat that re-run as a navigation and move focus on initial load.
+  const previous = useRef(path);
+  useEffect(() => {
+    if (previous.current === path) return;
+    previous.current = path;
+    let frame = 0;
+    let id = 0;
+    const lost = (): boolean => document.activeElement === null || document.activeElement === document.body;
+    const step = (): void => {
+      if (!lost()) return; // something (the view, the user) already holds focus
+      const heading = document.querySelector<HTMLElement>(`#${MAIN_ID} h1`);
+      if (heading === null && frame++ < ROUTE_FOCUS_FRAMES) {
+        id = requestAnimationFrame(step);
+        return;
+      }
+      const target = heading ?? document.getElementById(MAIN_ID);
+      if (target === null) return;
+      if (target.tabIndex < 0 && !target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+      target.focus();
+    };
+    id = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(id);
+  }, [path]);
+}
 
 /** The id of the single `<main>`; the skip link's target. */
 export const MAIN_ID = "main";
@@ -144,11 +182,23 @@ export function escalateToReload(buildId: string | null, reloadOnce: () => void)
   return true;
 }
 
+/**
+ * The page part of the document title: the view label, prefixed by the routed entity when there is
+ * one (F14: "web01 · Estate", "web01/grafana · Estate"), so tabs and history name the page.
+ */
+export function pageTitle(label: string | undefined, params: Readonly<Record<string, string>>): string | undefined {
+  if (label === undefined) return undefined;
+  const name = params["name"];
+  if (name === undefined || name === "") return label;
+  const host = params["host"];
+  return `${host !== undefined && host !== "" ? `${host}/${name}` : name} · ${label}`;
+}
+
 /** Hosts the active view: resolves the definition from the route, loads its chunk with one retry
  *  and a once-per-build reload escalation, and renders a text loading/error state (REQ-VIEW-03/04,
  *  REQ-A11Y-02). A render throw in the view degrades to a retryable page fallback (reset on view
  *  change) instead of blanking the app; lazy parts inside a view get a loading fallback. Sets the
- *  document title to "{view} · Pulse". */
+ *  document title to "{view} · Pulse", or "{entity} · {view} · Pulse" on an entity route. */
 export function ViewHost(props: ViewHostProps): ReactElement {
   useSignals();
   const { store, router, views, reloadOnce, buildId } = props;
@@ -156,7 +206,7 @@ export function ViewHost(props: ViewHostProps): ReactElement {
   const attach = props.attachStyles ?? attachChunkStyles;
 
   const def = resolveView(views, store.route.value.view);
-  useDocumentTitle(def?.label);
+  useDocumentTitle(pageTitle(def?.label, store.route.value.params));
 
   const [state, setState] = useState<ViewHostState>({ kind: "loading" });
   const generation = useRef(0);
@@ -276,6 +326,8 @@ export function Shell(props: ShellProps): ReactElement {
     [snapshot?.estate.timezone, snapshot?.estate.tzFallback],
   );
 
+  useRouteFocus(store.route.value.path);
+
   const title = resolveView(hostedViews, store.route.value.view)?.label;
   const outlet = (
     // isolate: the content's own stacking context, so a view's sticky elements stay under the
@@ -292,6 +344,13 @@ export function Shell(props: ShellProps): ReactElement {
           : "isolate w-full min-w-0 flex-1 px-4 py-6 outline-none md:px-6"
       }
     >
+      {store.route.value.redirectedFrom !== undefined ? (
+        // F12: an unknown or out-of-date link says so instead of silently showing the fallback.
+        <Callout compact role="status" tone="warn" icon="triangle-alert" className="mb-4" data-slot="route-not-found"
+          title={`There is no page at ${store.route.value.redirectedFrom}`}>
+          {`Showing ${title ?? "the default view"} instead.`}
+        </Callout>
+      ) : null}
       <ViewHost
         store={store}
         router={router}

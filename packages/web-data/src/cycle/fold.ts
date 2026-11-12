@@ -57,11 +57,13 @@ const REQUIRED_SOURCE_IDS = [
  * @returns The five unencoded view values keyed by `ViewId`.
  */
 export function foldCurrentViews(inputs: FoldInputs): CurrentViewValues {
+  // Overview's engine summary is derived from this same engine payload (F5: one verdict).
+  const engine = foldEngine(inputs);
   return {
-    overview: foldOverview(inputs),
+    overview: foldOverview(inputs, engine),
     alerts: foldAlerts(inputs),
     estate: foldEstate(inputs),
-    engine: foldEngine(inputs),
+    engine,
     timeline: foldTimeline(inputs),
   };
 }

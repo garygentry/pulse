@@ -119,7 +119,7 @@ describe("createVmClient", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe(
-      "http://victoriametrics:8428/api/v1/query?query=up+or+pulse_agent_up+or+pulse_deep_health_up",
+      "http://victoriametrics:8428/api/v1/query?query=union%28up%2C+pulse_agent_up%2C+pulse_deep_health_up%29",
     );
     expect(calls[0]!.init?.method).toBe("GET");
 
@@ -136,7 +136,7 @@ describe("createVmClient", () => {
     const calls: Call[] = [];
     await createVmClient("http://vm:8428/", jsonFetch(VECTOR_BODY, calls)).queryLiveness();
     expect(calls[0]!.url).toBe(
-      "http://vm:8428/api/v1/query?query=up+or+pulse_agent_up+or+pulse_deep_health_up",
+      "http://vm:8428/api/v1/query?query=union%28up%2C+pulse_agent_up%2C+pulse_deep_health_up%29",
     );
   });
 

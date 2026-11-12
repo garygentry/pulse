@@ -3,7 +3,7 @@
 // DataAvailability.state, NEVER array length (never silent-green).
 import type { ReactElement } from "react";
 
-import { Callout, TARGET_STATUS } from "@/ui";
+import { Callout, StatusBadge, TARGET_STATUS } from "@/ui";
 import type { AlertsPayload } from "@pulse/web-data/wire";
 import type { EstateClock } from "../../format.js";
 import { sourceStatusHeadline, sourceStatusViews } from "./degraded-model.js";
@@ -52,5 +52,27 @@ export function SourceStatusBanners({ payload, clock }: { readonly payload: Aler
         <SourceStatus key={s.availability.source} source={s} clock={clock} />
       ))}
     </div>
+  );
+}
+
+/**
+ * The deadman heartbeat as its own indicator above the firing table (F4): firing means the alert
+ * path works, so it is OK, not a problem row. A configured heartbeat that is NOT firing (with current
+ * Alertmanager evidence) is a warning. Renders nothing when there is no verdict to give. The badge
+ * label is short; the explanation is wrapping text, so it fits a 320px screen.
+ */
+export function HeartbeatIndicator(props: { readonly state: "firing" | "silent" | "absent" }): ReactElement | null {
+  if (props.state === "absent") return null;
+  const status = props.state === "firing" ? "ok" : "warning";
+  const { tone, icon } = TARGET_STATUS[status];
+  return (
+    <p className="m-0 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm" data-slot="alerts-heartbeat" data-status={status}>
+      <StatusBadge tone={tone} icon={icon} label={props.state === "firing" ? "Heartbeat OK" : "Heartbeat missing"} />
+      <span className="min-w-0 text-muted-foreground">
+        {props.state === "firing"
+          ? "The always-firing heartbeat is arriving, so the alert path is working."
+          : "The heartbeat is not firing, so the alert path may be broken."}
+      </span>
+    </p>
   );
 }

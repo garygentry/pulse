@@ -54,6 +54,22 @@ export function perHostProberPath(host: string): string {
 }
 
 /**
+ * True when the estate declares at least one probe for the CENTRAL prober (the probes `emitProber`
+ * writes to `prober/config.yaml`): a non-host-local deep-health probe, a backup-freshness probe, or
+ * a probe-only host. Only then is the central prober a scrape target (F6: otherwise its target is a
+ * permanent false "down").
+ *
+ * @param model - The validated estate.
+ * @returns Whether `emitProber` emits the central config.
+ */
+export function hasCentralProbes(model: EstateModel): boolean {
+  return model.services.some((service) =>
+    (service.deepHealth !== undefined && service.deepHealth.hostLocal !== true) ||
+    service.backupFreshness !== undefined) ||
+    model.hosts.some((host) => host.collectionClass === "probe-only");
+}
+
+/**
  * Emit prober configs of `{ probes: ProberEntry[] }` — one `ProberEntry` per declared probe
  * (REQ-RND-01): a service `deepHealth` → a `deep-health` entry; a service `backupFreshness` → a
  * `backup-freshness` entry (`#backup` name suffix, so a service declaring BOTH yields TWO entries);

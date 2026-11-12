@@ -17,12 +17,13 @@ import type {
   WebEstateServiceV2,
   WebScrapeTarget,
 } from "@pulse/renderer";
-import type { TargetIdentity, TargetStatus } from "@pulse/web-data/wire";
+import type { EstatePayload, LiveSignal, TargetIdentity, TargetStatus } from "@pulse/web-data/wire";
 
 import {
   Badge,
   DataTable,
   EmptyState,
+  ExternalLink,
   Icon,
   KeyValue,
   KeyValueList,
@@ -44,9 +45,9 @@ import { ProposeEditAction } from "../../mutations/ProposeEditAction.js";
 import { ProposalList } from "../../mutations/proposals/ProposalList.js";
 import { RegionErrorBoundary, safeCell, safeNavigate } from "./error-boundary.js";
 import { ProvenanceChip } from "./provenance-chip.js";
-import { alertAge, resolveAndJoin, toAttributedAlertRows } from "./entity-model.js";
+import { alertAge, hostServiceRows, resolveAndJoin, scrapeTargetHealth, toAttributedAlertRows } from "./entity-model.js";
 import { ENDPOINT_ALERT_TIMING, clearWindowSeconds } from "./endpoint-alert-timing.js";
-import type { AttributedAlertRow, EntityRouteTarget, JoinedEntity } from "./entity-model.js";
+import type { AttributedAlertRow, EntityRouteTarget, HostServiceRow, JoinedEntity } from "./entity-model.js";
 import { statusLabel } from "./status.js";
 import { readEstate } from "./types.js";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -355,7 +356,35 @@ function DeclaredFactsPanel(props: {
 
 // ── Live state ───────────────────────────────────────────────────────────────
 
-function LiveStatePanel(props: { readonly joined: JoinedEntity }): ReactElement {
+/** Display text for one live signal value: never 0/false for a missing sample (F24). */
+function signalText(signal: LiveSignal): string {
+  const { value, unit } = signal;
+  if (value === null || (typeof value === "number" && !Number.isFinite(value))) return "No current sample";
+  if (typeof value === "boolean") return value ? "up" : "down";
+  if (typeof value === "string") return value;
+  const n = value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return unit === "scalar" || unit === "count" || unit === "state" ? n : `${n} ${unit}`;
+}
+
+/** The live signals behind an entity's verdict (liveness, deep-health, backup age), so an unknown
+ *  or degraded status always shows its evidence (F24). Read from the overview snapshot. */
+function EvidenceList(props: { readonly signals: readonly LiveSignal[] }): ReactElement | null {
+  if (props.signals.length === 0) return null;
+  return (
+    <KeyValueList
+      data-testid="estate-entity-evidence"
+      aria-label="Evidence"
+      items={props.signals.map((signal): KeyValueItem => ({
+        id: signal.id,
+        label: signal.label,
+        value: signalText(signal),
+        ...(signal.availability.state === "current" ? {} : { hint: `Evidence ${signal.availability.state}` }),
+      }))}
+    />
+  );
+}
+
+function LiveStatePanel(props: { readonly joined: JoinedEntity; readonly signals: readonly LiveSignal[] }): ReactElement {
   const { status, staleNote, live } = props.joined;
   return (
     <Section title="Live state" variant="card">
@@ -375,6 +404,7 @@ function LiveStatePanel(props: { readonly joined: JoinedEntity }): ReactElement 
           </Badge>
         </p>
       )}
+      <EvidenceList signals={props.signals} />
     </Section>
   );
 }
@@ -387,10 +417,24 @@ function cell<Row>(render: (row: Row) => ReactNode): (ctx: { readonly row: { rea
   return ({ row }) => safe(row.original);
 }
 
-const SCRAPE_COLUMNS: ColumnDef<WebScrapeTarget>[] = [
-  { id: "job", header: "Job", cell: cell((t: WebScrapeTarget) => t.job) },
-  { id: "instance", header: "Instance", cell: cell((t: WebScrapeTarget) => t.instance) },
-];
+/** Scrape-target columns; Health comes from the declared-versus-scraped comparison (F22). */
+function scrapeColumns(
+  health: (t: WebScrapeTarget) => { readonly status: TargetStatus; readonly label: string },
+): ColumnDef<WebScrapeTarget>[] {
+  return [
+    { id: "job", header: "Job", cell: cell((t: WebScrapeTarget) => t.job) },
+    { id: "instance", header: "Instance", cell: cell((t: WebScrapeTarget) => t.instance) },
+    {
+      id: "health",
+      header: "Health",
+      cell: cell((t: WebScrapeTarget) => {
+        const h = health(t);
+        const { tone, icon } = TARGET_STATUS[h.status];
+        return <StatusBadge tone={tone} icon={icon} label={h.label} data-status={h.status} data-scrape-health="" />;
+      }),
+    },
+  ];
+}
 
 const scrapeRowId = (t: WebScrapeTarget, index: number): string => `${t.job}:${t.instance}:${index}`;
 
@@ -456,8 +500,9 @@ function describeEndpointAlert(
   return a.description !== undefined ? `${a.description} — ${rule}` : rule.charAt(0).toUpperCase() + rule.slice(1);
 }
 
-function MonitoringArtifacts(props: { readonly joined: JoinedEntity }): ReactElement {
+function MonitoringArtifacts(props: { readonly joined: JoinedEntity; readonly payload: EstatePayload }): ReactElement {
   const d = props.joined.declared;
+  const { payload } = props;
   return (
     <Section title="Monitoring artifacts" variant="card">
       {d.kind === "host" ? (
@@ -469,7 +514,7 @@ function MonitoringArtifacts(props: { readonly joined: JoinedEntity }): ReactEle
               caption="Scrape targets"
               captionHidden
               data={d.host.scrapeTargets}
-              columns={SCRAPE_COLUMNS}
+              columns={scrapeColumns((t) => scrapeTargetHealth(payload, d.host, t))}
               getRowId={scrapeRowId}
               empty="No rows"
               virtualize
@@ -499,6 +544,70 @@ function MonitoringArtifacts(props: { readonly joined: JoinedEntity }): ReactEle
       />
     </Section>
   );
+}
+
+// ── Host services and related links (F21) ───────────────────────────────────
+
+/** A host's declared services with their live status; each opens its service page. */
+function HostServices(props: { readonly rows: readonly HostServiceRow[]; readonly router: PathRouter }): ReactElement {
+  return (
+    <Section title="Services" variant="card" data-testid="estate-entity-services">
+      {props.rows.length === 0 ? (
+        <NoneDeclared />
+      ) : (
+        <List variant="card" aria-label="Services on this host">
+          {props.rows.map((row) => (
+            <ListItem
+              key={row.drilldownId}
+              onSelect={() => safeNavigate(props.router, `/estate/service/${encodeURIComponent(row.host)}/${encodeURIComponent(row.name)}`)}
+              leading={<TargetBadge status={row.status} />}
+              title={
+                <span data-testid="estate-entity-service-row">
+                  <VisuallyHidden>Open service </VisuallyHidden>
+                  {row.name}
+                </span>
+              }
+            />
+          ))}
+        </List>
+      )}
+    </Section>
+  );
+}
+
+/** Links from an entity to its Timeline lane and (when resolved) its Grafana board. */
+function RelatedLinks(props: { readonly drilldownId: string; readonly grafanaUrl: string | null; readonly router: PathRouter }): ReactElement {
+  const timeline = `/timeline?sel=${encodeURIComponent(props.drilldownId)}`;
+  return (
+    <Section title="Related" variant="card" data-testid="estate-entity-related">
+      <List aria-label="Related views">
+        <ListItem
+          onSelect={() => safeNavigate(props.router, timeline)}
+          leading={<Icon name="activity" />}
+          title="History on the Timeline"
+        />
+        {props.grafanaUrl !== null && props.grafanaUrl !== "" ? (
+          <li className="px-3 py-2 text-sm">
+            <ExternalLink href={props.grafanaUrl}>Open the Grafana board</ExternalLink>
+          </li>
+        ) : null}
+      </List>
+    </Section>
+  );
+}
+
+/** The overview snapshot's live signals attributed to exactly this entity, in server order. */
+function signalsFor(store: AppStore, drilldownId: string): readonly LiveSignal[] {
+  return (store.snapshot.value?.signals ?? []).filter((signal) => signal.target.id === drilldownId);
+}
+
+/** The Grafana board URL the overview snapshot resolved for this entity, or null. */
+function grafanaUrlFor(store: AppStore, drilldownId: string): string | null {
+  for (const host of store.snapshot.value?.hosts ?? []) {
+    if (host.drilldownId === drilldownId) return host.grafana?.url ?? null;
+    for (const service of host.services) if (service.drilldownId === drilldownId) return service.grafana?.url ?? null;
+  }
+  return null;
 }
 
 // ── Attributed alerts ────────────────────────────────────────────────────────
@@ -559,6 +668,7 @@ export function EntityPage(props: EntityPageProps): ReactElement {
   if (payload === null) return renderNotFound(props.target);
   const joined = resolveAndJoin(payload, props.target);
   if (joined === null) return renderNotFound(props.target);
+  const entityId = joined.declared.kind === "host" ? joined.declared.host.drilldownId : joined.declared.service.drilldownId;
 
   return (
     <EntityFrame
@@ -569,8 +679,12 @@ export function EntityPage(props: EntityPageProps): ReactElement {
     >
       <RegionErrorBoundary region="entity page">
         <DeclaredFactsPanel joined={joined} store={props.store} />
-        <LiveStatePanel joined={joined} />
-        <MonitoringArtifacts joined={joined} />
+        <LiveStatePanel joined={joined} signals={signalsFor(props.store, entityId)} />
+        {joined.declared.kind === "host" ? (
+          <HostServices rows={hostServiceRows(payload, joined.declared.host.name)} router={props.router} />
+        ) : null}
+        <RelatedLinks drilldownId={entityId} grafanaUrl={grafanaUrlFor(props.store, entityId)} router={props.router} />
+        <MonitoringArtifacts joined={joined} payload={payload} />
         <AttributedAlerts rows={toAttributedAlertRows(joined.live)} router={props.router} />
       </RegionErrorBoundary>
     </EntityFrame>

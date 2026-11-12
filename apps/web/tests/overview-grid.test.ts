@@ -14,7 +14,7 @@ import type { ReactElement } from "react";
 import { act } from "./react-render.js";
 
 import type { DataAvailability, HostStatus, OverviewSnapshotV2, ServiceStatus, TargetStatus } from "@pulse/web-data/wire";
-import { cellLabel, serviceLabel } from "../src/client/a11y/index.js";
+import { cellLabel, rollupReason, serviceLabel } from "../src/client/a11y/index.js";
 import { TARGET_STATUS } from "@/ui";
 import { effectiveStatus } from "../src/client/views/overview/freshness.js";
 import { STATUS_CHANGE_MARKER_WINDOW_MS, createChangeTracker } from "../src/client/views/overview/grid/change-marker.js";
@@ -281,7 +281,11 @@ describe("HostCell / ServiceChip — content and status semantics", () => {
       expect(trigger.dataset["status"]).toBe(status);
       expectBadge(trigger, status);
       expect(trigger.getAttribute("aria-label")!.startsWith(cellLabel({ ...host, rollup: status }))).toBe(true);
+      // F9/F46: the visible cell says why the roll-up is worse than the host itself, in the same words.
+      const reason = rollupReason({ ...host, rollup: status });
+      expect(trigger.querySelector('[data-slot="overview-host-rollup-reason"]')?.textContent ?? null).toBe(reason);
     }
+
     for (const service of allServices(snapshot)) {
       const status = effectiveStatus(service.statusEvidence);
       seen.add(status);

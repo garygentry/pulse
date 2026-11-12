@@ -372,6 +372,15 @@ describe("foldEstate — rendered vocabulary, joins, artifacts", () => {
     expect(est.declaredVersusScraped.value?.map((row) => row.state)).toEqual(["matched"]);
   });
 
+  test("F22: a matched row carries its rendered job and the discovered target's scrape health", () => {
+    const fold = (health: ScrapeTargetState["health"]) => foldEstate(inputs({ records: records({
+      "victoriametrics-targets": ok<readonly ScrapeTargetState[]>([scrapeTarget({ health })]),
+    }) })).declaredVersusScraped.value![0]!;
+    expect(fold("down")).toMatchObject({ state: "matched", health: "down" });
+    expect(fold("up").health).toBe("up");
+    expect(typeof fold("up").job).toBe("string");
+  });
+
   test("declared-versus-scraped matches relabeled targets by their stored job/instance (issue #69)", () => {
     // scrape.yml relabels host → instance for managed jobs, so VM's targets API reports
     // instance="hostA" for the target the renderer emitted as 10.0.0.1:9100.
@@ -692,6 +701,17 @@ describe("foldEngine — six fixed components", () => {
     expect(grafana.state).toBe("not-configured");
     expect(grafana.availability.state).toBe("not-configured");
     expect(grafana.version).toBeNull();
+  });
+
+  test("F31: vmalert's version comes from its vm_app_version short_version; a malformed one is null", () => {
+    const withVersion = (short: string) => foldEngine(inputs({ records: records({
+      "victoriametrics-signals": ok<readonly MetricSample[]>([
+        ...liveMetrics(),
+        sample("pulse_web_engine_vmalert_version", 1, { job: "vmalert", short_version: short }),
+      ]),
+    }) })).components.find((c) => c.id === "vmalert")!.version;
+    expect(withVersion("v1.102.1")).toBe("v1.102.1");
+    expect(withVersion("<script>")).toBeNull();
   });
 
   test("version from metadata, uptime only from the current process-start metric", () => {

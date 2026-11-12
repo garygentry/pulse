@@ -41,10 +41,12 @@ export interface LaneEvidenceInput {
    * check failure on another endpoint still wins in the Domains header.
    */
   readonly preCoverageIsNoData?: boolean;
+  /** True for a suppressed lane (LaneNode.suppressed): time with no problem reads suppressed, not OK (F34). */
+  readonly suppressed?: boolean;
 }
 
 /** Why a segment has its status (drives readout/legend text; REQ-LANE-03, REQ-A11Y-01). */
-export type SegmentCause = "ok" | "alert" | "check" | "no-data";
+export type SegmentCause = "ok" | "alert" | "check" | "no-data" | "suppressed";
 
 /** A lane segment: a viz TimelineSegment plus its cause and contributing alert names. */
 export interface LaneSegment extends TimelineSegment<TargetStatus> {
@@ -323,6 +325,7 @@ export function laneEvidenceInput(args: {
       checks: [],
       checksNotLoaded: !expanded && node.children.some((c) => c.endpoints.length > 0),
       noData,
+      suppressed: node.suppressed === true,
     };
   }
   return {
@@ -331,6 +334,7 @@ export function laneEvidenceInput(args: {
     checks: checkEvidenceFor(node, lookup, reachable),
     checksNotLoaded: false,
     noData,
+    suppressed: node.suppressed === true,
   };
 }
 
@@ -610,6 +614,7 @@ export function deriveLaneSegments(input: LaneEvidenceInput): LaneEvidenceResult
       if (r === 3) { status = "critical"; cause = a === 3 ? "alert" : "check"; }
       else if (r === 2) { status = "warning"; cause = "alert"; }
       else if (r === 1) { status = "unknown"; cause = "no-data"; }
+      else if (input.suppressed === true) { status = "suppressed"; cause = "suppressed"; }
       else { status = "ok"; cause = "ok"; }
     }
     const alertnames = [...names.keys()].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
@@ -675,7 +680,7 @@ export interface LaneEvidenceCache {
   /**
    * Return the cached result for `key` when the new input is equivalent to the previous one; otherwise
    * derive, store and return. Equivalent means: same `alerts` reference; same `noData` reference;
-   * equal `window.start`/`window.end`; equal `checksNotLoaded` and `preCoverageIsNoData`; `checks` of equal length whose
+   * equal `window.start`/`window.end`; equal `checksNotLoaded`, `preCoverageIsNoData` and `suppressed`; `checks` of equal length whose
    * elements have equal `endpoint` and `state` and (when ready) the same `payload` reference.
    */
   derive(key: string, input: LaneEvidenceInput): LaneEvidenceResult;
@@ -685,6 +690,7 @@ export interface LaneEvidenceCache {
 
 function equivalent(a: LaneEvidenceInput, b: LaneEvidenceInput): boolean {
   if (a.alerts !== b.alerts || a.noData !== b.noData || a.preCoverageIsNoData !== b.preCoverageIsNoData) return false;
+  if ((a.suppressed === true) !== (b.suppressed === true)) return false;
   if (a.window.start !== b.window.start || a.window.end !== b.window.end) return false;
   if (a.checksNotLoaded !== b.checksNotLoaded || a.checks.length !== b.checks.length) return false;
   return a.checks.every((x, i) => {

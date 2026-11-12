@@ -125,3 +125,43 @@ export function alertAge(firedAt: string | null, now: number = Date.now()): stri
   if (secs < 86400) return `${Math.round(secs / 3600)}h`;
   return `${Math.round(secs / 86400)}d`;
 }
+
+/** One service row on a host page (F21): its identity, route and joined live status. */
+export interface HostServiceRow {
+  readonly name: string;
+  readonly host: string;
+  readonly drilldownId: string;
+  readonly status: TargetStatus;
+}
+
+/** The host's declared services in model order, each joined with its live status (F21). */
+export function hostServiceRows(payload: EstatePayload, hostName: string): readonly HostServiceRow[] {
+  return payload.estate.services
+    .filter((service) => service.host === hostName)
+    .map((service) => ({
+      name: service.name,
+      host: service.host,
+      drilldownId: service.drilldownId,
+      status: joinStatus(service.suppressed, findLiveTarget(payload.liveTargets, { kind: "service", id: service.drilldownId })).status,
+    }));
+}
+
+/**
+ * The scrape health of one declared host scrape target (F22), from the declared-versus-scraped
+ * comparison: up → ok, down → critical; not discovered, unknown health, or non-current discovery →
+ * unknown (never ok).
+ */
+export function scrapeTargetHealth(
+  payload: EstatePayload,
+  host: { readonly drilldownId: string },
+  target: { readonly job: string; readonly instance: string },
+): { readonly status: TargetStatus; readonly label: string } {
+  const { availability, value: rows } = payload.declaredVersusScraped;
+  if (availability.state !== "current" || rows === null) return { status: "unknown", label: "Unknown" };
+  const row = rows.find((r) =>
+    r.drilldownId === host.drilldownId && r.scrapeTarget === target.instance && (r.job === undefined || r.job === target.job));
+  if (row === undefined || row.state === "missing") return { status: "unknown", label: "Not discovered" };
+  if (row.health === "up") return { status: "ok", label: "Up" };
+  if (row.health === "down") return { status: "critical", label: "Down" };
+  return { status: "unknown", label: "Unknown" };
+}

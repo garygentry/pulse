@@ -163,7 +163,8 @@ function LiveBadge(props: {
       tone={tone}
       icon={icon}
       variant="dot"
-      label={staleNote ?? `Live ${STATUS_LABEL[status]}`}
+      // F23: a suppressed entity is not live-monitored; "Live suppressed" read as "Live".
+      label={staleNote ?? (status === "suppressed" ? "Suppressed" : `Live ${STATUS_LABEL[status]}`)}
       data-indicator="live"
       data-status={status}
     />
@@ -526,7 +527,9 @@ export function Inventory(props: InventoryProps): ReactElement {
           </div>
         )}
       </Section>
-      <SecondarySections estate={estate} orphans={orphans} />
+      {/* F26: the relationships are not searched, so a search that matched nothing hides them
+          instead of showing the full unfiltered lists under "0 matches". */}
+      {matchedIds !== null && tree.nodes.length === 0 ? null : <SecondarySections estate={estate} orphans={orphans} />}
     </div>
   );
 }

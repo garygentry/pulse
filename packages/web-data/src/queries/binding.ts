@@ -387,7 +387,9 @@ const QUERY_BUILDERS: Readonly<Record<QueryId, QueryBuilder>> = {
     return `max(${service.backupAgeMetric}{${labelSelector("service", service.service)}})`;
   },
   "engine.ingestion-rate": () => "sum(rate(vm_rows_inserted_total[5m]))",
-  "engine.active-series": () => 'sum(vm_cache_entries{type="storage/tsid"})',
+  // F30: the hourly active-series set — the same metric the Capacity tile reads — not the TSID cache
+  // population, which fills and evicts (the trend flipped between ~28K and ~56K).
+  "engine.active-series": () => 'sum(vm_cache_entries{job="victoriametrics",type="storage/hour_metric_ids"})',
   "engine.disk-usage": () => "sum(vm_data_size_bytes)",
   "engine.notification-failures": () => "sum(rate(alertmanager_notifications_failed_total[5m]))",
   "engine.notification-latency": () =>

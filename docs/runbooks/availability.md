@@ -1,6 +1,6 @@
 ---
 title: Availability
-description: Triage and remediate the availability alert family — HostDown, HypervisorExporterDown, DeepHealthProbeFailed, and DeepHealthProbeStale — the host-reachability and deep-health-probe signals where missing data is always treated as failure, never as healthy.
+description: Triage and remediate the availability alert family — HostDown, HypervisorExporterDown, DeepHealthProbeFailed, DeepHealthProbeStale, and DeepHealthProberDown — the host-reachability and deep-health-probe signals where missing data is always treated as failure, never as healthy.
 slug: availability
 ---
 
@@ -8,7 +8,8 @@ slug: availability
 
 This runbook is where the `runbook_url` on an **availability** alert lands. The family covers a
 monitored host going unreachable (`HostDown`) and the deep-health **probe** failing or going stale
-(`DeepHealthProbeFailed`, `DeepHealthProbeStale`). Its guiding invariant: **missing data is treated
+(`DeepHealthProbeFailed`, `DeepHealthProbeStale`) or the prober itself going unreachable
+(`DeepHealthProberDown`). Its guiding invariant: **missing data is treated
 as failure, never as healthy** (`REQ-RULE-05`).
 
 The rule family is `stack/compose/config/vmalert/rules/availability.yml` (group `availability`).
@@ -33,6 +34,10 @@ expression is a separate critical rule covered by the [deep-health runbook](/dee
   failed (unreachable, malformed, or errored). Mapped `pulse_deep_health` values are stale meanwhile.
 - **DeepHealthProbeStale** (warning) — `time() - pulse_deep_health_last_scrape_seconds > 300`: no
   successful probe for over 5m, so functional-health evaluation cannot be trusted.
+- **DeepHealthProberDown** (warning) — `up{job=~"managed-linux-prober|prober"} == 0` for **2m**: the
+  prober itself is unreachable, so its `pulse_deep_health*` series are gone and the two rules above
+  have nothing to evaluate. Every deep-health service it covers reads unknown until it is back. Check
+  the agent on the host (`managed-linux-prober`) or the in-stack `prober` container.
 
 ## Triage
 
