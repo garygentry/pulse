@@ -47,3 +47,44 @@ tests:
               runbook_url: "https://runbooks.pulse.local/availability"
               summary: "Deep-health probe failed for camera-svc on host-beta (warning)"
               description: "The deep-health probe for service camera-svc on host host-beta has been failing for at least 2m (unreachable, malformed response, or probe error). This is the probe-reachability signal — distinct from the declared functional-health expression (03-transform-and-rendered-rules.md). While the probe is failing, mapped pulse_deep_health values are STALE and must not be read as healthy (see DeepHealthProbeStale)."
+  # (3) F6: the prober target itself is unreachable → warning, even though its deep-health series
+  # are absent (neither DeepHealthProbeFailed nor DeepHealthProbeStale has anything to evaluate)
+  - interval: 30s
+    input_series:
+      - series: 'up{job="managed-linux-prober", instance="host-beta", host="host-beta", estate="fixture-estate"}'
+        values: "1 1 0 0 0 0 0 0" # prober unreachable from t=60s
+    alert_rule_test:
+      - eval_time: 3m30s
+        alertname: DeepHealthProberDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: managed-linux-prober
+              instance: host-beta
+              host: host-beta
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Deep-health prober host-beta is unreachable (warning)"
+              description: "The deep-health prober scrape target host-beta (job managed-linux-prober) has been unreachable for at least 2m. Every deep-health service it probes has no current evidence, so its status is unknown, never healthy (REQ-RULE-05). Restore the prober."
+      - eval_time: 1m30s
+        alertname: DeepHealthProberDown
+        exp_alerts: [] # still inside the 2m grace window
+  # (4) F6: the central in-stack prober (job "prober", no host label) is covered too
+  - interval: 30s
+    input_series:
+      - series: 'up{job="prober", instance="prober:9120", estate="fixture-estate"}'
+        values: "0 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DeepHealthProberDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: prober
+              instance: prober:9120
+              estate: fixture-estate
+            exp_annotations:
+              runbook_url: "https://runbooks.pulse.local/availability"
+              summary: "Deep-health prober prober:9120 is unreachable (warning)"
+              description: "The deep-health prober scrape target prober:9120 (job prober) has been unreachable for at least 2m. Every deep-health service it probes has no current evidence, so its status is unknown, never healthy (REQ-RULE-05). Restore the prober."

@@ -19,7 +19,7 @@ import { createAppStore, type AppStore } from "../src/client/store/index.js";
 import { createPathRouter, type PathRouter } from "../src/client/router.js";
 import { createEstateClock, TZ_FALLBACK_MARKER } from "../src/client/format.js";
 import { groupNavViews, orderedNavViews } from "../src/client/shell/nav.js";
-import { CHUNK_RELOAD_SESSION_KEY, Shell, ViewHost } from "../src/client/shell/index.js";
+import { CHUNK_RELOAD_SESSION_KEY, Shell, ViewHost, pageTitle } from "../src/client/shell/index.js";
 import { LiveStatusPill } from "../src/client/shell/HealthRegion.js";
 import { CommandPalette } from "../src/client/shell/CommandPalette.js";
 import { PaletteDialog, type PaletteDialogProps } from "../src/client/shell/PaletteDialog.js";
@@ -338,7 +338,11 @@ describeUi("Shell health region", () => {
     const banner = screen.getByRole("banner");
     expect(within(banner).getByText("Homelab")).toBeInTheDocument();
     const indicator = banner.querySelector('[data-slot="staleness-indicator"]') as HTMLElement;
-    expect(indicator).toHaveAttribute("aria-live", "polite");
+    // F44: only the phase is a live region; the ticking timestamp is not.
+    expect(indicator).not.toHaveAttribute("aria-live");
+    const announcement = indicator.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(announcement.textContent).toBe("Data live");
+    expect(announcement.textContent).not.toContain("Updated");
     expect(indicator).toHaveAttribute("data-status", "ok");
     expect(within(indicator).getByRole("link", { name: /^Live/ })).toHaveAttribute("href", "/engine");
     expect(indicator.textContent).toContain("Updated");
@@ -354,6 +358,17 @@ describeUi("Shell health region", () => {
     const banner = screen.getByRole("banner");
     expect(within(banner).getByText("Pulse")).toBeInTheDocument();
     expect(within(banner).getByRole("link", { name: /^Connecting/ })).toBeInTheDocument();
+    expect(banner.textContent).toContain("Waiting for first update…");
+  });
+
+  it("F3: a ticking stream with no accepted snapshot says Connecting, never Live", async () => {
+    const ctx = setup("overview");
+    ctx.store.connection.value = { ...CONN_BASE, observation: observation() };
+    renderShell(ctx.store, ctx.router);
+    await screen.findByText("Overview body");
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getByRole("link", { name: /^Connecting/ })).toBeInTheDocument();
+    expect(within(banner).queryByRole("link", { name: /^Live/ })).toBeNull();
     expect(banner.textContent).toContain("Waiting for first update…");
   });
 
@@ -816,5 +831,24 @@ describeUi("ViewHost — retry then once-per-build reload escalation", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Loading Overview…");
     // The announcer's empty assertive region is the only alert.
     expect(screen.queryAllByRole("alert").filter((el) => el.textContent !== "")).toHaveLength(0);
+  });
+});
+
+test("F14: the page title names the routed entity", () => {
+  expect(pageTitle("Estate", { name: "web01" })).toBe("web01 · Estate");
+  expect(pageTitle("Estate", { host: "web01", name: "grafana" })).toBe("web01/grafana · Estate");
+  expect(pageTitle("Alerts", { fingerprint: "abc" })).toBe("Alerts");
+  expect(pageTitle(undefined, { name: "x" })).toBeUndefined();
+});
+
+describeUi("Shell not-found notice (F12)", () => {
+  it("says which path was not found and what is shown instead", async () => {
+    const ctx = setup("overview");
+    ctx.store.route.value = { path: "/overview", view: "overview", params: {}, query: {}, redirectedFrom: "/nope" };
+    renderShell(ctx.store, ctx.router);
+    await screen.findByText("Overview body");
+    const notice = screen.getAllByRole("status").find((el) => el.textContent?.includes("/nope"))!;
+    expect(notice.textContent).toContain("There is no page at /nope");
+    expect(notice.textContent).toContain("Showing Overview instead.");
   });
 });

@@ -32,6 +32,11 @@ export interface LaneNode {
   /** Curated query ids the timeline index advertises for this target; empty when absent from the index. */ readonly queryIds: readonly QueryId[];
   /** Server-resolved Grafana board URL for this target, or null. */ readonly grafanaUrl: string | null;
   /** Child service lanes (hosts only; empty for services). */ readonly children: readonly LaneNode[];
+  /**
+   * True when nothing is collected or alerting is suppressed for this target (an excluded host, a
+   * declared suppression, or a service of such a host): its quiet time reads suppressed, never OK (F34).
+   */
+  readonly suppressed?: boolean;
 }
 
 /** The whole lane hierarchy for the page. */
@@ -143,6 +148,7 @@ export function buildLaneTree(snapshot: OverviewSnapshotV2, index: TimelinePaylo
     const hostKey = targetKey(hostTarget);
     if (seen.has(hostKey)) continue; // defensive: first occurrence wins
     seen.add(hostKey);
+    const hostSuppressed = host.suppressed !== null || host.collectionClass === "excluded";
     const children: LaneNode[] = [];
     for (const service of host.services) {
       const serviceTarget: TargetIdentity = { kind: "service", id: service.drilldownId };
@@ -154,11 +160,13 @@ export function buildLaneTree(snapshot: OverviewSnapshotV2, index: TimelinePaylo
       children.push({
         target: serviceTarget, label: service.name, hostName: service.host, name: service.name,
         endpoints, queryIds: queryIdsOf(serviceTarget), grafanaUrl: service.grafana?.url ?? null, children: [],
+        ...(hostSuppressed || service.suppressed !== null ? { suppressed: true } : {}),
       });
     }
     hosts.push({
       target: hostTarget, label: host.name, hostName: null, name: host.name,
       endpoints: [], queryIds: queryIdsOf(hostTarget), grafanaUrl: host.grafana?.url ?? null, children,
+      ...(hostSuppressed ? { suppressed: true } : {}),
     });
   }
   const domains: TimelineDomain[] = [];

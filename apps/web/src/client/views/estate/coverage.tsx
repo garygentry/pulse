@@ -137,7 +137,8 @@ function ArtifactCount(props: { readonly entry: CoverageEntry }): ReactElement {
 function bucketColumns(bucket: BucketSpec, stale: boolean): ColumnDef<CoverageEntry>[] {
   const status = effectiveStatus(bucket.status, stale);
   const columns: ColumnDef<CoverageEntry>[] = [
-    { id: "status", header: "Status", cell: () => <Status status={status} /> },
+    // F25: this is COVERAGE status (is it monitored?), not health — say so in the header.
+    { id: "status", header: "Coverage", cell: () => <Status status={status} /> },
     { id: "name", header: "Entity", cell: cell((row: CoverageEntry) => row.name) },
     { id: "kind", header: "Kind", cell: cell((row: CoverageEntry) => <Badge variant="outline">{row.kind}</Badge>) },
     {
@@ -292,7 +293,7 @@ function diffColumns(stale: boolean): ColumnDef<DeclaredScrapeComparison>[] {
   return [
     {
       id: "status",
-      header: "Status",
+      header: "Scrape match",
       cell: cell((r: DeclaredScrapeComparison) => (
         <Status status={effectiveStatus(DIFF_STATUS[r.state] ?? "unknown", stale)} />
       )),

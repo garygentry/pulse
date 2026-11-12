@@ -15,6 +15,7 @@ import type {
   SourceId,
   TargetStatus,
 } from "@pulse/web-data/wire";
+import { ENGINE_COMPONENT_LABEL } from "@pulse/web-data/wire";
 import { HEALTH_STATUS } from "../../status/target-status.js";
 import type { IconName } from "@/ui";
 import type { CapacityTileId, TileValue } from "./model.js";
@@ -49,10 +50,7 @@ export type HealthToStatus = (h: HealthState) => TargetStatus;
 export const NOT_REPORTED = "not reported" as const;
 
 /** Display names per component id, in no particular order (payload order drives rendering). */
-export const COMPONENT_LABEL: Readonly<Record<ComponentId, string>> = {
-  victoriametrics: "VictoriaMetrics", vmalert: "vmalert", alertmanager: "Alertmanager",
-  gatus: "Gatus", grafana: "Grafana", web: "Pulse web app",
-};
+export const COMPONENT_LABEL: Readonly<Record<ComponentId, string>> = ENGINE_COMPONENT_LABEL;
 
 /** Contributors shown inline in the banner before "and N more". */
 export const VERDICT_INLINE_CONTRIBUTORS = 3;

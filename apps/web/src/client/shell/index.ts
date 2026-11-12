@@ -7,6 +7,7 @@ export {
   resolveView,
   CHUNK_RELOAD_SESSION_KEY,
   MAIN_ID,
+  pageTitle,
   VIEW_LOAD_RETRIES,
 } from "./Shell.js";
 export type { ShellProps, ViewHostProps, ViewHostState } from "./Shell.js";

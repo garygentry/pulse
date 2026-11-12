@@ -183,12 +183,18 @@ describeDom("StatHeader — unavailable coverage and engine", () => {
     expect(root.querySelector('[data-stat="engine"] [data-slot="status-badge"]')?.getAttribute("data-status")).toBe("unknown");
   });
 
-  test("engine reporting not OK renders 'Engine not OK' with a non-OK status", async () => {
+  test("engine reporting problems renders 'Engine degraded' with the Engine verdict's problems (F5)", async () => {
     const base = makeOverviewSnapshot();
-    const snapshot: OverviewSnapshotV2 = { ...base, engine: { ...base.engine, value: { ok: false } } };
+    const snapshot: OverviewSnapshotV2 = {
+      ...base,
+      engine: { ...base.engine, value: { ok: false, problems: ["2 scrape targets down", "deadman unhealthy"] } },
+    };
     const root = await mountHeader(deriveOverviewStats(snapshot), ready(snapshot));
-    expect(text(root, '[data-stat="engine"]')).toContain("Engine not OK");
-    expect(root.querySelector('[data-stat="engine"] [data-slot="status-badge"]')?.getAttribute("data-status")).toBe("critical");
+    const engine = text(root, '[data-stat="engine"]');
+    expect(engine).toContain("Engine degraded");
+    expect(engine).toContain("2 scrape targets down; deadman unhealthy");
+    expect(engine).not.toContain("Engine OK");
+    expect(root.querySelector('[data-stat="engine"] [data-slot="status-badge"]')?.getAttribute("data-status")).toBe("warning");
   });
 
   test("stale retained engine ok:true is unavailable with last-good time, never OK", async () => {

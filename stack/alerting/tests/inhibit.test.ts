@@ -272,6 +272,11 @@ describe("hypervisor-relay inhibition (issue #74)", () => {
         target_matchers: ['alertname="HostDown"', 'job="hypervisor-api"'],
         equal: ["estate"],
       },
+      {
+        source_matchers: ['alertname="HostDown"'],
+        target_matchers: ['alertname="DeepHealthProberDown"'],
+        equal: ["estate", "host"],
+      },
     ]);
     const [r] = productStaticInhibitRules();
     expect(targetAdmitsAlertname(r!.target_matchers, "HostDown")).toBe(true);
@@ -305,8 +310,17 @@ describe("hypervisor-relay inhibition (issue #74)", () => {
     const want = JSON.stringify(productStaticInhibitRules()[0]);
     expect(config!.inhibit_rules.some((r) => JSON.stringify(r) === want)).toBe(true);
     const merged = withProductStaticInhibits([{ source_matchers: ['host="a"'], target_matchers: ['host="a"'] }]);
-    expect(merged.length).toBe(2);
+    expect(merged.length).toBe(3);
     expect(merged.some((r) => JSON.stringify(r) === want)).toBe(true);
+  });
+
+  test("F6: HostDown holds back DeepHealthProberDown for the same host only, and nothing protected", () => {
+    const r = productStaticInhibitRules()[1]!;
+    expect(r.equal).toEqual(["estate", "host"]);
+    expect(targetAdmitsAlertname(r.target_matchers, "DeepHealthProberDown")).toBe(true);
+    for (const other of [...PROTECTED, "DeadMansSwitch"]) {
+      expect(targetAdmitsAlertname(r.target_matchers, other), other).toBe(false);
+    }
   });
 
   test("the bootstrap Alertmanager config carries the same rule", () => {

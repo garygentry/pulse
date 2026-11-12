@@ -12,6 +12,7 @@ import {
   OVERVIEW_HISTORY_RANGE,
   OVERVIEW_PREFERENCES_KEY,
   OVERVIEW_PREFERENCES_VERSION,
+  OVERVIEW_SORT_ORDER,
   OVERVIEW_STATUS_ORDER,
   type KioskPage,
   type OverviewModel,
@@ -280,11 +281,24 @@ describe("deriveOverviewModel — grouping and ordering", () => {
     expect(hostIds(model)).toEqual(hosts.map((h) => [...h]));
   });
 
-  test("status groups use shared labels and OVERVIEW_STATUS_ORDER", () => {
+  test("class grouping puts the excluded class last, whatever its name sorts as (F10)", () => {
+    const envelope = makeEnvelopeOverviewSnapshot();
+    const [first, ...rest] = envelope.hosts;
+    const withExcluded = { ...envelope, hosts: [...rest, { ...first!, name: "aaa-retired", drilldownId: "host:aaa-retired", collectionClass: "excluded" as const, services: [] }] };
+    const ids = groupIds(deriveOverviewModel(withExcluded, prefs("class", "name")));
+    expect(ids.at(-1)).toBe("class:excluded");
+    expect(ids.filter((id) => id === "class:excluded")).toHaveLength(1);
+  });
+
+  test("OVERVIEW_SORT_ORDER puts suppressed after ok (F10/F16)", () => {
+    expect(OVERVIEW_SORT_ORDER).toEqual(["critical", "warning", "unknown", "ok", "suppressed"]);
+  });
+
+  test("status groups use shared labels and OVERVIEW_SORT_ORDER", () => {
     const envelope = makeEnvelopeOverviewSnapshot();
     const model = deriveOverviewModel(envelope, prefs("status", "name"));
-    expect(groupIds(model)).toEqual(OVERVIEW_STATUS_ORDER.map((s) => `status:${s}`));
-    expect(model.groups.map((g) => g.label)).toEqual(["critical", "warning", "unknown", "suppressed", "OK"]);
+    expect(groupIds(model)).toEqual(OVERVIEW_SORT_ORDER.map((s) => `status:${s}`));
+    expect(model.groups.map((g) => g.label)).toEqual(["critical", "warning", "unknown", "OK", "suppressed"]);
     expect(model.groups.map((g) => g.hosts.length)).toEqual([20, 20, 20, 20, 20]);
   });
 
@@ -383,7 +397,7 @@ describe("deriveOverviewStats", () => {
     expect(stats.silenced).toBe(2);
     expect(stats.inhibited).toBe(1);
     expect(stats.coverage).toEqual({ status: "available", ...ENVELOPE_COVERAGE, availability: envelope.coverage.availability });
-    expect(stats.engine).toEqual({ status: "available", ok: true, availability: envelope.engine.availability });
+    expect(stats.engine).toEqual({ status: "available", ok: true, problems: [], availability: envelope.engine.availability });
     expect(deriveOverviewModel(envelope, PREFS).stats).toEqual(stats);
   });
 
@@ -434,7 +448,7 @@ describe("deriveOverviewStats", () => {
     const base = makeOverviewSnapshot();
     const availability: DataAvailability = { ...STALE, source: "victoriametrics-buildinfo" };
     const snap = { ...base, engine: { availability, value: { ok: true } } };
-    expect(deriveOverviewStats(snap).engine).toEqual({ status: "available", ok: true, availability });
+    expect(deriveOverviewStats(snap).engine).toEqual({ status: "available", ok: true, problems: [], availability });
   });
 
   test("malformed coverage counts / engine value fail closed to unavailable", () => {

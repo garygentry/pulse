@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { validateOverviewSnapshotV2 } from "../src/wire/index.js";
+import { OVERVIEW_MAX_RECENT_CHECKS, capRecentChecks, validateOverviewSnapshotV2 } from "../src/wire/index.js";
 
 const NOW = "2026-09-23T00:00:00.000Z";
 
@@ -127,6 +127,72 @@ describe("validateOverviewSnapshotV2", () => {
     const text = validOverview();
     (text.estate as Record<string, unknown>).name = "x".repeat(513);
     expect(validateOverviewSnapshotV2(text).ok).toBe(false);
+  });
+});
+
+describe("overview validator — recentChecks bound (F1)", () => {
+  function check(endpoint: string, minute: number): Record<string, unknown> {
+    return {
+      target: null,
+      endpoint,
+      success: true,
+      observedAt: new Date(Date.parse(NOW) + minute * 60_000).toISOString(),
+      durationMs: 5,
+    };
+  }
+
+  test("an over-cap list is capped to the newest per endpoint instead of rejecting the body", () => {
+    const body = validOverview();
+    body.recentChecks = Array.from({ length: 21 }, (_, e) =>
+      Array.from({ length: 100 }, (_, m) => check(`probe-${String(e).padStart(2, "0")}`, m))).flat();
+    const result = validateOverviewSnapshotV2(body);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recentChecks.length).toBeLessThanOrEqual(OVERVIEW_MAX_RECENT_CHECKS);
+    const probe = result.value.recentChecks.filter((item) => item.endpoint === "probe-00");
+    expect(probe.at(-1)!.observedAt).toBe(new Date(Date.parse(NOW) + 99 * 60_000).toISOString());
+  });
+
+  test("a small endpoint keeps all its results and leaves the slack to the others", () => {
+    const capped = capRecentChecks([
+      ...Array.from({ length: 2 }, (_, m) => check("small", m)),
+      ...Array.from({ length: 10 }, (_, m) => check("big", m)),
+    ] as never, 8);
+    expect(capped.filter((item) => item.endpoint === "small")).toHaveLength(2);
+    expect(capped.filter((item) => item.endpoint === "big").map((item) => item.observedAt))
+      .toEqual(Array.from({ length: 6 }, (_, i) => new Date(Date.parse(NOW) + (4 + i) * 60_000).toISOString()));
+  });
+
+  test("a list beyond the received ceiling is still refused, naming the field", () => {
+    const body = validOverview();
+    body.recentChecks = Array.from({ length: OVERVIEW_MAX_RECENT_CHECKS * 4 + 1 }, (_, m) => check("probe", m));
+    const result = validateOverviewSnapshotV2(body);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("recentChecks");
+  });
+});
+
+describe("overview validator — engine problems (F5)", () => {
+  test("accepts and copies bounded problems; a body without them is copied without them", () => {
+    const withProblems = validOverview();
+    (withProblems.engine as Record<string, unknown>).value = { ok: false, problems: ["2 scrape targets down"] };
+    const result = validateOverviewSnapshotV2(withProblems);
+    expect(result.ok && result.value.engine.value).toEqual({ ok: false, problems: ["2 scrape targets down"] });
+    const legacy = validOverview();
+    (legacy.engine as Record<string, unknown>).value = { ok: true };
+    const old = validateOverviewSnapshotV2(legacy);
+    expect(old.ok && old.value.engine.value).toEqual({ ok: true });
+  });
+
+  test("refuses non-string or over-bound problems, naming the field", () => {
+    for (const problems of [[1], Array.from({ length: 17 }, () => "x"), "x"]) {
+      const body = validOverview();
+      (body.engine as Record<string, unknown>).value = { ok: false, problems };
+      const result = validateOverviewSnapshotV2(body);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toContain("engine.problems");
+    }
   });
 });
 

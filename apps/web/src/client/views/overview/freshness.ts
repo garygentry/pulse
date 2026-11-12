@@ -21,11 +21,22 @@ const TARGET_STATUSES: ReadonlySet<string> = new Set<TargetStatus>([
   "suppressed",
 ]);
 
+/** The bounded display-safe message of a recorded view failure, or null when there is none (or it is NOT_READY). */
+function failureMessage(failure: unknown): string | null {
+  if (typeof failure !== "object" || failure === null) return null;
+  // NOT_READY is the server starting up (no first cycle yet): still loading, not a failure.
+  if ((failure as { readonly code?: unknown }).code === "NOT_READY") return null;
+  const message = (failure as { readonly message?: unknown }).message;
+  return typeof message === "string" && message.length > 0 ? message : "The request failed.";
+}
+
 /**
  * Derive the exhaustive top-level overview delivery state from the existing store.
  *
- * - no accepted snapshot, control channel not yet stale (initial contact, NOT_READY responses,
- *   or a live control channel still awaiting its first overview body) → `loading`;
+ * - no accepted snapshot, no recorded overview failure other than NOT_READY, control channel not
+ *   yet stale (initial contact, NOT_READY responses, or a live control channel still awaiting its
+ *   first overview body) → `loading`;
+ * - no accepted snapshot and a recorded overview failure → `unavailable`, naming the failure;
  * - no accepted snapshot and the connection or overview delivery is stale → `unavailable`;
  * - accepted snapshot with overview delivery `current` and connection `live` → `ready`;
  * - any other accepted-snapshot combination (stale/initial delivery, stale or initial
@@ -38,12 +49,21 @@ export function deriveOverviewSurfaceState(store: AppStore): OverviewSurfaceStat
   const deliveryPhase: string = connection.views.overview.phase;
 
   if (snapshot === null) {
+    // A recorded overview failure (unreachable, timed out, a body the validator rejected) is never
+    // "loading": the SSE ticks can keep the connection live while every overview fetch fails (F2/F50).
+    const failure: unknown = connection.views.overview.failure;
+    const reason = failureMessage(failure);
     const loading =
+      reason === null &&
       (connectionPhase === "initial" || connectionPhase === "live") &&
       (deliveryPhase === "initial" || deliveryPhase === "current");
     return loading
       ? { status: "loading", message: OVERVIEW_LOADING_MESSAGE }
-      : { status: "unavailable", message: OVERVIEW_UNAVAILABLE_MESSAGE, retryable: true };
+      : {
+          status: "unavailable",
+          message: reason === null ? OVERVIEW_UNAVAILABLE_MESSAGE : `${OVERVIEW_UNAVAILABLE_MESSAGE} ${reason}`,
+          retryable: true,
+        };
   }
 
   if (deliveryPhase === "current" && connectionPhase === "live" && connection.observation !== null) {

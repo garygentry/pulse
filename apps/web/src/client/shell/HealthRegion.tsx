@@ -28,37 +28,45 @@ export interface LiveStatusPillProps {
 /**
  * The always-visible liveness read: a pill whose tone and short label say live / stale / waiting,
  * with the absolute estate-TZ time plus a relative age beside it (and in its tooltip). Absolute time
- * is never shown alone; the tzFallback marker is surfaced when UTC is a fallback. Announced politely.
+ * is never shown alone; the tzFallback marker is surfaced when UTC is a fallback. Only the phase is
+ * announced (politely), never the ticking time.
  * The pill links to the engine view, which owns source health.
  */
 export function LiveStatusPill({ connection, clock }: LiveStatusPillProps): ReactElement {
   const observation = connection.observation;
   const stale = connection.phase === "stale";
+  // F3: "Live" needs data, not just a ticking stream: until the first snapshot is accepted (no
+  // estate clock) the pill says Connecting, matching "Waiting for first update…" beside it.
+  const live = observation !== null && clock !== null;
   const updated = `${
-    observation && clock
+    live
       ? `Updated ${clock.absoluteWithRelative(observation.observedAt)}`
       : "Waiting for first update…"
   }${clock?.tzFallback ? ` ${TZ_FALLBACK_MARKER}` : ""}`;
-  const label = stale ? "Stale" : observation ? "Live" : "Connecting";
+  const label = stale ? "Stale" : live ? "Live" : "Connecting";
 
   return (
     <div
       data-slot="staleness-indicator"
       data-status={stale ? "critical" : "ok"}
-      aria-live="polite"
       className="flex min-w-0 items-center gap-2"
     >
       <HealthPill
-        tone={stale ? "danger" : observation ? "ok" : "neutral"}
-        icon={stale ? "wifi-off" : observation ? "wifi" : "loader"}
+        tone={stale ? "danger" : live ? "ok" : "neutral"}
+        icon={stale ? "wifi-off" : live ? "wifi" : "loader"}
         label={label}
         href="/engine"
         title={updated}
         className="shrink-0"
       />
-      {/* Visible beside the pill from md; below md it stays in the live region for screen readers. */}
+      {/* Visible beside the pill from md; below md it stays readable to screen readers on demand. */}
       <span className="sr-only truncate text-xs text-muted-foreground tabular-nums md:not-sr-only">
         {updated}
+      </span>
+      {/* F44: announce only phase changes (Connecting → Live → Stale). The timestamp changes every
+          tick and every second of relative age, so it stays OUT of the live region. */}
+      <span className="sr-only" aria-live="polite" data-slot="staleness-announcement">
+        {`Data ${label.toLowerCase()}`}
       </span>
     </div>
   );

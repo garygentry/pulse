@@ -548,9 +548,14 @@ export function startLiveState(store: AppStore, opts: LiveStateOptions): LiveSta
     if (view === "overview") {
       const validated = validateOverviewSnapshotV2(payload);
       if (!validated.ok) {
+        // Never reject silently (F2): the message names the failing fields, not their contents.
+        console.error(`[pulse] overview snapshot rejected: ${validated.message}`);
         // Preserve a prior accepted body but make its delivery stale immediately. A malformed first
         // body leaves the signal and delivery in their initial states; no partial value is committed.
         desired.overview = result.identity;
+        // Record it as this view's failure so the surface leaves "loading" for "could not be
+        // delivered" (F2) — the SSE ticks keep the connection live, so nothing else would.
+        failures.overview = { code: "RESPONSE_INVALID", status: 200, message: CLIENT_TRANSPORT_MESSAGES.RESPONSE_INVALID };
         onTransportFailure();
         return;
       }

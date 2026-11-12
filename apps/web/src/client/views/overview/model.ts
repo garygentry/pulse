@@ -31,6 +31,19 @@ export const OVERVIEW_STATUS_ORDER = [
   "ok",
 ] as const satisfies readonly TargetStatus[];
 
+/**
+ * Worst-first SORT order for hosts, status groups and kiosk tiles: as OVERVIEW_STATUS_ORDER, but
+ * suppressed (not monitored or deliberately muted) after ok, so excluded and retired hosts never
+ * take the first screen ahead of live hosts (F10/F16).
+ */
+export const OVERVIEW_SORT_ORDER = [
+  "critical",
+  "warning",
+  "unknown",
+  "ok",
+  "suppressed",
+] as const satisfies readonly TargetStatus[];
+
 /** Locale-aware, numeric display-name comparator shared by every overview ordering operation. */
 export const OVERVIEW_COLLATOR = new Intl.Collator(undefined, {
   numeric: true,
@@ -210,6 +223,8 @@ export type EngineOkStat =
       readonly status: "available";
       /** Reported engine health; affirmative only when `availability` is current. */
       readonly ok: boolean;
+      /** The same problems the Engine verdict lists (empty when `ok`). */
+      readonly problems: readonly string[];
       /** Evidence qualifying `ok`. */
       readonly availability: DataAvailability;
     }

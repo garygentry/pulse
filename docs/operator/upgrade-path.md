@@ -83,6 +83,21 @@ history and Grafana state. Apart from rebuilding the locally built images above,
 > content-verification, and rollback — live in the [bootstrap runbook](/bootstrap/). This
 > page is the narrative; it links there and never restates those steps.
 
+## Upgrading to the next release
+
+**Re-render first (breaking).** The central deep-health `prober` scrape job in
+`stack/compose/config/victoriametrics/scrape.yml` now reads its target from
+`rendered/scrape/file_sd/prober.json`. The renderer writes that file only when the estate declares
+probes for the central prober (a deep-health check that is not `host_local`, a backup-freshness
+check, or a probe-only host), so a stack that runs only per-host probers no longer carries a
+permanently down `prober:9120` target. Keep old rendered output and the central prober is not
+scraped at all, so run step 1 before you apply the new stack config.
+
+**When `prober.json` lists a target, run the `deep-health` profile**
+(`docker compose --profile deep-health up -d prober`). The new `DeepHealthProberDown` warning
+fires for a prober target that stays unreachable for 2 minutes, including the central one when
+its profile is off.
+
 ## Upgrading to 0.2.0
 
 0.2.0 is the first tagged public release. If you run a deployment built from an earlier

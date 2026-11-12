@@ -1,5 +1,5 @@
 {
-  "bundleId": "sha256:829375f31afc7dcac2fbee67d993fa5c7d3b045c35689525328053dfc91f1fa3",
+  "bundleId": "sha256:1c4f7c8a968c1c3d90376342d3f18507fad8b9a0d3bc513bbc137cf799075f45",
   "covered": [
     {
       "artifacts": [
@@ -38,7 +38,8 @@
       "artifacts": [
         "gatus/config.yaml",
         "prober/config.yaml",
-        "scrape/file_sd/probe-only.json"
+        "scrape/file_sd/probe-only.json",
+        "scrape/file_sd/prober.json"
       ],
       "collectionClass": "probe-only",
       "kind": "host",
@@ -80,7 +81,8 @@
     {
       "artifacts": [
         "command-exporter/web01.yaml",
-        "prober/config.yaml"
+        "prober/config.yaml",
+        "scrape/file_sd/prober.json"
       ],
       "collectionClass": "managed-linux",
       "kind": "service",
@@ -90,7 +92,8 @@
     {
       "artifacts": [
         "gatus/config.yaml",
-        "prober/config.yaml"
+        "prober/config.yaml",
+        "scrape/file_sd/prober.json"
       ],
       "collectionClass": "managed-linux",
       "kind": "service",

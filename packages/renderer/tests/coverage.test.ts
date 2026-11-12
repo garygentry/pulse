@@ -137,7 +137,7 @@ describe("computeCoverage() bucketing (REQ-COV-01/02)", () => {
     expect(supp).toBeDefined();
     // Identical to the model's index relationships — suppression never empties them (REQ-COV-04).
     expect(supp!.artifacts).toEqual(buildArtifactIndex(model).services.get("web01/grafana")!.artifacts);
-    expect(supp!.artifacts).toEqual(["gatus/config.yaml", "prober/config.yaml"]);
+    expect(supp!.artifacts).toEqual(["gatus/config.yaml", "prober/config.yaml", "scrape/file_sd/prober.json"]);
   });
 
   test("a standalone suppression (bare name and composite id) suppresses a service", () => {

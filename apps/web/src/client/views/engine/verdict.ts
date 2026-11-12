@@ -1,11 +1,12 @@
 // views/engine/verdict.ts — the never-falsely-green engine roll-up and its banner text
 // (03 §3, 00 §4.2; D5). Pure and total: no clock, no store, never throws.
 
+import { engineProblems } from "@pulse/web-data/wire";
 import type {
   CycleObservation, EnginePayload, OverviewSnapshotV2, SourceId, TargetStatus, ViewDeliveryState,
 } from "@pulse/web-data/wire";
 import { scrapeDiscovery } from "./model.js";
-import { COMPONENT_LABEL, VERDICT_INLINE_CONTRIBUTORS } from "./labels.js";
+import { VERDICT_INLINE_CONTRIBUTORS } from "./labels.js";
 
 /** The seven sources whose success the overview engine-OK summary requires (fold-overview buildEngineSummary). */
 export const GOVERNING_SOURCES: readonly SourceId[] = [
@@ -31,8 +32,6 @@ export type Verdict =
   | { readonly kind: "ok" }
   | { readonly kind: "degraded"; readonly contributors: readonly string[] };
 
-const codePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
 /**
  * Roll up the engine payload and cycle evidence into one verdict (REQ-VERDICT-01..04).
  * Pure and total: never throws, and does not read the clock or the store.
@@ -47,37 +46,8 @@ export function rollUpVerdict(input: VerdictInput): Verdict {
   if (engine === null && delivery.phase === "initial" && !notCurrent) return { kind: "loading" };
   if (engine === null || notCurrent) return { kind: "unknown", since: lastGoodAt };
 
-  const out: string[] = [];
-
-  if (engine.cycle.buildFailure !== null) out.push("cycle build failed");
-  if (engine.cycle.degraded) out.push("publication cycle degraded");
-
-  for (const c of engine.components) {
-    if (c.state === "not-configured") continue;
-    const name = COMPONENT_LABEL[c.id] ?? String(c.id);
-    if (c.state === "unhealthy") out.push(`${name} unreachable`);
-    else if (c.state !== "healthy" || c.availability.state !== "current") out.push(`${name} stale`);
-  }
-
-  if (!engine.deadman.configured) out.push("deadman not configured");
-  else if (engine.deadman.state !== "healthy") out.push(`deadman ${engine.deadman.state}`);
-
-  let down = 0;
-  for (const job of engine.scrapeJobs) for (const t of job.targets) if (t.health !== "up") down += 1;
-  if (down > 0) out.push(`${down} scrape targets down`);
-  if (!scrapeDiscovery(engine, observation).current) out.push("target discovery not current");
-
-  const failing = engine.ruleGroups.filter((g) => g.health !== "healthy").length;
-  if (failing > 0) out.push(`${failing} rule groups failing`);
-
-  const f = engine.notifications.failuresPerSecond;
-  if (f !== null) {
-    const keys = Object.keys(f)
-      .filter((k) => { const v = f[k]; return typeof v === "number" && Number.isFinite(v) && v > 0; })
-      .sort(codePoint);
-    if (keys.length > 0) out.push(`notifications failing (${keys.join(", ")})`);
-  }
-  if (engine.notifications.availability.state !== "current") out.push("notification metrics unavailable");
+  // The payload-derived problems are shared with the overview engine summary (F5: one verdict).
+  const out: string[] = engineProblems(engine, { discoveryCurrent: scrapeDiscovery(engine, observation).current });
 
   if (out.length === 0) {
     if (observation !== null) {

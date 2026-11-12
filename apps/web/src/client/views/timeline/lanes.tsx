@@ -58,6 +58,7 @@ const LEGEND_STATUSES: readonly (readonly [TargetStatus, string])[] = [
   ["warning", "warning"],
   ["critical", "critical"],
   ["unknown", NO_DATA_TEXT],
+  ["suppressed", "suppressed"],
 ];
 
 /** Status badge props: the worded status plus a `data-status` hook (the badge spreads extra attributes). */

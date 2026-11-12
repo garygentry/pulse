@@ -8,6 +8,7 @@
 // type-only and erased, so this module adds no runtime dependency to `/wire`.
 
 import { CURRENT_MAX_PLAIN_BYTES } from "./common.js";
+import { ENGINE_MAX_PROBLEMS } from "./engine-verdict.js";
 import type { AvailabilitySection, DataAvailability, SourceId, Unit } from "./common.js";
 import type { TargetIdentity } from "./history.js";
 import type { WebEstateModelV2 } from "@pulse/renderer";
@@ -129,7 +130,11 @@ export interface CheckSummary {
 
 /** Compact overview summary of monitoring-engine health. */
 export interface EngineOverviewSummary {
-  /** True only when every governing current engine source succeeded. */ readonly ok: boolean;
+  /**
+   * True only when every governing current engine source succeeded and the engine payload shows
+   * no problem (the same derivation as the Engine verdict, `engineProblems`).
+   */ readonly ok: boolean;
+  /** The engine payload's problems (`engineProblems`), bounded; absent or empty when `ok`. */ readonly problems?: readonly string[];
 }
 
 /** Additive coverage summary counts derived from declared-versus-rendered comparison. */
@@ -191,6 +196,13 @@ const MAX_SERVICES = 300;
 const MAX_ALERTS = 1_024;
 const MAX_SIGNALS = 4_096;
 const MAX_CHECKS = 2_048;
+/**
+ * Upper bound on `recentChecks`, shared by the server fold and the client validator so the two can
+ * never disagree (F1: the server once sent 2100 checks and the client rejected the whole body).
+ */
+export const OVERVIEW_MAX_RECENT_CHECKS = MAX_CHECKS;
+/** Hard ceiling on a received `recentChecks` list before it is capped; larger bodies are refused. */
+const MAX_RECEIVED_CHECKS = MAX_CHECKS * 4;
 const SOURCE_IDS = new Set<SourceId>([
   "victoriametrics-signals", "victoriametrics-targets", "victoriametrics-buildinfo",
   "alertmanager-alerts", "alertmanager-silences", "alertmanager-status",
@@ -405,6 +417,34 @@ function signal(input: unknown): LiveSignal | null {
   return { target, id, label, unit: value.unit as Unit, value: scalar as LiveSignal["value"], availability: evidence };
 }
 
+/**
+ * Keep the newest checks per endpoint so the total fits `max`, sharing the budget fairly: an
+ * endpoint with few results keeps all of them and leaves the slack to the others. The result is
+ * ordered by endpoint, then observation time (oldest first), matching the server fold order.
+ */
+export function capRecentChecks(
+  checks: readonly CheckSummary[],
+  max: number = OVERVIEW_MAX_RECENT_CHECKS,
+): CheckSummary[] {
+  const groups = new Map<string, CheckSummary[]>();
+  for (const check of checks) {
+    const group = groups.get(check.endpoint);
+    if (group === undefined) groups.set(check.endpoint, [check]);
+    else group.push(check);
+  }
+  const byTime = (a: CheckSummary, b: CheckSummary) => (a.observedAt ?? "").localeCompare(b.observedAt ?? "");
+  const ordered = [...groups.values()].sort((a, b) => a.length - b.length);
+  const kept: CheckSummary[] = [];
+  let remaining = Math.max(0, Math.floor(max));
+  ordered.forEach((group, index) => {
+    const share = Math.floor(remaining / (ordered.length - index));
+    const take = Math.min(group.length, share);
+    if (take > 0) kept.push(...[...group].sort(byTime).slice(group.length - take));
+    remaining -= take;
+  });
+  return kept.sort((a, b) => a.endpoint.localeCompare(b.endpoint) || byTime(a, b));
+}
+
 function recentCheck(input: unknown): CheckSummary | null {
   const value = record(input);
   if (value === null || !hasKeys(value, ["target", "endpoint", "success", "observedAt", "durationMs"])) return null;
@@ -460,7 +500,12 @@ export function validateOverviewSnapshotV2(input: unknown): OverviewSnapshotVali
   const hosts = arrayOf(value.hosts, MAX_HOSTS, host);
   const alerts = arrayOf(value.alerts, MAX_ALERTS, alert);
   const signals = arrayOf(value.signals, MAX_SIGNALS, signal);
-  const recentChecks = arrayOf(value.recentChecks, MAX_CHECKS, recentCheck);
+  // An over-cap list is capped (newest per endpoint) rather than rejecting the whole overview: the
+  // checks are additive drawer detail and must never take the Overview down with them (F1).
+  const receivedChecks = arrayOf(value.recentChecks, MAX_RECEIVED_CHECKS, recentCheck);
+  const recentChecks = receivedChecks === null || receivedChecks.length <= MAX_CHECKS
+    ? receivedChecks
+    : capRecentChecks(receivedChecks, MAX_CHECKS);
   const firing = nonNegativeInteger(alertCounts.firing);
   const silenced = nonNegativeInteger(alertCounts.silenced);
   const inhibited = nonNegativeInteger(alertCounts.inhibited);
@@ -474,14 +519,26 @@ export function validateOverviewSnapshotV2(input: unknown): OverviewSnapshotVali
   const coverageAvailability = availability(coverageSection.availability);
   const engineValue = engineSection?.value === null ? null : record(engineSection?.value);
   const coverageValue = coverageSection?.value === null ? null : record(coverageSection?.value);
+  const invalidFields = Object.entries({
+    "sources.metrics": metrics, "sources.alerts": alertsSource, "sources.checks": checksSource,
+    hosts, alerts, signals, recentChecks,
+  }).filter(([, parsed]) => parsed === null).map(([field]) => field);
   if (metrics === null || alertsSource === null || checksSource === null || hosts === null || alerts === null || signals === null || recentChecks === null) {
-    return { ok: false, message: "The overview response is malformed." };
+    // Name the failing fields (never their contents) so a rejection is diagnosable (F2).
+    return { ok: false, message: `The overview response is malformed (${invalidFields.join(", ")}).` };
   }
   if (firing === null || silenced === null || inhibited === null || engineAvailability === null || coverageAvailability === null) {
     return { ok: false, message: "The overview response is malformed." };
   }
-  if (engineValue !== null && (!hasKeys(engineValue, ["ok"]) || typeof engineValue.ok !== "boolean")) {
-    return { ok: false, message: "The overview response is malformed." };
+  if (engineValue !== null && (!hasKeys(engineValue, ["ok"], ["problems"]) || typeof engineValue.ok !== "boolean")) {
+    return { ok: false, message: "The overview response is malformed (engine)." };
+  }
+  // `problems` is additive: a body without it reads as none.
+  const engineProblemList = engineValue === null || engineValue.problems === undefined
+    ? []
+    : arrayOf(engineValue.problems, ENGINE_MAX_PROBLEMS, (item) => boundedString(item));
+  if (engineProblemList === null) {
+    return { ok: false, message: "The overview response is malformed (engine.problems)." };
   }
   if (coverageValue !== null && !hasKeys(coverageValue, ["covered", "gaps", "extras"])) {
     return { ok: false, message: "The overview response is malformed." };
@@ -515,7 +572,12 @@ export function validateOverviewSnapshotV2(input: unknown): OverviewSnapshotVali
       hosts, alerts, signals, recentChecks,
       engine: engineValue === null
         ? { availability: engineAvailability, value: null }
-        : { availability: engineAvailability, value: { ok: engineValue.ok as boolean } },
+        : {
+            availability: engineAvailability,
+            value: engineValue.problems === undefined
+              ? { ok: engineValue.ok as boolean }
+              : { ok: engineValue.ok as boolean, problems: engineProblemList },
+          },
       alertCounts: { firing, silenced, inhibited },
       coverage: coverageValue === null
         ? { availability: coverageAvailability, value: null }

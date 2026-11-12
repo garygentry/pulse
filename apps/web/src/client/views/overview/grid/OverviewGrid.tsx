@@ -8,6 +8,7 @@
 // module never re-sorts, re-groups or reads status beyond what HostCell/ServiceChip render.
 
 import type { ReactElement } from "react";
+import type { EstateClock } from "../../../format.js";
 import { useCallback, useEffect, useId, useRef } from "react";
 
 import { Button, EmptyState, cn } from "@/ui";
@@ -35,6 +36,8 @@ export interface OverviewGridProps {
   readonly onToggleGroup: (groupId: string) => void;
   /** Selects a canonical host or service target. */
   readonly onSelect: (drilldownId: string) => void;
+  /** Estate clock for evidence times in the cells (F41). */
+  readonly clock?: EstateClock;
 }
 
 /** Selector matching every roving target trigger. */
@@ -99,6 +102,7 @@ interface GroupSectionProps {
   readonly reducedMotion: boolean;
   readonly onToggleGroup: (groupId: string) => void;
   readonly onSelect: (drilldownId: string) => void;
+  readonly clock?: EstateClock;
 }
 
 function GroupSection(props: GroupSectionProps): ReactElement {
@@ -143,6 +147,7 @@ function GroupSection(props: GroupSectionProps): ReactElement {
                 changeTracker={props.changeTracker}
                 reducedMotion={props.reducedMotion}
                 onSelect={props.onSelect}
+                {...(props.clock !== undefined ? { clock: props.clock } : {})}
               />
             ))}
       </div>
@@ -192,6 +197,7 @@ export function OverviewGrid(props: OverviewGridProps): ReactElement {
           reducedMotion={reducedMotion}
           onToggleGroup={onToggleGroup}
           onSelect={select}
+          {...(props.clock !== undefined ? { clock: props.clock } : {})}
         />
       ))}
     </div>

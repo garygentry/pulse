@@ -66,6 +66,15 @@ inhibit_rules:
       - job="hypervisor-api"
     equal:
       - estate
+  # F6: a down host takes its per-host prober with it; HostDown already pages for the host, so the
+  # prober's DeepHealthProberDown is held back for the same host. Mirrors HOST_DOWN_PROBER_INHIBIT.
+  - source_matchers:
+      - alertname="HostDown"
+    target_matchers:
+      - alertname="DeepHealthProberDown"
+    equal:
+      - estate
+      - host
 
 receivers:
   # Default / null sink: a receiver with no notifier config discards everything routed to it.

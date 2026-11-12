@@ -90,6 +90,29 @@ describe("deriveOverviewSurfaceState — no accepted snapshot", () => {
     });
   });
 
+  test("F2/F50: a recorded overview failure is unavailable with its reason, even while the stream is live", () => {
+    const failed = (code: string, message: string): ViewDeliveryState => ({
+      phase: "initial", identity: null, failure: { code, status: 0, message } as ViewDeliveryState["failure"],
+    });
+    const store = freshStore();
+    // Live SSE ticks, but the overview body was rejected by the validator.
+    setConnection(store, { phase: "live", lastGoodAt: T1, observation: observation(1), failingSince: T1 },
+      failed("RESPONSE_INVALID", "The Pulse server's response could not be read."));
+    expect(deriveOverviewSurfaceState(store)).toEqual({
+      status: "unavailable",
+      message: `${OVERVIEW_UNAVAILABLE_MESSAGE} The Pulse server's response could not be read.`,
+      retryable: true,
+    });
+    // Cold start with the API unreachable.
+    const cold = freshStore();
+    setConnection(cold, { failingSince: T1 }, failed("SERVER_UNREACHABLE", "The Pulse server could not be reached."));
+    expect(deriveOverviewSurfaceState(cold).status).toBe("unavailable");
+    // NOT_READY (server starting) is still loading.
+    const starting = freshStore();
+    setConnection(starting, { failingSince: T1 }, failed("NOT_READY", "Current data is not ready yet."));
+    expect(deriveOverviewSurfaceState(starting).status).toBe("loading");
+  });
+
   test("an unknown connection phase fails closed to unavailable", () => {
     const store = freshStore();
     setConnection(store, { phase: "bogus" as ConnectionState["phase"] });

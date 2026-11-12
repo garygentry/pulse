@@ -175,13 +175,16 @@ scrape_configs:
   #    Static, NOT per-host: the central prober serves /metrics on :9120 for the whole estate
   #    (05-config-schema-and-integration.md §5.2b). Emits pulse_deep_health* with self-set
   #    host/service labels — no per-host relabel (contrast the file_sd managed-linux job, §1a).
-  #    The prober service is profiles:["deep-health"]-gated OFF by default; this target is DOWN
-  #    until that profile is active. Wiring shape is stable.
+  #    The prober service is profiles:["deep-health"]-gated OFF by default. Its target comes from
+  #    the rendered file_sd, which lists prober:9120 ONLY when the estate declares central probes
+  #    (renderer `hasCentralProbes`), so a default deployment has no permanently DOWN target here
+  #    (F6). Enable `--profile deep-health` whenever the file lists the target.
   # ══════════════════════════════════════════════════════════════════════════
 
   - job_name: prober
-    static_configs:
-      - targets: ["prober:9120"]
+    file_sd_configs:
+      - files:
+          - /rendered/scrape/file_sd/prober.json
 
   # web overview app self-metrics (web-app 07-slot-reconciliation.md §3.5, REQ-OBS-03). The `web`
   # service is profiles:["web"]-gated OFF by default, so this target is DOWN under the default

@@ -75,10 +75,14 @@ describe("buildStatusUnionQuery — fixed instant union (criterion 2)", () => {
     "pulse_web_engine_notification_failures_per_second",
     "pulse_web_engine_notification_latency_p95_seconds",
     "pulse_web_engine_process_start_seconds",
+    "pulse_web_engine_vmalert_version",
   ];
 
-  test("preserves the existing status selectors at the head", () => {
-    expect(query.startsWith("up or pulse_agent_up or pulse_deep_health_up")).toBe(true);
+  test("is one MetricsQL union() with the status selectors at the head", () => {
+    expect(query.startsWith("union(up, pulse_agent_up, pulse_deep_health_up, ")).toBe(true);
+    expect(query.endsWith(")")).toBe(true);
+    // F28: `or on (__name__)` dropped every right-hand series on VictoriaMetrics; never again.
+    expect(query).not.toContain(" or ");
   });
 
   test("adds bounded declared overview metrics deterministically without duplicating status selectors", () => {
@@ -86,18 +90,16 @@ describe("buildStatusUnionQuery — fixed instant union (criterion 2)", () => {
       "pulse_config_drift_count", "pulse_backup_freshness_age_seconds", "pulse_config_drift_count",
       "up", "invalid metric",
     ]);
-    expect(expanded).toContain("pulse_backup_freshness_age_seconds or on (__name__) pulse_config_drift_count");
+    expect(expanded).toContain("pulse_deep_health_up, pulse_backup_freshness_age_seconds, pulse_config_drift_count, label_replace(");
     expect(expanded.match(/pulse_config_drift_count/g)).toHaveLength(1);
     expect(expanded).not.toContain("invalid metric");
   });
 
-  test("contains all seven aliases wrapped in label_replace and joined with `or on (__name__)`", () => {
+  test("contains every alias wrapped in label_replace as union() arguments", () => {
     for (const alias of ALIASES) {
       expect(query).toContain(`"__name__", "${alias}", "job", ".*"`);
     }
-    // status head + 7 projections => 7 join operators.
-    expect(query.split(" or on (__name__) ")).toHaveLength(8);
-    expect((query.match(/label_replace\(/g) ?? [])).toHaveLength(7);
+    expect((query.match(/label_replace\(/g) ?? [])).toHaveLength(ALIASES.length);
   });
 });
 

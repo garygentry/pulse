@@ -18,6 +18,8 @@ export interface RouteMatch {
   view: string;
   params: Readonly<Record<string, string>>;
   query: Readonly<Record<string, string>>;
+  /** The requested path when it matched no route and the fallback was shown instead (F12). */
+  redirectedFrom?: string;
 }
 
 /** The router handle (REQ-ROUTE-01). */
@@ -128,6 +130,15 @@ function canonicalPath(pattern: string, params: Readonly<Record<string, string>>
   return segments.length === 0 ? "/" : `/${segments.join("/")}`;
 }
 
+/** The canonical path as a URL: pattern segments with each `:param` re-encoded, so a decoded `/`
+ *  inside a value never becomes a path separator. */
+function encodedPath(pattern: string, params: Readonly<Record<string, string>>): string {
+  const segments = splitSegments(normalizePath(pattern)).map((p) =>
+    p.startsWith(":") ? encodeURIComponent(params[p.slice(1)] ?? "") : p,
+  );
+  return segments.length === 0 ? "/" : `/${segments.join("/")}`;
+}
+
 /** Parse a `location.search` (leading `?` optional) into a flat record; last value wins. */
 function parseQuery(search: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -225,7 +236,7 @@ function buildMatch(
 /** Notification key — `view|path|search` (07 §7 step 8). A URL-only change such as `/Alerts/` →
  *  `/alerts` produces no spurious re-render. */
 function matchKey(m: RouteMatch): string {
-  return `${m.view}|${m.path}|${serializeQuery(m.query)}`;
+  return `${m.view}|${m.path}|${serializeQuery(m.query)}|${m.redirectedFrom ?? ""}`;
 }
 
 export function createPathRouter(opts: PathRouterOptions): PathRouter {
@@ -256,17 +267,26 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
 
   const listeners = new Set<(match: RouteMatch) => void>();
 
-  const fallbackReplace = (query: Readonly<Record<string, string>>): RouteMatch => {
+  const fallbackReplace = (query: Readonly<Record<string, string>>, requested: string): RouteMatch => {
     const target = href(fallbackPath, query);
     win.history.replaceState(readState(win), "", target);
-    return buildMatch(fallbackFound, query);
+    // F12: say which path was not found instead of silently showing the fallback.
+    return { ...buildMatch(fallbackFound, query), redirectedFrom: requested };
   };
 
   const initialPath = normalizePath(win.location.pathname);
   const initialQuery = parseQuery(win.location.search);
   const initialFound = matchRoute(routes, initialPath);
   let currentMatch: RouteMatch =
-    initialFound === null ? fallbackReplace(initialQuery) : buildMatch(initialFound, initialQuery);
+    initialFound === null ? fallbackReplace(initialQuery, win.location.pathname) : buildMatch(initialFound, initialQuery);
+  // F13: a non-canonical address (`/alerts/`, `//engine`) is rewritten to the canonical path it
+  // rendered, keeping the query and fragment.
+  if (initialFound !== null) {
+    const canonical = encodedPath(initialFound.pattern, initialFound.params);
+    if (canonical !== win.location.pathname) {
+      win.history.replaceState(readState(win), "", `${href(canonical, initialQuery)}${win.location.hash}`);
+    }
+  }
 
   const notify = (next: RouteMatch): void => {
     for (const listener of [...listeners]) {
@@ -326,7 +346,7 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     const query = parseQuery(win.location.search);
     const found = matchRoute(routes, path);
     const previous = currentMatch;
-    const next = found === null ? fallbackReplace(query) : buildMatch(found, query);
+    const next = found === null ? fallbackReplace(query, win.location.pathname) : buildMatch(found, query);
     currentMatch = next;
     const samePage = matchKey(next) === matchKey(previous);
     if (!samePage) notify(next);
@@ -424,7 +444,7 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
     }
     const found = matchRoute(routes, targetPath);
     const previous = currentMatch;
-    const next = found === null ? fallbackReplace(query) : buildMatch(found, query);
+    const next = found === null ? fallbackReplace(query, targetPath) : buildMatch(found, query);
     currentMatch = next;
     const samePage = matchKey(next) === matchKey(previous);
     if (!samePage) notify(next);

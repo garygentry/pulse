@@ -8,7 +8,7 @@
 import type { ReactElement, ReactNode } from "react";
 import { useEffect, useMemo } from "react";
 import { useSignal } from "@preact/signals-react";
-import type { EnginePayload, OverviewSnapshotV2 } from "@pulse/web-data/wire";
+import type { EnginePayload, OverviewSnapshotV2, ViewDeliveryState } from "@pulse/web-data/wire";
 
 import { Callout, EmptyState, ExternalLink, FragmentBoundary, Icon, LoadingState, PageErrorBoundary, PageHeader } from "@/ui";
 import { isKiosk } from "../../shell/kiosk.js";
@@ -16,6 +16,8 @@ import { FALLBACK_ESTATE, createEstateClock, TZ_FALLBACK_MARKER } from "../../fo
 import type { EstateClock } from "../../format.js";
 import type { ViewProps } from "../../../shared/registry.js";
 import { useNotCurrent } from "../_shared/timeseries/history/freshness.js";
+import { PendingView } from "../_shared/pending-view.js";
+import { refetchView } from "../../store/live-state.js";
 
 import {
   readEngine, readEngineDelivery, readSnapshot, readObservation, readLastGoodAt, readConnectionPhase,
@@ -25,7 +27,7 @@ import {
 import { readRouteKey } from "./route-key.js";
 import { presentVerdict, rollUpVerdict } from "./verdict.js";
 import { engineBoardUrl } from "./labels.js";
-import { VerdictBanner } from "./verdict-banner.js";
+import { VerdictBanner, downTargetNames } from "./verdict-banner.js";
 import { ComponentCards, EngineStatusBadge } from "./components.js";
 import { ScrapeJobs } from "./scrape.js";
 import { RuleGroups } from "./rules.js";
@@ -127,7 +129,9 @@ function EngineViewBody({ store, router, rotation }: ViewProps): ReactElement {
   });
   const presentation = presentVerdict(verdict, clock.format);
 
-  if (verdict.kind === "loading") return <EngineLoading text={presentation.headline} kiosk={kiosk} />;
+  if (verdict.kind === "loading") {
+    return <EngineLoading text={presentation.headline} kiosk={kiosk} delivery={delivery} onRetry={() => refetchView(store, "engine")} />;
+  }
 
   return (
     <div
@@ -147,7 +151,7 @@ function EngineViewBody({ store, router, rotation }: ViewProps): ReactElement {
       />
 
       <Region id="verdict" label="Engine verdict">
-        <VerdictBanner verdict={verdict} presentation={presentation} kiosk={kiosk} />
+        <VerdictBanner verdict={verdict} presentation={presentation} kiosk={kiosk} downTargets={downTargetNames(engine)} />
       </Region>
 
       {engine === null || sections === null ? (
@@ -207,7 +211,12 @@ const ENGINE_PAGE_TITLE = "Monitoring engine";
 
 /** Pre-first-payload layout. The skeletons are aria-hidden; the visible status text carries the
  *  meaning, and aria-busy marks the region. The page keeps its one h1 while it loads. */
-function EngineLoading({ text, kiosk }: { readonly text: string; readonly kiosk: boolean }): ReactElement {
+function EngineLoading({ text, kiosk, delivery, onRetry }: {
+  readonly text: string;
+  readonly kiosk: boolean;
+  readonly delivery: ViewDeliveryState;
+  readonly onRetry: () => void;
+}): ReactElement {
   return (
     <div
       data-slot="engine-page"
@@ -217,7 +226,13 @@ function EngineLoading({ text, kiosk }: { readonly text: string; readonly kiosk:
       data-kiosk={kiosk ? "1" : "0"}
     >
       <PageHeader title={ENGINE_PAGE_TITLE} />
-      <LoadingState label={text} preset="cards" rows={6} />
+      {/* F49: a failed first fetch is an error with Retry, and a long wait says so. */}
+      <PendingView
+        delivery={delivery}
+        failureTitle="The engine state could not be loaded"
+        loading={<LoadingState label={text} preset="cards" rows={6} />}
+        onRetry={onRetry}
+      />
     </div>
   );
 }

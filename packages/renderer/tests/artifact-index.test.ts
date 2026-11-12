@@ -78,7 +78,7 @@ describe("buildArtifactIndex — host artifact paths (02 §3.4)", () => {
     [
       "probe-only",
       { name: "edge01", collectionClass: "probe-only", addresses: ["10.0.0.9"], probe: { kind: "icmp", target: "10.0.0.9" }, provenance: PROV },
-      ["gatus/config.yaml", "prober/config.yaml", "scrape/file_sd/probe-only.json"],
+      ["gatus/config.yaml", "prober/config.yaml", "scrape/file_sd/probe-only.json", "scrape/file_sd/prober.json"],
     ],
     [
       "excluded",
@@ -284,20 +284,20 @@ describe("buildArtifactIndex — service artifact paths (02 §3.4)", () => {
     expect(index.services.get("web01/grafana")?.artifacts).toEqual(["gatus/config.yaml"]);
   });
 
-  test("deepHealth declared -> [prober/config.yaml]", () => {
+  test("deepHealth declared -> [prober/config.yaml, central prober target]", () => {
     const svc = makeService({
       name: "frigate",
       host: "nvr01",
       deepHealth: { endpoint: "https://nvr01/health", responseMapping: { cameras: "$.cameras" }, alertExpression: "cameras < 6" },
     });
     const index = buildArtifactIndex(makeModel([], [svc]));
-    expect(index.services.get("nvr01/frigate")?.artifacts).toEqual(["prober/config.yaml"]);
+    expect(index.services.get("nvr01/frigate")?.artifacts).toEqual(["prober/config.yaml", "scrape/file_sd/prober.json"]);
   });
 
-  test("backupFreshness declared -> [prober/config.yaml]", () => {
+  test("backupFreshness declared -> [prober/config.yaml, central prober target]", () => {
     const svc = makeService({ name: "backups", host: "nas1", backupFreshness: { signal: "last_backup_ts", threshold: "24h" } });
     const index = buildArtifactIndex(makeModel([], [svc]));
-    expect(index.services.get("nas1/backups")?.artifacts).toEqual(["prober/config.yaml"]);
+    expect(index.services.get("nas1/backups")?.artifacts).toEqual(["prober/config.yaml", "scrape/file_sd/prober.json"]);
   });
 
   test("bare service (none of the conditions) -> none", () => {
@@ -314,7 +314,7 @@ describe("buildArtifactIndex — service artifact paths (02 §3.4)", () => {
       backupFreshness: { signal: "last_backup_ts", threshold: "24h" },
     });
     const index = buildArtifactIndex(makeModel([], [svc]));
-    expect(index.services.get("nvr01/frigate")?.artifacts).toEqual(["prober/config.yaml"]);
+    expect(index.services.get("nvr01/frigate")?.artifacts).toEqual(["prober/config.yaml", "scrape/file_sd/prober.json"]);
   });
 
   test("ingressUrl + deepHealth -> both files, sorted via compareString", () => {
@@ -326,7 +326,7 @@ describe("buildArtifactIndex — service artifact paths (02 §3.4)", () => {
     });
     const index = buildArtifactIndex(makeModel([], [svc]));
     // "gatus/config.yaml" < "prober/config.yaml" by code point.
-    expect(index.services.get("web01/grafana")?.artifacts).toEqual(["gatus/config.yaml", "prober/config.yaml"]);
+    expect(index.services.get("web01/grafana")?.artifacts).toEqual(["gatus/config.yaml", "prober/config.yaml", "scrape/file_sd/prober.json"]);
   });
 
   test("service key is '<host>/<service>'", () => {

@@ -1,0 +1,8 @@
+[
+  {
+    "labels": {},
+    "targets": [
+      "prober:9120"
+    ]
+  }
+]

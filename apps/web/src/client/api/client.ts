@@ -96,7 +96,8 @@ export function timeoutAbortReason(): DOMException {
  * Pulse down) is `SERVER_UNREACHABLE` and a 504 `SERVER_TIMEOUT`, at the real status. An auth
  * proxy answering in Pulse's place because the sign-in session expired is `SESSION_EXPIRED`: a
  * redirect (requests never follow one, so a cross-origin login redirect is detectable instead of a
- * CORS `TypeError`), a 2xx HTML page, or a 401/403 without a Pulse error envelope. A complete
+ * CORS `TypeError`), a 2xx HTML page, or a 401/403 without a Pulse error envelope. A complete 2xx
+ * body that is not valid JSON is `RESPONSE_INVALID` (the server reported no error, F51); an error
  * response that is not valid JSON, or carries an unknown or client-only code, is a bounded
  * `INTERNAL_ERROR`.
  */
@@ -228,7 +229,7 @@ type BodyText = { readonly ok: true; readonly text: string } | { readonly ok: fa
  * Read a response body as text, separating transport from content: a stream that fails mid-read
  * (connection drop, or the caller's abort/deadline) is a transport failure classified like a failed
  * `fetch`, never a malformed body. Parsing happens afterwards, so only a complete body that is not
- * valid JSON counts as a protocol (`INTERNAL_ERROR`) failure.
+ * valid JSON counts as a protocol failure (`RESPONSE_INVALID` for a 2xx, else `INTERNAL_ERROR`).
  */
 async function readBodyText(res: Response, signal: AbortSignal | undefined): Promise<BodyText> {
   try {
@@ -287,7 +288,7 @@ async function readErrorResult(res: Response, signal: AbortSignal | undefined): 
   return internalError(res.status);
 }
 
-/** Read a 2xx JSON body: transport failure while streaming, or `INTERNAL_ERROR` for invalid JSON. */
+/** Read a 2xx JSON body: transport failure while streaming, or `RESPONSE_INVALID` for invalid JSON (F51). */
 async function readOkJson<T>(
   res: Response,
   signal: AbortSignal | undefined,
@@ -295,7 +296,7 @@ async function readOkJson<T>(
   const body = await readBodyText(res, signal);
   if (!body.ok) return body;
   const value = parseJson(body.text);
-  return value === PARSE_FAILED ? { ok: false, error: internalError(res.status) } : { ok: true, value: value as T };
+  return value === PARSE_FAILED ? { ok: false, error: gatewayError("RESPONSE_INVALID", res.status) } : { ok: true, value: value as T };
 }
 
 /**

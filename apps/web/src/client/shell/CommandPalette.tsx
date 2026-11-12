@@ -26,6 +26,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import type { AppStore } from "../store/index.js";
 import type { PathRouter } from "../router.js";
 import { registerShortcut } from "../a11y/index.js";
+import { refetchView } from "../store/live-state.js";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
 import { ErrorState } from "@/ui/patterns/error-state";
 // ui-deep-import: entry code; through the barrel Bun.build hoists lazy-only @/ui modules into the entry
@@ -75,6 +76,13 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const openRef = useRef(open);
   openRef.current = open;
+
+  // F15: the palette promises alert search, but alerts are only fetched for the Alerts view. Opening
+  // the palette before Alerts was ever visited fetches them once, so the results never depend on
+  // navigation history.
+  useEffect(() => {
+    if (open && store.alerts.peek() === null) refetchView(store, "alerts");
+  }, [open, store]);
 
   // The lazily loaded dialog, imported at most once: the in-flight mark is never cleared, because
   // the browser would only replay a failed import's rejection. A failure is recorded for the open

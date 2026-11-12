@@ -222,6 +222,23 @@ describe("emitScrape — per-variant targets", () => {
     expect(off).toBeUndefined();
   });
 
+  test("the central prober is a scrape target iff the estate declares a central probe (F6)", () => {
+    const deepHealth = {
+      endpoint: "http://127.0.0.1:5000/api/stats",
+      responseMapping: { detectors: "$.detectors.count" },
+      alertExpression: "pulse_deep_health_up == 0",
+    };
+    const svc = (hostLocal: boolean): Service => ({
+      name: "frigate", host: "web01", kind: "http", managed: true,
+      deepHealth: { ...deepHealth, hostLocal }, provenance: PROV,
+    });
+    // No probes, or only host-local probes → no central target (no permanently DOWN prober:9120).
+    expect(fileFor(makeModel([managed()]), "prober")).toBeUndefined();
+    expect(fileFor(makeModel([managed({ exporterPorts: [9120] })], [svc(true)]), "prober")).toBeUndefined();
+    // A central deep-health probe → prober:9120.
+    expect(fileFor(makeModel([managed()], [svc(false)]), "prober")).toEqual([{ targets: ["prober:9120"], labels: {} }]);
+  });
+
   test("managed-linux jobs use the first address", () => {
     const model = makeModel([
       managed({ addresses: ["10.0.0.4", "10.0.0.5"], exporterPorts: [9256] }),

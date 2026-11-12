@@ -9,7 +9,7 @@
 import type { EstateModel, Host } from "@pulse/core";
 import { compareString } from "../order.js";
 import { perHostProberPath } from "./prober.js";
-import { RenderInvariantError } from "./scrape.js";
+import { CENTRAL_PROBER_FILE_SD, RenderInvariantError } from "./scrape.js";
 import type { WebScrapeTarget } from "./web-model.js";
 
 const CADVISOR_PORT = 8080;
@@ -154,11 +154,12 @@ function hostArtifacts(
     case "nas-api":
       return [`scrape/file_sd/${collectionClass}.json`];
     case "probe-only":
-      // A probe-only host maps to THREE files: its class file_sd, a prober declaration, and a
-      // gatus reachability check (02 §3.4). Sorted for determinism.
+      // A probe-only host maps to its class file_sd, a central prober declaration (plus the central
+      // prober's own scrape target, F6), and a gatus reachability check (02 §3.4). Sorted.
       return sortDedupe([
         "scrape/file_sd/probe-only.json",
         "prober/config.yaml",
+        CENTRAL_PROBER_FILE_SD,
         "gatus/config.yaml",
       ]);
     case "excluded":
@@ -252,13 +253,11 @@ function serviceArtifacts(service: EstateModel["services"][number]): string[] {
   if (service.deepHealth !== undefined) {
     // A host-local deep-health probe is monitored by the PER-HOST prober config (issue #8); a
     // central probe by the shared prober/config.yaml.
-    paths.push(
-      service.deepHealth.hostLocal === true
-        ? perHostProberPath(service.host)
-        : "prober/config.yaml",
-    );
+    if (service.deepHealth.hostLocal === true) paths.push(perHostProberPath(service.host));
+    else paths.push("prober/config.yaml", CENTRAL_PROBER_FILE_SD);
   }
-  if (service.backupFreshness !== undefined) paths.push("prober/config.yaml");
+  // The central prober config and its scrape target (F6: emitted only for central probes).
+  if (service.backupFreshness !== undefined) paths.push("prober/config.yaml", CENTRAL_PROBER_FILE_SD);
   // A backup service that declares a delivery `command` is ALSO monitored by the command-exporter
   // config on its host — that is where its freshness metric is actually produced (issue #3).
   if (service.backupFreshness?.command !== undefined) {

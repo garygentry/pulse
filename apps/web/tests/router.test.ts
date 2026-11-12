@@ -1050,3 +1050,31 @@ describe("server-side spa label (REQ-ROUTE-10)", () => {
   });
 });
 
+
+describe("F12/F13: not-found notice and canonical URL", () => {
+  test("an unknown path records what was requested; the next real navigation clears it", () => {
+    const router = buildRouter("/nope?x=1");
+    try {
+      expect(router.current().redirectedFrom).toBe("/nope");
+      expect(win.location.pathname).toBe("/overview");
+      router.navigate("/alerts");
+      expect(router.current().redirectedFrom).toBeUndefined();
+      router.navigate("/also-missing");
+      expect(router.current().redirectedFrom).toBe("/also-missing");
+    } finally {
+      router.stop();
+    }
+  });
+
+  test("a non-canonical address is rewritten to the canonical path, keeping query and fragment", () => {
+    const router = buildRouter("/alerts/?a=1#top");
+    try {
+      expect(win.location.pathname).toBe("/alerts");
+      expect(win.location.search).toBe("?a=1");
+      expect(win.location.hash).toBe("#top");
+      expect(router.current().redirectedFrom).toBeUndefined();
+    } finally {
+      router.stop();
+    }
+  });
+});

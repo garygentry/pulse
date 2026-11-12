@@ -34,6 +34,7 @@ import { DeclaredFacts } from "./DeclaredFacts.js";
 import { LivenessSparkline } from "./LivenessSparkline.js";
 import { DRAWER_EMPTY_CLASS } from "./classes.js";
 import { AVAILABILITY_LABEL, evidenceLastGood } from "./format.js";
+import { STATUS_LABEL, rollupReason } from "../../../a11y/index.js";
 import { LiveSignals } from "./LiveSignals.js";
 
 /** Props for the read-only selected-target drawer. */
@@ -95,13 +96,19 @@ export function targetDrawerTitle(target: OverviewTarget): string {
 }
 
 function TargetStatusSummary(props: { readonly model: TargetDrawerModel; readonly clock: EstateClock }): ReactElement {
-  const { status, availability } = props.model;
+  const { status, availability, target } = props.model;
+  // F46: a host drawer shows the host's OWN status; when its grid cell (the roll-up) reads worse
+  // because of a service, say so here too.
+  const reason = target.service === null ? rollupReason(target.host) : null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-status={status} data-availability={availability.state}>
       <TargetStatusBadge status={status} size="md" />
       <span data-slot="drawer-availability" className="font-medium">{AVAILABILITY_LABEL[availability.state] ?? availability.state}</span>
       {availability.message !== null ? <span data-slot="drawer-availability-message">{availability.message}</span> : null}
       <span data-slot="drawer-last-good" className="text-muted-foreground">{evidenceLastGood(props.clock, availability)}</span>
+      {reason !== null ? (
+        <span data-slot="drawer-rollup-reason" className="basis-full text-muted-foreground">{`Host itself ${STATUS_LABEL[status]}; ${reason}`}</span>
+      ) : null}
     </div>
   );
 }

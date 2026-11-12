@@ -97,24 +97,21 @@ export function LiveControl(props: LiveControlProps): ReactElement {
         <Icon name={live ? "activity" : "clock"} />
         {live ? "Live" : `Showing until ${props.clock.format(isoOf(props.pausedAt!))}`}
       </span>
-      {live ? (
-        <Button type="button" variant="outline" size="sm" aria-keyshortcuts="l" onClick={() => props.onPause()}>
-          Pause
-        </Button>
-      ) : (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-keyshortcuts="l"
-          data-paused="true"
-          className="border-status-warn-border font-bold"
-          onClick={() => props.onResume()}
-        >
-          <Icon name="play" />
-          Paused — resume live
-        </Button>
-      )}
+      {/* F37: ONE button whose label carries the state ("Pause" / "Paused — resume live"), so
+          toggling keeps keyboard focus on it; swapping two buttons dropped focus to <body>. The
+          label states the state, so it is not also an aria-pressed toggle. */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-keyshortcuts="l"
+        {...(live ? {} : { "data-paused": "true" })}
+        className={live ? undefined : "border-status-warn-border font-bold"}
+        onClick={() => (live ? props.onPause() : props.onResume())}
+      >
+        {live ? null : <Icon name="play" />}
+        {live ? "Pause" : "Paused — resume live"}
+      </Button>
     </span>
   );
 }

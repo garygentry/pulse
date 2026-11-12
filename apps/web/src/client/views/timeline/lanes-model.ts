@@ -219,16 +219,17 @@ export function regionData<T>(state: HistoryRegionState<T>): T | null {
   }
 }
 
-/** Rank for worstInView: lower is worse. Anything other than critical/warning/ok reads "no data". */
+/** Rank for worstInView: lower is worse. Anything other than critical/warning/suppressed/ok reads "no data". */
 function worstRank(status: TargetStatus): number {
   if (status === "critical") return 0;
   if (status === "warning") return 1;
-  if (status === "ok") return 3;
+  if (status === "suppressed") return 3;
+  if (status === "ok") return 4;
   return 2;
 }
 
 /**
- * Worst status in the visible window for the row label: critical > warning > no data > OK.
+ * Worst status in the visible window for the row label: critical > warning > no data > suppressed > OK.
  * Only segments that intersect `view` count (segments are derived over the domain).
  * "No data" ranks above OK so a lane with gaps never summarises as healthy.
  * @returns The row label's status and its text ("critical", "warning", NO_DATA_TEXT, "OK").
@@ -240,16 +241,22 @@ export function worstInView(
 ): { readonly status: TargetStatus; readonly text: string } {
   // While following live, history payloads can be up to one server cache TTL older than the live
   // window end, so every lane ends in a short no-data tail. Leave that tail out of the summary (the
-  // lane still draws it) unless it is all there is.
+  // lane still draws it) unless it is all there is. The tail can be split into several no-data
+  // segments (e.g. by alert names ending inside it), so the whole trailing no-data run is left out
+  // (F35: otherwise one sliver labels an all-green lane "no data").
   let end = view.end;
   if (liveTailSeconds > 0) {
-    let last: LaneSegment | undefined;
-    for (let i = segments.length - 1; i >= 0 && last === undefined; i--) {
+    let tailStart: number | null = null;
+    let reachesEnd = false;
+    for (let i = segments.length - 1; i >= 0; i--) {
       const seg = segments[i]!;
-      if (seg.start < view.end && seg.end > view.start) last = seg;
+      if (!(seg.start < view.end && seg.end > view.start)) continue;
+      if (seg.cause !== "no-data") break;
+      if (tailStart === null) reachesEnd = seg.end >= view.end;
+      tailStart = seg.start;
     }
-    if (last !== undefined && last.cause === "no-data" && last.end >= view.end && view.end - last.start <= liveTailSeconds && last.start > view.start) {
-      end = last.start;
+    if (tailStart !== null && reachesEnd && view.end - tailStart <= liveTailSeconds && tailStart > view.start) {
+      end = tailStart;
     }
   }
   let best = 2;
@@ -264,7 +271,8 @@ export function worstInView(
   if (!seen) best = 2;
   if (best === 0) return { status: "critical", text: STATUS_LABEL.critical };
   if (best === 1) return { status: "warning", text: STATUS_LABEL.warning };
-  if (best === 3) return { status: "ok", text: STATUS_LABEL.ok };
+  if (best === 3) return { status: "suppressed", text: STATUS_LABEL.suppressed };
+  if (best === 4) return { status: "ok", text: STATUS_LABEL.ok };
   return { status: "unknown", text: NO_DATA_TEXT };
 }
 

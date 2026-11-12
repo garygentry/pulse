@@ -345,6 +345,7 @@ const PROTECTED_FAMILIES = [
   "DeepHealthFailed",
   "DeepHealthProbeFailed",
   "DeepHealthProbeStale",
+  "DeepHealthProberDown",
   "AlertPathDown",
   "AncillaryDown",
   // pipeline-health family — exact alertnames from 02-static-rule-library.md §7

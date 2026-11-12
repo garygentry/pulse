@@ -5,7 +5,6 @@
 // `navigate` (CARRIED_QUERY_KEYS), so this module never emits or strips them (REQ-FACET-06).
 import type { RouteMatch } from "../../router.js";
 import type { ActiveAlert, AlertsPayload } from "@pulse/web-data/wire";
-import { firingRows } from "./model.js";
 import { normalizeTargetRef, targetRef } from "../../target-ref.js";
 
 /** The facets (00 §4.1, plus `ack`). Multi-select; union within a facet, AND across
@@ -187,5 +186,7 @@ export function resolveSelected(
   selected: string | null,
 ): ActiveAlert | null {
   if (payload === null || selected === null || selected === "") return null;
-  return firingRows(payload).find((a) => a.fingerprint === selected) ?? null;
+  // Every current alert, the heartbeat included: it is hidden from the Firing TABLE (F4), but its
+  // detail (palette, deep link) must still resolve rather than read "no longer firing".
+  return payload.alerts.find((a) => a.fingerprint === selected) ?? null;
 }

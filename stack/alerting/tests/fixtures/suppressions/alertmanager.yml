@@ -3,6 +3,13 @@ global:
 inhibit_rules:
   - equal:
       - estate
+      - host
+    source_matchers:
+      - alertname="HostDown"
+    target_matchers:
+      - alertname="DeepHealthProberDown"
+  - equal:
+      - estate
     source_matchers:
       - alertname="HypervisorExporterDown"
     target_matchers:

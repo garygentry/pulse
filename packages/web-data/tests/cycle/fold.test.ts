@@ -9,6 +9,10 @@ import { foldOverview } from "../../src/cycle/fold-overview.js";
 import { foldAlerts } from "../../src/cycle/fold-alerts.js";
 import { buildCycleCandidate, foldCurrentViews, materializeCycle } from "../../src/cycle/fold.js";
 import { CURRENT_MAX_PLAIN_BYTES, ERROR_MESSAGES } from "../../src/wire/common.js";
+import { OVERVIEW_MAX_RECENT_CHECKS, validateOverviewSnapshotV2 } from "../../src/wire/overview.js";
+import { engineProblems } from "../../src/wire/engine-verdict.js";
+import { foldEngine } from "../../src/cycle/fold-engine.js";
+import type { ScrapeTargetState } from "../../src/sources/types.js";
 import type { CycleObservation, SourceId, SourceObservation, ViewId } from "../../src/wire/common.js";
 import type { AckFoldRecord, CycleSourceRecords, FoldInputs } from "../../src/cycle/records.js";
 import type { SourceRecord } from "../../src/sources/types.js";
@@ -375,7 +379,85 @@ describe("foldOverview — compatibility + additive fields", () => {
     const ov = foldOverview(inputs({ records: records({ "gatus-statuses": ok([endpoint]) }) }));
     expect(ov.recentChecks).toHaveLength(2);
     expect(ov.recentChecks[0]!.target).toEqual({ kind: "service", id: "svc:hostA/grafana" });
-    expect(ov.engine.value).toEqual({ ok: true });
+    expect(ov.engine.availability.state).toBe("current");
+  });
+
+  test("F8: current DOWN evidence is a warning until its alert fires; missing evidence stays unknown", () => {
+    const status = (samples: MetricSample[], alerts: AlertmanagerAlert[] = []) => {
+      const ov = foldOverview(inputs({ records: records({
+        "victoriametrics-signals": ok(samples),
+        "alertmanager-alerts": ok<readonly AlertmanagerAlert[]>(alerts),
+      }) }));
+      const host = ov.hosts.find((item) => item.name === "hostA")!;
+      return { host: host.status, service: host.services.find((svc) => svc.name === "grafana")!.status };
+    };
+    const down = [metric("up", "hostA", 0), metric("pulse_deep_health_up", "hostA", 0, { service: "grafana" })];
+    // Down evidence, no alert yet (inside its `for:` window): warning, never unknown and never
+    // above the rule's own severity (DeepHealthProbeFailed is a warning).
+    expect(status(down)).toEqual({ host: "warning", service: "warning" });
+    // The alert fired: its severity decides.
+    const hostDown = amAlert({ name: "HostDown", labels: { alertname: "HostDown", severity: "critical", host: "hostA" } });
+    expect(status(down, [hostDown]).host).toBe("critical");
+    // A silenced/inhibited alert for the target: not escalated by the raw evidence.
+    expect(status(down, [{ ...hostDown, state: "silenced" }]).host).toBe("unknown");
+    expect(status(down, [{ ...hostDown, state: "inhibited" }]).host).toBe("unknown");
+    // Affirmative evidence → ok; no samples at all → unknown, never down.
+    expect(status([metric("up", "hostA", 1), metric("pulse_deep_health_up", "hostA", 1, { service: "grafana" })]))
+      .toEqual({ host: "ok", service: "ok" });
+    expect(status([metric("up", "hostA", 1)])).toEqual({ host: "ok", service: "unknown" });
+    expect(status([])).toEqual({ host: "unknown", service: "unknown" });
+  });
+
+  test("F8: a hypervisor reads unknown, not down, while pve-exporter (the relay) is down", () => {
+    const hypervisor = model({ hosts: [{ ...model().hosts[0]!, collectionClass: "hypervisor-api" }] as never });
+    const fold = (exporterUp: number) => foldOverview(inputs({ model: hypervisor, records: records({
+      "victoriametrics-signals": ok<readonly MetricSample[]>([
+        metric("up", "hostA", 0, { job: "hypervisor-api" }),
+        metric("up", "pve-exporter", exporterUp, { job: "pve-exporter" }),
+      ]),
+    }) })).hosts.find((item) => item.name === "hostA")!.status;
+    expect(fold(0)).toBe("unknown");
+    expect(fold(1)).toBe("warning");
+  });
+
+  test("the engine summary carries the Engine verdict's problems, so the views agree (F5)", () => {
+    const down: ScrapeTargetState = {
+      job: "node", instance: "hostA:9100", scrapeUrl: null, health: "down", lastScrapeAt: AT, lastError: "timeout",
+    };
+    const input = inputs({ records: records({ "victoriametrics-targets": ok<readonly ScrapeTargetState[]>([down]) }) });
+    const ov = foldOverview(input);
+    const expected = engineProblems(foldEngine(input));
+    expect(expected).toContain("1 scrape targets down");
+    expect(ov.engine.value).toEqual({ ok: false, problems: expected });
+    // foldCurrentViews derives both views from one engine payload.
+    const views = foldCurrentViews(input);
+    expect(views.overview.engine.value?.problems).toEqual(engineProblems(views.engine));
+  });
+
+  test("caps recent checks within the client bound, keeping the newest per endpoint (F1)", () => {
+    // 21 endpoints x 100 results = 2100 > 2048: the shape that once took the Overview down.
+    const endpoints: GatusEndpointState[] = Array.from({ length: 21 }, (_, e) => ({
+      name: `probe-${String(e).padStart(2, "0")}`,
+      group: "probes",
+      key: `probes_probe-${e}`,
+      identity: `probe-${e}`,
+      expected: true,
+      results: Array.from({ length: 100 }, (_, r) => ({
+        timestamp: new Date(Date.parse(AT) + r * 60_000).toISOString(),
+        success: true,
+        durationMs: 5,
+        conditionResults: [],
+      })),
+    }));
+    const ov = foldOverview(inputs({ records: records({ "gatus-statuses": ok(endpoints) }) }));
+    expect(ov.recentChecks.length).toBeLessThanOrEqual(OVERVIEW_MAX_RECENT_CHECKS);
+    expect(ov.recentChecks.length).toBe(OVERVIEW_MAX_RECENT_CHECKS); // the slack is shared out, not wasted
+    const newest = new Date(Date.parse(AT) + 99 * 60_000).toISOString();
+    for (const endpoint of endpoints) {
+      const kept = ov.recentChecks.filter((check) => check.endpoint === endpoint.name);
+      expect(kept.at(-1)!.observedAt).toBe(newest);
+    }
+    expect(validateOverviewSnapshotV2(ov).ok).toBe(true);
   });
 
   test("declared deep-health signal values are attributed to the canonical service", () => {

@@ -256,8 +256,8 @@ describeDom("estate: coverage explorer", (dom) => {
         const cols = [...b.querySelectorAll("thead th")].map((th) => th.textContent);
         expect(cols).toEqual(
           id === "suppressed"
-            ? ["Status", "Entity", "Kind", "Class", "Artifacts", "Rationale"]
-            : ["Status", "Entity", "Kind", "Class", "Artifacts"],
+            ? ["Coverage", "Entity", "Kind", "Class", "Artifacts", "Rationale"]
+            : ["Coverage", "Entity", "Kind", "Class", "Artifacts"],
         );
         // The bucket status badge sits beside the heading, outside the table.
         const badges = [...b.querySelectorAll('[data-slot="status-badge"][data-status]')];

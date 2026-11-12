@@ -66,6 +66,11 @@ function StatusGroup(props: { readonly kind: "hosts" | "services"; readonly titl
           </li>
         ))}
       </ul>
+      {props.kind === "hosts" ? (
+        // F9: host counts use the same roll-up as the grid cells, so a host with an unknown service
+        // counts as unknown here even though the host itself is OK. Say so.
+        <span className={DETAIL_CLASS} data-stat-qualifier="rollup">Worst of each host and its services</span>
+      ) : null}
     </StatCard>
   );
 }
@@ -121,7 +126,7 @@ function CoverageGroup(props: { readonly coverage: CoverageStat; readonly clock:
   );
 }
 
-function engineBadge(status: "ok" | "critical" | "unknown", label: string): ReactElement {
+function engineBadge(status: "ok" | "warning" | "unknown", label: string): ReactElement {
   return <TargetStatusBadge status={status} label={label} />;
 }
 
@@ -130,16 +135,21 @@ function EngineGroup(props: { readonly engine: EngineOkStat; readonly clock: Est
   const current = engine.status === "available" && engine.availability.state === "current";
   let badge: ReactElement;
   if (engine.status === "available" && current) {
-    badge = engine.ok ? engineBadge("ok", "Engine OK") : engineBadge("critical", "Engine not OK");
+    // Same word and tone as the Engine view's verdict (F5): degraded is a warning, not critical.
+    badge = engine.ok ? engineBadge("ok", "Engine OK") : engineBadge("warning", "Engine degraded");
   } else if (engine.availability.state === "not-configured") {
     badge = engineBadge("unknown", "Engine not configured");
   } else {
     badge = engineBadge("unknown", "Engine unavailable");
   }
   const lastGood = engine.availability.lastGoodAt;
+  const problems = engine.status === "available" && current && !engine.ok ? engine.problems : [];
   return (
     <StatCard stat="engine" availability={current ? "current" : "unavailable"} label="Engine" title="Engine">
       {badge}
+      {problems.length === 0 ? null : (
+        <span className={DETAIL_CLASS} data-stat-problems="">{problems.join("; ")}</span>
+      )}
       {current || lastGood === null ? null : (
         <span className={DETAIL_CLASS} data-stat-qualifier="">{lastGoodLabel(clock, lastGood)}</span>
       )}
@@ -243,7 +253,7 @@ function StripEngine(props: { readonly engine: EngineOkStat; readonly clock: Est
   const current = engine.status === "available" && engine.availability.state === "current";
   let badge: ReactElement;
   if (engine.status === "available" && current) {
-    badge = engine.ok ? engineBadge("ok", "OK") : engineBadge("critical", "Not OK");
+    badge = engine.ok ? engineBadge("ok", "OK") : engineBadge("warning", "Degraded");
   } else if (engine.availability.state === "not-configured") {
     badge = engineBadge("unknown", "Not configured");
   } else {

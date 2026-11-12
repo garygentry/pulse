@@ -6,6 +6,7 @@ import { Button, Callout, Section, TARGET_STATUS } from "@/ui";
 import type { IconName } from "@/ui";
 import { bannerSummary } from "./verdict.js";
 import type { BannerVerdict, VerdictPresentation } from "./verdict.js";
+import type { EnginePayload } from "@pulse/web-data/wire";
 
 /** Props for {@link VerdictBanner}. */
 export interface VerdictBannerProps {
@@ -15,6 +16,8 @@ export interface VerdictBannerProps {
   readonly presentation: VerdictPresentation;
   /** Kiosk: every contributor is shown inline and nothing is interactive. */
   readonly kiosk: boolean;
+  /** "job instance" of every down scrape target (`downTargetNames`), named under a degraded verdict. */
+  readonly downTargets?: readonly string[];
 }
 
 /** Icon per verdict kind, shown with the verdict word so the status is never colour alone. */
@@ -29,7 +32,16 @@ export const VERDICT_ICON: Readonly<Record<BannerVerdict["kind"], IconName>> = {
  * Callout is the live region; the "and N more" control and the full list sit after it, so a verdict
  * change announces only the headline. In kiosk every contributor is inline and there is no button.
  */
-export function VerdictBanner({ verdict, presentation: p, kiosk }: VerdictBannerProps): ReactElement {
+/** Down scrape targets named in the banner before "and N more". */
+const MAX_NAMED_TARGETS = 3;
+
+/** "job instance" for every scrape target that is not up, in payload order (F32). */
+export function downTargetNames(engine: EnginePayload | null): string[] {
+  if (engine === null) return [];
+  return engine.scrapeJobs.flatMap((job) => job.targets.filter((t) => t.health !== "up").map((t) => `${t.job} ${t.instance}`));
+}
+
+export function VerdictBanner({ verdict, presentation: p, kiosk, downTargets = [] }: VerdictBannerProps): ReactElement {
   const listId = `${useId()}-contributors`;
   const [open, setOpen] = useState(false);
   const status = p.status ?? "unknown";
@@ -46,6 +58,13 @@ export function VerdictBanner({ verdict, presentation: p, kiosk }: VerdictBanner
         data-status={status}
       >
         {summary === "" ? null : <span data-verdict-summary="">— {summary}</span>}
+        {verdict.kind === "degraded" && downTargets.length > 0 ? (
+          // F32: name the down targets instead of leaving them buried in the long scrape list.
+          <span className="block text-sm" data-verdict-down-targets="">
+            {`Down: ${downTargets.slice(0, MAX_NAMED_TARGETS).join(", ")}${
+              downTargets.length > MAX_NAMED_TARGETS ? `, and ${downTargets.length - MAX_NAMED_TARGETS} more` : ""}`}
+          </span>
+        ) : null}
       </Callout>
       {showMore ? (
         <div className="flex flex-col items-start gap-2">

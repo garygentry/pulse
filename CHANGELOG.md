@@ -8,6 +8,26 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Re-render before upgrading the stack config.** The central deep-health `prober` scrape job
+  now reads `rendered/scrape/file_sd/prober.json`, which the renderer writes only when the estate
+  declares central probes. With rendered output from an older renderer the central prober is not
+  scraped. See [Upgrading to the next release](docs/operator/upgrade-path.md#upgrading-to-the-next-release).
+
+### Added
+
+- `DeepHealthProberDown` (warning): a deep-health prober scrape target is unreachable. HostDown
+  holds it back for the same host.
+
+### Fixed
+
+- The engine instant query dropped every engine projection, `pulse_agent_up` and declared
+  deep-health/backup metrics on VictoriaMetrics; Engine capacity, notifications and uptime now
+  report.
+- The Overview no longer fails to load when more recent checks are retained than the client
+  accepts, and resolved alerts no longer show as firing in alert history and the Timeline.
+
 ## [0.2.0] - 2026-10-15
 
 The first tagged public release. It covers everything merged to `main` since the public

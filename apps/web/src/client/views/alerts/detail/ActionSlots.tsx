@@ -55,7 +55,10 @@ export function ActionSlots(props: { store: AppStore; alert: ActiveAlert }): Rea
       </div>
       {enabled.every(([, on]) => !on) ? (
         <p className="text-sm text-muted-foreground" data-actions-none="">
-          No actions are available in this session.
+          {/* F19: say WHY, so a deployment choice does not read as a permissions problem. */}
+          {props.store.session.value?.authMode === "none"
+            ? "No actions are available: this deployment runs without sign-in (auth mode “none”), so the write path is off. The operator can enable it."
+            : "No actions are available in this session."}
         </p>
       ) : null}
     </Section>
