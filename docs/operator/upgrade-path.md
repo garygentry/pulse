@@ -83,6 +83,12 @@ history and Grafana state. Apart from rebuilding the locally built images above,
 > content-verification, and rollback — live in the [bootstrap runbook](/bootstrap/). This
 > page is the narrative; it links there and never restates those steps.
 
+## Upgrading to 0.3.1
+
+0.3.1 changes only the web app. Rebuild the web image
+(`docker compose --profile web build`) and re-apply; the rendered tree and stack config are
+unchanged from 0.3.0. Coming from 0.2.0, read the 0.3.0 notes below first.
+
 ## Upgrading to 0.3.0
 
 **Re-render first (breaking).** The central deep-health `prober` scrape job in
