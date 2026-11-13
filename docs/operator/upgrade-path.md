@@ -83,7 +83,7 @@ history and Grafana state. Apart from rebuilding the locally built images above,
 > content-verification, and rollback — live in the [bootstrap runbook](/bootstrap/). This
 > page is the narrative; it links there and never restates those steps.
 
-## Upgrading to the next release
+## Upgrading to 0.3.0
 
 **Re-render first (breaking).** The central deep-health `prober` scrape job in
 `stack/compose/config/victoriametrics/scrape.yml` now reads its target from
@@ -97,6 +97,11 @@ scraped at all, so run step 1 before you apply the new stack config.
 (`docker compose --profile deep-health up -d prober`). The new `DeepHealthProberDown` warning
 fires for a prober target that stays unreachable for 2 minutes, including the central one when
 its profile is off.
+
+**Rebuild the web image** before `docker compose up`
+(`docker compose --profile web --profile deep-health build`); the web app changed in 0.3.0.
+An alert route or silence keyed on `alertname` sees one new name, `DeepHealthProberDown`, which
+HostDown inhibits for the same `estate` and `host`.
 
 ## Upgrading to 0.2.0
 

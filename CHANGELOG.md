@@ -8,17 +8,43 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Breaking
 
 - **Re-render before upgrading the stack config.** The central deep-health `prober` scrape job
   now reads `rendered/scrape/file_sd/prober.json`, which the renderer writes only when the estate
   declares central probes. With rendered output from an older renderer the central prober is not
-  scraped. See [Upgrading to the next release](docs/operator/upgrade-path.md#upgrading-to-the-next-release).
+  scraped. See [Upgrading to 0.3.0](docs/operator/upgrade-path.md#upgrading-to-030).
+
+- **Down evidence reads warning until its alert fires.** A host or service whose liveness reads
+  down is now `warning` on the Overview, Estate and host pages until the matching alert fires;
+  the firing alert's severity then decides. A silenced or inhibited alert, or a hypervisor read
+  through a down pve-exporter, stays `unknown`. Before, one missed scrape turned the cell
+  critical while the Alerts count stayed at zero. (#79)
 
 ### Added
 
 - `DeepHealthProberDown` (warning): a deep-health prober scrape target is unreachable. HostDown
-  holds it back for the same host.
+  holds it back for the same host. (#79)
+- Host pages list the host's services, link to the Timeline and Grafana, show each scrape
+  target's health and the live evidence behind the status. Entity pages get their own tab
+  titles. (#79)
+- An unknown URL shows a "There is no page at …" notice on the page it falls back to. (#79)
+- The Engine tile reads "Engine degraded" and names the problems (and the verdict banner names
+  down scrape targets). (#79)
+
+### Changed
+
+- Rolled-up host status explains itself ("Host itself …; N of M services …"), excluded and
+  suppressed rows sort last, and the Timeline draws suppressed time as its own segment. (#79)
+- Alerts and Engine show a recorded load failure with its reason and Retry instead of an
+  endless spinner, and say so when the first update takes longer than 20 seconds. The header
+  reads "Live" only when a snapshot arrived. (#79)
+- The heartbeat no longer counts as a firing alert; its indicator reads "Heartbeat OK" or
+  "Heartbeat missing", and "missing" when Alertmanager evidence is not current. (#79)
+- Engine active series come from the hourly metric-ID count; the vmalert version is read from
+  the engine projection. (#79)
 
 ### Fixed
 
@@ -193,5 +219,6 @@ change below needs a new vmalert mount, and the locally built `web` image must b
   status maps. (#43, #47)
 - New `@/ui` guardrail checks: token resolution, page structure, list keyboards and tabs. (#36)
 
-[Unreleased]: https://github.com/garygentry/pulse/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/garygentry/pulse/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/garygentry/pulse/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/garygentry/pulse/releases/tag/v0.2.0

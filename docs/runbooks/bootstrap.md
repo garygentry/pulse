@@ -56,7 +56,7 @@ release page needs neither), and verify the checksum before trusting it.
 **Command**
 
 ```bash
-TAG="v0.2.0"   # the release you are installing
+TAG="v0.3.0"   # the release you are installing
 ARCH="x64"     # or arm64; on Alpine use x64-musl or arm64-musl
 gh release download "$TAG" --repo garygentry/pulse \
   --pattern "pulse-linux-${ARCH}" --pattern SHA256SUMS
@@ -79,7 +79,7 @@ chmod +x pulse-cli && export PULSE_BIN="$(pwd)/pulse-cli"
 
 **Verify (content):** `sha256sum --ignore-missing -c SHA256SUMS` prints
 `pulse-linux-${ARCH}: OK` (for example `pulse-linux-x64: OK`). Read the `OK` line itself, not just the
-exit code. Then `"$PULSE_BIN" --version` prints `pulse 0.2.0` and
+exit code. Then `"$PULSE_BIN" --version` prints `pulse 0.3.0` and
 `supported schema majors: 1`, which confirms the binary runs and speaks schema major 1. A
 from-source CLI prints `pulse 0.0.0-dev`, because only release builds bake the version in.
 
