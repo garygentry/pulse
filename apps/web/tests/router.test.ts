@@ -1066,6 +1066,18 @@ describe("F12/F13: not-found notice and canonical URL", () => {
     }
   });
 
+  test("the root path lands on the fallback without a not-found notice", () => {
+    const router = buildRouter("/?x=1");
+    try {
+      expect(win.location.pathname).toBe("/overview");
+      expect(router.current().redirectedFrom).toBeUndefined();
+      router.navigate("/");
+      expect(router.current().redirectedFrom).toBeUndefined();
+    } finally {
+      router.stop();
+    }
+  });
+
   test("a non-canonical address is rewritten to the canonical path, keeping query and fragment", () => {
     const router = buildRouter("/alerts/?a=1#top");
     try {

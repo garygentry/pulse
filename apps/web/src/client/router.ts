@@ -270,8 +270,10 @@ export function createPathRouter(opts: PathRouterOptions): PathRouter {
   const fallbackReplace = (query: Readonly<Record<string, string>>, requested: string): RouteMatch => {
     const target = href(fallbackPath, query);
     win.history.replaceState(readState(win), "", target);
-    // F12: say which path was not found instead of silently showing the fallback.
-    return { ...buildMatch(fallbackFound, query), redirectedFrom: requested };
+    // F12: say which path was not found instead of silently showing the fallback. The root `/` is
+    // the app's entry point, not a missing page, so it lands on the fallback without a notice.
+    const match = buildMatch(fallbackFound, query);
+    return normalizePath(requested) === "/" ? match : { ...match, redirectedFrom: requested };
   };
 
   const initialPath = normalizePath(win.location.pathname);
