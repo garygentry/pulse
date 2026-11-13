@@ -83,7 +83,7 @@ history and Grafana state. Apart from rebuilding the locally built images above,
 > content-verification, and rollback — live in the [bootstrap runbook](/bootstrap/). This
 > page is the narrative; it links there and never restates those steps.
 
-## Upgrading to the next release (unreleased)
+## Upgrading to 0.3.2
 
 **Re-render.** `rendered/scrape/file_sd/` now holds every file a stack scrape job reads: each
 job's file is written as an empty list (`[]`) when it has no targets, instead of being left out.
@@ -104,8 +104,8 @@ unchanged from 0.3.0. Coming from 0.2.0, read the 0.3.0 notes below first.
 `stack/compose/config/victoriametrics/scrape.yml` now reads its target from
 `rendered/scrape/file_sd/prober.json`. The renderer lists `prober:9120` in that file only when the
 estate declares probes for the central prober (a deep-health check that is not `host_local`, a
-backup-freshness check, or a probe-only host). Otherwise 0.3.x leaves the file out and later
-releases write it as an empty list, so a stack that runs only per-host probers no longer carries
+backup-freshness check, or a probe-only host). Otherwise 0.3.0 and 0.3.1 leave the file out and
+0.3.2 writes it as an empty list, so a stack that runs only per-host probers no longer carries
 a permanently down `prober:9120` target. Keep old rendered output and the central prober is not
 scraped at all, so run step 1 before you apply the new stack config.
 
