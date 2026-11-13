@@ -49,7 +49,7 @@ cd pulse
 bun install
 ```
 
-To run a tagged release instead of `main`, check out its tag (for example `git checkout v0.2.0`) before `bun install`.
+To run a tagged release instead of `main`, check out its tag (for example `git checkout v0.3.0`) before `bun install`.
 Release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quickstart
