@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-13
+
 ### Fixed
 
 - Opening the site root (`/`) no longer shows "There is no page at /"; it lands on the Overview
@@ -226,6 +228,7 @@ change below needs a new vmalert mount, and the locally built `web` image must b
   status maps. (#43, #47)
 - New `@/ui` guardrail checks: token resolution, page structure, list keyboards and tabs. (#36)
 
-[Unreleased]: https://github.com/garygentry/pulse/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/garygentry/pulse/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/garygentry/pulse/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/garygentry/pulse/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/garygentry/pulse/releases/tag/v0.2.0
