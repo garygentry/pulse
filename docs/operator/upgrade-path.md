@@ -98,6 +98,13 @@ scraped at all, so run step 1 before you apply the new stack config.
 fires for a prober target that stays unreachable for 2 minutes, including the central one when
 its profile is off.
 
+**Expect a short `DeepHealthProberDown` when the upgrade removes a prober target.** When the
+re-render drops a target whose last scrape was down (for example the old permanently down
+`prober:9120`) and the same apply recreates VictoriaMetrics, the removed target gets no
+staleness marker. Its last `up == 0` sample stays visible for the 5-minute lookback, so the alert
+can fire for a few minutes and then resolves on its own. Silence `DeepHealthProberDown` for about
+10 minutes around the apply if you don't want the notification.
+
 **Rebuild the web image** before `docker compose up`
 (`docker compose --profile web --profile deep-health build`); the web app changed in 0.3.0.
 An alert route or silence keyed on `alertname` sees one new name, `DeepHealthProberDown`, which

@@ -8,6 +8,13 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Opening the site root (`/`) no longer shows "There is no page at /"; it lands on the Overview
+  without a notice. An unknown path still shows the notice.
+- The 0.3.0 upgrade notes now warn that removing a down prober target can fire
+  `DeepHealthProberDown` for a few minutes after the apply.
+
 ## [0.3.0] - 2026-11-13
 
 ### Breaking
