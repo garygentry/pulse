@@ -79,22 +79,26 @@ describe("diffTree added", () => {
 });
 
 describe("diffTree removed (ledger-scoped)", () => {
-  test("dropping a host then diffing the old-committed tree yields 'removed' for its stale target", () => {
+  test("dropping a host then diffing the old-committed tree yields 'removed' for its stale file", () => {
     const root = join(makeScratch(), "rendered");
-    // Commit model A (with the nas host).
+    // Commit model A (with the dns01 managed host and the nas host).
     materialize(render(multiclassModel).tree, root);
-    const stale = "scrape/file_sd/nas-api.json";
+    const stale = "agent/dns01.yaml";
     expect(existsSync(join(root, stale))).toBe(true);
 
-    // Freshly render model B (nas host dropped) and diff it against the committed A tree.
-    const withoutNas: EstateModel = {
+    // Freshly render model B (both hosts dropped) and diff it against the committed A tree.
+    const withoutHosts: EstateModel = {
       ...multiclassModel,
-      hosts: multiclassModel.hosts.filter((h) => h.name !== "nas1"),
+      hosts: multiclassModel.hosts.filter((h) => h.name !== "dns01" && h.name !== "nas1"),
     };
-    const drift = diffTree(render(withoutNas).tree, root);
+    const drift = diffTree(render(withoutHosts).tree, root);
 
-    // The manifest ledger still lists nas-api.json (present on disk, absent in tree B) -> removed.
+    // The manifest ledger still lists agent/dns01.yaml (present on disk, absent in tree B) -> removed.
     expect(drift).toContainEqual({ path: stale, kind: "removed" });
+    // nas-api.json is always written (a stack-core scrape job reads it), so dropping its only
+    // host is a 'changed' to `[]`, never a 'removed'.
+    expect(drift).toContainEqual({ path: "scrape/file_sd/nas-api.json", kind: "changed" });
+    expect(drift).not.toContainEqual({ path: "scrape/file_sd/nas-api.json", kind: "removed" });
     // The changed managed-file list surfaces as a 'changed' on the manifest path itself.
     expect(drift).toContainEqual({ path: MANIFEST_FILENAME, kind: "changed" });
   });

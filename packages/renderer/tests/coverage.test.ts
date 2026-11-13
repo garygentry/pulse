@@ -21,6 +21,7 @@ import type { CoverageEntry } from "../src/coverage.js";
 import { MANIFEST_FILENAME } from "../src/manifest.js";
 import { buildArtifactIndex } from "../src/render/artifact-index.js";
 import { render } from "../src/render/index.js";
+import { CENTRAL_PROBER_FILE_SD, SCRAPE_JOB_FILES } from "../src/render/scrape.js";
 import { makeHost, makeModel, makeService } from "./factories.js";
 import { multiclassModel } from "./fixtures/multiclass/model.js";
 
@@ -309,9 +310,24 @@ describe("golden↔coverage cross-check (multiclass, 07 §3.5)", () => {
   ]);
 
   const model: EstateModel = multiclassModel;
-  const renderedPaths = new Set(render(model).tree.map((f) => f.path));
+  const renderedTree = render(model).tree;
+  const renderedPaths = new Set(renderedTree.map((f) => f.path));
   const report = computeCoverage(model);
   const claimed = new Set(report.covered.flatMap((e) => e.artifacts));
+
+  // A scrape-job file_sd (or the central prober's) is always written so VictoriaMetrics never reads
+  // a missing file; written EMPTY it carries no entity edge, so nothing claims it. Only an empty
+  // one is exempt: a scrape-job file with any target must still be claimed.
+  const ALWAYS_WRITTEN_FILE_SD = new Set([
+    ...[...SCRAPE_JOB_FILES].map((group) => `scrape/file_sd/${group}.json`),
+    CENTRAL_PROBER_FILE_SD,
+  ]);
+  const isEmptyAlwaysWrittenFileSd = (path: string): boolean => {
+    if (!ALWAYS_WRITTEN_FILE_SD.has(path)) return false;
+    const file = renderedTree.find((f) => f.path === path)!;
+    const parsed: unknown = JSON.parse(file.contents);
+    return Array.isArray(parsed) && parsed.length === 0;
+  };
 
   test("(A) every covered entry's artifact path exists in the rendered golden tree", () => {
     for (const entry of report.covered) {
@@ -322,9 +338,17 @@ describe("golden↔coverage cross-check (multiclass, 07 §3.5)", () => {
     }
   });
 
+  test("the empty-file_sd exemption is narrow: only `[]` scrape-job files, never probe-only", () => {
+    expect(ALWAYS_WRITTEN_FILE_SD.has("scrape/file_sd/probe-only.json")).toBe(false);
+    for (const path of ALWAYS_WRITTEN_FILE_SD) expect(renderedPaths.has(path)).toBe(true);
+    // A non-empty scrape-job file is not exempt.
+    expect(isEmptyAlwaysWrittenFileSd("scrape/file_sd/managed-linux.json")).toBe(false);
+  });
+
   test("(B) every per-entity artifact file is claimed by ≥1 covered entry", () => {
     for (const path of renderedPaths) {
       if (ESTATE_SCOPED.has(path)) continue; // estate-scoped artifacts are exempt
+      if (isEmptyAlwaysWrittenFileSd(path)) continue; // an empty `[]` scrape-job file has no entity
       expect(claimed.has(path)).toBe(true);
     }
   });

@@ -11,6 +11,7 @@
     "scrape/file_sd/cadvisor.json",
     "scrape/file_sd/hypervisor-api.json",
     "scrape/file_sd/managed-linux-command-exporter.json",
+    "scrape/file_sd/managed-linux-exporters.json",
     "scrape/file_sd/managed-linux-heartbeat.json",
     "scrape/file_sd/managed-linux-prober.json",
     "scrape/file_sd/managed-linux.json",

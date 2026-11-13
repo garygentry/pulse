@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Changed
+
+- After re-rendering, `rendered/scrape/file_sd/` holds every file the scrape config reads, written
+  as an empty list (`[]`) when a job has no targets. VictoriaMetrics no longer logs
+  `cannot read … no such file or directory` for the missing files on every check interval.
+
 ## [0.3.1] - 2026-11-13
 
 ### Fixed

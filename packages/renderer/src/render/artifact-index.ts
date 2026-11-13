@@ -256,7 +256,7 @@ function serviceArtifacts(service: EstateModel["services"][number]): string[] {
     if (service.deepHealth.hostLocal === true) paths.push(perHostProberPath(service.host));
     else paths.push("prober/config.yaml", CENTRAL_PROBER_FILE_SD);
   }
-  // The central prober config and its scrape target (F6: emitted only for central probes).
+  // The central prober config and its scrape target (F6: it lists prober:9120 only for central probes).
   if (service.backupFreshness !== undefined) paths.push("prober/config.yaml", CENTRAL_PROBER_FILE_SD);
   // A backup service that declares a delivery `command` is ALSO monitored by the command-exporter
   // config on its host — that is where its freshness metric is actually produced (issue #3).
