@@ -77,7 +77,9 @@ Each rendered subtree binds into exactly one consumer, always `:ro`:
 
 VictoriaMetrics is told to re-read its scrape config every 30s
 (`-promscrape.configCheckInterval=30s`), so a re-rendered `file_sd` is picked up without a
-restart.
+restart. The renderer writes every `file_sd` file a scrape job in `scrape.yml` reads, as an empty
+list (`[]`) when that job has no targets, so VictoriaMetrics never logs a missing file on that
+check. `probe-only.json` feeds no scrape job and is written only when it has entries.
 
 ## The abstract-vs-native Alertmanager distinction
 

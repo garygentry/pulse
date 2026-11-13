@@ -1,18 +1,24 @@
 /** scrape.test.ts — the `file_sd` scrape emitter (02 §4.1, REQ-RND-01, REQ-SEC-02).
  *
- *  Asserts: one file per non-excluded, non-empty class with correct per-variant targets; excluded
- *  and zero-host classes emit no file; managed-linux targets are address:port per port; a
+ *  Asserts: every file a stack-core scrape job reads is written, as `[]` when the job has no
+ *  targets, with correct per-variant targets; excluded hosts contribute no targets; probe-only
+ *  (no scrape job) is written only when it has entries; managed-linux targets are address:port per port; a
  *  hypervisor-api credential renders as the SecretRef `.raw` in __pulse_credential__ (never a
  *  resolved value); nas-api renders a direct node_exporter target with no credential (issue #4);
  *  a refused credential omits the label and adds a secret_literal finding; an unknown class
  *  degrades to an INVALID_ENUM error finding, never a crash. */
 
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { expect, test, describe } from "bun:test";
+import { parse as parseYaml } from "yaml";
 
 import type { EstateModel, Host, Provenance, Service } from "@pulse/core";
 import { FINDING_CODES } from "@pulse/core";
 
-import { emitScrape } from "../src/render/scrape.js";
+import { CENTRAL_PROBER_FILE_SD, emitScrape, SCRAPE_JOB_FILES } from "../src/render/scrape.js";
 import type { FileSdEntry } from "../src/render/scrape.js";
 
 const PROV: Provenance = { file: "estate.yaml", path: "", line: 1, col: 1 };
@@ -57,8 +63,50 @@ const managed = (over: Partial<Host> = {}): Host => ({
   ...over,
 } as Host);
 
+/** Every file a stack-core scrape job reads (stack/compose/config/victoriametrics/scrape.yml), in
+ *  emission order. Each is always written — `[]` when its job has no targets. */
+const SCRAPE_JOB_PATHS = [
+  "scrape/file_sd/managed-linux.json",
+  "scrape/file_sd/cadvisor.json",
+  "scrape/file_sd/process-exporter.json",
+  "scrape/file_sd/managed-linux-heartbeat.json",
+  "scrape/file_sd/managed-linux-prober.json",
+  "scrape/file_sd/managed-linux-command-exporter.json",
+  "scrape/file_sd/managed-linux-exporters.json",
+  "scrape/file_sd/hypervisor-api.json",
+  "scrape/file_sd/nas-api.json",
+  "scrape/file_sd/prober.json",
+];
+
+/** The emitted file at `path`, parsed; fails the test when it is absent. */
+function parsedAt(files: { path: string; contents: string }[], path: string): FileSdEntry[] {
+  const file = files.find((f) => f.path === path);
+  if (file === undefined) throw new Error(`no emitted file at ${path}`);
+  return JSON.parse(file.contents) as FileSdEntry[];
+}
+
 describe("emitScrape — file presence", () => {
-  test("one file per non-excluded, non-empty class; excluded emits no file", () => {
+  test("the always-written set is exactly the file_sd files stack-core scrape.yml reads", () => {
+    const scrapeYml = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../stack/compose/config/victoriametrics/scrape.yml",
+    );
+    const config = parseYaml(readFileSync(scrapeYml, "utf8")) as {
+      scrape_configs: Array<{ file_sd_configs?: Array<{ files: string[] }> }>;
+    };
+    const read = config.scrape_configs
+      .flatMap((job) => job.file_sd_configs ?? [])
+      .flatMap((sd) => sd.files)
+      .map((file) => file.replace(/^\/rendered\//, ""));
+    const alwaysWritten = [
+      ...[...SCRAPE_JOB_FILES].map((group) => `scrape/file_sd/${group}.json`),
+      CENTRAL_PROBER_FILE_SD,
+    ];
+    expect(read.slice().sort()).toEqual(alwaysWritten.slice().sort());
+    expect(SCRAPE_JOB_PATHS.slice().sort()).toEqual(alwaysWritten.slice().sort());
+  });
+
+  test("every scrape-job file is written; excluded hosts contribute no targets and no file", () => {
     const model = makeModel([
       managed(),
       {
@@ -71,22 +119,28 @@ describe("emitScrape — file presence", () => {
     ]);
     const { files } = emitScrape(model);
     const paths = files.map((f) => f.path);
-    expect(paths).toEqual([
-      "scrape/file_sd/managed-linux.json",
-      "scrape/file_sd/process-exporter.json",
-      "scrape/file_sd/managed-linux-heartbeat.json",
-    ]);
+    expect(paths).toEqual(SCRAPE_JOB_PATHS);
     expect(paths).not.toContain("scrape/file_sd/excluded.json");
+    expect(paths).not.toContain("scrape/file_sd/probe-only.json");
+    expect(JSON.stringify(files)).not.toContain("old01");
+    expect(JSON.stringify(files)).not.toContain("10.0.0.99");
   });
 
-  test("a zero-host class produces no file", () => {
-    // Only managed-linux hosts declared → no hypervisor-api/nas-api/probe-only files.
+  test("a zero-target scrape job file is written as []", () => {
+    // Only managed-linux hosts declared → hypervisor-api/nas-api (and the unused managed jobs and
+    // the central prober) are written empty, so VictoriaMetrics never reads a missing file;
+    // probe-only feeds no scrape job, so it is not written at all.
     const { files } = emitScrape(makeModel([managed()]));
-    expect(files.map((f) => f.path)).toEqual([
+    expect(files.map((f) => f.path)).toEqual(SCRAPE_JOB_PATHS);
+    const nonEmpty = new Set([
       "scrape/file_sd/managed-linux.json",
       "scrape/file_sd/process-exporter.json",
       "scrape/file_sd/managed-linux-heartbeat.json",
     ]);
+    for (const file of files) {
+      if (nonEmpty.has(file.path)) expect(JSON.parse(file.contents)).not.toEqual([]);
+      else expect(JSON.parse(file.contents)).toEqual([]);
+    }
   });
 
   test("an excluded host contributes no target in any class", () => {
@@ -100,8 +154,22 @@ describe("emitScrape — file presence", () => {
       },
     ]);
     const { files, findings } = emitScrape(model);
-    expect(files).toEqual([]);
+    expect(files.map((f) => f.path)).toEqual(SCRAPE_JOB_PATHS);
+    for (const file of files) expect(JSON.parse(file.contents)).toEqual([]);
     expect(findings).toEqual([]);
+  });
+
+  test("probe-only is written only when it has entries", () => {
+    const host: Host = {
+      name: "edge01",
+      collectionClass: "probe-only",
+      addresses: ["10.0.0.7"],
+      probe: { kind: "icmp", target: "10.0.0.7" },
+      provenance: PROV,
+    };
+    const paths = emitScrape(makeModel([host])).files.map((f) => f.path);
+    expect(paths).toContain("scrape/file_sd/probe-only.json");
+    expect(paths.filter((p) => p !== "scrape/file_sd/probe-only.json")).toEqual(SCRAPE_JOB_PATHS);
   });
 });
 
@@ -126,7 +194,7 @@ describe("emitScrape — per-variant targets", () => {
   test("heartbeat 9110 is dropped when the host opts out; node-exporter 9100 stays (issue #30)", () => {
     const model = makeModel([managed({ heartbeat: false, exporterPorts: [9100] })]);
     // No heartbeat target at all…
-    expect(fileFor(model, "managed-linux-heartbeat")).toBeUndefined();
+    expect(fileFor(model, "managed-linux-heartbeat")).toEqual([]);
     // …but the mandatory node-exporter job (HostDown's up{job="managed-linux"}) is still emitted.
     expect(fileFor(model, "managed-linux")![0].targets).toEqual(["10.0.0.4:9100"]);
   });
@@ -135,7 +203,7 @@ describe("emitScrape — per-variant targets", () => {
     // With heartbeat off, :9110 is no longer a dedicated managed port, so a declared 9110 falls
     // through to managed-linux-exporters rather than silently vanishing.
     const model = makeModel([managed({ heartbeat: false, exporterPorts: [9100, 9110] })]);
-    expect(fileFor(model, "managed-linux-heartbeat")).toBeUndefined();
+    expect(fileFor(model, "managed-linux-heartbeat")).toEqual([]);
     const custom = fileFor(model, "managed-linux-exporters")!;
     expect(custom.map((e) => e.targets[0])).toEqual(["10.0.0.4:9110"]);
     expect(custom[0].labels.exporter_port).toBe("9110");
@@ -145,9 +213,9 @@ describe("emitScrape — per-variant targets", () => {
     const onModel = makeModel([managed({ cadvisor: true, exporterPorts: [8080] })]);
     const on = fileFor(onModel, "cadvisor");
     expect(on![0].targets).toEqual(["10.0.0.4:8080"]);
-    expect(fileFor(onModel, "managed-linux-exporters")).toBeUndefined();
+    expect(fileFor(onModel, "managed-linux-exporters")).toEqual([]);
     const off = fileFor(makeModel([managed({ cadvisor: false, exporterPorts: [] })]), "cadvisor");
-    expect(off).toBeUndefined();
+    expect(off).toEqual([]);
   });
 
   test("process-exporter gets its own job and ungated declared ports remain custom", () => {
@@ -168,9 +236,9 @@ describe("emitScrape — per-variant targets", () => {
       "9130",
       "9257",
     ]);
-    expect(fileFor(model, "cadvisor")).toBeUndefined();
-    expect(fileFor(model, "managed-linux-prober")).toBeUndefined();
-    expect(fileFor(model, "managed-linux-command-exporter")).toBeUndefined();
+    expect(fileFor(model, "cadvisor")).toEqual([]);
+    expect(fileFor(model, "managed-linux-prober")).toEqual([]);
+    expect(fileFor(model, "managed-linux-command-exporter")).toEqual([]);
   });
 
   test("command-exporter 9130 is emitted separately iff the host has command signals", () => {
@@ -184,12 +252,12 @@ describe("emitScrape — per-variant targets", () => {
     ]);
     const on = fileFor(onModel, "managed-linux-command-exporter");
     expect(on![0].targets).toEqual(["10.0.0.4:9130"]);
-    expect(fileFor(onModel, "managed-linux-exporters")).toBeUndefined();
+    expect(fileFor(onModel, "managed-linux-exporters")).toEqual([]);
     const off = fileFor(
       makeModel([managed({ exporterPorts: [], commandSignals: [] })]),
       "managed-linux-command-exporter",
     );
-    expect(off).toBeUndefined();
+    expect(off).toEqual([]);
   });
 
   test("managed-linux includes per-host prober 9120 iff a service on it declares a host_local probe (issue #8)", () => {
@@ -209,7 +277,7 @@ describe("emitScrape — per-variant targets", () => {
     const onModel = makeModel([managed({ exporterPorts: [9120] })], [hostLocalSvc]);
     const on = fileFor(onModel, "managed-linux-prober");
     expect(on![0].targets).toEqual(["10.0.0.4:9120"]);
-    expect(fileFor(onModel, "managed-linux-exporters")).toBeUndefined();
+    expect(fileFor(onModel, "managed-linux-exporters")).toEqual([]);
     // A central (non-host-local) probe does NOT add :9120.
     const central: Service = {
       ...hostLocalSvc,
@@ -219,7 +287,7 @@ describe("emitScrape — per-variant targets", () => {
       makeModel([managed({ exporterPorts: [] })], [central]),
       "managed-linux-prober",
     );
-    expect(off).toBeUndefined();
+    expect(off).toEqual([]);
   });
 
   test("the central prober is a scrape target iff the estate declares a central probe (F6)", () => {
@@ -233,8 +301,8 @@ describe("emitScrape — per-variant targets", () => {
       deepHealth: { ...deepHealth, hostLocal }, provenance: PROV,
     });
     // No probes, or only host-local probes → no central target (no permanently DOWN prober:9120).
-    expect(fileFor(makeModel([managed()]), "prober")).toBeUndefined();
-    expect(fileFor(makeModel([managed({ exporterPorts: [9120] })], [svc(true)]), "prober")).toBeUndefined();
+    expect(fileFor(makeModel([managed()]), "prober")).toEqual([]);
+    expect(fileFor(makeModel([managed({ exporterPorts: [9120] })], [svc(true)]), "prober")).toEqual([]);
     // A central deep-health probe → prober:9120.
     expect(fileFor(makeModel([managed()], [svc(false)]), "prober")).toEqual([{ targets: ["prober:9120"], labels: {} }]);
   });
@@ -325,7 +393,7 @@ describe("emitScrape — credential rendering (REQ-SEC-02)", () => {
   test("a refused (non-SecretRef) credential omits the label and adds a secret_literal finding", () => {
     const model = makeModel([hypervisor("literally-a-password")]);
     const { files, findings } = emitScrape(model);
-    const entries = JSON.parse(files[0].contents) as FileSdEntry[];
+    const entries = parsedAt(files, "scrape/file_sd/hypervisor-api.json");
     expect(entries[0].labels.__pulse_credential__).toBeUndefined();
     expect(findings).toHaveLength(1);
     expect(findings[0].code).toBe(FINDING_CODES.SECRET_LITERAL);
@@ -345,7 +413,9 @@ describe("emitScrape — defensive exhaustiveness (02 §4.1)", () => {
     expect(() => {
       result = emitScrape(makeModel([rogue]));
     }).not.toThrow();
-    expect(result.files).toEqual([]);
+    // The rogue host reaches no file: every scrape-job file is written, all empty.
+    expect(result.files.map((f) => f.path)).toEqual(SCRAPE_JOB_PATHS);
+    for (const file of result.files) expect(JSON.parse(file.contents)).toEqual([]);
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].code).toBe(FINDING_CODES.INVALID_ENUM);
     expect(result.findings[0].severity).toBe("error");
@@ -373,10 +443,11 @@ describe("emitScrape — determinism", () => {
       },
     ]);
     const { files } = emitScrape(model);
+    const contents = files.find((f) => f.path === "scrape/file_sd/hypervisor-api.json")!.contents;
     // __pulse_credential__ < collection_class < host by code point.
-    const idxCred = files[0].contents.indexOf("__pulse_credential__");
-    const idxClass = files[0].contents.indexOf("collection_class");
-    const idxHost = files[0].contents.indexOf('"host"');
+    const idxCred = contents.indexOf("__pulse_credential__");
+    const idxClass = contents.indexOf("collection_class");
+    const idxHost = contents.indexOf('"host"');
     expect(idxCred).toBeGreaterThanOrEqual(0);
     expect(idxCred).toBeLessThan(idxClass);
     expect(idxClass).toBeLessThan(idxHost);

@@ -92,21 +92,24 @@ describe("materialize round-trip (REQ-RND-06)", () => {
 });
 
 describe("wholesale replace (REQ-RND-03)", () => {
-  test("re-materializing with a host removed deletes its stale scrape-target file", () => {
+  test("re-materializing with hosts removed deletes their stale files and targets", () => {
     const dir = makeScratch();
     const root = join(dir, "rendered");
 
     materialize(render(multiclassModel).tree, root);
-    expect(existsSync(join(root, "scrape/file_sd/nas-api.json"))).toBe(true);
+    expect(existsSync(join(root, "agent/dns01.yaml"))).toBe(true);
+    expect(readFileSync(join(root, "scrape/file_sd/nas-api.json"), "utf8")).toContain("nas1");
 
-    const withoutNas: EstateModel = {
+    const withoutHosts: EstateModel = {
       ...multiclassModel,
-      hosts: multiclassModel.hosts.filter((h) => h.name !== "nas1"),
+      hosts: multiclassModel.hosts.filter((h) => h.name !== "nas1" && h.name !== "dns01"),
     };
-    materialize(render(withoutNas).tree, root);
+    materialize(render(withoutHosts).tree, root);
 
-    // The wholesale swap drops the stale target; the old root left no *.bak-* behind.
-    expect(existsSync(join(root, "scrape/file_sd/nas-api.json"))).toBe(false);
+    // The wholesale swap deletes the stale per-host file, and the always-written nas-api scrape
+    // file no longer carries the dropped target; the old root left no *.bak-* behind.
+    expect(existsSync(join(root, "agent/dns01.yaml"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(root, "scrape/file_sd/nas-api.json"), "utf8"))).toEqual([]);
     expect(existsSync(join(root, "scrape/file_sd/managed-linux.json"))).toBe(true);
     expect(siblings(dir, "rendered", "bak")).toEqual([]);
     expect(siblings(dir, "rendered", "tmp")).toEqual([]);

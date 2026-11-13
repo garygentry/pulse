@@ -177,8 +177,9 @@ scrape_configs:
   #    host/service labels — no per-host relabel (contrast the file_sd managed-linux job, §1a).
   #    The prober service is profiles:["deep-health"]-gated OFF by default. Its target comes from
   #    the rendered file_sd, which lists prober:9120 ONLY when the estate declares central probes
-  #    (renderer `hasCentralProbes`), so a default deployment has no permanently DOWN target here
-  #    (F6). Enable `--profile deep-health` whenever the file lists the target.
+  #    (renderer `hasCentralProbes`) and is otherwise written as `[]`, so a default deployment has
+  #    no permanently DOWN target here (F6). Enable `--profile deep-health` whenever the file lists
+  #    the target.
   # ══════════════════════════════════════════════════════════════════════════
 
   - job_name: prober

@@ -36,6 +36,13 @@ const MANAGED_SCRAPE_GROUPS = [
 ] as const;
 type ManagedScrapeGroup = (typeof MANAGED_SCRAPE_GROUPS)[number];
 
+/** The file_sd groups a stack-core scrape job reads (`stack/compose/config/victoriametrics/
+ *  scrape.yml`); each is always written, empty when it has no targets. */
+export const SCRAPE_JOB_FILES: ReadonlySet<string> = new Set<string>([
+  ...MANAGED_SCRAPE_GROUPS,
+  "hypervisor-api",
+  "nas-api",
+]);
 
 /** One Prometheus `file_sd` entry: a target group with a fixed label set. */
 export interface FileSdEntry {
@@ -63,7 +70,9 @@ function assertNever(x: never): never {
 /**
  * Emit deterministic Prometheus file_sd files. Non-managed classes retain the v1 one-file-per-class
  * mapping. Managed Linux emits node-exporter separately from every auxiliary exporter class so a
- * failed auxiliary scrape cannot trigger HostDown.
+ * failed auxiliary scrape cannot trigger HostDown. Every file a stack-core scrape job reads
+ * (`SCRAPE_JOB_FILES` plus the central `prober.json`) is always written, `[]` when it has no
+ * targets; `probe-only.json` feeds no scrape job and is written only when it has entries.
  */
 export function emitScrape(model: EstateModel): EmitResult {
   const findings: EmitResult["findings"] = [];
@@ -123,8 +132,11 @@ export function emitScrape(model: EstateModel): EmitResult {
     ),
   ];
   for (const groupName of emissionOrder) {
-    const entries = groups.get(groupName);
-    if (entries === undefined || entries.length === 0) continue;
+    const entries = groups.get(groupName) ?? [];
+    // Every file a stack-core scrape job reads is written, as `[]` when the job has no targets, so
+    // VictoriaMetrics never logs "cannot read" for it every check interval. probe-only feeds no
+    // scrape job, so it is written only when it has entries.
+    if (entries.length === 0 && !SCRAPE_JOB_FILES.has(groupName)) continue;
     entries.sort(
       (a, b) =>
         compareString(a.labels.host ?? "", b.labels.host ?? "") ||
@@ -137,13 +149,13 @@ export function emitScrape(model: EstateModel): EmitResult {
   }
 
   // The central deep-health prober (`prober:9120`, the profile-gated in-stack service) is a target
-  // only when it has central probes to run; otherwise the `prober` job has no targets (F6).
-  if (hasCentralProbes(model)) {
-    files.push({
-      path: CENTRAL_PROBER_FILE_SD,
-      contents: toCanonicalJson([{ targets: [`prober:${PROBER_PORT}`], labels: {} }]),
-    });
-  }
+  // only when it has central probes to run; otherwise the `prober` job reads an empty list (F6).
+  files.push({
+    path: CENTRAL_PROBER_FILE_SD,
+    contents: toCanonicalJson(
+      hasCentralProbes(model) ? [{ targets: [`prober:${PROBER_PORT}`], labels: {} }] : [],
+    ),
+  });
 
   return { files, findings };
 }
