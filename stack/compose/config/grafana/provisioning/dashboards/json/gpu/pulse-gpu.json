@@ -130,7 +130,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "GPU power draw vs limit · $instance",
-      "description": "Optional series pulse_gpu_power_draw_watts (solid) against the enforced pulse_gpu_power_limit_watts (dashed red), one panel per host. Cards without power telemetry (e.g. some laptop/low-end parts) show the limit only, with a 'draw not reported' legend entry.",
+      "description": "Optional series pulse_gpu_power_draw_watts (solid) against the enforced pulse_gpu_power_limit_watts (dashed red), one panel per host. Cards without power telemetry (e.g. some laptop/low-end parts) show the limit only, with a 'gpu N draw not reported' legend entry per such GPU.",
       "datasource": "${DS}",
       "repeat": "instance",
       "repeatDirection": "h",
@@ -172,8 +172,8 @@
         {
           "refId": "C",
           "datasource": "${DS}",
-          "legendFormat": "draw not reported by this GPU",
-          "expr": "absent(pulse_gpu_power_draw_watts{instance=~\"$instance\"}) * 0"
+          "legendFormat": "gpu {{gpu}} draw not reported",
+          "expr": "(pulse_gpu_power_limit_watts{instance=~\"$instance\"} unless on(instance, gpu) pulse_gpu_power_draw_watts{instance=~\"$instance\"}) * 0"
         }
       ]
     },
@@ -224,9 +224,12 @@
       "options": { "sortBy": [{ "displayName": "VRAM", "desc": true }] },
       "transformations": [
         {
+          "id": "filterFieldsByName",
+          "options": { "include": { "names": ["instance", "gpu", "process", "pid", "Value"] } }
+        },
+        {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true, "__name__": true, "collection_class": true, "host": true, "job": true },
             "indexByName": { "instance": 0, "gpu": 1, "process": 2, "pid": 3, "Value": 4 },
             "renameByName": { "instance": "Host", "gpu": "GPU", "process": "Process", "pid": "PID", "Value": "VRAM" }
           }

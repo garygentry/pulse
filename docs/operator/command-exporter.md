@@ -113,7 +113,9 @@ Prometheus text. The shipped **`Pulse — GPU`** dashboard (`pulse-gpu`) is a co
 
 **Optional series.** The board also charts these when your script emits them. Print a line only
 when the card reports a value. If `nvidia-smi` returns `[N/A]`, skip the line rather than printing
-`0`. The panels show "not reported by this GPU" instead of an error when a series is absent.
+`0`. A GPU without a series has no line in that panel. A panel where no selected host reports the
+series reads "not reported by this GPU", not an error. The power panel adds a legend entry
+`gpu N draw not reported` for a GPU that reports a limit but no draw.
 
 | Series | Labels | From |
 |--------|--------|------|
@@ -127,8 +129,8 @@ power-cap event shorter than that interval can show as a single spike or be miss
 the throttle lanes to correlate with load, not to alert on.
 
 The board lays out as: signal liveness; utilization and memory; temperature beside fan %; power
-draw with the limit dashed over it, beside a throttle-reason state timeline; and the top processes
-by VRAM.
+draw with the limit dashed over it, one panel per host; a throttle-reason state timeline; and the
+top processes by VRAM.
 
 Your `gpu-metrics.sh` prints those lines; the exporter adds the `_up`. The container needs the
 NVIDIA runtime and the GPU devices — wire them into the `command-exporter` service (compose) or the
