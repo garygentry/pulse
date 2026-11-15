@@ -130,7 +130,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "GPU power draw vs limit · $instance",
-      "description": "Optional series pulse_gpu_power_draw_watts (solid) against the enforced pulse_gpu_power_limit_watts (dashed red), one panel per host. Cards without power telemetry (e.g. some laptop/low-end parts) show the limit only.",
+      "description": "Optional series pulse_gpu_power_draw_watts (solid) against the enforced pulse_gpu_power_limit_watts (dashed red), one panel per host. Cards without power telemetry (e.g. some laptop/low-end parts) show the limit only, with a 'draw not reported' legend entry.",
       "datasource": "${DS}",
       "repeat": "instance",
       "repeatDirection": "h",
@@ -145,6 +145,13 @@
               { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
               { "id": "custom.fillOpacity", "value": 0 },
               { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [
+              { "id": "custom.hideFrom", "value": { "legend": false, "tooltip": true, "viz": true } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }
             ]
           }
         ]
@@ -161,6 +168,12 @@
           "datasource": "${DS}",
           "legendFormat": "{{instance}} · gpu {{gpu}} limit",
           "expr": "pulse_gpu_power_limit_watts{instance=~\"$instance\"}"
+        },
+        {
+          "refId": "C",
+          "datasource": "${DS}",
+          "legendFormat": "draw not reported by this GPU",
+          "expr": "absent(pulse_gpu_power_draw_watts{instance=~\"$instance\"}) * 0"
         }
       ]
     },
@@ -168,7 +181,7 @@
       "id": 8,
       "type": "state-timeline",
       "title": "GPU throttle reasons",
-      "description": "Optional series pulse_gpu_throttle_active{reason}: power_cap, thermal, hw_slowdown, from nvidia-smi clocks_event_reasons.active.",
+      "description": "Optional series pulse_gpu_throttle_active{reason}: power_cap, thermal, hw_slowdown, from nvidia-smi clocks_event_reasons.active. Each lane is the value at a scrape (30s by default), so a throttle shorter than the scrape interval can be missed: use this to correlate, not to alert.",
       "datasource": "${DS}",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
       "options": { "showValue": "never", "mergeValues": true, "rowHeight": 0.8 },
@@ -201,7 +214,7 @@
       "type": "table",
       "title": "Top GPU processes by VRAM",
       "datasource": "${DS}",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 37 },
       "fieldConfig": {
         "defaults": {},
         "overrides": [

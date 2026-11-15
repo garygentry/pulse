@@ -122,6 +122,10 @@ when the card reports a value. If `nvidia-smi` returns `[N/A]`, skip the line ra
 | `pulse_gpu_power_limit_watts` | `instance`, `gpu` | `--query-gpu=power.limit` (the enforced cap) |
 | `pulse_gpu_throttle_active` | `instance`, `gpu`, `reason` | `--query-gpu=clocks_event_reasons.active`, one `0`/`1` line per `reason` ∈ `power_cap`, `thermal`, `hw_slowdown` |
 
+Each value is a sample taken when the exporter is scraped (every 30 s by default). A burst or a
+power-cap event shorter than that interval can show as a single spike or be missed entirely. Use
+the throttle lanes to correlate with load, not to alert on.
+
 The board lays out as: signal liveness; utilization and memory; temperature beside fan %; power
 draw with the limit dashed over it, beside a throttle-reason state timeline; and the top processes
 by VRAM.
