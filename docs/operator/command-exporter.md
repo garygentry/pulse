@@ -111,6 +111,21 @@ Prometheus text. The shipped **`Pulse — GPU`** dashboard (`pulse-gpu`) is a co
 | `pulse_gpu_process_memory_bytes` | `instance`, `gpu`, `pid`, `process` | `--query-compute-apps=used_memory,pid,process_name` |
 | `pulse_command_signal_up{signal="gpu"}` | `instance` | the exporter (liveness) |
 
+**Optional series.** The board also charts these when your script emits them. Print a line only
+when the card reports a value. If `nvidia-smi` returns `[N/A]`, skip the line rather than printing
+`0`. The panels show "not reported by this GPU" instead of an error when a series is absent.
+
+| Series | Labels | From |
+|--------|--------|------|
+| `pulse_gpu_fan_speed_ratio` | `instance`, `gpu` | `--query-gpu=fan.speed` ÷ 100 (the vBIOS target across all fans) |
+| `pulse_gpu_power_draw_watts` | `instance`, `gpu` | `--query-gpu=power.draw` (often `[N/A]` on laptop and low-end parts) |
+| `pulse_gpu_power_limit_watts` | `instance`, `gpu` | `--query-gpu=power.limit` (the enforced cap) |
+| `pulse_gpu_throttle_active` | `instance`, `gpu`, `reason` | `--query-gpu=clocks_event_reasons.active`, one `0`/`1` line per `reason` ∈ `power_cap`, `thermal`, `hw_slowdown` |
+
+The board lays out as: signal liveness; utilization and memory; temperature beside fan %; power
+draw with the limit dashed over it, beside a throttle-reason state timeline; and the top processes
+by VRAM.
+
 Your `gpu-metrics.sh` prints those lines; the exporter adds the `_up`. The container needs the
 NVIDIA runtime and the GPU devices — wire them into the `command-exporter` service (compose) or the
 `podman run` unit (systemd) at deploy time.

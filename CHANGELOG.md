@@ -8,6 +8,19 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- The `Pulse — GPU` board charts fan %, power draw against the enforced limit, and a
+  throttle-reason timeline (`power_cap`, `thermal`, `hw_slowdown`). These read four optional
+  `pulse_gpu_*` series documented in the command-exporter guide. A panel whose series the card
+  doesn't report shows "not reported by this GPU" (#85).
+
+### Fixed
+
+- The `Pulse — GPU` "Top GPU processes by VRAM" table shows only Host, GPU, Process, PID, and
+  VRAM, sorted by VRAM. Previously the bytes unit was applied to every column, so the GPU index
+  and PID were rendered as sizes.
+
 ## [0.3.2] - 2026-11-13
 
 ### Changed
