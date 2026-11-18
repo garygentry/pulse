@@ -21,6 +21,9 @@ upgrade notes.
 - The `Pulse — GPU` "Top GPU processes by VRAM" table shows only Host, GPU, Process, PID, and
   VRAM, sorted by VRAM. Previously the bytes unit was applied to every column, so the GPU index
   and PID were rendered as sizes (#85).
+- Telegram and email notification bodies lead each alert with its status (`🔥 FIRING` or
+  `✅ RESOLVED`). Telegram receivers send resolved notices by default, and before this a resolve was
+  identical to the page it cleared, so it read as a second, new page (#87).
 
 ## [0.3.2] - 2026-11-13
 

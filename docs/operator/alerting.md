@@ -103,7 +103,10 @@ Alertmanager and **rendered as a link** in the notification body:
 
 - **Email + Telegram** notification bodies render it via the shipped templates
   (`stack/compose/config/alertmanager/templates/pulse.tmpl`), which the rendered Alertmanager config
-  registers and the email/telegram receivers reference.
+  registers and the email/telegram receivers reference. Each alert in those bodies leads with its
+  own status, `🔥 FIRING` or `✅ RESOLVED`, so a resolved notice is not mistaken for a new page.
+  Telegram receivers send resolved notices by default. Email receivers send them only when
+  `send_resolved: true` is set.
 - **Grafana** surfaces it automatically: the `alertGroups` panels render each alert's annotations,
   and Grafana links a `runbook_url`.
 

@@ -11,6 +11,11 @@
   Alertmanager container at /etc/alertmanager/templates (see docker-compose.yml).
 */}}
 
+{{/* Per-alert status prefix (issue #87). Receivers send resolved notices (send_resolved), and without
+     this a resolve is byte-identical to the page it clears. `.Status` is per-alert inside
+     `range .Alerts`, so a mixed group labels each line. */}}
+{{ define "pulse.status_prefix" }}{{ if eq .Status "resolved" }}✅ RESOLVED — {{ else }}🔥 FIRING — {{ end }}{{ end }}
+
 {{/* Shared runbook line — emitted only when the alert carries a runbook_url annotation. */}}
 {{ define "pulse.runbook_line" }}{{ if .Annotations.runbook_url }}
 Runbook: {{ .Annotations.runbook_url }}{{ end }}{{ end }}
@@ -18,7 +23,7 @@ Runbook: {{ .Annotations.runbook_url }}{{ end }}{{ end }}
 {{/* Telegram message body. The receiver pins parse_mode="" (plain text), so this content is never
      HTML-parsed and a stray < / > / & in an annotation can't make Telegram reject the send; Telegram
      still auto-links the bare runbook URL. */}}
-{{ define "pulse.telegram.message" }}{{ range .Alerts }}{{ .Labels.alertname }}: {{ .Annotations.summary }}
+{{ define "pulse.telegram.message" }}{{ range .Alerts }}{{ template "pulse.status_prefix" . }}{{ .Labels.alertname }}: {{ .Annotations.summary }}
 {{ .Annotations.description }}{{ template "pulse.runbook_line" . }}
 {{ end }}{{ end }}
 
@@ -27,7 +32,7 @@ Runbook: {{ .Annotations.runbook_url }}{{ end }}{{ end }}
 <html>
 <body style="font-family: system-ui, sans-serif;">
 {{ range .Alerts }}
-<h3 style="margin-bottom: 0.2em;">{{ .Labels.alertname }} — {{ .Annotations.summary }}</h3>
+<h3 style="margin-bottom: 0.2em;">{{ template "pulse.status_prefix" . }}{{ .Labels.alertname }} — {{ .Annotations.summary }}</h3>
 <p style="margin-top: 0.2em;">{{ .Annotations.description }}</p>
 {{ if .Annotations.runbook_url }}<p><a href="{{ .Annotations.runbook_url }}">Open runbook</a></p>{{ end }}
 <hr>
