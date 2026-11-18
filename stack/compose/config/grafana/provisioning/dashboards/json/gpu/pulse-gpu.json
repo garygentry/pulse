@@ -107,12 +107,134 @@
       ]
     },
     {
+      "id": 6,
+      "type": "timeseries",
+      "title": "GPU fan %",
+      "description": "Optional series pulse_gpu_fan_speed_ratio: the vBIOS fan target across all fans. 0% at idle is normal on zero-RPM cards.",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100, "noValue": "not reported by this GPU" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}}",
+          "expr": "pulse_gpu_fan_speed_ratio{instance=~\"$instance\"} * 100"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "GPU power draw vs limit · $instance",
+      "description": "Optional series pulse_gpu_power_draw_watts (solid) against the enforced pulse_gpu_power_limit_watts (dashed red), one panel per host. Cards without power telemetry (e.g. some laptop/low-end parts) show the limit only, with a 'gpu N draw not reported' legend entry per such GPU.",
+      "datasource": "${DS}",
+      "repeat": "instance",
+      "repeatDirection": "h",
+      "maxPerRow": 2,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "fieldConfig": {
+        "defaults": { "unit": "watt", "min": 0, "noValue": "not reported by this GPU" },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [
+              { "id": "custom.hideFrom", "value": { "legend": false, "tooltip": true, "viz": true } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}} draw",
+          "expr": "pulse_gpu_power_draw_watts{instance=~\"$instance\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}} limit",
+          "expr": "pulse_gpu_power_limit_watts{instance=~\"$instance\"}"
+        },
+        {
+          "refId": "C",
+          "datasource": "${DS}",
+          "legendFormat": "gpu {{gpu}} draw not reported",
+          "expr": "(pulse_gpu_power_limit_watts{instance=~\"$instance\"} unless on(instance, gpu) pulse_gpu_power_draw_watts{instance=~\"$instance\"}) * 0"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "state-timeline",
+      "title": "GPU throttle reasons",
+      "description": "Optional series pulse_gpu_throttle_active{reason}: power_cap, thermal, hw_slowdown, from nvidia-smi clocks_event_reasons.active. Each lane is the value at a scrape (30s by default), so a throttle shorter than the scrape interval can be missed: use this to correlate, not to alert.",
+      "datasource": "${DS}",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
+      "options": { "showValue": "never", "mergeValues": true, "rowHeight": 0.8 },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "not reported by this GPU",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "clear", "color": "green" },
+                "1": { "text": "throttling", "color": "red" }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "${DS}",
+          "legendFormat": "{{instance}} · gpu {{gpu}} · {{reason}}",
+          "expr": "pulse_gpu_throttle_active{instance=~\"$instance\"}"
+        }
+      ]
+    },
+    {
       "id": 5,
       "type": "table",
       "title": "Top GPU processes by VRAM",
       "datasource": "${DS}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 37 },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "VRAM" }, "properties": [{ "id": "unit", "value": "bytes" }] }
+        ]
+      },
+      "options": { "sortBy": [{ "displayName": "VRAM", "desc": true }] },
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": { "include": { "names": ["instance", "gpu", "process", "pid", "Value"] } }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": { "instance": 0, "gpu": 1, "process": 2, "pid": 3, "Value": 4 },
+            "renameByName": { "instance": "Host", "gpu": "GPU", "process": "Process", "pid": "PID", "Value": "VRAM" }
+          }
+        }
+      ],
       "targets": [
         {
           "refId": "A",
