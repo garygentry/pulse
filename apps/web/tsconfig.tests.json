@@ -16,5 +16,5 @@
     "types": ["bun-types"]
   },
   "references": [{ "path": "../../packages/web-data" }, { "path": "." }],
-  "include": ["tests/**/*.ts", "tests/**/*.tsx", "scripts/*.ts"]
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "scripts/*.ts", "scripts/contract/**/*.ts"]
 }
