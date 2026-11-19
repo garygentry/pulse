@@ -1,0 +1,23 @@
+{
+  "specsDir": "./specs",
+  "docsDir": "./docs/architecture",
+  "backlogDir": null,
+  "gitCommitAfterStage": true,
+  "commitPrefix": "forge",
+  "stack": "typescript",
+  "typeCheckCommand": "bun run typecheck",
+  "testCommand": "bun test",
+  "smokeCommand": "bun run smoke",
+  "loopIterationMultiplier": 1.5,
+  "loopRunner": {
+    "minRunnerVersion": "0.14.0",
+    "defaultAgent": "claude-cli",
+    "agentMode": "auto"
+  },
+  "autoInvokeNextStage": true,
+  "contextWindowTokens": null,
+  "contextWarnThreshold": 0.7,
+  "autoVerify": true,
+  "autoVerifyStages": {},
+  "autoFix": false
+}
