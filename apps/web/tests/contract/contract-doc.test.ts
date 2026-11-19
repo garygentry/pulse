@@ -28,12 +28,12 @@ import {
 } from "../../scripts/contract/contract-doc.js";
 import type { GeneratedSectionName } from "../../scripts/contract/contract-doc.js";
 import { ContractToolError } from "../../scripts/contract/errors.js";
-import { extractShape } from "../../scripts/contract/extract-shape.js";
 import { MAX_PARAM_BYTES, MAX_QUERY_BYTES, OPERATIONS } from "../../scripts/contract/operations.js";
 import type { ContractOperation } from "../../scripts/contract/operations.js";
 import { SHAPE_ROOTS } from "../../scripts/contract/shape-types.js";
 import type { ShapeNode, ShapeSnapshot } from "../../scripts/contract/shape-types.js";
 import type { FixtureIndex } from "../../scripts/contract/types.js";
+import { currentShape, GENERATION_TIMEOUT } from "./generated.js";
 import type { ServerConfig } from "../../src/server/config.js";
 import { alertsRoute, estateRoute, timelineRoute } from "../../src/server/routes/current.js";
 import {
@@ -493,8 +493,8 @@ describe("buildGeneratedSections", () => {
 });
 
 describe("generated sections over the real wire types", () => {
-  test("every section renders, is rectangular, and is byte-identical across two runs", () => {
-    const snapshot = extractShape(REPO_ROOT);
+  test("every section renders, is rectangular, and is byte-identical across two runs", async () => {
+    const snapshot = await currentShape();
     const empty: FixtureIndex = { formatVersion: 1, contract: snapshot.version, fixtures: [] };
     const first = buildGeneratedSections({ snapshot, index: empty });
     expect(buildGeneratedSections({ snapshot, index: empty })).toEqual(first);
@@ -509,7 +509,7 @@ describe("generated sections over the real wire types", () => {
     expect(first.fixtures.startsWith("Index format 1, contract 1.0, 0 fixtures.\n\n| Fixture |")).toBe(true);
     const filled = renderContractDoc(CONTRACT_MD, first);
     expect(renderContractDoc(filled, first)).toBe(filled);
-  });
+  }, GENERATION_TIMEOUT);
 });
 
 // ── OPERATIONS against the real routes ───────────────────────────────────────────────────────────

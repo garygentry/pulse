@@ -8,6 +8,7 @@ import { ContractToolError } from "../../scripts/contract/errors.js";
 import { extractShape } from "../../scripts/contract/extract-shape.js";
 import { SHAPE_ROOTS } from "../../scripts/contract/shape-types.js";
 import type { ShapeNode } from "../../scripts/contract/shape-types.js";
+import { currentShape } from "./generated.js";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../../..");
 /** Each extraction builds a TypeScript program; allow for a loaded host. */
@@ -56,8 +57,9 @@ function expectUnsupported(source: string, subject: string, message: RegExp): vo
 }
 
 describe("extractShape over the real wire types", () => {
-  test("two consecutive runs return the same snapshot, in the same key order", () => {
-    const first = extractShape(REPO_ROOT);
+  test("two runs return the same snapshot, in the same key order", async () => {
+    // The first run is the one the shared generation made; the second is a fresh program.
+    const first = await currentShape();
     const second = extractShape(REPO_ROOT);
     expect(second).toEqual(first);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));

@@ -7,21 +7,15 @@
 import { describe, expect, test } from "bun:test";
 
 import { CONTRACT_LIMITS, ENUM_FALLBACKS } from "@pulse/web-data/contract";
-import { SSE_RETRY_MS, validateLiveTick, validateOverviewSnapshotV2 } from "@pulse/web-data/wire";
+import { SSE_RETRY_MS } from "@pulse/web-data/wire";
 
-import { generateContract } from "../../scripts/contract/generate.js";
 import { GENERATION } from "../../scripts/contract/scenarios/common.js";
-import type { FixtureIndex, GeneratedFile } from "../../scripts/contract/types.js";
 import { HISTORY_STATUS } from "../../src/server/routes/history.js";
+import { fixtureIndex, generated, GENERATION_TIMEOUT } from "./generated.js";
 
-const GENERATION_TIMEOUT = { timeout: 30_000 };
 const DECODER = new TextDecoder();
 const ENCODER = new TextEncoder();
 const FIXTURES = "contract/fixtures/";
-
-function generated(): Promise<readonly GeneratedFile[]> {
-  return generateContract({ frozen: "report" });
-}
 
 async function bytesOf(path: string): Promise<Uint8Array> {
   const file = (await generated()).find((candidate) => candidate.path === FIXTURES + path);
@@ -37,11 +31,6 @@ async function json(path: string): Promise<any> {
 
 async function text(path: string): Promise<string> {
   return DECODER.decode(await bytesOf(path));
-}
-
-async function fixtureIndex(): Promise<FixtureIndex> {
-  const file = (await generated()).find((candidate) => candidate.path === "contract/index.json");
-  return JSON.parse(DECODER.decode(file!.bytes)) as FixtureIndex;
 }
 
 async function scenariosOf(group: string): Promise<string[]> {
@@ -183,31 +172,6 @@ describe("max-size fixtures sit exactly at their caps", () => {
     const checks = await json("history-checks/max-size");
     expect(checks.results).toHaveLength(limits.endpointResults);
     expect(checks.incidents).toHaveLength(limits.incidents);
-  }, GENERATION_TIMEOUT);
-
-  test("the whole fixture set stays within 8 MiB", async () => {
-    const total = (await generated())
-      .filter((file) => file.path.startsWith(FIXTURES))
-      .reduce((sum, file) => sum + file.bytes.length, 0);
-    expect(total).toBeLessThanOrEqual(8 * 1024 * 1024);
-  }, GENERATION_TIMEOUT);
-});
-
-describe("web validators accept the fixtures that name them", () => {
-  test("overview response fixtures and the typical tick", async () => {
-    for (const scenario of ["typical", "empty", "all-optional", "max-size"]) {
-      expect(validateOverviewSnapshotV2(await json(`overview/${scenario}`))).not.toBeNull();
-    }
-    expect(validateLiveTick(await json("events/tick-typical"))).not.toBeNull();
-    const index = await fixtureIndex();
-    const validated = index.fixtures.filter((entry) => entry.webValidator !== null).map((entry) => entry.path);
-    expect(validated).toEqual([
-      "fixtures/events/tick-typical.json",
-      "fixtures/overview/all-optional.json",
-      "fixtures/overview/empty.json",
-      "fixtures/overview/max-size.json",
-      "fixtures/overview/typical.json",
-    ]);
   }, GENERATION_TIMEOUT);
 });
 

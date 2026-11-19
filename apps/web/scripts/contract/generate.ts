@@ -53,6 +53,22 @@ const ENCODER = new TextEncoder();
 const NEWLINE = 0x0a;
 
 const memo = new Map<string, Promise<readonly GeneratedFile[]>>();
+const shapeMemo = new Map<string, ShapeSnapshot>();
+
+/**
+ * The shape extracted from the repository's wire types, memoised per process for each repository root.
+ * A memoised generation uses the same snapshot, so a check that needs both pays for one extraction.
+ *
+ * @throws {ContractToolError} SHAPE_UNSUPPORTED_TYPE from shape extraction
+ */
+export function currentShape(repoRoot: string = DEFAULT_REPO_ROOT): ShapeSnapshot {
+  let shape = shapeMemo.get(repoRoot);
+  if (shape === undefined) {
+    shape = extractShape(repoRoot);
+    shapeMemo.set(repoRoot, shape);
+  }
+  return shape;
+}
 
 /**
  * Produce every generated contract artifact in memory. Reads the repository (sources, the existing
@@ -76,7 +92,7 @@ export function generateContract(options: GenerateOptions = {}): Promise<readonl
   const key = `${frozen}\n${repoRoot}`;
   let pending = memo.get(key);
   if (pending === undefined) {
-    pending = generate(repoRoot, frozen, extractShape);
+    pending = generate(repoRoot, frozen, currentShape);
     memo.set(key, pending);
   }
   return pending;

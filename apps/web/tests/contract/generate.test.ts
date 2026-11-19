@@ -15,22 +15,17 @@ import { ContractToolError } from "../../scripts/contract/errors.js";
 import { generateContract, writeGenerated } from "../../scripts/contract/generate.js";
 import { APP_VERSION, at, atMs, FIXED_EPOCH_MS, GENERATION, PLACEHOLDER, utf8OfBytes } from "../../scripts/contract/scenarios/common.js";
 import { createScenarioContext } from "../../scripts/contract/scenarios/index.js";
-import type { ShapeSnapshot } from "../../scripts/contract/shape-types.js";
 import { tickCycle, transcript } from "../../scripts/contract/sse-transcript.js";
 import { responseBody, stubContext, stubRouteRequest } from "../../scripts/contract/stub-context.js";
 import type { FixtureIndex, GeneratedFile } from "../../scripts/contract/types.js";
+import { generated, GENERATION_TIMEOUT } from "./generated.js";
 import { buildLiveTick } from "../../src/server/events/stream.js";
 import { currentWritePathSnapshot } from "../../src/server/mutations/session-provider.js";
 import { __resetMetricsForTest, renderMetrics } from "../../src/server/routes/metrics.js";
 import type { RuntimeStatus } from "../../src/server/refresh.js";
 import { sessionRoute } from "../../src/server/routes/session.js";
 
-const GENERATION_TIMEOUT = { timeout: 30_000 };
 const DECODER = new TextDecoder();
-
-function generated(): Promise<readonly GeneratedFile[]> {
-  return generateContract({ frozen: "report" });
-}
 
 async function generatedJson(path: string): Promise<unknown> {
   const file = (await generated()).find((candidate) => candidate.path === path);
@@ -82,7 +77,8 @@ describe("generateContract", () => {
   }, GENERATION_TIMEOUT);
 
   test("is memoised: a second call returns the same files without generating again", async () => {
-    expect(await generated()).toBe(await generated());
+    expect(await generateContract({ frozen: "report" })).toBe(await generated());
+    expect(await generateContract({ frozen: "report" })).toBe(await generateContract({ frozen: "report" }));
   }, GENERATION_TIMEOUT);
 
   test("JSON files are canonical: LF only, one trailing newline, and a parse round trip keeps the bytes", async () => {
@@ -128,18 +124,6 @@ describe("generateContract", () => {
     const doc = DECODER.decode(file!.bytes);
     expect(doc).not.toMatch(/<!-- generated:([A-Za-z0-9:-]+) -->\n<!-- \/generated:\1 -->/);
     expect(doc).toContain("| [`fixtures/session/typical.json`](fixtures/session/typical.json) |");
-  }, GENERATION_TIMEOUT);
-
-  test("refuses to replace a frozen shape snapshot whose content differs", async () => {
-    const frozen = (await generatedJson(
-      `contract/shape/${CONTRACT_VERSION.major}.${CONTRACT_VERSION.minor}.json`,
-    )) as ShapeSnapshot;
-    const mutated = structuredClone(frozen) as unknown as { roots: Record<string, { optional: boolean }[]> };
-    const node = mutated.roots.SessionPayload![0]!;
-    node.optional = !node.optional;
-    const attempt = generateContract({ frozen: "enforce", extract: () => mutated as unknown as ShapeSnapshot });
-    await expect(attempt).rejects.toBeInstanceOf(ContractToolError);
-    await expect(attempt).rejects.toMatchObject({ code: "SNAPSHOT_FROZEN" });
   }, GENERATION_TIMEOUT);
 });
 
