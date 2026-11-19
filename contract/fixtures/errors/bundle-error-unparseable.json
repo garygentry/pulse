@@ -1,0 +1,1 @@
+{"code":"ESTATE_BUNDLE_UNPARSEABLE","kind":"unparseable","message":"Estate bundle model at /var/lib/pulse/rendered/web-estate-model.json is not valid JSON. Run 'pulse render'; do not hand-edit or copy individual bundle files.","path":"/var/lib/pulse/rendered/web-estate-model.json"}

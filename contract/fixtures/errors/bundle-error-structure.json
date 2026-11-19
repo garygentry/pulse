@@ -1,0 +1,1 @@
+{"code":"ESTATE_BUNDLE_STRUCTURE","kind":"structure","message":"Estate bundle model at /var/lib/pulse/rendered/web-estate-model.json has malformed field 'estate' (expected an object). Run 'pulse render'; do not hand-edit rendered artifacts.","path":"/var/lib/pulse/rendered/web-estate-model.json"}

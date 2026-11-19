@@ -1,0 +1,1 @@
+{"code":"ESTATE_BUNDLE_VERSION","kind":"version","message":"Estate bundle model at /var/lib/pulse/rendered/web-estate-model.json has an unsupported formatVersion. Re-render with the same Pulse version as the web image.","path":"/var/lib/pulse/rendered/web-estate-model.json"}

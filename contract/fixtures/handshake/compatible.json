@@ -1,0 +1,1 @@
+{"client":{"major":1,"minMinor":0},"expectedOutcome":"compatible","session":{"authMode":"none","capabilities":{"ack":false,"proposeEstateEdit":false,"silence":false},"contract":{"capabilities":[],"major":1,"minor":0},"identity":null}}

@@ -1,0 +1,1 @@
+{"code":"ESTATE_BUNDLE_INCOHERENT","kind":"incoherent","message":"Estate bundle model at /var/lib/pulse/rendered/web-estate-model.json belongs to a different render generation. Run 'pulse render' and mount the rendered tree as one unit.","path":"/var/lib/pulse/rendered/web-estate-model.json"}

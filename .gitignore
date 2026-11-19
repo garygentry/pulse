@@ -48,6 +48,9 @@ specs/
 .handoff/
 .system1/
 
+# Temp dir of an interrupted `bun run contract:gen`
+.contract-gen-*/
+
 # Editor and merge leftovers (also keeps them out of the ui:drift check)
 *.swp
 *.swo

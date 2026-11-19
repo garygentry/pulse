@@ -1,0 +1,1 @@
+{"code":"ESTATE_BUNDLE_UNREADABLE","kind":"unreadable","message":"Estate bundle model is unreadable at /var/lib/pulse/rendered/web-estate-model.json. Verify the read-only rendered-tree mount and file permissions, then run 'pulse render' if needed.","path":"/var/lib/pulse/rendered/web-estate-model.json"}

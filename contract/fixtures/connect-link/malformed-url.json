@@ -1,0 +1,1 @@
+{"expect":"reject","link":"pulse://connect?v=1&url=not%20a%20url","rejection":"malformed-url"}

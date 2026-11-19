@@ -20,6 +20,7 @@
     "alerting:render": "bun run stack/alerting/src/render.ts",
     "benchmark:rendered-model-v2": "bun run packages/renderer/tests/benchmark-rendered-model-v2.ts",
     "golden:update": "bun run scripts/update-golden.ts",
+    "contract:gen": "bun run apps/web/scripts/contract/generate.ts",
     "verify:golden": "bun test tests/deploy-toolkit/golden.test.ts",
     "verify:estate": "bun test tests/deploy-toolkit/estate.test.ts",
     "docs:build": "cd apps/docs && bun run build",
