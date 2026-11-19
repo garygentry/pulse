@@ -76,6 +76,7 @@ import {
   List,
   Menu,
   PanelRight,
+  Smartphone,
   TrendingUp,
 } from "lucide-react";
 import { iconRegistry } from "@/ui/lib/icon-registry";
@@ -165,6 +166,7 @@ export const ICONS = {
   list: List,
   menu: Menu,
   "panel-right": PanelRight,
+  smartphone: Smartphone,
   "trending-up": TrendingUp,
   triangle: Triangle,
 } as const satisfies Record<string, LucideIcon>;

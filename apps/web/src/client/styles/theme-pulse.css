@@ -8,7 +8,7 @@
  * - Inline monospace size (`--code-font-size`) for code/kbd/samp/pre in running text.
  *
  * Keep colours here as references to theme.css tokens: no literal colour values, except the one
- * below that restates a theme.css value.
+ * below that restates a theme.css value, and the QR plate pair at the end of the file.
  */
 
 /* deck's theme.css (v0.5.0) sets --destructive-control-foreground in `:root` only, so dark mode
@@ -76,4 +76,15 @@
   :root[data-density="wallboard"] body {
     font-size: 18px;
   }
+}
+
+/* Connect-screen QR plate (views/connect/qr-code.tsx): dark modules on a light plate in BOTH themes, for scanner
+   reliability, so one grouped declaration covers light and dark. The values restate theme.css's light --card and
+   --foreground (tests/connect-qr-tokens.test.ts pins them). Keep the selector on one line: the restated-values
+   test reads the first line-leading `.dark {` block. */
+:root, .dark { --qr-plate: oklch(1 0 0); --qr-module: oklch(0.2 0 0); }
+
+@theme inline {
+  --color-qr-plate: var(--qr-plate);
+  --color-qr-module: var(--qr-module);
 }
