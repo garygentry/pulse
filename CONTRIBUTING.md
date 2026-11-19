@@ -42,7 +42,8 @@ someone's network. Describe them in words ("an RFC 1918 address") instead.
   - or on its own when its last label is a common public TLD (`.com`, `.net`, `.org`, `.io`, …) or a private-use
     suffix (`.lan`, `.local`, `.home`, `.internal`, `.corp`, `.intranet`, `.localdomain`, `.home.arpa`).
 - **IP addresses.** Four-part decimal IPv4, and IPv6 literals including IPv4-mapped and zoned forms, fail outside
-  the allowlist.
+  the allowlist. This includes an address inside a percent-encoded URL (`https%3A%2F%2F<address>`,
+  `%5B<address>%5D`).
 - **Home paths.** `/home/<name>/`, `/Users/<name>/`, `C:\Users\<name>\` and `~<name>/` fail. `~/` and `$HOME` are
   fine.
 - **Never flagged:**

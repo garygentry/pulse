@@ -229,7 +229,37 @@ const IPV6_FIRING: readonly Firing[] = [
   { name: "in a JSON string", line: `{"address":"${ULA}"}`, value: ULA },
 ];
 
+/** Literals directly after a percent escape, as a connect link carries them. Columns are 1-based. */
+const ENCODED_IP_FIRING: readonly Firing[] = [
+  { name: "IPv4 after an encoded scheme", line: `pulse://connect?v=1&url=https%3A%2F%2F${TEN}`, value: TEN, column: 39 },
+  { name: "IPv4 after an encoded scheme, lower-case escapes", line: `url=https%3a%2f%2f${TEN}`, value: TEN, column: 19 },
+  { name: "IPv4 with an encoded port", line: `url=https%3A%2F%2F${TEN}%3A8443`, value: TEN, column: 19 },
+  { name: "IPv4 with an encoded port, lower-case escapes", line: `url=https%3a%2f%2f${TEN}%3a8443&name=home`, value: TEN, column: 19 },
+  { name: "IPv4 after encoded userinfo", line: `https%3A%2F%2Fops%40${TEN}%2Fx`, value: TEN, column: 21 },
+  { name: "IPv4 after an escape that ends in a digit", line: `x%20${TEN}`, value: TEN, column: 5 },
+  { name: "IPv6 in encoded brackets", line: `url=https%3A%2F%2F%5B${ULA}%5D`, value: ULA, column: 22 },
+  { name: "IPv6 in encoded brackets, lower-case + port", line: `https%3a%2f%2f%5b${ULA}%5d%3a8443`, value: ULA, column: 18 },
+  { name: "IPv6 starting with :: in encoded brackets", line: `%5B${colon("", "", "fd00", "1")}%5D`, value: colon("", "", "fd00", "1"), column: 4 },
+  { name: "IPv4-mapped in encoded brackets", line: `%5B${MAPPED_PRIVATE}%5D%3A8443`, value: MAPPED_PRIVATE, column: 4 },
+  { name: "zoned IPv6 in encoded brackets keeps its zone", line: `%5B${LINK_LOCAL_ZONED}%5D`, value: LINK_LOCAL_ZONED, column: 4 },
+];
+
 const IP_QUIET: Readonly<Record<string, readonly string[]>> = {
+  "allowlisted, percent-encoded positions": [
+    "https%3A%2F%2F192.0.2.10%3A8443",
+    "pulse://connect?v=1&url=https%3A%2F%2F192.0.2.10",
+    "url=https%3a%2f%2f192.0.2.10%3a8443&name=home",
+    "https%3A%2F%2F127.0.0.1%3A8080",
+    "https%3A%2F%2Fops%40198.51.100.7%2Fx",
+    "%5B2001:db8::10%5D",
+    "https%3A%2F%2F%5B2001:db8::10%5D%3A8443",
+    "https%3a%2f%2f%5b::1%5d",
+    "%5B::ffff:192.0.2.1%5D",
+    "v%2F1.2.3.4.5",
+    "tag%3Av1.2.3.4",
+    "100%",
+    "%3A8443",
+  ],
   "every allowlist range": [
     "192.0.2.1",
     "198.51.100.200",
@@ -291,6 +321,19 @@ describe("IP address rule (P2)", () => {
       expect(suggestFor(match)).toBe(V6_SUGGESTION);
     });
   }
+
+  for (const sample of ENCODED_IP_FIRING) {
+    test(`fires (percent-encoded): ${sample.name}`, () => {
+      const match = expectOne(findIpAddresses(sample.line), sample);
+      expect(match.rule).toBe("ip-address");
+      expect(match.kind).toBe(sample.value.includes(":") ? "ipv6" : "default");
+    });
+  }
+
+  test("a connect link cannot carry a private address past the scan", () => {
+    const result = runScan([{ path: "contract/CONTRACT.md", text: `ok\npulse://connect?v=1&url=https%3A%2F%2F${TEN}%3A8443\n` }]);
+    expect(result.violations.map((v) => [v.line, v.column, v.rule, v.masked])).toEqual([[2, 39, "ip-address", "10…"]]);
+  });
 
   test("an IPv4-mapped literal is one finding, not an IPv6 and an IPv4 one", () => {
     expect(summary(findIpAddresses(`bind ${MAPPED_PRIVATE} now`))).toEqual([{ value: MAPPED_PRIVATE, column: 6 }]);

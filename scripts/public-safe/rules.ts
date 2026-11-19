@@ -138,13 +138,21 @@ export function findHostnames(line: string): RuleMatch[] {
 
 // ── IP address rule ──────────────────────────────────────────────────────────────────────────────────────────
 
-/** An IPv6-shaped run: group 1 is the literal, group 2 an optional zone. */
-export const IPV6_RE = /(?<![0-9a-z_:.])((?:[0-9a-f]{0,4}:){2,8}(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-f]{1,4})?)(%[0-9a-z]{1,15})?(?![0-9a-z_:]|\.\d)/gi;
-/** Exactly four decimal parts; rejects `v1.2.3.4`, `1.2.3.4.5` and `1.2.3.4-rc1`. */
-export const IPV4_RE = /(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?!\w|\.\d|-[a-z])/gi;
+/**
+ * An IPv6-shaped run: group 1 is the literal, group 2 an optional zone. A literal starts at an identifier
+ * boundary or directly after a percent escape (`%5B`, `%2F`, …), never inside one.
+ */
+export const IPV6_RE = /(?:(?<![0-9a-z_:.%])|(?<=%[0-9a-f]{2}))((?:[0-9a-f]{0,4}:){2,8}(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-f]{1,4})?)(%[0-9a-z]{1,15})?(?![0-9a-z_:]|\.\d)/gi;
+/**
+ * Exactly four decimal parts; rejects `v1.2.3.4`, `1.2.3.4.5` and `1.2.3.4-rc1`. A percent escape before the
+ * literal is a boundary, as in the connect-link form `https%3A%2F%2F<address>`.
+ */
+export const IPV4_RE = /(?:(?<![\w.%])|(?<=%[0-9a-f]{2}))(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?!\w|\.\d|-[a-z])/gi;
 const ISO_DATE_BEFORE_RE = /\d{4}-\d{2}-\d{2}[T ]$/;
 const TIME_RE = /^\d{1,2}:\d{2}(?::\d{2})?$/;
 const UUID_BEFORE_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:?$/i;
+const ESCAPE_BEFORE_RE = /%[0-9a-f]{2}$/i;
+const ESCAPE_START_RE = /^%[0-9a-f]{2}/i;
 
 /** True when an IPV6_RE literal has the shape of an address rather than a time, ratio, MAC or scope path. */
 function looksLikeIpv6(text: string, before: string): boolean {
@@ -174,9 +182,12 @@ export function findIpAddresses(line: string): RuleMatch[] {
     const text = m[1] ?? "";
     if (!looksLikeIpv6(text, line.slice(Math.max(0, m.index - 37), m.index))) continue;
     if (!ipaddr.IPv6.isValid(text)) continue;
-    ipv6Spans.push([m.index, m.index + m[0].length]);
+    // Inside a percent-encoded URL, `%5D` after the literal is the closing bracket, not a zone.
+    const encoded = ESCAPE_BEFORE_RE.test(line.slice(Math.max(0, m.index - 3), m.index));
+    const value = encoded && ESCAPE_START_RE.test(m[2] ?? "") ? text : m[0];
+    ipv6Spans.push([m.index, m.index + value.length]);
     if (isAllowedIp(ipaddr.IPv6.parse(text))) continue;
-    out.push({ rule: "ip-address", value: m[0], index: m.index, kind: "ipv6" });
+    out.push({ rule: "ip-address", value, index: m.index, kind: "ipv6" });
   }
 
   for (const m of line.matchAll(IPV4_RE)) {
