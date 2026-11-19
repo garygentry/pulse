@@ -422,6 +422,7 @@ export function makeSession(
     identity: opts.identity ?? null,
     authMode: opts.authMode ?? "none",
     capabilities: { silence: false, ack: false, proposeEstateEdit: false },
+    contract: { major: 1, minor: 0, capabilities: [] },
   };
   return deepFreeze(session);
 }

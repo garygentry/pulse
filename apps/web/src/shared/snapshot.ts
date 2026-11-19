@@ -58,6 +58,9 @@ export interface HealthBody {
   /** Write-path status per capability; always emitted once mutations ship (auth-mode-none in none
    *  mode). Optional so existing HealthBody literals compile unedited. Never affects `status`. */
   writePath?: { silence: HealthWritePathEntry; ack: HealthWritePathEntry; proposeEstateEdit: HealthWritePathEntry };
+  /** Contract version the server speaks, "major.minor". Optional so existing HealthBody literals compile
+   *  unedited; /healthz always emits it. Never affects `status`. */
+  contract?: string;
 }
 
 /** Write-path reasons (the 8 literals of server/mutations/write-path.ts). Re-declared here because

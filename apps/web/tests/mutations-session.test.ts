@@ -16,6 +16,7 @@ const PAYLOAD: SessionPayload = {
   identity: { subject: "gary-subject", displayName: "Gary Gentry", source: "proxy-header" },
   authMode: "proxy-header",
   capabilities: { silence: true, ack: true, proposeEstateEdit: false },
+  contract: { major: 1, minor: 0, capabilities: [] },
 };
 
 const SEEDED: SessionState = {
@@ -57,6 +58,7 @@ describe("toSessionState (REQ-SEC-06)", () => {
       identity: null,
       authMode: "none",
       capabilities: { silence: 1, ack: "true", proposeEstateEdit: true } as unknown as SessionPayload["capabilities"],
+      contract: { major: 1, minor: 0, capabilities: [] },
     });
     expect(state.identity).toBeNull();
     expect(state.capabilities).toEqual({ silence: false, ack: false, proposeEstateEdit: true });

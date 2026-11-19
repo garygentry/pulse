@@ -32,4 +32,6 @@ export interface SessionPayload {
   /** Configured authentication mode. */ readonly authMode: AuthMode;
   /** Per-capability flags; all false unless proxy-header mode, trusted identity and healthy stores. */
   readonly capabilities: SessionCapabilities;
+  /** Contract handshake: the contract version this server speaks plus its currently available capabilities. */
+  readonly contract: ContractHandshake;
 }

@@ -1,7 +1,8 @@
 // src/server/routes/metrics.ts — GET /metrics, hand-rolled Prometheus text (REQ-OBS-03, 10 §6).
 //
 // The retained legacy families (pulse_web_build_info, pulse_web_source_up, pulse_web_snapshot_age_seconds,
-// pulse_web_estate_model_loaded, pulse_web_refresh_total, pulse_web_http_requests_total) are joined by
+// pulse_web_estate_model_loaded, pulse_web_refresh_total, pulse_web_http_requests_total,
+// pulse_web_client_handshakes_total) are joined by
 // the runtime-cycle telemetry families required by 10 §6: cycle sequence/duration/publications, per-
 // SourceId upstream call/up, SSE stream/event, and history request/cache/active/queued. Counters are
 // process-lifetime monotonic Maps held here and mutated by the loop (recordRefresh, recordUpstreamCall,
@@ -23,6 +24,8 @@ import type { MutationAction } from "../mutations/registry.js";
 import type { RefusalReason } from "../mutations/refusal.js";
 import type { WritePathSnapshot } from "../mutations/write-path.js";
 import { WRITE_PATH_STORES } from "../mutations/write-path.js";
+import type { HandshakeLabels } from "@pulse/web-data/contract";
+import { CONTRACT_VERSION, KNOWN_CLIENTS, formatContractVersion } from "@pulse/web-data/contract";
 
 const METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 type SourceKey = "metrics" | "alerts" | "checks";
@@ -85,6 +88,27 @@ const DEFAULT_VIEW: MetricsRuntimeView = {
 
 const refreshTotal = new Map<string, number>(); // key: `${source}|${outcome}` (legacy loop, retained)
 const httpRequestsTotal = new Map<string, number>(); // key: `${route}|${status}`
+const clientHandshakesTotal = new Map<string, number>(); // key: `${client}|${contractMajor}|${outcome}`
+
+/** Closed client-label set of `pulse_web_client_handshakes_total`. */
+const HANDSHAKE_CLIENTS: ReadonlySet<string> = new Set<string>([...KNOWN_CLIENTS, "other", "none"]);
+/** Closed outcome-label set of `pulse_web_client_handshakes_total`. */
+const HANDSHAKE_OUTCOMES: ReadonlySet<string> = new Set([
+  "compatible",
+  "server_too_old",
+  "client_too_old",
+  "not_announced",
+]);
+
+/**
+ * True when `major` is a label value `handshakeLabels` can produce: "other", "none", or a canonical
+ * decimal integer 0..CONTRACT_VERSION.major+1 (no leading zeros).
+ */
+function isHandshakeMajorLabel(major: string): boolean {
+  if (major === "other" || major === "none") return true;
+  if (!/^(0|[1-9][0-9]{0,3})$/.test(major)) return false;
+  return Number(major) <= CONTRACT_VERSION.major + 1;
+}
 const cyclePublicationsTotal = new Map<CyclePublicationOutcome, number>(); // key: outcome
 const upstreamCallsTotal = new Map<string, number>(); // key: `${SourceId}|${outcome}`
 const sseEventsTotal = new Map<string, number>(); // key: `${event}|${outcome}`
@@ -152,6 +176,22 @@ export function recordHttpRequest(route: string, status: number): void {
   httpRequestsTotal.set(key, (httpRequestsTotal.get(key) ?? 0) + 1);
 }
 
+/**
+ * Increment `pulse_web_client_handshakes_total{client, contract_major, outcome}`.
+ *
+ * Accepts only `handshakeLabels()` output. The type enforces this at compile time, and a runtime guard
+ * silently drops any value outside the closed sets, so the series count can never exceed
+ * 4 × (CONTRACT_VERSION.major + 4) × 4 even if a caller bypasses the type. Never throws and never logs.
+ */
+export function recordClientHandshake(labels: HandshakeLabels): void {
+  const { client, contractMajor, outcome } = labels;
+  if (!HANDSHAKE_CLIENTS.has(client) || !HANDSHAKE_OUTCOMES.has(outcome) || !isHandshakeMajorLabel(contractMajor)) {
+    return;
+  }
+  const key = `${client}|${contractMajor}|${outcome}`;
+  clientHandshakesTotal.set(key, (clientHandshakesTotal.get(key) ?? 0) + 1);
+}
+
 /** Increment `pulse_web_cycle_publications_total{outcome}` — called once per cycle publication (10 §6). */
 export function recordCyclePublication(outcome: CyclePublicationOutcome): void {
   cyclePublicationsTotal.set(outcome, (cyclePublicationsTotal.get(outcome) ?? 0) + 1);
@@ -185,6 +225,7 @@ export function recordHistoryRequest(query: HistoryQueryLabel, outcome: HistoryR
 export function __resetMetricsForTest(): void {
   refreshTotal.clear();
   httpRequestsTotal.clear();
+  clientHandshakesTotal.clear();
   cyclePublicationsTotal.clear();
   upstreamCallsTotal.clear();
   sseEventsTotal.clear();
@@ -238,7 +279,9 @@ export function renderMetrics(
   const obs = view.cycleObservation;
 
   lines.push(`# TYPE pulse_web_build_info gauge`);
-  lines.push(`pulse_web_build_info{version="${esc(WEB_APP_VERSION)}"} 1`);
+  lines.push(
+    `pulse_web_build_info{version="${esc(WEB_APP_VERSION)}",contract="${formatContractVersion(CONTRACT_VERSION)}"} 1`,
+  );
 
   // Retained legacy per-loop source health (metrics/alerts/checks); item 048 removes it once the shell
   // moves fully onto the cycle observation. The corrected cycle-observation source health follows below.
@@ -323,6 +366,15 @@ export function renderMetrics(
   for (const [key, value] of httpRequestsTotal) {
     const [route, statusCode] = key.split("|");
     lines.push(`pulse_web_http_requests_total{route="${esc(route ?? "")}",status="${statusCode}"} ${value}`);
+  }
+
+  // Client handshakes by bounded labels; series follow first-observation order.
+  lines.push(`# TYPE pulse_web_client_handshakes_total counter`);
+  for (const [key, value] of clientHandshakesTotal) {
+    const [client, major, outcome] = key.split("|");
+    lines.push(
+      `pulse_web_client_handshakes_total{client="${esc(client ?? "")}",contract_major="${esc(major ?? "")}",outcome="${esc(outcome ?? "")}"} ${value}`,
+    );
   }
 
   // ── Mutation / write-path telemetry ───────────────────────────────────────────────────────────

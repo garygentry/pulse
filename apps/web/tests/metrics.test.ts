@@ -20,6 +20,7 @@ import {
   recordAuditWriteFailure,
   recordAckAutoClears,
   setWritePathStatusProvider,
+  recordClientHandshake,
   __resetMetricsForTest,
   type MetricsRuntimeView,
 } from "../src/server/routes/metrics.js";
@@ -33,6 +34,12 @@ import type {
 } from "@pulse/web-data/wire";
 import type { HistoryStats } from "@pulse/web-data/history";
 import type { WritePathSnapshot } from "../src/server/mutations/write-path.js";
+import {
+  CONTRACT_VERSION,
+  handshakeLabels,
+  parseClientAnnouncement,
+  type HandshakeLabels,
+} from "@pulse/web-data/contract";
 
 // ── Builders ────────────────────────────────────────────────────────────────────────────────────
 
@@ -358,5 +365,122 @@ describe("renderMetrics — mutation & write-path families (REQ-OBS-01, REQ-OBS-
     expect(text).not.toContain("pulse_web_mutations_total{");
     expect(text).toContain("\npulse_web_ack_auto_clears_total 0\n");
     expect(text).not.toContain("pulse_web_write_path_status");
+  });
+});
+
+describe("renderMetrics — client handshakes and the build_info contract label", () => {
+  afterEach(() => __resetMetricsForTest());
+
+  const FAMILY = "pulse_web_client_handshakes_total";
+  const seriesLines = (): string[] =>
+    renderMetrics(status(), Date.now(), view())
+      .split("\n")
+      .filter((line) => line.startsWith(`${FAMILY}{`));
+
+  test("the family emits its TYPE line with no series before any handshake", () => {
+    const text = renderMetrics(status(), Date.now(), view());
+    expect(text).toContain(`# TYPE ${FAMILY} counter`);
+    expect(seriesLines()).toEqual([]);
+  });
+
+  test("series render in first-observation order with the fixed label order", () => {
+    recordClientHandshake({ client: "none", contractMajor: "none", outcome: "not_announced" });
+    recordClientHandshake({ client: "ios", contractMajor: "1", outcome: "compatible" });
+    recordClientHandshake({ client: "ios", contractMajor: "1", outcome: "compatible" });
+    expect(seriesLines()).toEqual([
+      `${FAMILY}{client="none",contract_major="none",outcome="not_announced"} 1`,
+      `${FAMILY}{client="ios",contract_major="1",outcome="compatible"} 2`,
+    ]);
+  });
+
+  test("each outcome and client bucket from handshakeLabels is counted", () => {
+    const announce = (client: string | null, contract: string | null): void => {
+      const h = new Headers();
+      if (client !== null) h.set("X-Pulse-Client", client);
+      if (contract !== null) h.set("X-Pulse-Contract", contract);
+      recordClientHandshake(handshakeLabels(parseClientAnnouncement(h)));
+    };
+    announce(null, null);
+    announce("ios", "1.0");
+    announce("ios", "1.3");
+    announce("ios-widget", "2.0");
+    announce("ios", "0.4");
+    announce("my-tool", "9.0");
+    expect(seriesLines()).toEqual([
+      `${FAMILY}{client="none",contract_major="none",outcome="not_announced"} 1`,
+      `${FAMILY}{client="ios",contract_major="1",outcome="compatible"} 1`,
+      `${FAMILY}{client="ios",contract_major="1",outcome="server_too_old"} 1`,
+      `${FAMILY}{client="ios-widget",contract_major="2",outcome="server_too_old"} 1`,
+      `${FAMILY}{client="ios",contract_major="0",outcome="client_too_old"} 1`,
+      `${FAMILY}{client="other",contract_major="other",outcome="server_too_old"} 1`,
+    ]);
+  });
+
+  test("a label outside the closed sets is dropped, even when the type is bypassed", () => {
+    const ok = { client: "ios", contractMajor: "1", outcome: "compatible" } as const;
+    const bad: unknown[] = [
+      { ...ok, client: "evil" },
+      { ...ok, client: 'ios",x="1' },
+      { ...ok, outcome: "exploded" },
+      { ...ok, contractMajor: String(CONTRACT_VERSION.major + 2) },
+      { ...ok, contractMajor: "01" },
+      { ...ok, contractMajor: "1.0" },
+      { ...ok, contractMajor: "-1" },
+      { ...ok, contractMajor: "" },
+      { ...ok, contractMajor: "99999" },
+    ];
+    for (const labels of bad) recordClientHandshake(labels as HandshakeLabels);
+    expect(seriesLines()).toEqual([]);
+  });
+
+  test("the series count stays within the bound for arbitrary announcement headers", () => {
+    // Deterministic pseudo-random stream so a failure reproduces.
+    let seed = 0x2f6e2b1;
+    const next = (n: number): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % n;
+    };
+    const clients = ["ios", "ios-widget", "my-tool", "android", "Bad Name!", "", "a".repeat(33), "x".repeat(5000), "ios, ios"];
+    const junkContracts = ["v1", "1", "1.", ".0", "1.0.0", "01.0", "-1.0", "1.0, 1.0", "9".repeat(400), ""];
+    const pairs: (readonly [string | null, string | null])[] = [];
+    // Every major 0..9999 at least once, then junk.
+    for (let major = 0; major <= 9999; major++) {
+      pairs.push([clients[next(clients.length)] ?? null, `${major}.${next(50)}`]);
+    }
+    for (let i = 0; i < 1000; i++) {
+      const client = next(5) === 0 ? null : (clients[next(clients.length)] ?? null);
+      const contract =
+        next(3) === 0 ? null : next(2) === 0 ? (junkContracts[next(junkContracts.length)] ?? null) : `${next(12)}.${next(12)}`;
+      pairs.push([client, contract]);
+    }
+    for (const [client, contract] of pairs) {
+      const h = new Headers();
+      if (client !== null) h.set("X-Pulse-Client", client);
+      if (contract !== null) h.set("X-Pulse-Contract", contract);
+      recordClientHandshake(handshakeLabels(parseClientAnnouncement(h)));
+    }
+    const lines = seriesLines();
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThanOrEqual(4 * (CONTRACT_VERSION.major + 4) * 4);
+    const allowedMajors = new Set(["other", "none", ...Array.from({ length: CONTRACT_VERSION.major + 2 }, (_, i) => String(i))]);
+    for (const line of lines) {
+      const m = /^pulse_web_client_handshakes_total\{client="([^"]*)",contract_major="([^"]*)",outcome="([^"]*)"\} \d+$/.exec(line);
+      expect(m, line).not.toBeNull();
+      expect(["ios", "ios-widget", "other", "none"]).toContain(m?.[1] ?? "");
+      expect(allowedMajors.has(m?.[2] ?? "")).toBe(true);
+      expect(["compatible", "server_too_old", "client_too_old", "not_announced"]).toContain(m?.[3] ?? "");
+    }
+  });
+
+  test("__resetMetricsForTest clears the family", () => {
+    recordClientHandshake({ client: "ios", contractMajor: "1", outcome: "compatible" });
+    expect(seriesLines()).toHaveLength(1);
+    __resetMetricsForTest();
+    expect(seriesLines()).toEqual([]);
+  });
+
+  test("pulse_web_build_info carries the contract version label", () => {
+    const text = renderMetrics(status(), Date.now(), view());
+    expect(text).toMatch(/^pulse_web_build_info\{version="[^"]*",contract="1\.0"\} 1$/m);
   });
 });

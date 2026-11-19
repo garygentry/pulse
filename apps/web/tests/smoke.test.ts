@@ -190,6 +190,14 @@ webDescribe("smoke:web — profile-web bring-up (SC-1, SC-6)", () => {
     expect(serviceKeys).toEqual([...FIXTURE_SERVICES].sort());
   }, 60_000);
 
+  // The contract handshake is served by the real container.
+  test("/api/session carries the contract handshake at major 1", () => {
+    const r = inStackGet("http://web:8080/api/session");
+    expect(r.ok, `GET /api/session failed: ${r.body}`).toBe(true);
+    const body = JSON.parse(r.body) as { contract: { major: number; minor: number; capabilities: string[] } };
+    expect(body.contract.major).toBe(1);
+  }, 60_000);
+
   // Issue #2 — the image's shell carries the strict CSP, with the hash of the inline script the
   // image was built from and a per-response style nonce, and every response carries nosniff.
   test("the shell carries the build-hashed CSP and the hardening headers (issue #2)", () => {
@@ -404,9 +412,14 @@ describe("smoke:web (in-process) — normal composition, every M1 route (10 §8)
     const sess = await get(rt, "/api/session");
     expect(sess.status).toBe(200);
     expect(sess.headers.get("cache-control")).toBe("private, no-store");
-    const sbody = (await sess.json()) as { identity: unknown; capabilities: Record<string, boolean> };
+    const sbody = (await sess.json()) as {
+      identity: unknown;
+      capabilities: Record<string, boolean>;
+      contract: { major: number; minor: number; capabilities: string[] };
+    };
     expect(sbody.identity).toBeNull();
     expect(sbody.capabilities).toEqual({ silence: false, ack: false, proposeEstateEdit: false });
+    expect(sbody.contract.major).toBe(1);
 
     const ev = await get(rt, "/api/events");
     expect(ev.status).toBe(200);
@@ -524,6 +537,7 @@ describe("smoke:web (in-process) — normal composition, every M1 route (10 §8)
     expect((await get(rt, "/healthz")).status).toBe(200);
     expect((await get(rt, "/metrics")).status).toBe(200);
     expect((await get(rt, "/api/session")).status).toBe(200);
+    expect((await (await get(rt, "/api/session")).json()).contract.major).toBe(1);
     const ev = await get(rt, "/api/events");
     expect(ev.status).toBe(200);
     await ev.body?.cancel();

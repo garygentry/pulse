@@ -11,6 +11,7 @@ import type { RouteDefinition, RouteRequest, ServerContext } from "../../shared/
 import type { HealthBody } from "../../shared/snapshot.js";
 import { getRuntimeStatus } from "../refresh.js"; // operational status singleton (§6)
 import { WEB_APP_VERSION } from "../../version.js"; // generated stamp
+import { CONTRACT_VERSION, formatContractVersion } from "@pulse/web-data/contract";
 import { currentHealthWritePath } from "../mutations/session-provider.js";
 
 /**
@@ -36,6 +37,7 @@ export const healthzRoute: RouteDefinition = {
       sources: s.sources,
       // Defensive read: direct-dispatch tests pass `{} as ServerContext` (status.test.ts:86).
       writePath: currentHealthWritePath(ctx?.config?.identity?.mode),
+      contract: formatContractVersion(CONTRACT_VERSION),
     };
     return Response.json(body, { status: 200 });
   },
