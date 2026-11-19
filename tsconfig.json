@@ -12,6 +12,7 @@
     { "path": "apps/web/tsconfig.tests.json" },
     { "path": "stack/tests" },
     { "path": "tests/deploy-toolkit" },
+    { "path": "tests/public-safe" },
     { "path": "stack/alerting" },
     { "path": "stack/grafana" },
     { "path": "agent/prober" },
