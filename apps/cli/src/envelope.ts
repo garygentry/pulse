@@ -15,7 +15,13 @@ import { PULSE_VERSION } from "./version.js";
 export const ENVELOPE_VERSION = 1 as const;
 
 /** The command discriminant carried in the envelope. */
-export type PulseCommand = "init" | "render" | "validate" | "coverage" | "proposals";
+export type PulseCommand =
+  | "init"
+  | "render"
+  | "validate"
+  | "coverage"
+  | "proposals"
+  | "connect-link";
 export type { ProposalsData, ProposalSummary } from "./commands/proposals/types.js";
 
 /** The envelope `meta` block: provenance every command emits identically. */
@@ -81,6 +87,19 @@ export interface InitData {
   skipped: string[];
   /** Existing files init refused to overwrite; present ⇒ exit 1 unless `--force` (REQ-INIT-03). */
   wouldClobber?: string[];
+}
+
+/** Where `pulse connect-link` took its address from (precedence flag > env > config). */
+export type ConnectLinkSource = "flag" | "env" | "config";
+
+/** `connect-link` result payload; the envelope's `data` is `null` on a refusal or when no address is set. */
+export interface ConnectLinkData {
+  /** The connect link. */
+  readonly link: string;
+  /** The normalised base URL the link carries. */
+  readonly baseUrl: string;
+  /** Where the address came from. */
+  readonly source: ConnectLinkSource;
 }
 
 /** The inputs `buildEnvelope` assembles into a `PulseEnvelope<D>`. */

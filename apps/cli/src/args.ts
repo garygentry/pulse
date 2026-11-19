@@ -60,10 +60,12 @@ export type ParsedInvocation =
   | { kind: "command"; command: "render"; global: GlobalFlags; render: RenderInvocationFlags }
   | { kind: "command"; command: "init"; global: GlobalFlags; init: InitInvocationFlags }
   /** The proposals family; its tail is parsed by `parseProposalsArgs`. */
-  | { kind: "command"; command: "proposals"; global: GlobalFlags; proposals: ProposalsInvocation };
+  | { kind: "command"; command: "proposals"; global: GlobalFlags; proposals: ProposalsInvocation }
+  /** `connect-link`; `url` is present only when `--url` was passed. */
+  | { kind: "command"; command: "connect-link"; global: GlobalFlags; connectLink: { url?: string } };
 
 /** The verbs (REQ-CLI-01, REQ-PROP-07). Order is presentation-only. */
-const VERBS = ["init", "render", "validate", "coverage", "proposals"] as const;
+const VERBS = ["init", "render", "validate", "coverage", "proposals", "connect-link"] as const;
 type Verb = (typeof VERBS)[number];
 
 /**
@@ -92,6 +94,13 @@ const RENDER_OPTIONS = {
 const INIT_OPTIONS = {
   ...GLOBAL_OPTIONS,
   force: { type: "boolean", default: false },
+} satisfies Record<string, { type: "boolean" | "string"; default?: boolean | string }>;
+
+/** `connect-link` = global ∪ connect-link flags. */
+const CONNECT_LINK_OPTIONS = {
+  ...GLOBAL_OPTIONS,
+  /** Explicit base address; highest precedence. */
+  url: { type: "string" },
 } satisfies Record<string, { type: "boolean" | "string"; default?: boolean | string }>;
 
 /**
@@ -128,7 +137,7 @@ export function parseInvocation(argv: string[]): ParsedInvocation {
     if (argv.includes("--version")) return { kind: "version" };
     throw new UsageError(
       argv.length === 0
-        ? "no command given (expected one of: init, render, validate, coverage, proposals)"
+        ? "no command given (expected one of: init, render, validate, coverage, proposals, connect-link)"
         : `unknown command: ${JSON.stringify(argv[0])}`,
     );
   }
@@ -151,7 +160,13 @@ export function parseInvocation(argv: string[]): ParsedInvocation {
   }
 
   const options =
-    verb === "render" ? RENDER_OPTIONS : verb === "init" ? INIT_OPTIONS : GLOBAL_OPTIONS;
+    verb === "render"
+      ? RENDER_OPTIONS
+      : verb === "init"
+        ? INIT_OPTIONS
+        : verb === "connect-link"
+          ? CONNECT_LINK_OPTIONS
+          : GLOBAL_OPTIONS;
 
   let values: Record<string, string | boolean | undefined>;
   try {
@@ -180,6 +195,18 @@ export function parseInvocation(argv: string[]): ParsedInvocation {
         global,
         init: { force: values.force === true },
       };
+    case "connect-link": {
+      const url = typeof values.url === "string" ? values.url : undefined;
+      if (url !== undefined && url.trim() === "") {
+        throw new UsageError("--url needs an https address");
+      }
+      return {
+        kind: "command",
+        command: "connect-link",
+        global,
+        connectLink: url !== undefined ? { url } : {},
+      };
+    }
   }
 }
 

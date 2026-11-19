@@ -11,6 +11,18 @@ import { parse as parseYaml } from "yaml";
 
 import { ConfigIoError } from "@pulse/core";
 import type { GlobalFlags } from "./args.js";
+import type { ConnectLinkSource } from "./envelope.js";
+
+/** Env var naming the server's external address; shared with the web server so the two agree. */
+export const EXTERNAL_URL_ENV = "PULSE_WEB_EXTERNAL_URL" as const;
+
+/** A raw, un-normalised connect-link address and where it came from. */
+export interface ConnectLinkAddress {
+  /** The address as given. */
+  readonly value: string;
+  /** Its source. */
+  readonly source: ConnectLinkSource;
+}
 
 /** The fields `pulse.config.yaml` may carry (tech spec §3.4); all optional in the file. */
 export interface PulseConfigFile {
@@ -22,6 +34,8 @@ export interface PulseConfigFile {
   strict?: boolean;
   /** Proposals directory (REQ-PROP-11). The signing secret is NEVER read from this file (REQ-SEC-04). */
   proposalsDir?: string;
+  /** The server's external https address, used by `pulse connect-link`. */
+  externalUrl?: string;
 }
 
 /**
@@ -41,6 +55,12 @@ export interface ResolvedConfig {
    * secret is NOT a field of this type (REQ-SEC-04).
    */
   proposalsDir?: string;
+  /**
+   * The connect-link address, present ONLY when some source set it
+   * (flag > PULSE_WEB_EXTERNAL_URL > file). Omitted, not `undefined`, when unset. The value is
+   * raw: it is neither normalised nor resolved against cwd.
+   */
+  externalUrl?: ConnectLinkAddress;
 }
 
 /** Built-in defaults (tech spec §3.4) — the file is optional; these apply when nothing overrides. */
@@ -54,6 +74,8 @@ export interface ConfigInputs {
   outputRootFlag?: string;
   /** `proposals --proposals-dir <path>` (highest precedence for `proposalsDir`). */
   proposalsDirFlag?: string;
+  /** `connect-link --url <address>` (highest precedence for `externalUrl`). */
+  externalUrlFlag?: string;
   /** The process environment (`PULSE_*` keys are read). */
   env: NodeJS.ProcessEnv;
   /** Working directory used to locate the default `pulse.config.yaml`. */
@@ -93,6 +115,8 @@ export function resolveConfig(inputs: ConfigInputs): ResolvedConfig {
   const proposalsDir =
     inputs.proposalsDirFlag ?? nonEmpty(env.PULSE_PROPOSALS_DIR) ?? file.proposalsDir;
 
+  const externalUrl = resolveConnectLinkAddress(inputs.externalUrlFlag, env, file);
+
   return {
     estateDir: isAbsolute(estateDir) ? estateDir : resolvePath(cwd, estateDir),
     outputRoot: isAbsolute(outputRoot) ? outputRoot : resolvePath(cwd, outputRoot),
@@ -100,7 +124,26 @@ export function resolveConfig(inputs: ConfigInputs): ResolvedConfig {
     ...(proposalsDir !== undefined
       ? { proposalsDir: isAbsolute(proposalsDir) ? proposalsDir : resolvePath(cwd, proposalsDir) }
       : {}),
+    ...(externalUrl !== undefined ? { externalUrl } : {}),
   };
+}
+
+/**
+ * Pick the connect-link address: `flag`, then `env[PULSE_WEB_EXTERNAL_URL]`, then
+ * `file.externalUrl`. An empty or whitespace-only env or file value counts as unset, the same as
+ * the server. Returns `undefined` when none is set. Pure; never throws.
+ */
+function resolveConnectLinkAddress(
+  flag: string | undefined,
+  env: NodeJS.ProcessEnv,
+  file: PulseConfigFile,
+): ConnectLinkAddress | undefined {
+  if (flag !== undefined) return { value: flag, source: "flag" };
+  const fromEnv = env[EXTERNAL_URL_ENV];
+  if (fromEnv !== undefined && fromEnv.trim() !== "") return { value: fromEnv, source: "env" };
+  const fromFile = file.externalUrl;
+  if (fromFile !== undefined && fromFile.trim() !== "") return { value: fromFile, source: "config" };
+  return undefined;
 }
 
 /** Read + shape-check a config file. Returns `{}` when a NON-explicit path is absent. */
@@ -147,6 +190,7 @@ function validateConfigShape(text: string, path: string): PulseConfigFile {
   if ("outputRoot" in obj) out.outputRoot = asString(obj.outputRoot, "outputRoot", path);
   if ("strict" in obj) out.strict = asBool(obj.strict, "strict", path);
   if ("proposalsDir" in obj) out.proposalsDir = asString(obj.proposalsDir, "proposalsDir", path);
+  if ("externalUrl" in obj) out.externalUrl = asString(obj.externalUrl, "externalUrl", path);
   // REQ-SEC-04: the secret is env-only. A secret-looking key in the file is a config fault; its
   // value is never echoed.
   for (const k of Object.keys(obj)) {

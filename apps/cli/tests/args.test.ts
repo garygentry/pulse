@@ -133,3 +133,47 @@ describe("parseInvocation — usage errors (exit 2)", () => {
     }
   });
 });
+
+describe("parseInvocation — connect-link", () => {
+  test("bare connect-link has an empty connectLink bag", () => {
+    expect(parseInvocation(["connect-link"])).toEqual({
+      kind: "command",
+      command: "connect-link",
+      global: { json: false, strict: false, verbose: false, quiet: false },
+      connectLink: {},
+    });
+  });
+
+  test("--url with --json --quiet parses, in any position", () => {
+    expect(
+      parseInvocation(["--json", "connect-link", "--url", "https://pulse.example.com", "--quiet"]),
+    ).toEqual({
+      kind: "command",
+      command: "connect-link",
+      global: { json: true, strict: false, verbose: false, quiet: true },
+      connectLink: { url: "https://pulse.example.com" },
+    });
+  });
+
+  test("--url without a value, an empty --url, an unknown flag and a positional are usage errors", () => {
+    for (const argv of [
+      ["connect-link", "--url"],
+      ["connect-link", "--url="],
+      ["connect-link", "--url", "   "],
+      ["connect-link", "--bogus"],
+      ["connect-link", "https://pulse.example.com"],
+    ]) {
+      expect(() => parseInvocation(argv)).toThrow(UsageError);
+    }
+  });
+
+  test("--url is rejected on other verbs", () => {
+    expect(() => parseInvocation(["validate", "--url", "https://pulse.example.com"])).toThrow(
+      UsageError,
+    );
+  });
+
+  test("the no-verb message lists connect-link", () => {
+    expect(() => parseInvocation([])).toThrow(/proposals, connect-link\)/);
+  });
+});

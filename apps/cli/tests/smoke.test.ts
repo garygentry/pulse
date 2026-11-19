@@ -17,6 +17,7 @@ import type {
   InitData,
   RenderData,
   CoverageData,
+  ConnectLinkData,
 } from "../src/envelope.js";
 import type { ExitCode } from "../src/exit.js";
 
@@ -99,5 +100,21 @@ describe("agent-loop smoke: init → validate → render → coverage (SC-01/SC-
       // The whole outcome is decidable from stdout + exit code alone.
       expect(run.exitCode).toBe(0);
     }
+  });
+});
+
+describe("connect-link smoke", () => {
+  test("connect-link --url --json exits 0 with the link in the envelope", async () => {
+    const run = await runCli(["connect-link", "--url", "https://pulse.example.com", "--json"], {
+      cwd: repo,
+    });
+    expect(run.exitCode).toBe(0);
+    const parsed = envelope<ConnectLinkData>(run.stdout, 0, "connect-link");
+    expect(parsed.findings).toEqual([]);
+    expect(parsed.data).toEqual({
+      link: "pulse://connect?v=1&url=https%3A%2F%2Fpulse.example.com",
+      baseUrl: "https://pulse.example.com",
+      source: "flag",
+    });
   });
 });

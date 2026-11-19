@@ -28,6 +28,7 @@ import { runCoverage } from "./commands/coverage.js"; // 05 §6
 import { runInit, BUNDLED_GUIDANCE_PACK } from "./commands/init.js"; // 05 §7 (+ build-embedded pack)
 import { PULSE_VERSION } from "./version.js";
 import type { CommandResult } from "./commands/result.js"; // 05 §3
+import { runConnectLink } from "./commands/connect-link.js";
 import { runProposals } from "./commands/proposals/index.js";
 import type { ProposalsInvocation } from "./commands/proposals/args.js";
 import { ProposalToolError } from "./commands/proposals/git.js";
@@ -149,6 +150,9 @@ export async function main(argv: string[], io: ProcessBridge = realBridge): Prom
       ...(inv.command === "proposals" && inv.proposals.proposalsDirFlag !== undefined
         ? { proposalsDirFlag: inv.proposals.proposalsDirFlag }
         : {}),
+      ...(inv.command === "connect-link" && inv.connectLink.url !== undefined
+        ? { externalUrlFlag: inv.connectLink.url }
+        : {}),
       env: io.env,
       cwd: io.cwd(),
     });
@@ -227,6 +231,9 @@ function route(
     case "proposals":
       // Synchronous like every other handler; git via Bun.spawnSync.
       return runProposals(ctx.proposals!, ctx, { env, now: () => new Date() });
+    case "connect-link":
+      // The address is already resolved (flag > env > file) by `resolveConfig`.
+      return runConnectLink({ address: ctx.config.externalUrl }, ctx.out);
   }
 }
 

@@ -6,6 +6,6 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "types": ["bun-types"]
   },
-  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/renderer" }],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/renderer" }, { "path": "../../packages/web-data" }],
   "include": ["src/**/*.ts"]
 }

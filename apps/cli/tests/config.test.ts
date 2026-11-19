@@ -271,3 +271,88 @@ describe("resolveConfig — path resolution", () => {
     }
   });
 });
+
+describe("resolveConfig — externalUrl precedence (flag > PULSE_WEB_EXTERNAL_URL > file)", () => {
+  /** Resolve in a fresh cwd, optionally holding a pulse.config.yaml. */
+  function resolveWith(
+    file: string | null,
+    overrides: Pick<ConfigInputs, "externalUrlFlag"> & { env?: NodeJS.ProcessEnv } = {},
+  ) {
+    const cwd = mkdtempSync(join(tmpdir(), "pulse-external-"));
+    try {
+      if (file !== null) writeFileSync(join(cwd, "pulse.config.yaml"), file);
+      const { env, ...rest } = overrides;
+      return resolveConfig({ flags: makeFlags(), env: env ?? {}, cwd, ...rest });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+  const FILE = "externalUrl: https://file.example.com\n";
+  const ENV = { PULSE_WEB_EXTERNAL_URL: "https://env.example.com" };
+
+  test("absent (not undefined) when no source sets it", () => {
+    for (const cfg of [resolveWith(null), resolveWith("strict: false\n")]) {
+      expect("externalUrl" in cfg).toBe(false);
+    }
+  });
+
+  test("the file value is used when nothing else is set", () => {
+    expect(resolveWith(FILE).externalUrl).toEqual({
+      value: "https://file.example.com",
+      source: "config",
+    });
+  });
+
+  test("env beats file", () => {
+    expect(resolveWith(FILE, { env: ENV }).externalUrl).toEqual({
+      value: "https://env.example.com",
+      source: "env",
+    });
+  });
+
+  test("flag beats env and file", () => {
+    expect(
+      resolveWith(FILE, { env: ENV, externalUrlFlag: "https://flag.example.com" }).externalUrl,
+    ).toEqual({ value: "https://flag.example.com", source: "flag" });
+  });
+
+  test("an empty or whitespace-only env value falls through to the file", () => {
+    for (const blank of ["", "   ", "\t\n"]) {
+      expect(resolveWith(FILE, { env: { PULSE_WEB_EXTERNAL_URL: blank } }).externalUrl).toEqual({
+        value: "https://file.example.com",
+        source: "config",
+      });
+      expect("externalUrl" in resolveWith(null, { env: { PULSE_WEB_EXTERNAL_URL: blank } })).toBe(
+        false,
+      );
+    }
+  });
+
+  test("an empty or whitespace-only file value counts as unset", () => {
+    for (const file of ['externalUrl: ""\n', 'externalUrl: "   "\n']) {
+      expect("externalUrl" in resolveWith(file)).toBe(false);
+      expect(resolveWith(file, { env: ENV }).externalUrl?.source).toBe("env");
+    }
+  });
+
+  test("the value is kept raw: not normalised and not resolved against cwd", () => {
+    expect(resolveWith(null, { externalUrlFlag: "http://192.0.2.10/" }).externalUrl).toEqual({
+      value: "http://192.0.2.10/",
+      source: "flag",
+    });
+    expect(resolveWith("externalUrl: relative/path\n").externalUrl?.value).toBe("relative/path");
+  });
+
+  test("a non-string externalUrl in the file throws ConfigIoError INVALID_ARG", () => {
+    for (const file of ["externalUrl: 42\n", "externalUrl: [https://file.example.com]\n"]) {
+      try {
+        resolveWith(file);
+        throw new Error("expected throw");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConfigIoError);
+        expect((err as ConfigIoError).code).toBe("INVALID_ARG");
+        expect((err as ConfigIoError).message).toContain("'externalUrl' must be a string");
+      }
+    }
+  });
+});

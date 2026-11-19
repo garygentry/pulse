@@ -35,6 +35,7 @@
       "dependencies": {
         "@pulse/core": "workspace:*",
         "@pulse/renderer": "workspace:*",
+        "@pulse/web-data": "workspace:*",
         "yaml": "^2.5.0",
       },
     },
