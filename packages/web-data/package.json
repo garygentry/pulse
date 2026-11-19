@@ -21,6 +21,7 @@
   "dependencies": {
     "@pulse/renderer": "workspace:*",
     "ipaddr.js": "2.5.0",
+    "qrcode-generator": "2.0.4",
     "zod": "^3.23.0"
   }
 }

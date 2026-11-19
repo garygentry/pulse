@@ -11,5 +11,12 @@ export { ENUM_FALLBACKS } from "./enums.js";
 export type { EnumFallback, EnumFallbackEntry } from "./enums.js";
 export { CLIENT_HEADER, CLIENT_NAME_PATTERN, CONTRACT_HEADER, KNOWN_CLIENTS, handshakeLabels, parseClientAnnouncement } from "./announcement.js";
 export type { ClientAnnouncement, HandshakeClientLabel, HandshakeLabels, HandshakeOutcomeLabel, KnownClient } from "./announcement.js";
+export {
+  CONNECT_LINK_FORMAT_VERSION, CONNECT_LINK_HOST, CONNECT_LINK_MAX_LENGTH, CONNECT_LINK_SCHEME, KNOWN_LINK_PARAMS,
+  LINK_PARAM_NAME_PATTERN, RESERVED_LINK_PARAMS, buildConnectLink, isLoopbackHost, normaliseBaseUrl, parseConnectLink,
+} from "./connect-link.js";
+export type { ConnectLinkBuildResult, ConnectLinkParseResult, ConnectLinkRefusal, ConnectLinkRejection, NormaliseResult } from "./connect-link.js";
+export { encodeQrMatrix } from "./qr.js";
+export type { QrEcc, QrMatrix } from "./qr.js";
 export { ContractError } from "./errors.js";
 export type { ContractErrorCode } from "./errors.js";
