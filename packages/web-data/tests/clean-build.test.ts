@@ -5,7 +5,7 @@
  *  Unlike wire-browser-safe.test.ts (which walks the *source* value graph), this suite compiles the
  *  package from source into a FRESH temp outDir and exercises the EMITTED artifacts:
  *    - it must build with no pre-existing output (so a passing run cannot rely on a stale dev dist);
- *    - every one of the eight public export subpaths imports from the freshly built dist, resolving
+ *    - every one of the nine public export subpaths imports from the freshly built dist, resolving
  *      its runtime deps (zod/ipaddr.js) without any source alias;
  *    - the recursively-walked emitted `/wire` graph is browser-safe, and the walker FAILS with an
  *      import chain for every forbidden dependency class (§4.1's enumerated guard);
@@ -33,7 +33,7 @@ const PKG_DIR = resolve(REPO_ROOT, "packages/web-data");
 const SRC_DIR = resolve(PKG_DIR, "src");
 const DIST_DIR = resolve(PKG_DIR, "dist");
 
-/** The eight public export subpaths from package.json (02 §3) → their emitted entry file. */
+/** The nine public export subpaths from package.json (02 §3) → their emitted entry file. */
 const SUBPATH_ENTRIES: Readonly<Record<string, string>> = {
   ".": "index.js",
   "./wire": "wire/index.js",
@@ -43,6 +43,7 @@ const SUBPATH_ENTRIES: Readonly<Record<string, string>> = {
   "./history": "history/index.js",
   "./identity": "identity/index.js",
   "./audit": "audit/index.js",
+  "./contract": "contract/index.js",
 };
 
 const tempDirs: string[] = [];
@@ -102,7 +103,7 @@ afterAll(() => {
 // ── Export map + clean build + dist import (AC1) ─────────────────────────────────────────────────
 
 describe("package export map", () => {
-  test("lists exactly the eight documented subpaths, each resolving to ./dist", () => {
+  test("lists exactly the nine documented subpaths, each resolving to ./dist", () => {
     const pkg = JSON.parse(readFileSync(resolve(PKG_DIR, "package.json"), "utf8")) as {
       exports: Record<string, { types: string; import: string }>;
     };
@@ -137,6 +138,7 @@ describe("clean package build (no pre-existing output)", () => {
       "./history": "createHistoryService",
       "./identity": "resolveIdentity",
       "./audit": "createJsonlAuditWriter",
+      "./contract": "decideCompatibility",
     };
     for (const [sub, entry] of Object.entries(SUBPATH_ENTRIES)) {
       const mod = (await import(join(outDir, entry))) as Record<string, unknown>;
