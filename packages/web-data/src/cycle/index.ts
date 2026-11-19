@@ -8,7 +8,7 @@ export * from "./identity.js";
 export * from "./records.js";
 // Pure overview and alerts folds (item 020). Concrete fold subroutines stay in their modules;
 // these entry points are exported for cycle composition (item 039) and tests.
-export { foldOverview, DEADMANS_SWITCH_ALERTNAME } from "./fold-overview.js";
+export { foldOverview, enforceOverviewLimits, DEADMANS_SWITCH_ALERTNAME } from "./fold-overview.js";
 export { foldAlerts } from "./fold-alerts.js";
 // Pure estate and engine folds (item 022).
 export { foldEstate } from "./fold-estate.js";

@@ -12,6 +12,7 @@ import type { SourceData, BuildConfig } from "../src/server/snapshot/build.js";
 import { buildSnapshot, matchAlerts, resolveStatus } from "../src/server/snapshot/build.js";
 import type { LiveSeries, RawActiveAlert, RawCheckStatus } from "../src/server/sources/types.js";
 import type { ActiveAlert } from "../src/shared/snapshot.js";
+import { validateOverviewSnapshotV2 } from "@pulse/web-data/wire";
 
 const NOW = new Date("2026-08-22T12:00:00.000Z");
 
@@ -375,5 +376,17 @@ describe("grid membership + envelope", () => {
     expect(snap.sources.metrics).toBe(data.liveness.health);
     expect(snap.sources.alerts).toBe(data.alerts.health);
     expect(snap.sources.checks).toBe(data.checks.health);
+  });
+});
+
+// ── Contract limits ──────────────────────────────────────────────────────────────────────────────
+
+describe("contract limits", () => {
+  test("an over-cap estate is trimmed to a body the client validator accepts", () => {
+    const names = Array.from({ length: 101 }, (_, i) => `host-${String(i + 1).padStart(3, "0")}`);
+    const m = model({ hosts: names.map((name) => host({ name, drilldownId: `host:${name}` })), services: [] });
+    const snap = buildSnapshot(m, sd(), NOW, CFG);
+    expect(snap.hosts.map((h) => h.name)).toEqual(names.slice(0, 100));
+    expect(validateOverviewSnapshotV2(snap).ok).toBe(true);
   });
 });

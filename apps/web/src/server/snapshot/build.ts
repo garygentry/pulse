@@ -16,6 +16,7 @@ import type {
 } from "../../shared/snapshot.js";
 import type { WebEstateHost, WebEstateModel, WebEstateService } from "@pulse/renderer";
 import type { LiveSeries, RawActiveAlert, RawCheckStatus } from "../sources/types.js";
+import { enforceOverviewLimits } from "@pulse/web-data/cycle";
 
 import { evaluateHostLiveness, evaluateServiceLiveness } from "./liveness.js";
 import { hostGrafanaLink, serviceGrafanaLink } from "./links.js";
@@ -224,7 +225,8 @@ export function buildSnapshot(
     buildHost(host, model, sourceData, now, cfg, matchedAlerts, matchedChecks),
   );
 
-  return {
+  // Same contract-limit trim as the cycle fold, so this body also always validates on the client.
+  return enforceOverviewLimits({
     appVersion: cfg.appVersion,
     generatedAt: now.toISOString(),
     estate: { name: model.estate.name, timezone: cfg.timezone, tzFallback: cfg.tzFallback },
@@ -257,7 +259,7 @@ export function buildSnapshot(
       },
       value: null,
     },
-  };
+  });
 }
 
 /** Re-exports for consumers that import the snapshot fold's helpers (server tier, tests). */

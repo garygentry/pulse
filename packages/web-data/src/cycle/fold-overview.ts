@@ -20,8 +20,13 @@ import type {
   OverviewCheckResult,
   OverviewSnapshotV2,
   ServiceStatus,
+  SourceHealthCompat,
   TargetStatus,
+  TargetStatusEvidence,
 } from "../wire/overview.js";
+import type { TargetIdentity } from "../wire/history.js";
+import { CONTRACT_LIMITS, capList, truncateUtf8 } from "../contract/limits.js";
+import type { OverviewLimits } from "../contract/limits.js";
 import type { AvailabilitySection } from "../wire/common.js";
 import type { MetricSample } from "../sources/vm.js";
 import type { AlertmanagerAlert } from "../sources/alertmanager.js";
@@ -734,6 +739,299 @@ function buildCoverage(inputs: FoldInputs): AvailabilitySection<CoverageSummary>
 }
 
 // ---------------------------------------------------------------------------
+// Contract limits: trim collections and truncate strings so the body always validates
+// ---------------------------------------------------------------------------
+
+/** Map preserving identity: returns `items` itself when every `fn(item) === item`. */
+function mapSame<T>(items: readonly T[], fn: (item: T) => T): readonly T[] {
+  let out: T[] | null = null;
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i] as T;
+    const next = fn(item);
+    if (out !== null) out.push(next);
+    else if (next !== item) {
+      out = items.slice(0, i);
+      out.push(next);
+    }
+  }
+  return out ?? items;
+}
+
+/** truncateUtf8 for a text field (limits.textBytes). */
+function text(value: string, limits: OverviewLimits): string {
+  return truncateUtf8(value, limits.textBytes);
+}
+
+/** truncateUtf8 for a message field (limits.messageBytes); null passes through. */
+function message(value: string | null, limits: OverviewLimits): string | null {
+  return value === null ? null : truncateUtf8(value, limits.messageBytes);
+}
+
+function enforceAvailability(a: DataAvailability, limits: OverviewLimits): DataAvailability {
+  const bounded = message(a.message, limits);
+  return bounded === a.message ? a : { ...a, message: bounded };
+}
+
+function enforceEvidence(e: TargetStatusEvidence, limits: OverviewLimits): TargetStatusEvidence {
+  const availability = enforceAvailability(e.availability, limits);
+  return availability === e.availability ? e : { ...e, availability };
+}
+
+function enforceIdentity(t: TargetIdentity, limits: OverviewLimits): TargetIdentity {
+  const id = text(t.id, limits);
+  return id === t.id ? t : { ...t, id };
+}
+
+function enforceAlert(a: OverviewAlertSummary, limits: OverviewLimits): OverviewAlertSummary {
+  const fingerprint = text(a.fingerprint, limits);
+  const name = text(a.name, limits);
+  const target = a.target === null ? null : enforceIdentity(a.target, limits);
+  const summary = a.summary === undefined ? undefined : truncateUtf8(a.summary, limits.messageBytes);
+  if (fingerprint === a.fingerprint && name === a.name && target === a.target && summary === a.summary) return a;
+  return { ...a, fingerprint, name, target, ...(summary !== undefined ? { summary } : {}) };
+}
+
+function enforceTargetCheck(c: OverviewCheckResult, limits: OverviewLimits): OverviewCheckResult {
+  const endpoint = text(c.endpoint, limits);
+  return endpoint === c.endpoint ? c : { ...c, endpoint };
+}
+
+/** Suppression shared by hosts and services: `class` is a text field, `rationale` a message field. */
+function enforceSuppressed(s: HostStatus["suppressed"], limits: OverviewLimits): HostStatus["suppressed"] {
+  if (s === null) return null;
+  const klass = text(s.class, limits);
+  const rationale = truncateUtf8(s.rationale, limits.messageBytes);
+  return klass === s.class && rationale === s.rationale ? s : { class: klass, rationale };
+}
+
+/** Grafana link: an over-cap `url` becomes "" (deep links disabled), because a cut URL is a broken link. */
+function enforceGrafana(g: HostStatus["grafana"], limits: OverviewLimits): HostStatus["grafana"] {
+  if (g === null) return null;
+  const boardUid = text(g.boardUid, limits);
+  const url = truncateUtf8(g.url, limits.messageBytes) === g.url ? g.url : "";
+  return boardUid === g.boardUid && url === g.url ? g : { boardUid, url };
+}
+
+function enforceAlerts(
+  alerts: readonly OverviewAlertSummary[],
+  limits: OverviewLimits,
+): readonly OverviewAlertSummary[] {
+  return mapSame(capList(alerts, limits.alerts), (a) => enforceAlert(a, limits));
+}
+
+function enforceTargetChecks(
+  checks: readonly OverviewCheckResult[],
+  limits: OverviewLimits,
+): readonly OverviewCheckResult[] {
+  return mapSame(capList(checks, limits.targetChecks), (c) => enforceTargetCheck(c, limits));
+}
+
+function enforceService(s: ServiceStatus, limits: OverviewLimits): ServiceStatus {
+  const name = text(s.name, limits);
+  const host = text(s.host, limits);
+  const drilldownId = text(s.drilldownId, limits);
+  const suppressed = enforceSuppressed(s.suppressed, limits);
+  const statusEvidence = enforceEvidence(s.statusEvidence, limits);
+  const activeAlerts = enforceAlerts(s.activeAlerts, limits);
+  const checks = enforceTargetChecks(s.checks, limits);
+  const grafana = enforceGrafana(s.grafana, limits);
+  // An over-cap ingress URL is omitted rather than cut: the member is optional and a cut URL is a broken link.
+  const dropIngress = s.ingressUrl !== undefined && truncateUtf8(s.ingressUrl, limits.messageBytes) !== s.ingressUrl;
+  if (name === s.name && host === s.host && drilldownId === s.drilldownId && suppressed === s.suppressed &&
+      statusEvidence === s.statusEvidence && activeAlerts === s.activeAlerts && checks === s.checks &&
+      grafana === s.grafana && !dropIngress) return s;
+  const { ingressUrl, ...rest } = s;
+  return {
+    ...rest,
+    ...(ingressUrl !== undefined && !dropIngress ? { ingressUrl } : {}),
+    name, host, drilldownId, suppressed, statusEvidence, activeAlerts, checks, grafana,
+  };
+}
+
+/** `status` and `rollup` are kept: they were resolved from the complete alert and service sets. */
+function enforceHost(h: HostStatus, services: readonly ServiceStatus[], limits: OverviewLimits): HostStatus {
+  const name = text(h.name, limits);
+  const drilldownId = text(h.drilldownId, limits);
+  const addresses = mapSame(capList(h.addresses, limits.hostAddresses), (a) => text(a, limits));
+  const suppressed = enforceSuppressed(h.suppressed, limits);
+  const statusEvidence = enforceEvidence(h.statusEvidence, limits);
+  const rollupEvidence = enforceEvidence(h.rollupEvidence, limits);
+  const activeAlerts = enforceAlerts(h.activeAlerts, limits);
+  const checks = enforceTargetChecks(h.checks, limits);
+  const grafana = enforceGrafana(h.grafana, limits);
+  if (name === h.name && drilldownId === h.drilldownId && addresses === h.addresses && suppressed === h.suppressed &&
+      statusEvidence === h.statusEvidence && rollupEvidence === h.rollupEvidence && activeAlerts === h.activeAlerts &&
+      checks === h.checks && grafana === h.grafana && services === h.services) return h;
+  return {
+    ...h, name, drilldownId, addresses, suppressed, statusEvidence, rollupEvidence, activeAlerts, checks, grafana,
+    services,
+  };
+}
+
+function enforceSignal(s: LiveSignal, limits: OverviewLimits): LiveSignal {
+  const target = enforceIdentity(s.target, limits);
+  const id = text(s.id, limits);
+  const label = text(s.label, limits);
+  const value = typeof s.value === "string" ? truncateUtf8(s.value, limits.messageBytes) : s.value;
+  const availability = enforceAvailability(s.availability, limits);
+  if (target === s.target && id === s.id && label === s.label && value === s.value &&
+      availability === s.availability) return s;
+  return { ...s, target, id, label, value, availability };
+}
+
+function enforceRecentCheck(c: CheckSummary, limits: OverviewLimits): CheckSummary {
+  const target = c.target === null ? null : enforceIdentity(c.target, limits);
+  const endpoint = text(c.endpoint, limits);
+  return target === c.target && endpoint === c.endpoint ? c : { ...c, target, endpoint };
+}
+
+function enforceSourceHealth(s: SourceHealthCompat, limits: OverviewLimits): SourceHealthCompat {
+  const error = message(s.error, limits);
+  return error === s.error ? s : { ...s, error };
+}
+
+function enforceEngine(e: OverviewSnapshotV2["engine"], limits: OverviewLimits): OverviewSnapshotV2["engine"] {
+  const availability = enforceAvailability(e.availability, limits);
+  let value = e.value;
+  if (value !== null && value.problems !== undefined) {
+    const problems = mapSame(capList(value.problems, limits.engineProblems), (p) => text(p, limits));
+    if (problems !== value.problems) value = { ...value, problems };
+  }
+  return availability === e.availability && value === e.value ? e : { ...e, availability, value };
+}
+
+/**
+ * Bring an overview snapshot within the contract's overview limits: trim every bounded collection in its
+ * existing order and truncate every validator-bounded string to its UTF-8 byte cap, so the result always
+ * passes `validateOverviewSnapshotV2` (given otherwise well-formed input).
+ *
+ * Pure and copy-on-write: never mutates `snapshot` (which may be deep-frozen). Returns the SAME reference
+ * when nothing exceeded a cap. Otherwise it returns a new root, and only the changed paths are new objects;
+ * unchanged subtrees are shared.
+ *
+ * Hosts keep their first `hosts` entries; services share one `servicesTotal` budget in host order (a host past
+ * the budget stays, with no services). Signals of a host or service that was trimmed away are dropped; alerts
+ * and recent checks of trimmed targets are kept. Status, rollup and `alertCounts` are NOT recomputed: they
+ * describe the complete estate, computed before trimming.
+ *
+ * @param snapshot - A complete overview body.
+ * @param limits - Caps to enforce; tests pass small values. Defaults to `CONTRACT_LIMITS.overview`.
+ * @returns A snapshot within `limits`.
+ * @throws {RangeError} only if `limits` holds a negative or non-integer cap; `CONTRACT_LIMITS` never does.
+ */
+export function enforceOverviewLimits(
+  snapshot: OverviewSnapshotV2,
+  limits: OverviewLimits = CONTRACT_LIMITS.overview,
+): OverviewSnapshotV2 {
+  // Hosts, with one shared service budget walked in host order.
+  const cappedHosts = capList(snapshot.hosts, limits.hosts);
+  let targetsDropped = cappedHosts !== snapshot.hosts;
+  let idsTruncated = false;
+  let budget = limits.servicesTotal;
+  let hosts = mapSame(cappedHosts, (h) => {
+    const kept = capList(h.services, budget);
+    budget -= kept.length;
+    if (kept !== h.services) targetsDropped = true;
+    const services = mapSame(kept, (s) => {
+      const next = enforceService(s, limits);
+      if (next.drilldownId !== s.drilldownId) idsTruncated = true;
+      return next;
+    });
+    const next = enforceHost(h, services, limits);
+    if (next.drilldownId !== h.drilldownId) idsTruncated = true;
+    return next;
+  });
+
+  // Two ids that share their whole kept prefix collide once truncated; the later target is dropped, because
+  // the validator requires unique drilldown ids.
+  if (idsTruncated) {
+    const seen = new Set<string>();
+    const unique: HostStatus[] = [];
+    let collided = false;
+    for (const h of hosts) {
+      if (seen.has(h.drilldownId)) {
+        collided = true;
+        continue;
+      }
+      seen.add(h.drilldownId);
+      const services = h.services.filter((s) => {
+        if (seen.has(s.drilldownId)) return false;
+        seen.add(s.drilldownId);
+        return true;
+      });
+      if (services.length === h.services.length) unique.push(h);
+      else {
+        collided = true;
+        unique.push({ ...h, services });
+      }
+    }
+    if (collided) {
+      hosts = unique;
+      targetsDropped = true;
+    }
+  }
+
+  const alerts = enforceAlerts(snapshot.alerts, limits);
+
+  // Signals are drawer detail for a cell: once a cell is no longer sent, its signals go with it.
+  let keptSignals = snapshot.signals;
+  if (targetsDropped) {
+    const retained = new Set<string>();
+    for (const h of hosts) {
+      retained.add(h.drilldownId);
+      for (const s of h.services) retained.add(s.drilldownId);
+    }
+    const filtered = keptSignals.filter((s) => s.target.kind === "endpoint" || retained.has(text(s.target.id, limits)));
+    if (filtered.length !== keptSignals.length) keptSignals = filtered;
+  }
+  const signals = mapSame(capList(keptSignals, limits.signals), (s) => enforceSignal(s, limits));
+
+  // capRecentChecks always allocates and re-sorts, so it runs only over the cap.
+  const boundedChecks = mapSame(snapshot.recentChecks, (c) => enforceRecentCheck(c, limits));
+  const recentChecks = boundedChecks.length > limits.recentChecks
+    ? capRecentChecks(boundedChecks, limits.recentChecks)
+    : boundedChecks;
+
+  const engine = enforceEngine(snapshot.engine, limits);
+  const appVersion = text(snapshot.appVersion, limits);
+  const estateName = text(snapshot.estate.name, limits);
+  const timezone = text(snapshot.estate.timezone, limits);
+  const estate = estateName === snapshot.estate.name && timezone === snapshot.estate.timezone
+    ? snapshot.estate
+    : { ...snapshot.estate, name: estateName, timezone };
+  const metrics = enforceSourceHealth(snapshot.sources.metrics, limits);
+  const alertsSource = enforceSourceHealth(snapshot.sources.alerts, limits);
+  const checksSource = enforceSourceHealth(snapshot.sources.checks, limits);
+  const sources = metrics === snapshot.sources.metrics && alertsSource === snapshot.sources.alerts &&
+      checksSource === snapshot.sources.checks
+    ? snapshot.sources
+    : { metrics, alerts: alertsSource, checks: checksSource };
+  const coverageAvailability = enforceAvailability(snapshot.coverage.availability, limits);
+  const coverage = coverageAvailability === snapshot.coverage.availability
+    ? snapshot.coverage
+    : { ...snapshot.coverage, availability: coverageAvailability };
+
+  if (appVersion === snapshot.appVersion && estate === snapshot.estate && sources === snapshot.sources &&
+      hosts === snapshot.hosts && alerts === snapshot.alerts && signals === snapshot.signals &&
+      recentChecks === snapshot.recentChecks && engine === snapshot.engine && coverage === snapshot.coverage) {
+    return snapshot;
+  }
+  return {
+    appVersion,
+    generatedAt: snapshot.generatedAt,
+    estate,
+    sources,
+    hosts,
+    alerts,
+    signals,
+    recentChecks,
+    engine,
+    alertCounts: snapshot.alertCounts,
+    coverage,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The overview fold
 // ---------------------------------------------------------------------------
 
@@ -809,7 +1107,8 @@ export function foldOverview(inputs: FoldInputs, engine: EnginePayload = foldEng
     checks: sourceHealthCompat(checksRecord),
   };
 
-  return {
+  // The body is brought within the contract caps here, so the client validator never rejects it.
+  return enforceOverviewLimits({
     appVersion: inputs.appVersion,
     generatedAt: inputs.observedAt,
     estate: { name: model.estate.name, timezone: model.estate.timezone, tzFallback: false },
@@ -821,5 +1120,5 @@ export function foldOverview(inputs: FoldInputs, engine: EnginePayload = foldEng
     engine: buildEngineSummary(inputs, engine),
     alertCounts: buildAlertCounts(effectiveAlerts),
     coverage: buildCoverage(inputs),
-  };
+  });
 }
