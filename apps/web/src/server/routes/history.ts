@@ -33,13 +33,13 @@ import { apiError, errorFor, errorResponse } from "./respond.js";
 /** Gatus check-history default window when the request omits `range`. Endpoint history is not a
  *  curated VM catalog query, so it has no per-query default; a full day of checks is the natural
  *  operator view and every closed range id is accepted by `HistoryService.endpointHistory`. */
-const CHECKS_DEFAULT_RANGE: RangeId = "24h";
+export const CHECKS_DEFAULT_RANGE: RangeId = "24h";
 
 /**
  * Map each bounded `HistoryFailure` code to its exact HTTP status (05 §8). Every code is a subset
  * of `ApiErrorCode`, so the response body reuses the canonical `ERROR_MESSAGES` text via `apiError`.
  */
-const HISTORY_STATUS: Readonly<Record<HistoryFailure["code"], number>> = {
+export const HISTORY_STATUS: Readonly<Record<HistoryFailure["code"], number>> = {
   INVALID_REQUEST: 400,
   QUERY_NOT_FOUND: 404,
   TARGET_NOT_FOUND: 404,
