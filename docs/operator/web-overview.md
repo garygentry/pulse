@@ -74,6 +74,7 @@ host port** by default (`expose: ["8080"]` only — host publication is the expo
 | `PULSE_ESTATE_TZ` | no | Display timezone; defaults to UTC. |
 | `PULSE_GRAFANA_URL` | no | Absent → drill-down deep links to Grafana are disabled. |
 | `PULSE_GATUS_STALE_SECONDS` | no | Freshness cutoff for Gatus results; default 300. |
+| `PULSE_WEB_EXTERNAL_URL` | no | The server's external https address for phone connect links, e.g. `https://pulse.example.com`. Empty → the web UI uses the address you are browsing. A value with credentials (or one that is not a URL) stops startup; an `http://` or loopback address logs a warning and no link is offered. |
 
 The service `depends_on` VictoriaMetrics + Alertmanager (`service_healthy`) and Gatus
 (`service_started` — the pinned Gatus image is shell-less and carries no healthcheck).

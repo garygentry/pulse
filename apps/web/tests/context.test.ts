@@ -268,6 +268,15 @@ describe("bundle-error mode retains operational/session/asset behavior (§7)", (
     expect(body.capabilities).toEqual({ silence: false, ack: false, proposeEstateEdit: false });
   });
 
+  test("/api/connect-link still responds 200 in bundle-error mode", async () => {
+    const res = await dispatch(get("/api/connect-link"), "/api/connect-link", bundleErrorRuntime(), stubAssets);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(["configured", "refusal"]);
+    expect(body.refusal).toBeNull();
+  });
+
   test("a non-API GET renders the error-page HTML and assets still load", async () => {
     const runtime = bundleErrorRuntime();
     const page = await dispatch(get("/"), "/", runtime, stubAssets);

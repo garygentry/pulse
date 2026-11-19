@@ -29,6 +29,10 @@ import {
 
 const HTML_HEADERS = { "content-type": "text/html; charset=utf-8" } as const;
 
+/** `/api/*` routes that respond without the estate bundle and stay live in bundle-error mode: the
+ *  handshake, the event stream, and the connect link. */
+const BUNDLE_ERROR_EXEMPT_API: ReadonlySet<string> = new Set(["/api/session", "/api/events", "/api/connect-link"]);
+
 /** JSON `Response` with a status (the small helper the bundle-error path shares). */
 function json(body: unknown, status: number): Response {
   return Response.json(body, { status });
@@ -181,7 +185,7 @@ export async function dispatch(
   const ctx = runtime.getContext(identity);
   const modelError = runtime.getStatus().model.error;
 
-  // (2) Bundle-error mode (§7): operational routes and session/events stay live; every estate/cycle
+  // (2) Bundle-error mode (§7): operational routes and session/events/connect-link stay live; every estate/cycle
   //     -backed API returns the safe bundle 503 (no stale cycle); non-API GET returns the error-page
   //     HTML; `/assets/*` falls through to normal serving.
   if (modelError !== null) {
@@ -191,17 +195,17 @@ export async function dispatch(
         return match.route.handler(buildRouteRequest(req, match.route.path, match.params, services), ctx);
       }
     } else if (pathname.startsWith("/api/")) {
-      if (pathname !== "/api/session" && pathname !== "/api/events") {
+      if (!BUNDLE_ERROR_EXEMPT_API.has(pathname)) {
         return json(overviewErrorBody(modelError), 503); // existing safe bundle code/message (§7)
       }
-      // session/events fall through to the normal match below (they respond without a cycle).
+      // session/events/connect-link fall through to the normal match below (they respond without a cycle).
     } else if (!pathname.startsWith("/assets/")) {
       return new Response(renderErrorPage(modelError), {
         status: 200,
         headers: { ...HTML_HEADERS, "content-security-policy": ERROR_PAGE_CSP },
       });
     }
-    // `/assets/*` (and session/events) fall through.
+    // `/assets/*` (and session/events/connect-link) fall through.
   }
 
   // (3) Match the compiled GET routes.

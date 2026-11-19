@@ -15,11 +15,14 @@ The service listens on a fixed port **8080**. Every route is `GET`-only; any oth
 | `GET` | `/assets/*` | asset bytes | Content-hashed client bundle. Served with `Cache-Control: public, max-age=31536000, immutable`. `404` if the asset name is unknown. |
 | `GET` | `/api/overview` | `application/json` — [`OverviewSnapshot`](#overviewsnapshot) | The current estate snapshot. Returns `503` with an error body in [error-page mode](./architecture.md#estate-model--error-page-mode). |
 | `GET` | `/api/history/alerts?range=<range>` | `application/json` — `IntervalHistoryPayload | ErrorEnvelope` | Alert firing-history lanes. `range` is `1h`, `6h`, `24h`, or `7d` and defaults to `24h`. Responses use `Cache-Control: private, no-cache`. |
+| `GET` | `/api/session` | `application/json` — [`SessionPayload`](#sessionpayload) | Identity, auth mode, per-identity capabilities and the client API contract handshake. `Cache-Control: private, no-store`. Served in error-page mode. |
+| `GET` | `/api/connect-link` | `application/json` — [`ConnectLinkPayload`](#connectlinkpayload) | Web-only (not part of the client API contract): the phone connect link built from `PULSE_WEB_EXTERNAL_URL`. `Cache-Control: private, no-store`. Served in error-page mode. |
 | `GET` | `/healthz` | `application/json` — [`HealthBody`](#healthbody) | Always `200` when the process can respond. |
 | `GET` | `/metrics` | `text/plain` | Prometheus exposition — see [Metrics](#metrics). |
 
 In error-page mode, `/healthz` and `/metrics` stay live and `/assets/*` is still served, while `/`
-returns the diagnostic error page and `/api/overview` returns `503`.
+returns the diagnostic error page and `/api/overview` returns `503`. `/api/session`, `/api/events`
+and `/api/connect-link` do not need the estate model and keep returning `200`.
 
 ## JSON shapes
 
@@ -76,25 +79,65 @@ Served by `GET /healthz`. Always `200` when the process can respond.
     "formatVersion": 2,                  // null when not loaded
     "error": null                        // a short message when the model failed to load
   },
-  "sources": { "metrics": {…}, "alerts": {…}, "checks": {…} }  // SourceHealth each
+  "sources": { "metrics": {…}, "alerts": {…}, "checks": {…} }, // SourceHealth each
+  "contract": "1.0"                      // client API contract version the server speaks
 }
 ```
 
 `status` is `"degraded"` when any engine source is unreachable **or** the estate model is not loaded.
 In error-page mode, `/healthz` returns `200` with `estateModel.loaded = false`.
 
+### `SessionPayload`
+
+Served by `GET /api/session`. Besides `identity`, `authMode` and the per-identity `capabilities`, the
+body carries the `contract` member: the client API contract version and the server capabilities
+currently available.
+
+```jsonc
+{
+  "identity": null,
+  "authMode": "none",
+  "capabilities": { "silence": false, "ack": false, "proposeEstateEdit": false },
+  "contract": { "major": 1, "minor": 0, "capabilities": [] }
+}
+```
+
+A client may announce itself with the optional `X-Pulse-Client` (its name) and `X-Pulse-Contract`
+(the `major.minor` it was built against) request headers. The announcement is only counted (see
+`pulse_web_client_handshakes_total` under [Metrics](#metrics)); it never changes the status, body or
+headers, and a missing or malformed announcement is ignored. A client that finds the server's major
+incompatible stops by itself; the server still answers `200`.
+
+### `ConnectLinkPayload`
+
+Served by `GET /api/connect-link`. Web-only: the web UI reads it to show the phone connect link, and
+it is not part of the client API contract. Exactly one of three states holds:
+
+```jsonc
+// PULSE_WEB_EXTERNAL_URL is usable
+{ "configured": { "link": "pulse://connect?v=1&url=https%3A%2F%2Fpulse.example.com", "baseUrl": "https://pulse.example.com" }, "refusal": null }
+// PULSE_WEB_EXTERNAL_URL is set but refused: "not-https" | "loopback" | "too-long"
+{ "configured": null, "refusal": { "reason": "not-https", "envVar": "PULSE_WEB_EXTERNAL_URL" } }
+// PULSE_WEB_EXTERNAL_URL is unset: the web UI builds the link from the address being browsed
+{ "configured": null, "refusal": null }
+```
+
+The link is built once at startup and never reflects `Host` or `X-Forwarded-*` request headers. It
+carries no secret and has no access control: anyone who can reach the web UI can read it.
+
 ## Metrics
 
-`GET /metrics` publishes six Prometheus metric families:
+`GET /metrics` publishes these Prometheus metric families:
 
 | Metric | Meaning |
 |---|---|
-| `pulse_web_build_info` | Build/version info (labelled). |
+| `pulse_web_build_info` | Build/version info, labelled `version` and `contract` (the client API contract version, e.g. `"1.0"`). |
 | `pulse_web_source_up` | Per-engine reachability (`1`/`0`), labelled by source. |
 | `pulse_web_estate_model_loaded` | `1` when the estate model is loaded, `0` in error-page mode. |
 | `pulse_web_snapshot_age_seconds` | Age of the current snapshot. |
 | `pulse_web_refresh_total` | Refresh-cycle counter. |
 | `pulse_web_http_requests_total` | HTTP request counter. |
+| `pulse_web_client_handshakes_total` | `/api/session` requests by announced client, labelled `client`, `contract_major` and `outcome` (`compatible` / `server_too_old` / `client_too_old` / `not_announced`). Label values come from closed sets, never from raw header text. |
 
 ## Environment variables
 
@@ -110,6 +153,7 @@ at `8080` so the slot's `expose`, the healthcheck, and the scrape target all agr
 | `PULSE_ESTATE_TZ` | no | UTC, with an explicit "TZ not configured" marker; an invalid zone logs a warning and falls back to UTC |
 | `PULSE_GRAFANA_URL` | no | Grafana deep links disabled, with an actionable tooltip |
 | `PULSE_GATUS_STALE_SECONDS` | no | `300`; a non-numeric value logs a warning and uses the default |
+| `PULSE_WEB_EXTERNAL_URL` | no | unset/empty → connect links use the address being browsed. Set it to the server's external https base, e.g. `https://pulse.example.com`. A value with credentials, a control character or one that is not a URL is a hard startup failure (the value is never echoed); an `http://`, loopback or over-long address logs one `config_warning` and refuses links |
 
 Only the three engine URLs are hard-required. An unset `PULSE_WEB_ESTATE_MODEL` deliberately yields a
 `null` model path and servable error-page mode rather than refusing to boot, so the container can

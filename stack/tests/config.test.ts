@@ -445,6 +445,15 @@ test("default profile == DEFAULT_PROFILE_SERVICES; web/deep-health are gated", (
   }
 });
 
+test("the web service passes PULSE_WEB_EXTERNAL_URL through with an empty default", () => {
+  const env = composeConfigAllProfiles().services.web?.environment;
+  expect(env, "web service declares no environment map").toBeDefined();
+  const value = Array.isArray(env)
+    ? env.find((e) => e.startsWith("PULSE_WEB_EXTERNAL_URL="))?.slice("PULSE_WEB_EXTERNAL_URL=".length)
+    : env?.PULSE_WEB_EXTERNAL_URL;
+  expect(value).toBe("");
+});
+
 /* ===========================================================================================
  * §3.1 — Fixture integrity (REQ-REPRO-01, CON-03)
  * ========================================================================================= */

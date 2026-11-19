@@ -117,6 +117,7 @@ server binds.
 | `PULSE_WEB_AUTH_MODE` | `none` (exact `none` \| `proxy-header`) |
 | `PULSE_WEB_AUTH_HEADER` | `Remote-User` (an RFC token) |
 | `PULSE_WEB_TRUSTED_PROXIES` | empty (comma-separated IPv4/IPv6 CIDRs) |
+| `PULSE_WEB_EXTERNAL_URL` | empty → connect links use the address you are browsing. Set it to the server's external https base (e.g. `https://pulse.example.com`). A value with credentials or one that is not a URL is a fatal `ConfigError` (the value is never echoed); an `http://`, loopback or over-long address logs one `config_warning` and refuses links |
 
 The write path (audit log, acks and proposals under `PULSE_WEB_DATA_DIR`) is inert in auth mode
 `none`; see [docs/operator/write-path.md](../../docs/operator/write-path.md). No estate YAML or

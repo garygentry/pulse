@@ -198,6 +198,13 @@ webDescribe("smoke:web — profile-web bring-up (SC-1, SC-6)", () => {
     expect(body.contract.major).toBe(1);
   }, 60_000);
 
+  // The stack passes PULSE_WEB_EXTERNAL_URL with an empty default, so the server behaves as before.
+  test("/api/connect-link reports no configured address and no refusal", () => {
+    const r = inStackGet("http://web:8080/api/connect-link");
+    expect(r.ok, `GET /api/connect-link failed: ${r.body}`).toBe(true);
+    expect(JSON.parse(r.body)).toEqual({ configured: null, refusal: null });
+  }, 60_000);
+
   // Issue #2 — the image's shell carries the strict CSP, with the hash of the inline script the
   // image was built from and a per-response style nonce, and every response carries nosniff.
   test("the shell carries the build-hashed CSP and the hardening headers (issue #2)", () => {
@@ -538,6 +545,7 @@ describe("smoke:web (in-process) — normal composition, every M1 route (10 §8)
     expect((await get(rt, "/metrics")).status).toBe(200);
     expect((await get(rt, "/api/session")).status).toBe(200);
     expect((await (await get(rt, "/api/session")).json()).contract.major).toBe(1);
+    expect((await get(rt, "/api/connect-link")).status).toBe(200);
     const ev = await get(rt, "/api/events");
     expect(ev.status).toBe(200);
     await ev.body?.cancel();

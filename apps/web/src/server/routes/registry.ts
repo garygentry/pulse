@@ -16,6 +16,7 @@ import { metricsRoute } from "./metrics.js";
 import { sessionRoute } from "./session.js";
 import { alertsRoute, estateRoute, engineRoute, timelineRoute } from "./current.js";
 import { eventsRoute } from "./events.js";
+import { connectLinkRoute } from "./connect-link.js";
 import {
   historyEstateRoute,
   historyTargetRoute,
@@ -38,6 +39,7 @@ export const ROUTES: readonly RouteDefinition[] = [
   timelineRoute,
   sessionRoute,
   eventsRoute,
+  connectLinkRoute, // web-only GET /api/connect-link (outside the client contract)
   historyEstateRoute,
   historyTargetRoute,
   historyAlertsRoute,

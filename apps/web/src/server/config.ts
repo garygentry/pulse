@@ -12,13 +12,17 @@
 import { isAbsolute, join, normalize } from "node:path";
 
 import { PROPOSAL_SECRET_MIN_BYTES } from "@pulse/core/proposals"; // single source in core; not redefined
+import { buildConnectLink } from "@pulse/web-data/contract";
 import { parseIdentityConfig, type IdentityConfig } from "@pulse/web-data/identity";
 import type { AuthMode } from "@pulse/web-data/identity";
 
+import type { ExternalUrlSoftRefusal } from "../shared/connect-link.js";
 import { ENV, GATUS_STALE_SECONDS_DEFAULT } from "../shared/constants.js";
 import { ConfigError } from "../shared/errors.js";
 import { log } from "./log.js";
 import { WRITE_PATH_DEFAULTS, WRITE_PATH_ENV } from "./mutations/constants.js";
+
+export type { ExternalUrlSoftRefusal } from "../shared/connect-link.js";
 
 /**
  * The app's complete parsed runtime configuration (the env table). Built once at startup by
@@ -54,7 +58,36 @@ export interface ServerConfig {
   readonly identity: IdentityConfig;
   /** Write-path configuration. In mode "none" every path is null and the secret is absent. */
   readonly writePath: WritePathConfig;
+  /** `PULSE_WEB_EXTERNAL_URL`: the server's external https base for phone connect links. `unset` when
+   *  absent/empty (behaves as before). A credential-bearing or unparseable value is a fatal ConfigError. */
+  readonly externalUrl: ExternalUrlState;
 }
+
+// ── External URL (phone connect links) ─────────────────────────────────────────────────────────
+
+/** Parsed `PULSE_WEB_EXTERNAL_URL`. */
+export type ExternalUrlState =
+  | {
+      /** The variable is absent, empty or whitespace: the web UI uses the browsing address. */
+      readonly state: "unset";
+    }
+  | {
+      /** The address is a usable https, non-loopback base. */
+      readonly state: "usable";
+      /** The normalised base URL. */
+      readonly baseUrl: string;
+      /** The connect link, built once at startup. */
+      readonly link: string;
+    }
+  | {
+      /** The address is set but cannot be used for a connect link; the server still starts. */
+      readonly state: "refused";
+      /** Why the address was refused. */
+      readonly refusal: ExternalUrlSoftRefusal;
+    };
+
+/** The `unset` state (frozen; shared by every unset parse). */
+export const UNSET_EXTERNAL_URL: ExternalUrlState = Object.freeze({ state: "unset" });
 
 // ── Write-path configuration ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +127,50 @@ export const NONE_WRITE_PATH_CONFIG: WritePathConfig = Object.freeze({
 
 /** C0 controls, DEL and C1 controls — a path containing any is malformed. */
 const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f-\u009f]/;
+
+/** Fatal message for PULSE_WEB_EXTERNAL_URL. Names the variable, never the value. */
+const EXTERNAL_URL_FATAL = `${ENV.WEB_EXTERNAL_URL} must be an absolute https URL without credentials`;
+
+/**
+ * Parse `PULSE_WEB_EXTERNAL_URL`.
+ *
+ * - unset / "" / whitespace → `{ state: "unset" }` (the compose default passes "").
+ * - a control character in the RAW value, an unparseable value or a value carrying credentials throws
+ *   {@link ConfigError}, which is fatal at startup. The value is never echoed.
+ * - a non-https, loopback or over-long address → `{ state: "refused", refusal }`, plus ONE
+ *   `config_warning` log line naming the variable and the reason, never the value.
+ * - otherwise → `{ state: "usable", baseUrl, link }`, with the link built once.
+ *
+ * @param env - The environment map (test seam).
+ * @throws {ConfigError} for a value that is unparseable, carries credentials or contains a control character.
+ */
+export function parseExternalUrl(env: Record<string, string | undefined>): ExternalUrlState {
+  const raw = env[ENV.WEB_EXTERNAL_URL];
+  // Checked before trimming: URL parsing silently strips tab/newline, so this must run first.
+  if (raw !== undefined && CONTROL_CHAR_RE.test(raw)) throw new ConfigError(ENV.WEB_EXTERNAL_URL, EXTERNAL_URL_FATAL);
+  const value = nonEmpty(raw);
+  if (value === undefined) return UNSET_EXTERNAL_URL;
+  const built = buildConnectLink(value);
+  if (built.ok) return Object.freeze({ state: "usable", baseUrl: built.baseUrl, link: built.link });
+  switch (built.refusal) {
+    case "unparseable":
+    case "credentials":
+      throw new ConfigError(ENV.WEB_EXTERNAL_URL, EXTERNAL_URL_FATAL);
+    case "not-https":
+    case "loopback":
+    case "too-long":
+      log({
+        event: "config_warning",
+        ok: false,
+        envVar: ENV.WEB_EXTERNAL_URL,
+        reason: built.refusal,
+        error:
+          `${ENV.WEB_EXTERNAL_URL} refused (${built.refusal}): connect links are disabled until it is ` +
+          `set to the server's https, non-loopback address`,
+      });
+      return Object.freeze({ state: "refused", refusal: built.refusal });
+  }
+}
 
 // ── Estate timezone decision (rendered-model-v2) ────────────────────────────────────────────────
 // Shared v2 timezone-decision contract, homed here (00-core-definitions.md §9). Item 011 implements
@@ -162,13 +239,15 @@ export function resolveEstateTimezone(
  * @param env - The environment map (test seam). Default: `process.env`.
  * @returns The parsed, validated configuration.
  * @throws {ConfigError} (code `CONFIG_MISSING_ENV`) if any of `PULSE_VM_URL` /
- *   `PULSE_ALERTMANAGER_URL` / `PULSE_GATUS_URL` / `PULSE_VMALERT_URL` is missing or empty.
+ *   `PULSE_ALERTMANAGER_URL` / `PULSE_GATUS_URL` / `PULSE_VMALERT_URL` is missing or empty, or if
+ *   `PULSE_WEB_EXTERNAL_URL` is unparseable, carries credentials or contains a control character.
  */
 export function loadServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
   // Existing literal kept byte-identical and evaluated FIRST, so the order in which pre-existing
-  // ConfigErrors are raised (engine URLs, then identity) is unchanged; write-path errors come last.
+  // ConfigErrors are raised (engine URLs, then identity) is unchanged; write-path errors come next
+  // and the external URL is parsed last.
   const base = {
     vmUrl: required(env, ENV.VM_URL),
     alertmanagerUrl: required(env, ENV.ALERTMANAGER_URL),
@@ -180,7 +259,8 @@ export function loadServerConfig(
     gatusStaleSeconds: parseStaleSeconds(env[ENV.GATUS_STALE_SECONDS]),
     identity: parseIdentity(env),
   };
-  return { ...base, writePath: parseWritePath(env, base.identity.mode) };
+  const writePath = parseWritePath(env, base.identity.mode);
+  return { ...base, writePath, externalUrl: parseExternalUrl(env) };
 }
 
 /**
