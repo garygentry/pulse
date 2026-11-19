@@ -207,7 +207,11 @@ export function findIpAddresses(line: string): RuleMatch[] {
 // ── Home-directory path rule ─────────────────────────────────────────────────────────────────────────────────
 
 const SEG = "[\\p{L}\\p{N}._-]{1,255}";
-const SEG_END = "(?=[\\\\/\\s\"'`)\\]},;:]|$)";
+/**
+ * What may follow the user segment: a path separator, whitespace, a quote, a closing bracket, list or sentence
+ * punctuation, markdown markup (`**…**`, `<…>`, a table `|`), URL syntax (`?`, `#`, `&`, `=`), or end of line.
+ */
+const SEG_END = "(?=[\\\\/\\s\"'`)\\]},;:*<>?#|&=!]|$)";
 /** `/home/<name>` and `/Users/<name>`. A preceding `/` is allowed (`file:///home/…`); a preceding letter is not. */
 export const POSIX_HOME_RE = new RegExp(`(?<![\\p{L}\\p{N}_.~%-])/(home|Users)/(${SEG})${SEG_END}`, "gu");
 /** `C:\Users\<name>`, also JSON-escaped (`C:\\Users\\…`) and with forward slashes. */

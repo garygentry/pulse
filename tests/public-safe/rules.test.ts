@@ -387,7 +387,48 @@ const HOME_FIRING: ReadonlyArray<Firing & { readonly masked: string }> = [
   { name: "quoted", line: `"cwd":"${MAC_HOME}"`, value: MAC_HOME, masked: "/Users/…" },
 ];
 
+/** Markdown and URL punctuation that may directly follow the user segment. */
+const HOME_TERMINATORS = ["*", ">", "<", "?", "#", "|", "&", "=", "!"] as const;
+const HOME_ROOTS: ReadonlyArray<{ readonly label: string; readonly path: string; readonly masked: string }> = [
+  { label: "/home", path: POSIX_HOME, masked: "/home/…" },
+  { label: "/Users", path: MAC_HOME, masked: "/Users/…" },
+  { label: "Windows", path: WINDOWS_HOME, masked: "C:\\Users\\…" },
+  { label: "Windows, JSON-escaped", path: WINDOWS_HOME_JSON, masked: "C:\\Users\\…" },
+];
+
+const HOME_PUNCTUATED_FIRING: ReadonlyArray<Firing & { readonly masked: string }> = HOME_ROOTS.flatMap((root) => [
+  ...HOME_TERMINATORS.flatMap((t) => [
+    { name: `${root.label} then ${t}`, line: `see ${root.path}${t}`, value: root.path, column: 5, masked: root.masked },
+    { name: `${root.label} then ${t} and more text`, line: `${root.path}${t}x y`, value: root.path, column: 1, masked: root.masked },
+  ]),
+  { name: `${root.label} in markdown bold`, line: `a **${root.path}** b`, value: root.path, column: 5, masked: root.masked },
+  { name: `${root.label} in angle brackets`, line: `a <${root.path}> b`, value: root.path, column: 4, masked: root.masked },
+  { name: `${root.label} in an unpadded table cell`, line: `|${root.path}|x|`, value: root.path, column: 2, masked: root.masked },
+  { name: `${root.label} with a fragment`, line: `${root.path}#L1`, value: root.path, column: 1, masked: root.masked },
+  { name: `${root.label} with a query`, line: `${root.path}?x=1&y=2`, value: root.path, column: 1, masked: root.masked },
+]);
+
 const HOME_QUIET: readonly string[] = [
+  "**/home/USER**",
+  "</Users/NAME>",
+  "|/home/USER|x|",
+  "/home/USER?x",
+  "/home/USER#L1",
+  "/Users/NAME&",
+  "/home/USER=",
+  "/home/USER!",
+  "**C:\\Users\\USER**",
+  "/home/<name>**",
+  "/home/<name>>",
+  "/home/{user}|",
+  "/home/{user}?x",
+  "**/home/**",
+  "</home/>",
+  "/home/$USER*",
+  "/home/…*",
+  "https://example.com/home/page?x=1#top",
+  "/var/home/USER|",
+
   "/home/USER/",
   "/Users/NAME/x",
   "/Users/USER/Library",
@@ -407,7 +448,7 @@ const HOME_QUIET: readonly string[] = [
 ];
 
 describe("home-path rule (P3)", () => {
-  for (const sample of HOME_FIRING) {
+  for (const sample of [...HOME_FIRING, ...HOME_PUNCTUATED_FIRING]) {
     test(`fires: ${sample.name}`, () => {
       const match = expectOne(findHomePaths(sample.line), sample);
       expect(match.rule).toBe("home-path");
