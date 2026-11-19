@@ -1,0 +1,1 @@
+{"code":"ESTATE_BUNDLE_MISSING","kind":"missing","message":"Required estate model is missing at /var/lib/pulse/rendered/web-estate-model.json. Run 'pulse render' and verify the PULSE_WEB_ESTATE_MODEL mount.","path":"/var/lib/pulse/rendered/web-estate-model.json"}

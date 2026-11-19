@@ -1,0 +1,1 @@
+{"effectiveStepSeconds":30,"fetchedAt":"2026-01-01T00:00:00.000Z","queryId":"estate.liveness","range":"1h","series":[{"labels":{},"points":[[1767225450000,1],[1767225480000,1],[1767225510000,0],[1767225540000,0],[1767225570000,1],[1767225600000,1]]}],"stale":false,"target":{"id":"host:host-001.example.net","kind":"host"},"unit":"future-value"}

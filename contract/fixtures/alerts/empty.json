@@ -1,0 +1,1 @@
+{"alertmanager":{"lastGoodAt":"2026-01-01T00:00:00.000Z","message":null,"source":"alertmanager-alerts","state":"current"},"alerts":[],"generatedAt":"2026-01-01T00:00:00.000Z","rules":[],"silences":[],"vmalert":{"lastGoodAt":"2026-01-01T00:00:00.000Z","message":null,"source":"vmalert-rules","state":"current"}}

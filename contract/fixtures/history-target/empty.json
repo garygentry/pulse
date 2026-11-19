@@ -1,0 +1,1 @@
+{"effectiveStepSeconds":30,"fetchedAt":"2026-01-01T00:00:00.000Z","queryId":"endpoint.check.latency","range":"1h","series":[],"stale":false,"target":{"id":"host-001.example.net/web","kind":"endpoint"},"unit":"milliseconds"}

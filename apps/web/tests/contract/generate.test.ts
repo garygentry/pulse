@@ -104,7 +104,8 @@ describe("generateContract", () => {
       .filter((path) => path.startsWith("contract/fixtures/"));
     expect(index.fixtures.map((entry) => `contract/${entry.path}`)).toEqual(fixturePaths);
     for (const entry of index.fixtures) {
-      expect(entry.path).toBe(`fixtures/${entry.group}/${entry.scenario}.json`);
+      const extension = entry.kind === "stream" ? "sse" : "json";
+      expect(entry.path).toBe(`fixtures/${entry.group}/${entry.scenario}.${extension}`);
       expect(entry.status !== null).toBe(entry.kind === "response" || entry.kind === "error");
     }
     expect(index.fixtures.find((entry) => entry.path === "fixtures/handshake/server-too-old-minor.json")).toEqual({
@@ -234,12 +235,18 @@ describe("placeholders", () => {
     let urls = 0;
     for (const file of await generated()) {
       if (!file.path.startsWith("contract/fixtures/")) continue;
-      // Connect links carry their base URL percent-encoded.
-      const text = decodeURIComponent(DECODER.decode(file.bytes).replaceAll("%20", " "));
+      // Connect links carry their base URL percent-encoded; a bare "%" in prose is left as it is.
+      const text = DECODER.decode(file.bytes).replace(/(?:%[0-9A-Fa-f]{2})+/g, (encoded) => {
+        try {
+          return decodeURIComponent(encoded);
+        } catch {
+          return encoded;
+        }
+      });
       const loopbackAllowed = file.path === "contract/fixtures/connect-link/http-loopback.json";
       for (const match of text.matchAll(/https?:\/\/([^/?#"&\s]+)/g)) {
         urls += 1;
-        const host = match[1]!;
+        const host = match[1]!.replace(/:\d+$/, ""); // a port does not change whose name it is
         if (host === "localhost" && loopbackAllowed) continue;
         if (host === "connect") continue; // the wrong-scheme link keeps the link's own host
         expect({ path: file.path, host, ok: hostOk(host) }).toEqual({ path: file.path, host, ok: true });

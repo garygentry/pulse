@@ -1,0 +1,1 @@
+{"effectiveStepSeconds":60,"fetchedAt":"2026-01-01T00:00:00.000Z","queryId":"service.backup-age","range":"6h","series":[{"labels":{},"points":[[1767225300000,3600],[1767225360000,3660],[1767225420000,3720],[1767225480000,3780],[1767225540000,3840],[1767225600000,3900]]}],"stale":false,"target":{"id":"svc:host-001.example.net/web","kind":"service"},"unit":"seconds"}

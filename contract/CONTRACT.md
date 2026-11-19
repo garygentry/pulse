@@ -1151,10 +1151,23 @@ Each index entry has these fields:
 A decoder is correct when it gives the result the index records for every fixture.
 
 <!-- generated:fixtures -->
-Index format 1, contract 1.0, 29 fixtures.
+Index format 1, contract 1.0, 163 fixtures.
 
 | Fixture | Operation | Scenario | Kind | Status | Expect | Expected result |
 |---|---|---|---|---|---|---|
+| [`fixtures/alerts/all-optional.json`](fixtures/alerts/all-optional.json) | `GET /api/alerts` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/alerts/bundle-error.json`](fixtures/alerts/bundle-error.json) | `GET /api/alerts` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/alerts/empty.json`](fixtures/alerts/empty.json) | `GET /api/alerts` | `empty` | response | 200 | accept | — |
+| [`fixtures/alerts/error-invalid-request.json`](fixtures/alerts/error-invalid-request.json) | `GET /api/alerts` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/alerts/error-not-ready.json`](fixtures/alerts/error-not-ready.json) | `GET /api/alerts` | `error-not-ready` | error | 503 | accept | — |
+| [`fixtures/alerts/max-size.json`](fixtures/alerts/max-size.json) | `GET /api/alerts` | `max-size` | response | 200 | accept | — |
+| [`fixtures/alerts/typical.json`](fixtures/alerts/typical.json) | `GET /api/alerts` | `typical` | response | 200 | accept | — |
+| [`fixtures/alerts/unknown-enum-alert-state.json`](fixtures/alerts/unknown-enum-alert-state.json) | `GET /api/alerts` | `unknown-enum-alert-state` | response | 200 | accept | — |
+| [`fixtures/alerts/unknown-enum-availability-state.json`](fixtures/alerts/unknown-enum-availability-state.json) | `GET /api/alerts` | `unknown-enum-availability-state` | response | 200 | accept | — |
+| [`fixtures/alerts/unknown-enum-rule-health.json`](fixtures/alerts/unknown-enum-rule-health.json) | `GET /api/alerts` | `unknown-enum-rule-health` | response | 200 | accept | — |
+| [`fixtures/alerts/unknown-enum-silence-state.json`](fixtures/alerts/unknown-enum-silence-state.json) | `GET /api/alerts` | `unknown-enum-silence-state` | response | 200 | accept | — |
+| [`fixtures/alerts/unknown-enum-source-id.json`](fixtures/alerts/unknown-enum-source-id.json) | `GET /api/alerts` | `unknown-enum-source-id` | response | 200 | accept | — |
+| [`fixtures/alerts/unknown-enum-target-kind.json`](fixtures/alerts/unknown-enum-target-kind.json) | `GET /api/alerts` | `unknown-enum-target-kind` | response | 200 | accept | — |
 | [`fixtures/connect-link/basic.json`](fixtures/connect-link/basic.json) | `connect-link` | `basic` | connect-link | — | accept | — |
 | [`fixtures/connect-link/http-loopback.json`](fixtures/connect-link/http-loopback.json) | `connect-link` | `http-loopback` | connect-link | — | reject | rejection `not-https` |
 | [`fixtures/connect-link/http-url.json`](fixtures/connect-link/http-url.json) | `connect-link` | `http-url` | connect-link | — | reject | rejection `not-https` |
@@ -1173,17 +1186,138 @@ Index format 1, contract 1.0, 29 fixtures.
 | [`fixtures/errors/bundle-error-version.json`](fixtures/errors/bundle-error-version.json) | `GET /api/*` | `bundle-error-version` | error | 503 | accept | — |
 | [`fixtures/errors/internal-error.json`](fixtures/errors/internal-error.json) | `GET /api/*` | `internal-error` | error | 500 | accept | — |
 | [`fixtures/errors/invalid-request.json`](fixtures/errors/invalid-request.json) | `GET /api/*` | `invalid-request` | error | 400 | accept | — |
+| [`fixtures/errors/unknown-enum-api-error-code.json`](fixtures/errors/unknown-enum-api-error-code.json) | `GET /api/*` | `unknown-enum-api-error-code` | error | 400 | accept | — |
+| [`fixtures/errors/unknown-enum-bundle-error-kind.json`](fixtures/errors/unknown-enum-bundle-error-kind.json) | `GET /api/*` | `unknown-enum-bundle-error-kind` | error | 503 | accept | — |
+| [`fixtures/estate/all-optional.json`](fixtures/estate/all-optional.json) | `GET /api/estate` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/estate/bundle-error.json`](fixtures/estate/bundle-error.json) | `GET /api/estate` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/estate/empty.json`](fixtures/estate/empty.json) | `GET /api/estate` | `empty` | response | 200 | accept | — |
+| [`fixtures/estate/error-invalid-request.json`](fixtures/estate/error-invalid-request.json) | `GET /api/estate` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/estate/error-not-ready.json`](fixtures/estate/error-not-ready.json) | `GET /api/estate` | `error-not-ready` | error | 503 | accept | — |
+| [`fixtures/estate/max-size.json`](fixtures/estate/max-size.json) | `GET /api/estate` | `max-size` | response | 200 | accept | — |
+| [`fixtures/estate/typical.json`](fixtures/estate/typical.json) | `GET /api/estate` | `typical` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-channel-kind.json`](fixtures/estate/unknown-enum-channel-kind.json) | `GET /api/estate` | `unknown-enum-channel-kind` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-collection-class.json`](fixtures/estate/unknown-enum-collection-class.json) | `GET /api/estate` | `unknown-enum-collection-class` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-command-output.json`](fixtures/estate/unknown-enum-command-output.json) | `GET /api/estate` | `unknown-enum-command-output` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-coverage-kind.json`](fixtures/estate/unknown-enum-coverage-kind.json) | `GET /api/estate` | `unknown-enum-coverage-kind` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-credential-kind.json`](fixtures/estate/unknown-enum-credential-kind.json) | `GET /api/estate` | `unknown-enum-credential-kind` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-deadman-kind.json`](fixtures/estate/unknown-enum-deadman-kind.json) | `GET /api/estate` | `unknown-enum-deadman-kind` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-declared-scrape-health.json`](fixtures/estate/unknown-enum-declared-scrape-health.json) | `GET /api/estate` | `unknown-enum-declared-scrape-health` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-declared-scrape-state.json`](fixtures/estate/unknown-enum-declared-scrape-state.json) | `GET /api/estate` | `unknown-enum-declared-scrape-state` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-delivery-form.json`](fixtures/estate/unknown-enum-delivery-form.json) | `GET /api/estate` | `unknown-enum-delivery-form` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-finding-code.json`](fixtures/estate/unknown-enum-finding-code.json) | `GET /api/estate` | `unknown-enum-finding-code` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-finding-severity.json`](fixtures/estate/unknown-enum-finding-severity.json) | `GET /api/estate` | `unknown-enum-finding-severity` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-health-state.json`](fixtures/estate/unknown-enum-health-state.json) | `GET /api/estate` | `unknown-enum-health-state` | response | 200 | accept | — |
+| [`fixtures/estate/unknown-enum-suppression-class.json`](fixtures/estate/unknown-enum-suppression-class.json) | `GET /api/estate` | `unknown-enum-suppression-class` | response | 200 | accept | — |
+| [`fixtures/events/stream-resume-match.sse`](fixtures/events/stream-resume-match.sse) | `SSE /api/events` | `stream-resume-match` | stream | — | accept | — |
+| [`fixtures/events/stream-typical.sse`](fixtures/events/stream-typical.sse) | `SSE /api/events` | `stream-typical` | stream | — | accept | — |
+| [`fixtures/events/stream-unknown-event.sse`](fixtures/events/stream-unknown-event.sse) | `SSE /api/events` | `stream-unknown-event` | stream | — | accept | — |
+| [`fixtures/events/tick-typical.json`](fixtures/events/tick-typical.json) | `SSE /api/events` | `tick-typical` | event | — | accept | — |
+| [`fixtures/events/tick-unknown-fields.json`](fixtures/events/tick-unknown-fields.json) | `SSE /api/events` | `tick-unknown-fields` | event | — | accept | — |
+| [`fixtures/events/tick-unknown-view.json`](fixtures/events/tick-unknown-view.json) | `SSE /api/events` | `tick-unknown-view` | event | — | accept | — |
+| [`fixtures/events/unknown-enum-view-id.json`](fixtures/events/unknown-enum-view-id.json) | `SSE /api/events` | `unknown-enum-view-id` | event | — | accept | — |
 | [`fixtures/handshake/client-too-old.json`](fixtures/handshake/client-too-old.json) | `handshake` | `client-too-old` | handshake | — | accept | outcome `client-too-old` for client `0.0` |
 | [`fixtures/handshake/compatible.json`](fixtures/handshake/compatible.json) | `handshake` | `compatible` | handshake | — | accept | outcome `compatible` for client `1.0` |
 | [`fixtures/handshake/server-too-old-absent.json`](fixtures/handshake/server-too-old-absent.json) | `handshake` | `server-too-old-absent` | handshake | — | accept | outcome `server-too-old` for client `1.0` |
 | [`fixtures/handshake/server-too-old-major.json`](fixtures/handshake/server-too-old-major.json) | `handshake` | `server-too-old-major` | handshake | — | accept | outcome `server-too-old` for client `2.0` |
 | [`fixtures/handshake/server-too-old-minor.json`](fixtures/handshake/server-too-old-minor.json) | `handshake` | `server-too-old-minor` | handshake | — | accept | outcome `server-too-old` for client `1.1` |
+| [`fixtures/history-alerts/all-optional.json`](fixtures/history-alerts/all-optional.json) | `GET /api/history/alerts` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/history-alerts/bundle-error.json`](fixtures/history-alerts/bundle-error.json) | `GET /api/history/alerts` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/history-alerts/empty.json`](fixtures/history-alerts/empty.json) | `GET /api/history/alerts` | `empty` | response | 200 | accept | — |
+| [`fixtures/history-alerts/error-history-cancelled.json`](fixtures/history-alerts/error-history-cancelled.json) | `GET /api/history/alerts` | `error-history-cancelled` | error | 503 | accept | — |
+| [`fixtures/history-alerts/error-history-limit-exceeded.json`](fixtures/history-alerts/error-history-limit-exceeded.json) | `GET /api/history/alerts` | `error-history-limit-exceeded` | error | 502 | accept | — |
+| [`fixtures/history-alerts/error-history-overloaded.json`](fixtures/history-alerts/error-history-overloaded.json) | `GET /api/history/alerts` | `error-history-overloaded` | error | 503 | accept | — |
+| [`fixtures/history-alerts/error-invalid-request.json`](fixtures/history-alerts/error-invalid-request.json) | `GET /api/history/alerts` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/history-alerts/error-model-changed.json`](fixtures/history-alerts/error-model-changed.json) | `GET /api/history/alerts` | `error-model-changed` | error | 503 | accept | — |
+| [`fixtures/history-alerts/error-query-not-applicable.json`](fixtures/history-alerts/error-query-not-applicable.json) | `GET /api/history/alerts` | `error-query-not-applicable` | error | 422 | accept | — |
+| [`fixtures/history-alerts/error-query-not-found.json`](fixtures/history-alerts/error-query-not-found.json) | `GET /api/history/alerts` | `error-query-not-found` | error | 404 | accept | — |
+| [`fixtures/history-alerts/error-range-unsupported.json`](fixtures/history-alerts/error-range-unsupported.json) | `GET /api/history/alerts` | `error-range-unsupported` | error | 422 | accept | — |
+| [`fixtures/history-alerts/error-source-timeout.json`](fixtures/history-alerts/error-source-timeout.json) | `GET /api/history/alerts` | `error-source-timeout` | error | 504 | accept | — |
+| [`fixtures/history-alerts/error-source-unavailable.json`](fixtures/history-alerts/error-source-unavailable.json) | `GET /api/history/alerts` | `error-source-unavailable` | error | 502 | accept | — |
+| [`fixtures/history-alerts/error-target-not-found.json`](fixtures/history-alerts/error-target-not-found.json) | `GET /api/history/alerts` | `error-target-not-found` | error | 404 | accept | — |
+| [`fixtures/history-alerts/max-size-intervals.json`](fixtures/history-alerts/max-size-intervals.json) | `GET /api/history/alerts` | `max-size-intervals` | response | 200 | accept | — |
+| [`fixtures/history-alerts/max-size-lanes.json`](fixtures/history-alerts/max-size-lanes.json) | `GET /api/history/alerts` | `max-size-lanes` | response | 200 | accept | — |
+| [`fixtures/history-alerts/typical.json`](fixtures/history-alerts/typical.json) | `GET /api/history/alerts` | `typical` | response | 200 | accept | — |
+| [`fixtures/history-alerts/unknown-enum-attribution.json`](fixtures/history-alerts/unknown-enum-attribution.json) | `GET /api/history/alerts` | `unknown-enum-attribution` | response | 200 | accept | — |
+| [`fixtures/history-alerts/unknown-enum-history-severity.json`](fixtures/history-alerts/unknown-enum-history-severity.json) | `GET /api/history/alerts` | `unknown-enum-history-severity` | response | 200 | accept | — |
+| [`fixtures/history-checks/all-optional.json`](fixtures/history-checks/all-optional.json) | `GET /api/history/checks/:endpoint` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/history-checks/bundle-error.json`](fixtures/history-checks/bundle-error.json) | `GET /api/history/checks/:endpoint` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/history-checks/empty.json`](fixtures/history-checks/empty.json) | `GET /api/history/checks/:endpoint` | `empty` | response | 200 | accept | — |
+| [`fixtures/history-checks/error-history-cancelled.json`](fixtures/history-checks/error-history-cancelled.json) | `GET /api/history/checks/:endpoint` | `error-history-cancelled` | error | 503 | accept | — |
+| [`fixtures/history-checks/error-history-limit-exceeded.json`](fixtures/history-checks/error-history-limit-exceeded.json) | `GET /api/history/checks/:endpoint` | `error-history-limit-exceeded` | error | 502 | accept | — |
+| [`fixtures/history-checks/error-history-overloaded.json`](fixtures/history-checks/error-history-overloaded.json) | `GET /api/history/checks/:endpoint` | `error-history-overloaded` | error | 503 | accept | — |
+| [`fixtures/history-checks/error-invalid-request.json`](fixtures/history-checks/error-invalid-request.json) | `GET /api/history/checks/:endpoint` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/history-checks/error-model-changed.json`](fixtures/history-checks/error-model-changed.json) | `GET /api/history/checks/:endpoint` | `error-model-changed` | error | 503 | accept | — |
+| [`fixtures/history-checks/error-query-not-applicable.json`](fixtures/history-checks/error-query-not-applicable.json) | `GET /api/history/checks/:endpoint` | `error-query-not-applicable` | error | 422 | accept | — |
+| [`fixtures/history-checks/error-query-not-found.json`](fixtures/history-checks/error-query-not-found.json) | `GET /api/history/checks/:endpoint` | `error-query-not-found` | error | 404 | accept | — |
+| [`fixtures/history-checks/error-range-unsupported.json`](fixtures/history-checks/error-range-unsupported.json) | `GET /api/history/checks/:endpoint` | `error-range-unsupported` | error | 422 | accept | — |
+| [`fixtures/history-checks/error-source-timeout.json`](fixtures/history-checks/error-source-timeout.json) | `GET /api/history/checks/:endpoint` | `error-source-timeout` | error | 504 | accept | — |
+| [`fixtures/history-checks/error-source-unavailable.json`](fixtures/history-checks/error-source-unavailable.json) | `GET /api/history/checks/:endpoint` | `error-source-unavailable` | error | 502 | accept | — |
+| [`fixtures/history-checks/error-target-not-found.json`](fixtures/history-checks/error-target-not-found.json) | `GET /api/history/checks/:endpoint` | `error-target-not-found` | error | 404 | accept | — |
+| [`fixtures/history-checks/max-size.json`](fixtures/history-checks/max-size.json) | `GET /api/history/checks/:endpoint` | `max-size` | response | 200 | accept | — |
+| [`fixtures/history-checks/typical.json`](fixtures/history-checks/typical.json) | `GET /api/history/checks/:endpoint` | `typical` | response | 200 | accept | — |
+| [`fixtures/history-checks/unknown-enum-interval-state.json`](fixtures/history-checks/unknown-enum-interval-state.json) | `GET /api/history/checks/:endpoint` | `unknown-enum-interval-state` | response | 200 | accept | — |
+| [`fixtures/history-checks/unknown-enum-provenance.json`](fixtures/history-checks/unknown-enum-provenance.json) | `GET /api/history/checks/:endpoint` | `unknown-enum-provenance` | response | 200 | accept | — |
+| [`fixtures/history-checks/unknown-enum-range-id.json`](fixtures/history-checks/unknown-enum-range-id.json) | `GET /api/history/checks/:endpoint` | `unknown-enum-range-id` | response | 200 | accept | — |
+| [`fixtures/history-estate/all-optional.json`](fixtures/history-estate/all-optional.json) | `GET /api/history/estate/:queryId` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/history-estate/bundle-error.json`](fixtures/history-estate/bundle-error.json) | `GET /api/history/estate/:queryId` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/history-estate/empty.json`](fixtures/history-estate/empty.json) | `GET /api/history/estate/:queryId` | `empty` | response | 200 | accept | — |
+| [`fixtures/history-estate/error-history-cancelled.json`](fixtures/history-estate/error-history-cancelled.json) | `GET /api/history/estate/:queryId` | `error-history-cancelled` | error | 503 | accept | — |
+| [`fixtures/history-estate/error-history-limit-exceeded.json`](fixtures/history-estate/error-history-limit-exceeded.json) | `GET /api/history/estate/:queryId` | `error-history-limit-exceeded` | error | 502 | accept | — |
+| [`fixtures/history-estate/error-history-overloaded.json`](fixtures/history-estate/error-history-overloaded.json) | `GET /api/history/estate/:queryId` | `error-history-overloaded` | error | 503 | accept | — |
+| [`fixtures/history-estate/error-invalid-request.json`](fixtures/history-estate/error-invalid-request.json) | `GET /api/history/estate/:queryId` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/history-estate/error-model-changed.json`](fixtures/history-estate/error-model-changed.json) | `GET /api/history/estate/:queryId` | `error-model-changed` | error | 503 | accept | — |
+| [`fixtures/history-estate/error-query-not-applicable.json`](fixtures/history-estate/error-query-not-applicable.json) | `GET /api/history/estate/:queryId` | `error-query-not-applicable` | error | 422 | accept | — |
+| [`fixtures/history-estate/error-query-not-found.json`](fixtures/history-estate/error-query-not-found.json) | `GET /api/history/estate/:queryId` | `error-query-not-found` | error | 404 | accept | — |
+| [`fixtures/history-estate/error-range-unsupported.json`](fixtures/history-estate/error-range-unsupported.json) | `GET /api/history/estate/:queryId` | `error-range-unsupported` | error | 422 | accept | — |
+| [`fixtures/history-estate/error-source-timeout.json`](fixtures/history-estate/error-source-timeout.json) | `GET /api/history/estate/:queryId` | `error-source-timeout` | error | 504 | accept | — |
+| [`fixtures/history-estate/error-source-unavailable.json`](fixtures/history-estate/error-source-unavailable.json) | `GET /api/history/estate/:queryId` | `error-source-unavailable` | error | 502 | accept | — |
+| [`fixtures/history-estate/error-target-not-found.json`](fixtures/history-estate/error-target-not-found.json) | `GET /api/history/estate/:queryId` | `error-target-not-found` | error | 404 | accept | — |
+| [`fixtures/history-estate/max-size-points.json`](fixtures/history-estate/max-size-points.json) | `GET /api/history/estate/:queryId` | `max-size-points` | response | 200 | accept | — |
+| [`fixtures/history-estate/max-size-series.json`](fixtures/history-estate/max-size-series.json) | `GET /api/history/estate/:queryId` | `max-size-series` | response | 200 | accept | — |
+| [`fixtures/history-estate/typical.json`](fixtures/history-estate/typical.json) | `GET /api/history/estate/:queryId` | `typical` | response | 200 | accept | — |
+| [`fixtures/history-estate/unknown-enum-query-id.json`](fixtures/history-estate/unknown-enum-query-id.json) | `GET /api/history/estate/:queryId` | `unknown-enum-query-id` | response | 200 | accept | — |
+| [`fixtures/history-estate/unknown-enum-unit.json`](fixtures/history-estate/unknown-enum-unit.json) | `GET /api/history/estate/:queryId` | `unknown-enum-unit` | response | 200 | accept | — |
+| [`fixtures/history-target/all-optional.json`](fixtures/history-target/all-optional.json) | `GET /api/history/target/:drilldownId/:queryId` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/history-target/bundle-error.json`](fixtures/history-target/bundle-error.json) | `GET /api/history/target/:drilldownId/:queryId` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/history-target/empty.json`](fixtures/history-target/empty.json) | `GET /api/history/target/:drilldownId/:queryId` | `empty` | response | 200 | accept | — |
+| [`fixtures/history-target/error-history-cancelled.json`](fixtures/history-target/error-history-cancelled.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-history-cancelled` | error | 503 | accept | — |
+| [`fixtures/history-target/error-history-limit-exceeded.json`](fixtures/history-target/error-history-limit-exceeded.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-history-limit-exceeded` | error | 502 | accept | — |
+| [`fixtures/history-target/error-history-overloaded.json`](fixtures/history-target/error-history-overloaded.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-history-overloaded` | error | 503 | accept | — |
+| [`fixtures/history-target/error-invalid-request.json`](fixtures/history-target/error-invalid-request.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/history-target/error-model-changed.json`](fixtures/history-target/error-model-changed.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-model-changed` | error | 503 | accept | — |
+| [`fixtures/history-target/error-query-not-applicable.json`](fixtures/history-target/error-query-not-applicable.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-query-not-applicable` | error | 422 | accept | — |
+| [`fixtures/history-target/error-query-not-found.json`](fixtures/history-target/error-query-not-found.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-query-not-found` | error | 404 | accept | — |
+| [`fixtures/history-target/error-range-unsupported.json`](fixtures/history-target/error-range-unsupported.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-range-unsupported` | error | 422 | accept | — |
+| [`fixtures/history-target/error-source-timeout.json`](fixtures/history-target/error-source-timeout.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-source-timeout` | error | 504 | accept | — |
+| [`fixtures/history-target/error-source-unavailable.json`](fixtures/history-target/error-source-unavailable.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-source-unavailable` | error | 502 | accept | — |
+| [`fixtures/history-target/error-target-not-found.json`](fixtures/history-target/error-target-not-found.json) | `GET /api/history/target/:drilldownId/:queryId` | `error-target-not-found` | error | 404 | accept | — |
+| [`fixtures/history-target/max-size-points.json`](fixtures/history-target/max-size-points.json) | `GET /api/history/target/:drilldownId/:queryId` | `max-size-points` | response | 200 | accept | — |
+| [`fixtures/history-target/max-size-series.json`](fixtures/history-target/max-size-series.json) | `GET /api/history/target/:drilldownId/:queryId` | `max-size-series` | response | 200 | accept | — |
+| [`fixtures/history-target/typical.json`](fixtures/history-target/typical.json) | `GET /api/history/target/:drilldownId/:queryId` | `typical` | response | 200 | accept | — |
+| [`fixtures/overview/all-optional.json`](fixtures/overview/all-optional.json) | `GET /api/overview` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/overview/bundle-error.json`](fixtures/overview/bundle-error.json) | `GET /api/overview` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/overview/empty.json`](fixtures/overview/empty.json) | `GET /api/overview` | `empty` | response | 200 | accept | — |
+| [`fixtures/overview/error-invalid-request.json`](fixtures/overview/error-invalid-request.json) | `GET /api/overview` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/overview/error-not-ready.json`](fixtures/overview/error-not-ready.json) | `GET /api/overview` | `error-not-ready` | error | 503 | accept | — |
+| [`fixtures/overview/max-size.json`](fixtures/overview/max-size.json) | `GET /api/overview` | `max-size` | response | 200 | accept | — |
+| [`fixtures/overview/typical.json`](fixtures/overview/typical.json) | `GET /api/overview` | `typical` | response | 200 | accept | — |
+| [`fixtures/overview/unknown-enum-overview-severity.json`](fixtures/overview/unknown-enum-overview-severity.json) | `GET /api/overview` | `unknown-enum-overview-severity` | response | 200 | accept | — |
+| [`fixtures/overview/unknown-enum-target-status.json`](fixtures/overview/unknown-enum-target-status.json) | `GET /api/overview` | `unknown-enum-target-status` | response | 200 | accept | — |
+| [`fixtures/overview/unknown-fields.json`](fixtures/overview/unknown-fields.json) | `GET /api/overview` | `unknown-fields` | response | 200 | accept | — |
 | [`fixtures/session/all-optional.json`](fixtures/session/all-optional.json) | `GET /api/session` | `all-optional` | response | 200 | accept | — |
 | [`fixtures/session/empty.json`](fixtures/session/empty.json) | `GET /api/session` | `empty` | response | 200 | accept | — |
 | [`fixtures/session/error-invalid-request.json`](fixtures/session/error-invalid-request.json) | `GET /api/session` | `error-invalid-request` | error | 400 | accept | — |
 | [`fixtures/session/max-size.json`](fixtures/session/max-size.json) | `GET /api/session` | `max-size` | response | 200 | accept | — |
 | [`fixtures/session/typical.json`](fixtures/session/typical.json) | `GET /api/session` | `typical` | response | 200 | accept | — |
 | [`fixtures/session/unknown-capability.json`](fixtures/session/unknown-capability.json) | `GET /api/session` | `unknown-capability` | response | 200 | accept | — |
+| [`fixtures/session/unknown-enum-auth-mode.json`](fixtures/session/unknown-enum-auth-mode.json) | `GET /api/session` | `unknown-enum-auth-mode` | response | 200 | accept | — |
+| [`fixtures/timeline/all-optional.json`](fixtures/timeline/all-optional.json) | `GET /api/timeline` | `all-optional` | response | 200 | accept | — |
+| [`fixtures/timeline/bundle-error.json`](fixtures/timeline/bundle-error.json) | `GET /api/timeline` | `bundle-error` | error | 503 | accept | — |
+| [`fixtures/timeline/empty.json`](fixtures/timeline/empty.json) | `GET /api/timeline` | `empty` | response | 200 | accept | — |
+| [`fixtures/timeline/error-invalid-request.json`](fixtures/timeline/error-invalid-request.json) | `GET /api/timeline` | `error-invalid-request` | error | 400 | accept | — |
+| [`fixtures/timeline/error-not-ready.json`](fixtures/timeline/error-not-ready.json) | `GET /api/timeline` | `error-not-ready` | error | 503 | accept | — |
+| [`fixtures/timeline/max-size.json`](fixtures/timeline/max-size.json) | `GET /api/timeline` | `max-size` | response | 200 | accept | — |
+| [`fixtures/timeline/typical.json`](fixtures/timeline/typical.json) | `GET /api/timeline` | `typical` | response | 200 | accept | — |
 <!-- /generated:fixtures -->
 
 <a id="extending"></a>

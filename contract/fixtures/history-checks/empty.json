@@ -1,0 +1,1 @@
+{"effectiveStepSeconds":null,"endpoint":"host-001.example.net/web","fetchedAt":"2026-01-01T00:00:00.000Z","incidents":[],"operation":"endpoint-history","provenance":"gatus","range":"24h","results":[],"stale":false,"target":{"id":"host-001.example.net/web","kind":"endpoint"},"unit":"milliseconds"}
