@@ -139,6 +139,8 @@ After an intentional estate or renderer change, regenerate goldens with `bun run
 
 ## Documentation
 
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contributor rules, including the public-safe placeholders that `contract/` and `apps/ios/` must use (checked by `bun test` and `bun run lint:public-safe`).
+- [`contract/CONTRACT.md`](contract/CONTRACT.md) — the client contract: the versioned, language-neutral description of the web server's API for clients such as a phone app, with fixtures under [`contract/fixtures/`](contract/fixtures/).
 - [`docs/operator/`](docs/operator/) — task-oriented operator guides: [getting started](docs/operator/getting-started.md), [exposure](docs/operator/exposure.md), [alerting](docs/operator/alerting.md), and the [web overview](docs/operator/web-overview.md), plus recipes for secrets, sizing, and the command-exporter.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release; operators upgrading an existing deployment follow the [upgrade path](docs/operator/upgrade-path.md#upgrading-to-020).
 - [`docs/runbooks/`](docs/runbooks/) — step-by-step operational runbooks: [bootstrap](docs/runbooks/bootstrap.md), [agent install](docs/runbooks/agent-install.md), [backup enrollment](docs/runbooks/backup-enrollment.md), and the retirement checklist.

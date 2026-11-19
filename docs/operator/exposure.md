@@ -201,6 +201,46 @@ git check-ignore stack/compose/docker-compose.override.yml
 **Rollback:** `rm stack/compose/docker-compose.override.yml` (and any `Caddyfile`) then
 `docker compose up --wait` — the stack returns to expose-only and no committed file changed.
 
+## Connecting a phone
+
+A phone client finds the server through a **connect link**: a `pulse://connect?…` link that carries the
+server's external address, usually scanned as a QR code. The link holds no secret — it only says where the
+server is — so the phone still goes through the same proxy and login as a browser.
+
+The address in a link must be **https** and must not be a loopback address, so set up one of the
+reverse-proxy recipes above first. Recipe B (loopback publish) cannot be reached from a phone.
+
+1. Tell the web server its external address in `stack/compose/.env`, then restart the `web` service:
+
+   ```bash
+   PULSE_WEB_EXTERNAL_URL=https://pulse.example.com
+   ```
+
+   Give the base address only: no credentials, query or fragment. A value with credentials, or one that is
+   not a URL, stops the server at startup. An `http://` or loopback address lets the server start, logs one
+   warning, and the connect screen explains why no link is shown.
+
+2. Open `/connect` in the web overview (or pick **Connect a phone** in the command palette) and scan the QR
+   code. The link is also shown as text with a copy button.
+
+When `PULSE_WEB_EXTERNAL_URL` is empty, the connect screen builds the link from the address you are browsing.
+That works when you already reach the web overview at its public https address, and is refused (with the
+reason shown) when you browse over `http://` or a loopback tunnel.
+
+From a terminal, `pulse connect-link` prints the same link with a QR code:
+
+```bash
+pulse connect-link --url https://pulse.example.com
+pulse connect-link --json     # the link in the JSON envelope, for scripts
+```
+
+The address comes from `--url`, then the `PULSE_WEB_EXTERNAL_URL` environment variable, then `externalUrl`
+in `pulse.config.yaml`. `--quiet` hides the QR code and prints only the link. A missing or refused address
+exits non-zero with a finding that names the reason.
+
+The link format and the checks a client applies to it are part of the client contract: see the
+"Connect link" section (`#connect-link`) of `contract/CONTRACT.md` in the repository.
+
 ## Where to go next
 
 - **The posture this builds on** → [runtime posture](/runtime-posture/).

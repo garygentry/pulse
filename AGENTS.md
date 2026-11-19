@@ -24,3 +24,15 @@ See `docs/architecture/ui.md` for the full picture. The rules that matter most:
   working, still review screenshots (375/768/1280, light and dark) under `screenshots/`.
 - `apps/web/tests/ui-guardrails.test.ts` enforces the mechanical rules; keep it green instead of
   allowlisting around it.
+
+## Client contract
+
+- Changing a contract wire type (`packages/web-data/src/wire/**`, `CONTRACT_LIMITS`, `ENUM_FALLBACKS`) requires
+  `bun run contract:gen`, committing all of `contract/**`, and a `CONTRACT_VERSION` bump per
+  `contract/CONTRACT.md` #versioning. `contract/shape/<version>.json` is frozen once written; `bun test` gates both.
+
+## Public-safe content
+
+- Tracked `contract/**` and `apps/ios/**` use only the placeholders in `CONTRIBUTING.md` "Public-safe
+  placeholders"; `bun test` enforces it. Run `bun run lint:public-safe` before copying `specs/ios/` to another
+  machine.
