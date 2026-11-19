@@ -9,22 +9,14 @@
 // query/expression (no passthrough, REQ-SEC-02). Bundle-error mode is short-circuited by the router
 // BEFORE this handler runs (§4.4 / §7) — no stale cycle/snapshot is served.
 
+import type { BundleErrorBody } from "@pulse/web-data/wire";
 import type { RouteDefinition, ServerContext } from "../../shared/registry.js";
 import type { EstateBundleError } from "../../shared/errors.js";
 import { cycleJsonResponse } from "../../shared/api/json.js";
 import { notReadyResponse } from "./respond.js";
 
-/** Structured 503 body served on `/api/overview` in error-page mode (REQ-MODEL-03). */
-export interface OverviewErrorBody {
-  /** Stable machine code from the `EstateBundleError` (`ESTATE_BUNDLE_*`). */
-  code: string;
-  /** The failure kind (`missing` | `unreadable` | `unparseable` | `version` | `structure` | `incoherent`). */
-  kind: EstateBundleError["kind"];
-  /** The in-container member path named in the message (agent-actionable). */
-  path: string;
-  /** The full agent-actionable message (file, problem, fix path). */
-  message: string;
-}
+/** Structured 503 body served on `/api/overview` in error-page mode (REQ-MODEL-03). Alias of the wire type. */
+export type OverviewErrorBody = BundleErrorBody;
 
 /** Project an `EstateBundleError` into the structured 503 body served in error-page mode (§4.4). */
 export function overviewErrorBody(error: EstateBundleError): OverviewErrorBody {

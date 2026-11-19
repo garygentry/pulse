@@ -10,10 +10,10 @@
 // observation fails safely (no invented tick) rather than emitting an unbounded frame.
 
 import { canonicalJson, type CycleState } from "@pulse/web-data/cycle";
-import { validateLiveTick, type LiveTick } from "@pulse/web-data/wire";
+import { SSE_RETRY_MS, validateLiveTick, type LiveTick } from "@pulse/web-data/wire";
 
-/** Client reconnect backoff advertised once per connection (§2). */
-export const SSE_RETRY_MS = 10_000;
+/** Client reconnect backoff advertised once per connection (§2). The wire package owns the value. */
+export { SSE_RETRY_MS };
 /** Shared heartbeat cadence — one registry timer serves every stream (§3). */
 export const SSE_HEARTBEAT_MS = 5_000;
 /** Maximum concurrently admitted streams; stream 65 displaces the oldest first (§3). */
