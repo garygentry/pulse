@@ -47,6 +47,8 @@ specs/
 .remember/
 .handoff/
 .system1/
+# Estate-specific public-safe deny terms (scripts/public-safe); never committed.
+.public-safe.local
 
 # Temp dir of an interrupted `bun run contract:gen`
 .contract-gen-*/
