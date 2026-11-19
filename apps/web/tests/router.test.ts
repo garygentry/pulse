@@ -25,6 +25,8 @@ import { setRuntimeStatus, type RuntimeStatus, type ServerRuntime } from "../src
 import type { ServerContext } from "../src/shared/registry.js";
 import type { StaticAssets } from "../src/server/assets.js";
 import type { ServerConfig } from "../src/server/config.js";
+import { SECONDARY_VIEWS } from "../src/client/views/secondary.js";
+import { VIEWS } from "../src/client/views/registry.js";
 import { registerHappyDom, unregisterHappyDom } from "./happy-dom.js";
 
 // ── happy-dom registration (this file's own beforeAll) ───────────────────────────────────────────
@@ -914,6 +916,44 @@ describe("routesFromViews", () => {
     expect(routesFromViews([{ id: "overview" }])).toEqual([
       { pattern: "/overview", view: "overview" },
     ]);
+  });
+});
+
+describe("secondary views", () => {
+  test("routesFromViews(SECONDARY_VIEWS) yields the /connect route", () => {
+    expect(routesFromViews(SECONDARY_VIEWS)).toEqual([{ pattern: "/connect", view: "connect" }]);
+  });
+
+  test("no secondary view id starts with a reserved prefix, so the SPA keeps its route", () => {
+    for (const route of routesFromViews(SECONDARY_VIEWS)) {
+      for (const prefix of RESERVED_PREFIXES) {
+        expect(route.pattern.startsWith(prefix), `${route.pattern} vs ${prefix}`).toBe(false);
+        expect(`${route.pattern}/`.startsWith(prefix), `${route.pattern}/ vs ${prefix}`).toBe(false);
+      }
+    }
+  });
+
+  test("secondary views stay out of the nav and never shadow a nav view", () => {
+    const navIds = new Set(VIEWS.map((view) => view.id));
+    for (const view of SECONDARY_VIEWS) {
+      expect(view.nav, `${view.id} has no nav entry`).toBeUndefined();
+      expect(navIds.has(view.id), `${view.id} is not a nav view id`).toBe(false);
+    }
+  });
+
+  test("/connect resolves through a router built as main.tsx builds it", () => {
+    resetLocation("/connect");
+    const router = createPathRouter({
+      routes: routesFromViews([...VIEWS, ...SECONDARY_VIEWS]),
+      fallback: "/overview",
+      win: win as unknown as Window,
+    });
+    try {
+      expect(router.current()).toMatchObject({ view: "connect" });
+      expect(router.current().redirectedFrom).toBeUndefined();
+    } finally {
+      router.stop();
+    }
   });
 });
 

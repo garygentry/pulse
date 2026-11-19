@@ -11,6 +11,7 @@ import { createPathRouter, routesFromViews } from "../src/client/router.js";
 import { createAppStore } from "../src/client/store/index.js";
 import { buildIndex, entityPath } from "../src/client/shell/command-index.js";
 import { VIEWS } from "../src/client/views/registry.js";
+import { SECONDARY_VIEWS } from "../src/client/views/secondary.js";
 import { ESTATE_ROUTES } from "../src/client/views/estate/types.js";
 import { describeDom } from "./dom.js";
 
@@ -97,7 +98,7 @@ test("buildIndex gains no new entries — hosts/services only change destination
     hosts: [{ name: "h1", rollup: "ok", services: [{ name: "s1", host: "h1" }] }],
   } as unknown as OverviewSnapshot;
   const index = buildIndex(store);
-  expect(index).toHaveLength(VIEWS.length + 2);
+  expect(index).toHaveLength(VIEWS.length + SECONDARY_VIEWS.length + 2);
   expect(index.find((e) => e.kind === "host")?.navPath).toBe("/estate/host/h1");
   expect(index.find((e) => e.kind === "service")?.navPath).toBe("/estate/service/h1/s1");
 });

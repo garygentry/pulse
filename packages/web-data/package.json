@@ -3,6 +3,7 @@
   "version": "0.3.3",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./wire": { "types": "./dist/wire/index.d.ts", "import": "./dist/wire/index.js" },

@@ -49,7 +49,9 @@ describe("ui workbench registration", () => {
   test("main.tsx gates registration on the literal NODE_ENV the build inlines", () => {
     const main = readFileSync(join(CLIENT, "main.tsx"), "utf8");
     expect(main).toMatch(/process\.env\.NODE_ENV !== "production"\s*\?\s*devViews\(/);
-    expect(main).toContain("routesFromViews([...VIEWS, ...DEV_VIEWS])");
+    // The dev views reach the router and the outlet through the hosted-but-nav-less list.
+    expect(main).toContain("const EXTRA_VIEWS = [...SECONDARY_VIEWS, ...DEV_VIEWS];");
+    expect(main).toContain("routesFromViews([...VIEWS, ...EXTRA_VIEWS])");
     // The chunk's dynamic import is gated too: the bundler emits a chunk for every parsed import().
     const index = readFileSync(join(WORKBENCH, "index.ts"), "utf8");
     expect(index).toMatch(/process\.env\.NODE_ENV !== "production"\s*\?\s*import\("\.\/view\.js"\)/);

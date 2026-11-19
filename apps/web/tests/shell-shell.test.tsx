@@ -478,16 +478,19 @@ describeUi("Shell command palette", () => {
     const input = await screen.findByRole("combobox");
     expect(screen.getByRole("dialog", { name: "Command palette" })).toContainElement(input);
     await waitFor(() => expect(input).toHaveFocus());
-    // Empty query lists every view; they tie on tier and kind, so they rank by label.
+    // Empty query lists every view, the nav-less secondary ones included; they tie on tier and kind,
+    // so they rank by label.
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
-      "Alerts", "Engine", "Estate", "Overview", "Timeline",
+      "Alerts", "Connect a phone", "Engine", "Estate", "Overview", "Timeline",
     ]);
 
     await userEvent.type(input, "eng");
     await waitFor(() => expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Engine"]));
     await userEvent.clear(input);
-    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(6));
     await waitFor(() => expect(screen.getByRole("option", { name: "Alerts" })).toHaveAttribute("aria-selected", "true"));
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(screen.getByRole("option", { name: "Connect a phone" })).toHaveAttribute("aria-selected", "true"));
     await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(screen.getByRole("option", { name: "Engine" })).toHaveAttribute("aria-selected", "true"));
     await userEvent.keyboard("{Enter}");

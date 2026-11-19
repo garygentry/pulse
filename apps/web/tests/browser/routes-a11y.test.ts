@@ -23,8 +23,9 @@ const DEV_SCRIPT = resolve(import.meta.dir, "../../scripts/dev.ts");
  *  It does not pin the app's "now": rendered ages and Gatus results still follow the real clock. */
 const CLOCK = "2026-01-01T12:00:00Z";
 
-/** Every route and tab, with the nav item that should be current there. */
-const ROUTES: readonly { path: string; nav: string }[] = [
+/** Every route and tab, with the nav item that should be current there (`null`: a secondary view,
+ *  which has no nav item). */
+const ROUTES: readonly { path: string; nav: string | null }[] = [
   { path: "/overview", nav: "Overview" },
   { path: "/alerts", nav: "Alerts" },
   { path: "/alerts?tab=catalog", nav: "Alerts" },
@@ -34,6 +35,7 @@ const ROUTES: readonly { path: string; nav: string }[] = [
   { path: "/estate?tab=coverage", nav: "Estate" },
   { path: "/estate?tab=findings", nav: "Estate" },
   { path: "/engine", nav: "Engine" },
+  { path: "/connect", nav: null },
 ];
 
 /** The wallboards checked for a kiosk side gutter, and the least gutter they keep (the wallboard
@@ -126,7 +128,8 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
           current: document.querySelector('nav [aria-current="page"]')?.textContent?.trim() ?? null,
         }));
         expect(shape, route.path).toMatchObject({ h1: 1, main: 1, dark: mode.theme === "dark", density: mode.density });
-        expect(shape.current, `${route.path}: current nav item`).toContain(route.nav);
+        if (route.nav === null) expect(shape.current, `${route.path}: no current nav item`).toBeNull();
+        else expect(shape.current, `${route.path}: current nav item`).toContain(route.nav);
         const results = await new AxeBuilder({ page }).options({ resultTypes: ["violations"] }).withTags(["wcag2a", "wcag2aa"]).analyze();
         for (const v of results.violations) {
           failures.push(`${route.path}: ${v.id} ${JSON.stringify(v.nodes.slice(0, 3).map((n) => n.target))}`);

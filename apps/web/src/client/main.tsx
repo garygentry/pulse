@@ -17,6 +17,7 @@ import { createAppStore } from "./store/index.js";
 import { startLiveState } from "./store/live-state.js";
 import { devViews } from "./views/dev-views.js";
 import { VIEWS } from "./views/registry.js";
+import { SECONDARY_VIEWS } from "./views/secondary.js";
 
 const root = document.getElementById("app");
 if (!root) throw new Error("[main] #app mount node missing from shell HTML");
@@ -36,10 +37,12 @@ if (styleNonce) setNonce(styleNonce);
 // Development-only views (the `/_ui` workbench). The client build inlines NODE_ENV, so a production
 // bundle folds this to `[]` and drops the workbench and its chunk.
 const DEV_VIEWS = process.env.NODE_ENV !== "production" ? devViews(process.env.NODE_ENV) : [];
+// Hosted by the outlet but kept out of the nav and kiosk rotation: secondary views (palette-listed), then dev views.
+const EXTRA_VIEWS = [...SECONDARY_VIEWS, ...DEV_VIEWS];
 
 const store = createAppStore();
 const router = createPathRouter({
-  routes: routesFromViews([...VIEWS, ...DEV_VIEWS]),
+  routes: routesFromViews([...VIEWS, ...EXTRA_VIEWS]),
   fallback: "/overview",
 });
 
@@ -61,7 +64,7 @@ createRoot(root, ROOT_OPTIONS).render(
       store={store}
       router={router}
       views={VIEWS}
-      devViews={DEV_VIEWS}
+      devViews={EXTRA_VIEWS}
       reloadOnce={live.reloadOnce}
       buildId={buildId}
       setNextKioskView={live.setNextKioskView}

@@ -1,6 +1,6 @@
 // apps/web/tests/views-page-structure.test.tsx — every registered view's page structure, rendered.
 //
-// For every view the app registers (`VIEWS` plus the development-only `devViews`), every route it owns
+// For every view the app registers (`VIEWS`, the secondary views and the development-only `devViews`), every route it owns
 // (its `/<id>` path, each tab, each deep route) is rendered through the registry's own `load()` with
 // React Testing Library, against fixture payloads, in both a loaded and a no-data (loading) state.
 // The third state is a render fault (every payload signal throws on read), which must reach the
@@ -22,6 +22,7 @@ import { createPathRouter, routesFromViews, type PathRouter } from "../src/clien
 import { createAppStore, type AppStore } from "../src/client/store/index.js";
 import { devViews } from "../src/client/views/dev-views.js";
 import { VIEWS } from "../src/client/views/registry.js";
+import { SECONDARY_VIEWS } from "../src/client/views/secondary.js";
 import { TRIAGE_TAB_IDS } from "../src/client/views/alerts/view-model.js";
 import { DEFAULT_TAB as ESTATE_DEFAULT_TAB, TAB_IDS as ESTATE_TAB_IDS } from "../src/client/views/estate/types.js";
 import { FIXTURE_FINGERPRINTS, makeAlertsPayload } from "./alerts-fixtures.js";
@@ -45,7 +46,7 @@ afterAll(() => {
 });
 
 /** Every view the app can route to, as main.tsx registers them (development build). */
-const ALL_VIEWS: readonly ViewDefinition[] = [...VIEWS, ...devViews("development")];
+const ALL_VIEWS: readonly ViewDefinition[] = [...VIEWS, ...SECONDARY_VIEWS, ...devViews("development")];
 
 /** Seed a store with the payloads `view` reads. */
 type Seed = (store: AppStore) => void;
@@ -78,6 +79,8 @@ const SEEDS: Readonly<Record<string, Seed>> = {
     s.snapshot.value = snapshot;
     s.timeline.value = makeTimelineIndex(snapshot);
   },
+  // Secondary view: reads no store payload (its own fetch stays pending here, so it shows loading).
+  connect: () => {},
   "_ui": () => {},
 };
 
@@ -98,6 +101,7 @@ const ROUTES: Readonly<Record<string, readonly string[]>> = {
   ],
   engine: ["/engine"],
   timeline: ["/timeline"],
+  connect: ["/connect"],
   "_ui": ["/_ui"],
 };
 
@@ -128,8 +132,8 @@ function faultPayloads(store: AppStore): () => void {
   };
 }
 
-/** The workbench reads no payload, so it has no render-fault state to drive. */
-const NO_PAYLOAD_VIEWS = new Set(["_ui"]);
+/** The workbench and the connect screen read no payload, so they have no render-fault state to drive. */
+const NO_PAYLOAD_VIEWS = new Set(["_ui", "connect"]);
 
 type State = "loaded" | "no data" | "render fault";
 

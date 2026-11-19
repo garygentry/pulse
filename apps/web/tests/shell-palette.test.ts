@@ -14,6 +14,9 @@ import {
   type PaletteEntry,
 } from "../src/client/shell/command-index.js";
 
+import { VIEWS } from "../src/client/views/registry.js";
+import { SECONDARY_VIEWS } from "../src/client/views/secondary.js";
+
 function makeStore(): AppStore {
   return createAppStore({ storage: null, initialQuery: {} });
 }
@@ -38,6 +41,18 @@ function snapshotWithHosts(): OverviewSnapshot {
     ],
   } as unknown as OverviewSnapshot;
 }
+
+// ─── secondary views ──────────────────────────────────────────────────────────────────────────────
+
+test("buildIndex lists the secondary views after the nav views: Connect a phone navigates to /connect", () => {
+  const index = buildIndex(makeStore());
+  const connect = index.filter((e) => e.label === "Connect a phone");
+  expect(connect).toEqual([{ kind: "view", id: "connect", label: "Connect a phone", navPath: "/connect" }]);
+  expect(index.map((e) => e.id)).toEqual([...VIEWS.map((v) => v.id), ...SECONDARY_VIEWS.map((v) => v.id)]);
+  // It is found by typing, and ranks as a view.
+  expect(matchEntries(index, "phone")[0]).toMatchObject({ kind: "view", navPath: "/connect" });
+  expect(matchEntries(index, "connect")[0]).toMatchObject({ kind: "view", navPath: "/connect" });
+});
 
 // ─── buildIndex null-safety (REQ-ROBUST-01, REQ-CMD-01) ────────────────────────────────────────────
 

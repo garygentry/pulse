@@ -106,8 +106,8 @@ export interface ShellProps {
   router: PathRouter;
   /** The pre-registered view registry (08). Source of nav entries and the outlet's view set. */
   views: readonly ViewDefinition[];
-  /** Development-only views (the `/_ui` workbench). The outlet hosts them, but they stay out of the
-   *  side nav and kiosk rotation, which read `views` only. Empty or absent in production builds. */
+  /** Views the outlet hosts outside the side nav and kiosk rotation (which read `views` only): the
+   *  secondary views (`views/secondary.ts`) and, outside production, the dev-only views. */
   devViews?: readonly ViewDefinition[] | undefined;
   /** The shared once-only reload (`LiveStateHandle.reloadOnce`) — passed to `ViewHost` (REQ-VIEW-04)
    *  and to the command palette, whose chunk-failure state recovers by reloading.
@@ -312,7 +312,7 @@ export function Shell(props: ShellProps): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kioskOn, rotateSpec, viewIdsKey, router]);
 
-  // The outlet hosts the dev-only views too; nav and kiosk rotation keep reading `views`.
+  // The outlet hosts the secondary and dev-only views too; nav and kiosk rotation keep reading `views`.
   const devViews = props.devViews;
   const hostedViews = useMemo(
     () => (devViews === undefined || devViews.length === 0 ? views : [...views, ...devViews]),

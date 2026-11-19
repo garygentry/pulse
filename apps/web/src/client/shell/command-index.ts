@@ -9,6 +9,7 @@
 import type { AppStore } from "../store/index.js";
 import type { OverviewSnapshot, ServiceStatus } from "../../shared/snapshot.js";
 import { VIEWS } from "../views/registry.js";
+import { SECONDARY_VIEWS } from "../views/secondary.js";
 import { STATUS_LABEL } from "../a11y/index.js"; // 05-a11y-primitives.md
 
 /** One searchable target in the command palette. Declared in 00-core-definitions.md §4.1 and
@@ -31,7 +32,7 @@ export interface PaletteEntry {
  *
  * PURE: reads signals via `.peek()` (never `.value`) so it establishes no reactive dependency —
  * the reactive rebuild is owned by the `computed()` in CommandPalette (§3.2). Order is
- * deterministic: all views (registry order), then all hosts (snapshot order), then all services
+ * deterministic: all views (registry order, then the secondary views), then all hosts (snapshot order), then all services
  * (host order, then service order), then firing alerts. Ranking/capping happens in `matchEntries`.
  *
  * NULL-SAFE (REQ-ROBUST-01, REQ-CMD-01):
@@ -47,6 +48,10 @@ export function buildIndex(store: AppStore): PaletteEntry[] {
 
   // 1. Views — always available from the registry (REQ-CMD-01, null-safe floor).
   for (const view of VIEWS) {
+    entries.push({ kind: "view", id: view.id, label: view.label, navPath: `/${view.id}` });
+  }
+  // Secondary views: palette-listed, with no sidebar entry. Same entry shape, after every nav view.
+  for (const view of SECONDARY_VIEWS) {
     entries.push({ kind: "view", id: view.id, label: view.label, navPath: `/${view.id}` });
   }
 

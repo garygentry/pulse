@@ -21,7 +21,8 @@ export interface AppProps {
   store: AppStore;
   router: PathRouter;
   views: readonly ViewDefinition[];
-  /** Development-only views: routable and hosted, never in nav or kiosk rotation. */
+  /** Views the outlet hosts outside the side nav and kiosk rotation: the secondary views
+   *  (`views/secondary.ts`) and, outside production, the dev-only views. */
   devViews?: readonly ViewDefinition[] | undefined;
   /** The shared once-only reload (`LiveStateHandle.reloadOnce`) — REQ-CONC-03. */
   reloadOnce: () => void;
