@@ -24,6 +24,10 @@
 // `model.estate.domains` in order, deduplicated first-wins, endpoint `dns:<domain>`).
 // `checkHistory.endpoints` is the union of resolvable service endpoint keys and the domain
 // endpoint names, sorted ascending. Domain endpoints are NOT endpoint targets.
+//
+// Each list is trimmed to its contract cap after ordering. Hosts sort before services and services
+// before endpoints, so every kept target's `parent` is kept too. `checkHistory.endpoints` is built
+// from the untrimmed domain list, so trimming `domains` does not change which endpoints it lists.
 
 import type { RangeId, TargetKind } from "../wire/common.js";
 import type { QueryId, TargetIdentity } from "../wire/history.js";
@@ -32,6 +36,7 @@ import { QUERY_CATALOG, queryIdsForTargetKind } from "../queries/catalog.js";
 import { bindCuratedQuery } from "../queries/binding.js";
 import { RANGE_IDS, acceptedRangesForQuery } from "../queries/ranges.js";
 import type { FoldInputs } from "./records.js";
+import { CONTRACT_LIMITS, capList } from "../contract/limits.js";
 
 /** Deterministic timeline target ordering: host < service < endpoint, then by exact id (§11). */
 const TARGET_KIND_RANK: Readonly<Record<Exclude<TargetKind, "estate">, number>> = {
@@ -173,15 +178,15 @@ export function foldTimeline(inputs: FoldInputs): TimelinePayload {
 
   return {
     generatedAt: inputs.observedAt,
-    targets,
+    targets: capList(targets, CONTRACT_LIMITS.timeline.targets),
     alertHistory: {
       ranges: acceptedRangesForQuery(QUERY_CATALOG["alerts.firing"]),
       provenance: "vmalert",
     },
     checkHistory: {
-      endpoints: checkEndpoints,
+      endpoints: capList(checkEndpoints, CONTRACT_LIMITS.timeline.checkEndpoints),
       provenance: "gatus",
     },
-    domains,
+    domains: capList(domains, CONTRACT_LIMITS.timeline.domains),
   };
 }

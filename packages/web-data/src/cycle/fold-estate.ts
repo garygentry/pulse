@@ -37,6 +37,7 @@ import type { FoldInputs } from "./records.js";
 import { hostLivenessJob, isHostLivenessSample } from "../wire/host-liveness.js";
 import { DEFAULT_GATUS_STALE_SECONDS, effectiveData, sourceAvailability } from "./records.js";
 import { candidateFromAlertLabels, resolveCandidate } from "./target-match.js";
+import { CONTRACT_LIMITS, capList } from "../contract/limits.js";
 import { ENGINE_SCRAPE_JOBS, scrapeInstanceSource, scrapeSeriesIdentity } from "../queries/series-identity.js";
 
 /** The renderer host collection-class discriminant, derived from the model to avoid a core import. */
@@ -456,6 +457,35 @@ function buildDeclaredVersusScraped(
   return { availability, value: rows };
 }
 
+/**
+ * Copy-on-write trim of the findings artifact to its contract cap, keeping the artifact's canonical
+ * order. Returns `section` itself when there is no value or it already fits; the artifact is never
+ * mutated.
+ */
+function capFindings(
+  section: AvailabilitySection<WebFindingsArtifact>,
+  max: number = CONTRACT_LIMITS.estate.findings,
+): AvailabilitySection<WebFindingsArtifact> {
+  const { value } = section;
+  if (value === null || value.findings.length <= max) return section;
+  return { availability: section.availability, value: { ...value, findings: value.findings.slice(0, max) } };
+}
+
+/**
+ * Copy-on-write trim of the declared-versus-scraped rows to their contract cap. Declared rows come
+ * first, so discovered-only (`unexpected`/`engine`) rows are dropped first. Returns `section` itself
+ * when there is no value or it already fits.
+ */
+function capDeclaredVersusScraped(
+  section: AvailabilitySection<readonly DeclaredScrapeComparison[]>,
+  max: number = CONTRACT_LIMITS.estate.declaredVersusScraped,
+): AvailabilitySection<readonly DeclaredScrapeComparison[]> {
+  const { value } = section;
+  if (value === null) return section;
+  const rows = capList(value, max);
+  return rows === value ? section : { availability: section.availability, value: rows };
+}
+
 // ---------------------------------------------------------------------------
 // The estate fold
 // ---------------------------------------------------------------------------
@@ -467,6 +497,8 @@ function buildDeclaredVersusScraped(
  * with current liveness and attributed alert evidence in model order, surfaces optional
  * coverage/findings artifacts through availability sections, and derives directional
  * declared-versus-scraped rows that become `unknown` on scrape-discovery failure.
+ * `liveTargets` (hosts first, so services go first), findings and declared-versus-scraped rows
+ * are trimmed to their contract caps; the model itself is passed through whole.
  * Pure and total over valid inputs; never-silent-green; performs no source or history call.
  *
  * @param inputs - The captured model/artifacts, source records, and stamping metadata.
@@ -499,9 +531,9 @@ export function foldEstate(inputs: FoldInputs): EstatePayload {
   return {
     generatedAt: inputs.observedAt,
     estate: model,
-    liveTargets,
+    liveTargets: capList(liveTargets, CONTRACT_LIMITS.estate.liveTargets),
     coverage: buildCoverage(inputs),
-    findings: buildFindings(inputs),
-    declaredVersusScraped: buildDeclaredVersusScraped(inputs),
+    findings: capFindings(buildFindings(inputs)),
+    declaredVersusScraped: capDeclaredVersusScraped(buildDeclaredVersusScraped(inputs)),
   };
 }

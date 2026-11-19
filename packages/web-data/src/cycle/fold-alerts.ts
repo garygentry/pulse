@@ -23,6 +23,7 @@ import type { VmalertRuleGroup } from "../sources/vmalert.js";
 import type { FoldInputs } from "./records.js";
 import { effectiveData, sourceAvailability } from "./records.js";
 import { candidateFromAlertLabels, resolveCandidate, toTargetIdentity } from "./target-match.js";
+import { CONTRACT_LIMITS, capList } from "../contract/limits.js";
 
 /** Deterministic code-point string comparison used by every stable order below. */
 function compareString(a: string, b: string): number {
@@ -120,7 +121,10 @@ function toActiveSilence(silence: AlertmanagerSilence): ActiveSilence {
  * Fold the captured records into the alerts view payload (§8). Returns every AM alert,
  * every vmalert rule, and active silences (state `active` or `pending`, never expired) with
  * exact model attribution, history references, independent availability, and deterministic
- * ordering. Pure and total over valid inputs; performs no source or history call.
+ * ordering. Each list is trimmed to its contract cap after sorting, so the tail of the order is
+ * what goes: inhibited before silenced before firing alerts, and lower severities first within a
+ * state. `silencedBy`/`inhibitedBy` ids are not rewritten and may name a trimmed entry.
+ * Pure and total over valid inputs; performs no source or history call.
  *
  * @param inputs - The captured model/artifacts, source records, and stamping metadata.
  * @returns The materialized {@link AlertsPayload}.
@@ -167,8 +171,8 @@ export function foldAlerts(inputs: FoldInputs): AlertsPayload {
     generatedAt: inputs.observedAt,
     alertmanager: worseAvailability(alertsAvail, silencesAvail),
     vmalert: vmalertAvail,
-    alerts,
-    rules,
-    silences,
+    alerts: capList(alerts, CONTRACT_LIMITS.alerts.alerts),
+    rules: capList(rules, CONTRACT_LIMITS.alerts.rules),
+    silences: capList(silences, CONTRACT_LIMITS.alerts.silences),
   };
 }

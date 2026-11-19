@@ -1,18 +1,24 @@
 // packages/web-data/tests/cycle/fold-limits.test.ts — the overview body is trimmed to the contract caps
 // instead of being emitted over-cap and rejected by the client validator. One cap+1 → cap case per overview
 // collection, the string caps, and the November 2026 regression driven through the real `foldOverview`.
+// The alerts, estate and timeline folds follow: one cap+1 → cap case per collection, in the trim order.
 
 import { describe, expect, test } from "bun:test";
 
 import { CONTRACT_LIMITS } from "../../src/contract/limits.js";
 import type { OverviewLimits } from "../../src/contract/limits.js";
+import { foldAlerts } from "../../src/cycle/fold-alerts.js";
+import { foldEstate } from "../../src/cycle/fold-estate.js";
 import { enforceOverviewLimits, foldOverview } from "../../src/cycle/fold-overview.js";
+import { foldTimeline } from "../../src/cycle/fold-timeline.js";
 import * as cycleBarrel from "../../src/cycle/index.js";
 import { materializeView } from "../../src/cycle/identity.js";
 import { validateOverviewSnapshotV2 } from "../../src/wire/overview.js";
 import type { CycleSourceRecords, FoldInputs } from "../../src/cycle/records.js";
 import type { SourceRecord } from "../../src/sources/types.js";
-import type { AlertmanagerAlert } from "../../src/sources/alertmanager.js";
+import type { AlertmanagerAlert, AlertmanagerSilence } from "../../src/sources/alertmanager.js";
+import type { ScrapeTargetState } from "../../src/sources/types.js";
+import type { VmalertRuleGroup } from "../../src/sources/vmalert.js";
 import type { GatusEndpointState } from "../../src/sources/gatus.js";
 import type { DataAvailability } from "../../src/wire/common.js";
 import type {
@@ -24,7 +30,7 @@ import type {
   OverviewSnapshotV2,
   ServiceStatus,
 } from "../../src/wire/overview.js";
-import type { WebEstateModelV2 } from "@pulse/renderer";
+import type { WebEstateModelV2, WebFindingsArtifact } from "@pulse/renderer";
 
 const AT = "2026-01-01T00:00:00.000Z";
 const OBSERVED = "2026-01-01T00:00:05.000Z";
@@ -700,5 +706,350 @@ describe("November 2026 regression — an over-cap estate still renders", () => 
     });
     expect(validateOverviewSnapshotV2(over).ok).toBe(false);
     expect(validateOverviewSnapshotV2(enforceOverviewLimits(over)).ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Alerts, estate and timeline folds: cap+1 → cap through the real folds
+// ---------------------------------------------------------------------------
+
+/** A small in-cap estate (no Gatus results, alerts or command signals) to grow one collection at a time. */
+function foldInputs(hosts: number, services: number): FoldInputs {
+  return regressionInputs({ hosts, services, endpoints: 0, results: 0, alerts: 0, commands: 0 });
+}
+
+function withRecords(base: FoldInputs, over: Partial<CycleSourceRecords>): FoldInputs {
+  return { ...base, records: { ...base.records, ...over } };
+}
+
+describe("alerts fold limits", () => {
+  const A = CONTRACT_LIMITS.alerts;
+
+  function amAlert(i: number, state: AlertmanagerAlert["state"], severity = "critical"): AlertmanagerAlert {
+    return {
+      fingerprint: `fp-${pad(i)}`,
+      state,
+      name: "HighCpu",
+      severity,
+      startsAt: AT,
+      endsAt: "2026-01-02T00:00:00.000Z",
+      labels: { alertname: "HighCpu", severity },
+      annotations: {},
+      receivers: ["team"],
+      silencedBy: state === "silenced" ? ["sil-0000"] : [],
+      inhibitedBy: state === "inhibited" ? ["fp-0000"] : [],
+      group: null,
+    };
+  }
+
+  function silence(i: number, state: AlertmanagerSilence["state"] = "active"): AlertmanagerSilence {
+    return {
+      id: `sil-${pad(i)}`,
+      matchers: [{ name: "alertname", value: "HighCpu", isRegex: false, isEqual: true }],
+      createdBy: "operator",
+      comment: "maintenance",
+      startsAt: AT,
+      endsAt: "2026-01-02T00:00:00.000Z",
+      state,
+    };
+  }
+
+  function ruleGroup(count: number): VmalertRuleGroup {
+    return {
+      group: "pulse",
+      file: "rules.yml",
+      family: "pulse",
+      intervalSeconds: 60,
+      lastEvaluationAt: AT,
+      // Reverse name order, so the test shows the trim runs after the sort.
+      rules: Array.from({ length: count }, (_, r) => ({
+        name: `rule-${pad(count - 1 - r)}`,
+        type: "alerting" as const,
+        state: "inactive",
+        health: "healthy" as const,
+        lastEvaluationAt: AT,
+        lastError: null,
+        labels: {},
+        annotations: {},
+        deadman: false,
+      })),
+    };
+  }
+
+  function alertsInputs(over: {
+    alerts?: readonly AlertmanagerAlert[];
+    silences?: readonly AlertmanagerSilence[];
+    rules?: number;
+  }): FoldInputs {
+    return withRecords(foldInputs(1, 1), {
+      "alertmanager-alerts": ok<readonly AlertmanagerAlert[]>(over.alerts ?? []),
+      "alertmanager-silences": ok<readonly AlertmanagerSilence[]>(over.silences ?? []),
+      "vmalert-rules": ok<readonly VmalertRuleGroup[]>([ruleGroup(over.rules ?? 0)]),
+    });
+  }
+
+  test("alerts: 1025 → 1024 in sort order; the last inhibited alert goes first", () => {
+    // Fed inhibited → silenced → firing, the reverse of the documented order.
+    const fed = [
+      ...Array.from({ length: 5 }, (_, i) => amAlert(2000 + i, "inhibited")),
+      ...Array.from({ length: 20 }, (_, i) => amAlert(1000 + i, "silenced")),
+      ...Array.from({ length: A.alerts - 24 }, (_, i) => amAlert(i, "firing")),
+    ];
+    expect(fed.length).toBe(A.alerts + 1);
+    const out = foldAlerts(alertsInputs({ alerts: fed })).alerts;
+
+    expect(out.length).toBe(A.alerts);
+    expect(out.map((a) => a.fingerprint)).toEqual([
+      ...Array.from({ length: A.alerts - 24 }, (_, i) => `fp-${pad(i)}`),
+      ...Array.from({ length: 20 }, (_, i) => `fp-${pad(1000 + i)}`),
+      ...Array.from({ length: 4 }, (_, i) => `fp-${pad(2000 + i)}`),
+    ]);
+    expect(out.filter((a) => a.state === "firing").length).toBe(A.alerts - 24);
+    expect(out.filter((a) => a.state === "silenced").length).toBe(20);
+  });
+
+  test("alerts: within a state the lowest severity is trimmed first", () => {
+    const fed = [
+      amAlert(0, "firing", "info"),
+      ...Array.from({ length: A.alerts }, (_, i) => amAlert(i + 1, "firing", i % 2 === 0 ? "critical" : "warning")),
+    ];
+    const out = foldAlerts(alertsInputs({ alerts: fed })).alerts;
+    expect(out.length).toBe(A.alerts);
+    expect(out.some((a) => a.severity === "info")).toBe(false);
+  });
+
+  test("a kept alert may still name a trimmed silence: references are not rewritten", () => {
+    const silenced = amAlert(1, "silenced");
+    const out = foldAlerts(alertsInputs({
+      alerts: [{ ...silenced, silencedBy: [`sil-${pad(A.silences)}`] }],
+      silences: Array.from({ length: A.silences + 1 }, (_, i) => silence(i)),
+    }));
+    expect(out.silences.some((s) => s.id === `sil-${pad(A.silences)}`)).toBe(false);
+    expect(out.alerts[0]!.silencedBy).toEqual([`sil-${pad(A.silences)}`]);
+  });
+
+  test("rules: 2049 → 2048 in group → family → name order", () => {
+    const out = foldAlerts(alertsInputs({ rules: A.rules + 1 })).rules;
+    expect(out.length).toBe(A.rules);
+    expect(out.map((r) => r.name)).toEqual(Array.from({ length: A.rules }, (_, r) => `rule-${pad(r)}`));
+  });
+
+  test("silences: 1025 active → 1024 in startsAt → id order; expired ones never count", () => {
+    const fed = [
+      silence(9000, "expired"),
+      ...Array.from({ length: A.silences + 1 }, (_, i) => silence(A.silences - i)),
+    ];
+    const out = foldAlerts(alertsInputs({ silences: fed })).silences;
+    expect(out.length).toBe(A.silences);
+    expect(out.map((s) => s.id)).toEqual(Array.from({ length: A.silences }, (_, i) => `sil-${pad(i)}`));
+  });
+
+  test("exactly at every cap nothing is trimmed", () => {
+    const out = foldAlerts(alertsInputs({
+      alerts: Array.from({ length: A.alerts }, (_, i) => amAlert(i, "firing")),
+      silences: Array.from({ length: A.silences }, (_, i) => silence(i)),
+      rules: A.rules,
+    }));
+    expect(out.alerts.length).toBe(A.alerts);
+    expect(out.rules.length).toBe(A.rules);
+    expect(out.silences.length).toBe(A.silences);
+  });
+
+  test("every CONTRACT_LIMITS.alerts key has a case above", () => {
+    expect(Object.keys(A).sort()).toEqual(["alerts", "rules", "silences"]);
+  });
+});
+
+describe("estate fold limits", () => {
+  const E = CONTRACT_LIMITS.estate;
+  type Finding = WebFindingsArtifact["findings"][number];
+
+  function findingsArtifact(count: number): WebFindingsArtifact {
+    return {
+      formatVersion: 2,
+      bundleId: `sha256:${"0123456789abcdef".repeat(4)}`,
+      findings: Array.from({ length: count }, (_, f): Finding => ({
+        severity: "warning",
+        code: "unknown_field",
+        file: "estate.yml",
+        path: `hosts[${f}].extra`,
+        message: `unknown field ${f}`,
+        fix: "remove it",
+      })),
+    };
+  }
+
+  function discovered(i: number): ScrapeTargetState {
+    return {
+      job: "extra",
+      instance: `extra-${pad(i)}.example.net:9100`,
+      scrapeUrl: null,
+      health: "up",
+      lastScrapeAt: AT,
+      lastError: null,
+    };
+  }
+
+  test("liveTargets: 2049 → 2048; hosts come first, so the last service goes", () => {
+    const inputs = foldInputs(100, E.liveTargets + 1 - 100);
+    const out = foldEstate(inputs);
+
+    expect(out.liveTargets.length).toBe(E.liveTargets);
+    expect(out.liveTargets.map((t) => t.target.id)).toEqual(
+      [...inputs.model.hosts, ...inputs.model.services].slice(0, E.liveTargets).map((t) => t.drilldownId),
+    );
+    expect(out.liveTargets.filter((t) => t.target.kind === "host").length).toBe(100);
+    // The rendered model is passed through whole.
+    expect(out.estate).toBe(inputs.model);
+    expect(out.estate.services.length).toBe(E.liveTargets + 1 - 100);
+  });
+
+  test("findings: 1025 → 1024 in artifact order; the input artifact is not mutated", () => {
+    const artifact = deepFreeze(findingsArtifact(E.findings + 1));
+    const out = foldEstate({ ...foldInputs(1, 1), findings: artifact });
+
+    expect(out.findings.value!.findings.length).toBe(E.findings);
+    expect(out.findings.value!.findings).toEqual(artifact.findings.slice(0, E.findings));
+    expect(out.findings.value!.bundleId).toBe(artifact.bundleId);
+    expect(out.findings.availability.state).toBe("current");
+    expect(artifact.findings.length).toBe(E.findings + 1);
+  });
+
+  test("findings: at the cap the artifact is passed through by reference; absent stays unavailable", () => {
+    const artifact = findingsArtifact(E.findings);
+    expect(foldEstate({ ...foldInputs(1, 1), findings: artifact }).findings.value).toBe(artifact);
+
+    const absent = foldEstate({ ...foldInputs(1, 1), findings: null }).findings;
+    expect(absent.value).toBeNull();
+    expect(absent.availability.state).toBe("unavailable");
+  });
+
+  test("declaredVersusScraped: 4097 → 4096; declared rows first, so a discovered-only row goes", () => {
+    const base = foldInputs(10, 1);
+    const extras = Array.from({ length: E.declaredVersusScraped + 1 - 10 }, (_, i) => discovered(i));
+    const out = foldEstate(withRecords(base, {
+      "victoriametrics-targets": ok<readonly ScrapeTargetState[]>(extras),
+    })).declaredVersusScraped;
+
+    expect(out.availability.state).toBe("current");
+    const rows = out.value!;
+    expect(rows.length).toBe(E.declaredVersusScraped);
+    expect(rows.slice(0, 10).map((r) => r.drilldownId)).toEqual(base.model.hosts.map((h) => h.drilldownId));
+    expect(rows.slice(0, 10).every((r) => r.state === "missing")).toBe(true);
+    expect(rows.slice(10).map((r) => r.scrapeTarget)).toEqual(
+      extras.slice(0, E.declaredVersusScraped - 10).map((t) => t.instance),
+    );
+    expect(rows.slice(10).every((r) => r.state === "unexpected")).toBe(true);
+  });
+
+  test("exactly at every cap nothing is trimmed", () => {
+    const base = foldInputs(100, E.liveTargets - 100);
+    const out = foldEstate(withRecords(
+      { ...base, findings: findingsArtifact(E.findings) },
+      {
+        "victoriametrics-targets": ok<readonly ScrapeTargetState[]>(
+          Array.from({ length: E.declaredVersusScraped - 100 }, (_, i) => discovered(i)),
+        ),
+      },
+    ));
+    expect(out.liveTargets.length).toBe(E.liveTargets);
+    expect(out.findings.value!.findings.length).toBe(E.findings);
+    expect(out.declaredVersusScraped.value!.length).toBe(E.declaredVersusScraped);
+  });
+
+  test("every CONTRACT_LIMITS.estate key has a case above", () => {
+    expect(Object.keys(E).sort()).toEqual(["declaredVersusScraped", "findings", "liveTargets"]);
+  });
+});
+
+describe("timeline fold limits", () => {
+  const T = CONTRACT_LIMITS.timeline;
+  const HOSTS = 4;
+  const SERVICES = 40;
+
+  /**
+   * An estate whose hosts, services and endpoints all carry an applicable query: managed-linux scrape
+   * instances for hosts, an ingress URL for services, and `endpoints` Gatus keys spread over the services.
+   */
+  function timelineInputs(endpoints: number, domains: readonly string[] = ["example.com"]): FoldInputs {
+    const base = foldInputs(HOSTS, SERVICES);
+    const model: WebEstateModelV2 = {
+      ...base.model,
+      estate: { ...base.model.estate, domains: [...domains] },
+      hosts: base.model.hosts.map((h) => ({
+        ...h,
+        scrapeTargets: h.scrapeTargets.map((t) => ({ ...t, job: "managed-linux" })),
+      })),
+      services: base.model.services.map((s, i) => ({
+        ...s,
+        gatusEndpoints: Array.from({ length: endpoints }, (_, e) => e)
+          .filter((e) => e % SERVICES === i)
+          .map((e) => `probe-${pad(e)}`),
+      })),
+    };
+    return { ...base, model };
+  }
+
+  const domainNames = (count: number): string[] =>
+    Array.from({ length: count }, (_, d) => `zone-${pad(d)}.example.com`);
+
+  test("targets: 2049 → 2048 in host → service → endpoint order; every kept parent resolves", () => {
+    const endpoints = T.targets + 1 - HOSTS - SERVICES;
+    const inputs = timelineInputs(endpoints);
+    const out = foldTimeline(inputs).targets;
+
+    const expected = [
+      ...inputs.model.hosts.map((h) => h.drilldownId).sort(),
+      ...inputs.model.services.map((s) => s.drilldownId).sort(),
+      ...Array.from({ length: endpoints }, (_, e) => `probe-${pad(e)}`),
+    ];
+    expect(expected.length).toBe(T.targets + 1);
+    expect(out.length).toBe(T.targets);
+    expect(out.map((t) => t.target.id)).toEqual(expected.slice(0, T.targets));
+    expect(out.filter((t) => t.target.kind === "host").length).toBe(HOSTS);
+    expect(out.filter((t) => t.target.kind === "service").length).toBe(SERVICES);
+
+    const kept = new Set(out.map((t) => `${t.target.kind}:${t.target.id}`));
+    expect(out.filter((t) => t.target.kind !== "host").every((t) => t.parent !== null)).toBe(true);
+    expect(out.every((t) => t.parent === null || kept.has(`${t.parent.kind}:${t.parent.id}`))).toBe(true);
+  });
+
+  test("domains: 513 → 512 in model order", () => {
+    const names = domainNames(T.domains + 1).reverse();
+    const out = foldTimeline(timelineInputs(0, names));
+    expect(out.domains.length).toBe(T.domains);
+    expect(out.domains.map((d) => d.domain)).toEqual(names.slice(0, T.domains));
+  });
+
+  test("checkHistory.endpoints: 512 → 511 ascending, built from the untrimmed domain list", () => {
+    // 12 service endpoint keys + 500 domain endpoints = 512, one over the cap.
+    const names = domainNames(500);
+    const out = foldTimeline(timelineInputs(12, names));
+    const all = [...names.map((n) => `dns:${n}`), ...Array.from({ length: 12 }, (_, e) => `probe-${pad(e)}`)].sort();
+    expect(all.length).toBe(T.checkEndpoints + 1);
+    expect(out.checkHistory.endpoints.length).toBe(T.checkEndpoints);
+    expect(out.checkHistory.endpoints).toEqual(all.slice(0, T.checkEndpoints));
+    expect(out.domains.length).toBe(500);
+  });
+
+  test("trimming domains does not change which endpoints are listed", () => {
+    // 513 domains: the domain list drops its last entry; the endpoint list is cut from all 513 names.
+    const names = domainNames(T.domains + 1);
+    const out = foldTimeline(timelineInputs(0, names));
+    expect(out.domains.length).toBe(T.domains);
+    expect(out.checkHistory.endpoints).toEqual(names.map((n) => `dns:${n}`).sort().slice(0, T.checkEndpoints));
+  });
+
+  test("exactly at every cap nothing is trimmed", () => {
+    const targets = foldTimeline(timelineInputs(T.targets - HOSTS - SERVICES)).targets;
+    expect(targets.length).toBe(T.targets);
+
+    const out = foldTimeline(timelineInputs(0, domainNames(T.checkEndpoints)));
+    expect(out.checkHistory.endpoints.length).toBe(T.checkEndpoints);
+    expect(foldTimeline(timelineInputs(0, domainNames(T.domains))).domains.length).toBe(T.domains);
+  });
+
+  test("every CONTRACT_LIMITS.timeline key has a case above", () => {
+    expect(Object.keys(T).sort()).toEqual(["checkEndpoints", "domains", "targets"]);
   });
 });
