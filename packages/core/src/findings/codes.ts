@@ -44,6 +44,9 @@ export const FINDING_CODES = {
   PROPOSAL_CANNOT_CLEAR_BASE: "proposal_cannot_clear_base",
   PROPOSAL_INVALID_ESTATE: "proposal_invalid_estate",
   PROPOSAL_ALREADY_DECIDED: "proposal_already_decided",
+  // connect link — `pulse connect-link` CLI
+  CONNECT_LINK_NO_ADDRESS: "connect_link_no_address",
+  CONNECT_LINK_REFUSED: "connect_link_refused",
 } as const;
 
 /** A finding code value — the type of `Finding.code` at the type level. */

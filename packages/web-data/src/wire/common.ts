@@ -48,6 +48,8 @@ export const GATUS_MAX_ENDPOINTS = 511 as const;
 export const SSE_HEARTBEAT_MS = 5_000 as const;
 /** Maximum concurrently admitted SSE streams. */
 export const SSE_MAX_STREAMS = 64 as const;
+/** Reconnect delay in milliseconds that the server suggests in its SSE `retry:` frame. */
+export const SSE_RETRY_MS = 10_000 as const;
 /** History success cache time-to-live in milliseconds. */
 export const HISTORY_TTL_MS = 60_000 as const;
 /** History queue-plus-execution deadline in milliseconds. */
@@ -150,6 +152,16 @@ export interface ApiError<C extends string = ApiErrorCode> {
 
 /** Canonical request-error envelope over the full API error code set. */
 export type ErrorEnvelope = ApiError<ApiErrorCode>;
+
+/** Closed set of estate-bundle failure kinds; mirrors the web server's estate-bundle error kinds. */
+export type BundleErrorKind = "missing" | "unreadable" | "unparseable" | "version" | "structure" | "incoherent";
+/** 503 body returned by non-exempt `/api` routes while the estate bundle failed to load. */
+export interface BundleErrorBody {
+  /** One of the six `ESTATE_BUNDLE_*` API error codes. */ readonly code: string;
+  /** Failure kind. */ readonly kind: BundleErrorKind;
+  /** In-container path of the bundle (not a host path). */ readonly path: string;
+  /** Human-readable message. */ readonly message: string;
+}
 
 /** Exact default text for every externally surfaced API/history failure. Details carry bounded context. */
 export const ERROR_MESSAGES: Readonly<Record<ApiErrorCode, string>> = {

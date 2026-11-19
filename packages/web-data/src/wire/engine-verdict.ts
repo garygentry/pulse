@@ -3,6 +3,8 @@
 // disagree about the engine (F5: Overview said "Engine OK" while Engine said "Degraded"). Pure and
 // total: no clock, no I/O, never throws.
 
+// Direct module import, never the "../contract/index.js" barrel: the barrel carries third-party dependencies.
+import { CONTRACT_LIMITS } from "../contract/limits.js";
 import type { EngineComponent, EnginePayload } from "./engine.js";
 
 /** Display names per engine component id. */
@@ -12,7 +14,7 @@ export const ENGINE_COMPONENT_LABEL: Readonly<Record<EngineComponent["id"], stri
 };
 
 /** Most problems an overview engine summary carries (the overview validator's bound). */
-export const ENGINE_MAX_PROBLEMS = 16;
+export const ENGINE_MAX_PROBLEMS: number = CONTRACT_LIMITS.overview.engineProblems;
 
 const codePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 

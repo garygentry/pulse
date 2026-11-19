@@ -8,7 +8,9 @@
 // type-only and erased, so this module adds no runtime dependency to `/wire`.
 
 import { CURRENT_MAX_PLAIN_BYTES } from "./common.js";
-import { ENGINE_MAX_PROBLEMS } from "./engine-verdict.js";
+// Direct module import, never the "../contract/index.js" barrel: the barrel carries third-party dependencies.
+import { CONTRACT_LIMITS } from "../contract/limits.js";
+import type { OverviewLimits } from "../contract/limits.js";
 import type { AvailabilitySection, DataAvailability, SourceId, Unit } from "./common.js";
 import type { TargetIdentity } from "./history.js";
 import type { WebEstateModelV2 } from "@pulse/renderer";
@@ -189,20 +191,23 @@ export type OverviewSnapshotValidationResult =
       /** Bounded operator-safe rejection reason. */ readonly message: string;
     };
 
-const MAX_TEXT_BYTES = 512;
-const MAX_MESSAGE_BYTES = 1_024;
-const MAX_HOSTS = 100;
-const MAX_SERVICES = 300;
-const MAX_ALERTS = 1_024;
-const MAX_SIGNALS = 4_096;
-const MAX_CHECKS = 2_048;
+/** Every overview cap is read from the contract limits; none is defined here. */
+const L: OverviewLimits = CONTRACT_LIMITS.overview;
+const MAX_TEXT_BYTES = L.textBytes;
+const MAX_MESSAGE_BYTES = L.messageBytes;
+const MAX_HOSTS = L.hosts;
+const MAX_SERVICES = L.servicesTotal;
+const MAX_ALERTS = L.alerts;
+const MAX_SIGNALS = L.signals;
+/** Per-target `checks` cap. */
+const MAX_TARGET_CHECKS = L.targetChecks;
 /**
  * Upper bound on `recentChecks`, shared by the server fold and the client validator so the two can
  * never disagree (F1: the server once sent 2100 checks and the client rejected the whole body).
  */
-export const OVERVIEW_MAX_RECENT_CHECKS = MAX_CHECKS;
+export const OVERVIEW_MAX_RECENT_CHECKS = L.recentChecks;
 /** Hard ceiling on a received `recentChecks` list before it is capped; larger bodies are refused. */
-const MAX_RECEIVED_CHECKS = MAX_CHECKS * 4;
+const MAX_RECEIVED_CHECKS = OVERVIEW_MAX_RECENT_CHECKS * 4;
 const SOURCE_IDS = new Set<SourceId>([
   "victoriametrics-signals", "victoriametrics-targets", "victoriametrics-buildinfo",
   "alertmanager-alerts", "alertmanager-silences", "alertmanager-status",
@@ -356,7 +361,7 @@ function service(input: unknown): ServiceStatus | null {
   const evidence = statusEvidence(value.statusEvidence);
   const suppressed = suppression(value.suppressed);
   const activeAlerts = arrayOf(value.activeAlerts, MAX_ALERTS, alert);
-  const checks = arrayOf(value.checks, MAX_CHECKS, check);
+  const checks = arrayOf(value.checks, MAX_TARGET_CHECKS, check);
   const link = grafana(value.grafana);
   const ingressUrl = value.ingressUrl === undefined ? undefined : boundedString(value.ingressUrl, MAX_MESSAGE_BYTES);
   if (name === null || host === null || drilldownId === null || status === null || evidence === null) return null;
@@ -380,9 +385,9 @@ function host(input: unknown): HostStatus | null {
   const evidence = statusEvidence(value.statusEvidence);
   const rollupEvidence = statusEvidence(value.rollupEvidence);
   const suppressed = suppression(value.suppressed);
-  const addresses = arrayOf(value.addresses, 64, (item) => boundedString(item));
+  const addresses = arrayOf(value.addresses, L.hostAddresses, (item) => boundedString(item));
   const activeAlerts = arrayOf(value.activeAlerts, MAX_ALERTS, alert);
-  const checks = arrayOf(value.checks, MAX_CHECKS, check);
+  const checks = arrayOf(value.checks, MAX_TARGET_CHECKS, check);
   const services = arrayOf(value.services, MAX_SERVICES, service);
   const link = grafana(value.grafana);
   if (name === null || drilldownId === null || status === null || rollup === null || evidence === null || rollupEvidence === null) return null;
@@ -503,9 +508,9 @@ export function validateOverviewSnapshotV2(input: unknown): OverviewSnapshotVali
   // An over-cap list is capped (newest per endpoint) rather than rejecting the whole overview: the
   // checks are additive drawer detail and must never take the Overview down with them (F1).
   const receivedChecks = arrayOf(value.recentChecks, MAX_RECEIVED_CHECKS, recentCheck);
-  const recentChecks = receivedChecks === null || receivedChecks.length <= MAX_CHECKS
+  const recentChecks = receivedChecks === null || receivedChecks.length <= OVERVIEW_MAX_RECENT_CHECKS
     ? receivedChecks
-    : capRecentChecks(receivedChecks, MAX_CHECKS);
+    : capRecentChecks(receivedChecks, OVERVIEW_MAX_RECENT_CHECKS);
   const firing = nonNegativeInteger(alertCounts.firing);
   const silenced = nonNegativeInteger(alertCounts.silenced);
   const inhibited = nonNegativeInteger(alertCounts.inhibited);
@@ -536,7 +541,7 @@ export function validateOverviewSnapshotV2(input: unknown): OverviewSnapshotVali
   // `problems` is additive: a body without it reads as none.
   const engineProblemList = engineValue === null || engineValue.problems === undefined
     ? []
-    : arrayOf(engineValue.problems, ENGINE_MAX_PROBLEMS, (item) => boundedString(item));
+    : arrayOf(engineValue.problems, L.engineProblems, (item) => boundedString(item));
   if (engineProblemList === null) {
     return { ok: false, message: "The overview response is malformed (engine.problems)." };
   }

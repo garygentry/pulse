@@ -97,3 +97,15 @@ describe("FINDING_CODES proposal additions (REQ-PROP-07..10)", () => {
     expect(new Set(codes).size).toBe(8);
   });
 });
+
+describe("FINDING_CODES connect-link additions", () => {
+  test("exposes the two exact CONNECT_LINK_* keys and lowercase values", () => {
+    expect(FINDING_CODES.CONNECT_LINK_NO_ADDRESS).toBe("connect_link_no_address");
+    expect(FINDING_CODES.CONNECT_LINK_REFUSED).toBe("connect_link_refused");
+  });
+
+  test("the two additions are assignable to FindingCode", () => {
+    const codes: FindingCode[] = [FINDING_CODES.CONNECT_LINK_NO_ADDRESS, FINDING_CODES.CONNECT_LINK_REFUSED];
+    expect(new Set(codes).size).toBe(2);
+  });
+});

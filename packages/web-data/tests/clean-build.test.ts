@@ -241,7 +241,7 @@ function classifyBare(specifier: string): string {
 
 /** Recursively walk the emitted import graph from `entry`, collecting reachable files and every
  *  forbidden edge with the import chain that reaches it (02 §4.1). */
-function walkEmittedWireGraph(entry: string, wireRoot: string): {
+function walkEmittedWireGraph(entry: string, wireRoot: string, allowedEscapes: ReadonlySet<string> = new Set()): {
   files: Set<string>;
   violations: WireViolation[];
 } {
@@ -266,7 +266,7 @@ function walkEmittedWireGraph(entry: string, wireRoot: string): {
         continue;
       }
       const insideWire = target === wireRoot || target.startsWith(`${wireRoot}/`);
-      if (!insideWire) {
+      if (!insideWire && !allowedEscapes.has(target)) {
         violations.push({
           reason: dynamic ? "dynamic-import-outside-wire" : "escapes-wire",
           chain: [...chainHere, label(target)],
@@ -283,11 +283,14 @@ function walkEmittedWireGraph(entry: string, wireRoot: string): {
 describe("emitted `/wire` graph is browser-safe (built dist)", () => {
   test("the freshly built `/wire` graph has no forbidden edge and reaches common.js", () => {
     const wireRoot = join(outDir, "wire");
-    const { files, violations } = walkEmittedWireGraph(join(wireRoot, "index.js"), wireRoot);
+    // The one permitted edge out of wire/: the contract limits leaf, whose own imports are walked
+    // too and must lead straight back into wire/ (it imports only wire/common.js).
+    const limits = join(outDir, "contract", "limits.js");
+    const { files, violations } = walkEmittedWireGraph(join(wireRoot, "index.js"), wireRoot, new Set([limits]));
     expect(violations).toEqual([]);
     // Non-vacuous: it actually reached the authoritative common module and stayed within wire/.
     expect(files.has(join(wireRoot, "common.ts")) || files.has(join(wireRoot, "common.js"))).toBe(true);
-    for (const f of files) expect(f.startsWith(wireRoot)).toBe(true);
+    expect([...files].filter((f) => !f.startsWith(wireRoot))).toEqual([limits]);
   });
 });
 

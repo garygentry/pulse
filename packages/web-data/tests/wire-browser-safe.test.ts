@@ -10,17 +10,25 @@
  *  `import type { SourceErrorKind }` in `wire/common.ts` is invisible here, and the emitted
  *  `/wire` runtime graph it models has no cross-boundary dependency at all.
  *
+ *  The same walk covers the `/contract` barrel (`src/contract/index.ts`), which is also bundled
+ *  into the browser. It may import by value only its own files, `wire/common.ts` (through
+ *  `contract/limits.ts`) and the two third-party packages `ipaddr.js` and `qrcode-generator`.
+ *
  *  Scope: source-graph reachability, the repo's established isolation-guard technique
  *  (cf. `apps/web/tests/prod-isolation.test.ts`). The built-artifact browser bundle walk is
  *  owned by items 052/053; this evidence does not require `dist`. */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const WIRE_DIR = resolve(import.meta.dir, "../src/wire");
 const WIRE_ENTRY = resolve(WIRE_DIR, "index.ts");
+const CONTRACT_DIR = resolve(import.meta.dir, "../src/contract");
+const CONTRACT_ENTRY = resolve(CONTRACT_DIR, "index.ts");
+/** The only third-party packages the contract runtime may import by value. */
+const CONTRACT_ALLOWED_BARE = ["ipaddr.js", "qrcode-generator"];
 
 /**
  * Resolve a RELATIVE specifier to a real source file. The tree is authored with `.js`
@@ -85,11 +93,22 @@ describe("`/wire` common graph is browser-safe (criterion 4)", () => {
     expect(graph.unresolved).toEqual([]);
   });
 
-  test("no value import escapes the wire/ directory", () => {
+  test("the only value import that escapes wire/ is contract/limits.ts", () => {
+    // The overview validator reads its caps from the contract limits. That module is a leaf whose only
+    // import is wire/common.ts, so the graph stays acyclic and free of third-party code.
     const escapes = [...graph.files]
       .filter((f) => !f.startsWith(WIRE_DIR))
       .map((f) => relative(REPO_ROOT, f));
-    expect(escapes).toEqual([]);
+    expect(escapes).toEqual(["packages/web-data/src/contract/limits.ts"]);
+  });
+
+  test("contract/limits.ts imports only wire/common.ts", () => {
+    const limits = wireGraph(resolve(CONTRACT_DIR, "limits.ts"));
+    expect([...limits.files].map((f) => relative(REPO_ROOT, f)).sort()).toEqual([
+      "packages/web-data/src/contract/limits.ts",
+      "packages/web-data/src/wire/common.ts",
+    ]);
+    expect([...limits.bare]).toEqual([]);
   });
 
   test("no forbidden runtime dependency is reachable", () => {
@@ -109,5 +128,63 @@ describe("`/wire` common graph is browser-safe (criterion 4)", () => {
     // `/wire` is pure contracts; any bare value import (even a benign one) would ship runtime
     // code to the browser and is disallowed.
     expect([...graph.bare]).toEqual([]);
+  });
+});
+
+describe("`/contract` graph is browser-safe", () => {
+  const graph = wireGraph(CONTRACT_ENTRY);
+  const contractFiles = readdirSync(CONTRACT_DIR, { recursive: true, encoding: "utf8" })
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => resolve(CONTRACT_DIR, name));
+
+  test("the walk reaches the barrel and the limits module, with nothing unresolved", () => {
+    expect(graph.files.has(CONTRACT_ENTRY)).toBe(true);
+    expect(graph.files.has(resolve(CONTRACT_DIR, "limits.ts"))).toBe(true);
+    expect(graph.unresolved).toEqual([]);
+  });
+
+  test("the only value import that leaves contract/ is wire/common.ts", () => {
+    const escapes = [...graph.files]
+      .filter((f) => !f.startsWith(CONTRACT_DIR))
+      .map((f) => relative(REPO_ROOT, f));
+    expect(escapes).toEqual(["packages/web-data/src/wire/common.ts"]);
+  });
+
+  test("every file under src/contract/ imports only allowed third-party packages", () => {
+    // Scans each file directly, so a module not yet re-exported by the barrel is covered too.
+    const offenders: string[] = [];
+    const transpiler = new Bun.Transpiler({ loader: "ts" });
+    for (const file of contractFiles) {
+      for (const imp of transpiler.scanImports(readFileSync(file, "utf8"))) {
+        if (imp.path.startsWith(".")) continue;
+        if (!CONTRACT_ALLOWED_BARE.includes(imp.path)) offenders.push(`${relative(REPO_ROOT, file)} → ${imp.path}`);
+      }
+    }
+    expect(contractFiles.length).toBeGreaterThan(0);
+    expect(offenders).toEqual([]);
+  });
+
+  test("no file under src/contract/ reaches cycle/, sources/ or another package by value", () => {
+    const offenders: string[] = [];
+    for (const file of contractFiles) {
+      const reached = wireGraph(file);
+      for (const f of reached.files) {
+        const inside = f.startsWith(CONTRACT_DIR) || f === resolve(WIRE_DIR, "common.ts");
+        if (!inside) offenders.push(`${relative(REPO_ROOT, file)} → ${relative(REPO_ROOT, f)}`);
+      }
+      offenders.push(...reached.unresolved);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("nothing in src/contract/ imports the contract barrel", () => {
+    const offenders: string[] = [];
+    const transpiler = new Bun.Transpiler({ loader: "ts" });
+    for (const file of contractFiles) {
+      for (const imp of transpiler.scanImports(readFileSync(file, "utf8"))) {
+        if (imp.path === "./index.js") offenders.push(relative(REPO_ROOT, file));
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

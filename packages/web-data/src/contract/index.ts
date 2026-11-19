@@ -5,6 +5,10 @@ export { CONTRACT_VERSION, CONTRACT_VERSION_PATTERN, decideCompatibility, format
 export type { ClientRequirement, CompatibilityOutcome, ContractVersion } from "./version.js";
 export { KNOWN_SERVER_CAPABILITIES, SERVER_CAPABILITY_PATTERN, currentServerCapabilities, registerCapabilityProvider, __resetCapabilityProvidersForTest } from "./capabilities.js";
 export type { CapabilityProvider, ServerCapability } from "./capabilities.js";
+export { CONTRACT_LIMITS, capList, truncateUtf8 } from "./limits.js";
+export type { ContractLimits, OverviewLimits } from "./limits.js";
+export { ENUM_FALLBACKS } from "./enums.js";
+export type { EnumFallback, EnumFallbackEntry } from "./enums.js";
 export { CLIENT_HEADER, CLIENT_NAME_PATTERN, CONTRACT_HEADER, KNOWN_CLIENTS, handshakeLabels, parseClientAnnouncement } from "./announcement.js";
 export type { ClientAnnouncement, HandshakeClientLabel, HandshakeLabels, HandshakeOutcomeLabel, KnownClient } from "./announcement.js";
 export { ContractError } from "./errors.js";

@@ -152,6 +152,9 @@ describe("FINDING_CODES coverage (anti-rot guard, 07 §4)", () => {
     FINDING_CODES.PROPOSAL_CANNOT_CLEAR_BASE,
     FINDING_CODES.PROPOSAL_INVALID_ESTATE,
     FINDING_CODES.PROPOSAL_ALREADY_DECIDED,
+    // Produced by the `pulse connect-link` CLI; covered by that command's own tests in apps/cli.
+    FINDING_CODES.CONNECT_LINK_NO_ADDRESS,
+    FINDING_CODES.CONNECT_LINK_REFUSED,
   ]);
 
   test("every core-produced FINDING_CODES value has a covering case", () => {

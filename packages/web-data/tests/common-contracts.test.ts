@@ -49,6 +49,7 @@ import {
   SOURCE_TIMEOUT_MS,
   SSE_HEARTBEAT_MS,
   SSE_MAX_STREAMS,
+  SSE_RETRY_MS,
 } from "../src/wire/common.js";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
@@ -70,6 +71,7 @@ describe("fixed identifiers and limits (§2)", () => {
       GATUS_MAX_ENDPOINTS,
       SSE_HEARTBEAT_MS,
       SSE_MAX_STREAMS,
+      SSE_RETRY_MS,
       HISTORY_TTL_MS,
       HISTORY_DEADLINE_MS,
       HISTORY_MAX_ACTIVE,
@@ -95,6 +97,7 @@ describe("fixed identifiers and limits (§2)", () => {
       GATUS_MAX_ENDPOINTS: 511,
       SSE_HEARTBEAT_MS: 5_000,
       SSE_MAX_STREAMS: 64,
+      SSE_RETRY_MS: 10_000,
       HISTORY_TTL_MS: 60_000,
       HISTORY_DEADLINE_MS: 5_000,
       HISTORY_MAX_ACTIVE: 4,
