@@ -68,6 +68,7 @@ import {
 // pulse additions: the shell and pulse views' icons deck's set lacks.
 import {
   Bell,
+  BellRing,
   ChevronLeft,
   ChevronUp,
   CircleAlert,
@@ -77,6 +78,7 @@ import {
   Menu,
   PanelRight,
   Smartphone,
+  Trash2,
   TrendingUp,
 } from "lucide-react";
 import { iconRegistry } from "@/ui/lib/icon-registry";
@@ -158,6 +160,7 @@ export const ICONS = {
 
   // pulse additions.
   bell: Bell,
+  "bell-ring": BellRing,
   "chevron-left": ChevronLeft,
   "chevron-up": ChevronUp,
   "circle-alert": CircleAlert,
@@ -167,6 +170,7 @@ export const ICONS = {
   menu: Menu,
   "panel-right": PanelRight,
   smartphone: Smartphone,
+  "trash-2": Trash2,
   "trending-up": TrendingUp,
   triangle: Triangle,
 } as const satisfies Record<string, LucideIcon>;

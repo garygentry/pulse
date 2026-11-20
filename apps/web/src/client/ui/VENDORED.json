@@ -210,7 +210,7 @@
       "local": "apps/web/src/client/ui/lib/icons.ts",
       "upstream": "apps/web/src/ui/lib/icons.ts",
       "upstreamBlob": "957cc03809be0eb6fb30b599c6384849291c6fa1",
-      "localBlob": "71e9d5499eea5efa8d4b891551a9ca42cd40b126",
+      "localBlob": "ab0ecae977752bb1a2b77b5ced3882e02878c365",
       "notes": [
         "icons-additions"
       ]
