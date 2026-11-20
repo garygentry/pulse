@@ -6,7 +6,13 @@ import type { ContractLimits, EnumFallbackEntry } from "@pulse/web-data/contract
 
 import { ContractToolError } from "./errors.js";
 import { OPERATIONS, compareOperationErrors } from "./operations.js";
-import type { ContractCaching, ContractOperation, ContractOperationError, ContractParam } from "./operations.js";
+import type {
+  ContractAuth,
+  ContractCaching,
+  ContractOperation,
+  ContractOperationError,
+  ContractParam,
+} from "./operations.js";
 import { SHAPE_ROOTS } from "./shape-types.js";
 import type { ShapeKind, ShapeNode, ShapeSnapshot } from "./shape-types.js";
 import type { FixtureIndex, FixtureIndexEntry } from "./types.js";
@@ -194,13 +200,24 @@ function renderCaching(caching: ContractCaching): string {
   }
 }
 
+/** Auth cell text. */
+const AUTH_CELL: Readonly<Record<ContractAuth, string>> = {
+  none: "none",
+  "pairing-token": "pairing token (body `token`)",
+  "device-credential": "`Authorization: Bearer <credential>`",
+};
+
+/** A backticked root name linking to its field table. */
+const rootLink = (root: ShapeRootName): string => `[${code(root)}](#fields-${root.toLowerCase()})`;
+
 /**
  * Render the operations table.
- * Columns: Operation | Request | Parameters | Success | Errors | Caching | Response.
+ * Columns: Operation | Method | Path | Auth | Parameters | Request body | Success | Errors | Caching | Response.
  * Rows follow the input order. Each operation's notes follow the table as `- **<name>:** note` lines.
  *
- * @throws {ContractToolError} code SCENARIO_INVALID (subject = label) when two operations share a label or an
- *   operation has no fixture groups
+ * @throws {ContractToolError} code SCENARIO_INVALID (subject = label) when two operations share a label, an
+ *   operation has no fixture groups, an operation without a response body does not succeed with exactly 204, or
+ *   an operation needing no authorisation is not a GET
  */
 export function renderOperationsTable(operations: readonly ContractOperation[]): string {
   const labels = new Set<string>();
@@ -212,17 +229,46 @@ export function renderOperationsTable(operations: readonly ContractOperation[]):
     if (op.fixtureGroups.length === 0) {
       throw new ContractToolError("SCENARIO_INVALID", op.label, `operation ${op.label} has no fixture groups`);
     }
+    if (op.responseRoot === null && !(op.success.length === 1 && op.success[0] === 204)) {
+      throw new ContractToolError(
+        "SCENARIO_INVALID",
+        op.label,
+        `operation ${op.label} has no response body but its success statuses are not exactly [204]`,
+      );
+    }
+    if (op.auth === "none" && op.method !== "GET") {
+      throw new ContractToolError(
+        "SCENARIO_INVALID",
+        op.label,
+        `operation ${op.label} needs no authorisation but is a ${op.method}, not a GET`,
+      );
+    }
   }
   const rows = operations.map((op) => [
     op.name,
-    op.label.startsWith("SSE ") ? code(`${op.method} ${op.path} (SSE)`) : code(`${op.method} ${op.path}`),
+    code(op.method),
+    op.label.startsWith("SSE ") ? `${code(op.path)} (SSE)` : code(op.path),
+    AUTH_CELL[op.auth],
     op.params.length === 0 ? "none" : op.params.map(renderParam).join("<br>"),
+    op.requestRoot === null ? "none" : rootLink(op.requestRoot),
     op.success.join(", "),
     renderErrors(op.errors),
     renderCaching(op.caching),
-    `[${code(op.responseRoot)}](#fields-${op.responseRoot.toLowerCase()})`,
+    op.responseRoot === null ? "none (204)" : rootLink(op.responseRoot),
   ]);
-  let out = table(["Operation", "Request", "Parameters", "Success", "Errors", "Caching", "Response"], rows);
+  const header = [
+    "Operation",
+    "Method",
+    "Path",
+    "Auth",
+    "Parameters",
+    "Request body",
+    "Success",
+    "Errors",
+    "Caching",
+    "Response",
+  ];
+  let out = table(header, rows);
   const notes = operations.flatMap((op) => (op.notes ?? []).map((note) => `- **${op.name}:** ${note}\n`));
   if (notes.length > 0) out += `\n${notes.join("")}`;
   return out;

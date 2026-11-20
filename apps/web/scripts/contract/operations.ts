@@ -58,27 +58,41 @@ export type ContractCaching =
   | { readonly kind: "no-store"; readonly cacheControl: "private, no-store" }
   | { readonly kind: "stream"; readonly cacheControl: "no-cache" };
 
+/** HTTP method of a contract operation. */
+export type ContractMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+/**
+ * What authorises a contract operation. Reads are always `none`.
+ * - `pairing-token`: the one-time token in the request body (`PairingRedeemRequest.token`).
+ * - `device-credential`: exactly one `Authorization: Bearer <credential>` header.
+ */
+export type ContractAuth = "none" | "pairing-token" | "device-credential";
+
 /** One contract operation. */
 export interface ContractOperation {
-  /** Operation label, equal to a fixture index entry's `operation`: `GET <path>` or `SSE /api/events`. */
+  /** Operation label, equal to a fixture index entry's `operation`: `<METHOD> <path>` or `SSE /api/events`. */
   readonly label: string;
   /** Short human name for the table's first column. */
   readonly name: string;
-  /** Always GET. */
-  readonly method: "GET";
+  /** HTTP method. Every operation with `auth: "none"` is a GET. */
+  readonly method: ContractMethod;
   /** Route pattern exactly as in the route module (`:name` parameters). */
   readonly path: string;
-  /** Request parameters. */
+  /** What authorises the call. */
+  readonly auth: ContractAuth;
+  /** Request parameters (query, path, header). The Authorization header is described by `auth`, not here. */
   readonly params: readonly ContractParam[];
+  /** Root type of the JSON request body, or null for an operation without a body. */
+  readonly requestRoot: (typeof SHAPE_ROOTS)[number] | null;
   /** Success statuses in ascending order. */
   readonly success: readonly number[];
-  /** Root type of the success body. */
-  readonly responseRoot: (typeof SHAPE_ROOTS)[number];
+  /** Root type of the success body, or null when every success status has no body (204). */
+  readonly responseRoot: (typeof SHAPE_ROOTS)[number] | null;
   /** Error responses, sorted by status then code. */
   readonly errors: readonly ContractOperationError[];
   /** Caching behaviour. */
   readonly caching: ContractCaching;
-  /** Fixture groups holding this operation's fixtures. */
+  /** Fixture groups holding this operation's fixtures. Never empty. */
   readonly fixtureGroups: readonly FixtureGroup[];
   /** Extra one-line facts rendered under the table. */
   readonly notes?: readonly string[];
@@ -198,7 +212,9 @@ function currentView(
     name,
     method: "GET",
     path,
+    auth: "none",
     params: [],
+    requestRoot: null,
     success: [200, 304],
     responseRoot,
     errors: CURRENT_VIEW_ERRORS,
@@ -222,7 +238,9 @@ function historyOperation(
     name,
     method: "GET",
     path,
+    auth: "none",
     params,
+    requestRoot: null,
     success: [200],
     responseRoot,
     errors: HISTORY_OPERATION_ERRORS,
@@ -247,6 +265,7 @@ export const OPERATIONS: readonly ContractOperation[] = deepFreeze([
     name: "Session",
     method: "GET",
     path: "/api/session",
+    auth: "none",
     params: [
       {
         name: headerName(CLIENT_HEADER),
@@ -263,6 +282,7 @@ export const OPERATIONS: readonly ContractOperation[] = deepFreeze([
         note: "ignored when malformed",
       },
     ],
+    requestRoot: null,
     success: [200],
     responseRoot: "SessionPayload",
     errors: GUARD_ONLY_ERRORS,
@@ -344,6 +364,7 @@ export const OPERATIONS: readonly ContractOperation[] = deepFreeze([
     name: "Live events",
     method: "GET",
     path: "/api/events",
+    auth: "none",
     params: [
       {
         name: "Last-Event-ID",
@@ -352,6 +373,7 @@ export const OPERATIONS: readonly ContractOperation[] = deepFreeze([
         values: { kind: "text", description: "the `id` of the last tick received" },
       },
     ],
+    requestRoot: null,
     success: [200],
     responseRoot: "LiveTick",
     errors: GUARD_ONLY_ERRORS,

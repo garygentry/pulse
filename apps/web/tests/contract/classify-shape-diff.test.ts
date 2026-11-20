@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifyShapeDiff, requiredVersionBump } from "../../scripts/contract/classify-shape-diff.js";
+import { classifyShapeDiff, requiredVersionBump, shapeRootOf } from "../../scripts/contract/classify-shape-diff.js";
 import type { ShapeChange, ShapeNode, ShapeSnapshot } from "../../scripts/contract/shape-types.js";
 
 const VERSION = { major: 1, minor: 0 } as const;
@@ -302,5 +302,104 @@ describe("classifyShapeDiff", () => {
       "member-removed",
     ];
     expect([...seen].sort()).toEqual([...all].sort());
+  });
+});
+
+describe("request roots", () => {
+  /** A small request body: a required string, a literal union and an optional string. */
+  const REQUEST: readonly ShapeNode[] = [
+    node("Request", "object"),
+    node("Request.id", "string"),
+    node("Request.mode", "literal-union", { members: ["a", "b"] }),
+    node("Request.note", "string", { optional: true }),
+  ];
+  const OPTIONS = { requestRoots: new Set(["Request"]) } as const;
+
+  /** Apply an edit to a copy of REQUEST and classify it with `Request` as a request root. */
+  function requestDiff(edit: (nodes: ShapeNode[]) => ShapeNode[], options?: typeof OPTIONS) {
+    return classifyShapeDiff(snapshot({ Request: REQUEST }), snapshot({ Request: edit([...REQUEST]) }), options);
+  }
+
+  const RULES: readonly Row[] = [
+    {
+      name: "an optional field is added",
+      edit: (nodes) => [...nodes, node("Request.hint", "string", { optional: true })],
+      changes: [{ path: "Request.hint", change: "field-added", class: "additive" }],
+      class: "additive",
+    },
+    {
+      name: "a required field is added",
+      edit: (nodes) => [...nodes, node("Request.owner", "string")],
+      changes: [{ path: "Request.owner", change: "field-added", class: "breaking" }],
+      class: "breaking",
+    },
+    {
+      name: "a field becomes required",
+      edit: replace("Request.note", node("Request.note", "string")),
+      changes: [{ path: "Request.note", change: "optional-changed", class: "breaking" }],
+      class: "breaking",
+    },
+    {
+      name: "a field becomes optional",
+      edit: replace("Request.id", node("Request.id", "string", { optional: true })),
+      changes: [{ path: "Request.id", change: "optional-changed", class: "additive" }],
+      class: "additive",
+    },
+    {
+      name: "a literal member is removed",
+      edit: replace("Request.mode", node("Request.mode", "literal-union", { members: ["a"] })),
+      changes: [{ path: "Request.mode", change: "member-removed", class: "breaking" }],
+      class: "breaking",
+    },
+    {
+      name: "a literal member is added",
+      edit: replace("Request.mode", node("Request.mode", "literal-union", { members: ["a", "b", "c"] })),
+      changes: [{ path: "Request.mode", change: "member-added", class: "additive" }],
+      class: "additive",
+    },
+  ];
+
+  for (const row of RULES) {
+    test(`${row.name}: ${row.class}`, () => {
+      const diff = requestDiff(row.edit, OPTIONS);
+      expect(diff.changes).toEqual([...row.changes]);
+      expect(diff.class).toBe(row.class);
+    });
+  }
+
+  test("without options the same edits classify exactly as on a response root", () => {
+    for (const row of RULES) {
+      const asRequest = requestDiff(row.edit);
+      const rename = (path: string): string => path.replace(/^Request/, "Payload");
+      const asPayload = classifyShapeDiff(
+        snapshot({ Payload: REQUEST.map((n) => ({ ...n, path: rename(n.path) })) }),
+        snapshot({ Payload: row.edit([...REQUEST]).map((n) => ({ ...n, path: rename(n.path) })) }),
+      );
+      expect(asRequest.class).toBe(asPayload.class);
+      expect(asRequest.changes.map((c) => ({ ...c, path: rename(c.path) }))).toEqual([...asPayload.changes]);
+    }
+    expect(requestDiff(RULES[1]!.edit).changes).toEqual([
+      { path: "Request.owner", change: "field-added", class: "additive" },
+    ]);
+  });
+
+  test("rules are per root: a required field added under a response root stays additive", () => {
+    const diff = classifyShapeDiff(
+      snapshot({ Payload: BASE, Request: REQUEST }),
+      snapshot({ Payload: [...BASE, node("Payload.owner", "string")], Request: REQUEST }),
+      OPTIONS,
+    );
+    expect(diff.changes).toEqual([{ path: "Payload.owner", change: "field-added", class: "additive" }]);
+    expect(diff.class).toBe("additive");
+  });
+
+  test("shapeRootOf takes the prefix before the first delimiter, or the whole bare root", () => {
+    expect(shapeRootOf("DeviceRegistrationRequest.preferences.info")).toBe("DeviceRegistrationRequest");
+    expect(shapeRootOf("Payload.hosts[].detail")).toBe("Payload");
+    expect(shapeRootOf("Payload[]")).toBe("Payload");
+    expect(shapeRootOf("Labels{}.value")).toBe("Labels");
+    expect(shapeRootOf("PushPayload(screen=alert).fingerprint")).toBe("PushPayload");
+    expect(shapeRootOf("PushPayload.pulse.target(screen=alert).fingerprint")).toBe("PushPayload");
+    expect(shapeRootOf("SessionPayload")).toBe("SessionPayload");
   });
 });

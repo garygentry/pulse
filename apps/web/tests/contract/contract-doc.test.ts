@@ -291,15 +291,17 @@ describe("renderOperationsTable", () => {
   const lines = rendered.split("\n");
 
   test("has the documented header and one row per operation", () => {
-    expect(lines[0]).toBe("| Operation | Request | Parameters | Success | Errors | Caching | Response |");
-    expect(lines[1]).toBe("|---|---|---|---|---|---|---|");
+    expect(lines[0]).toBe(
+      "| Operation | Method | Path | Auth | Parameters | Request body | Success | Errors | Caching | Response |",
+    );
+    expect(lines[1]).toBe("|---|---|---|---|---|---|---|---|---|---|");
     expect(lines.filter((line) => line.startsWith("| ")).length).toBe(1 + OPERATIONS.length);
-    expectRectangular(rendered, 7);
+    expectRectangular(rendered, 10);
   });
 
   test("the overview row matches the documented layout", () => {
     expect(lines).toContain(
-      "| Overview | `GET /api/overview` | none | 200, 304 | `400` `INVALID_REQUEST`: query string over 2048 bytes, a repeated query key, or a malformed/over-512-byte path parameter<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`503` `ESTATE_BUNDLE_*` (BundleErrorBody): the estate bundle failed to load<br>`503` `NOT_READY`: before the first cycle is published | ETag + If-None-Match → 304; `private, no-cache`; Vary: Accept-Encoding | [`OverviewSnapshotV2`](#fields-overviewsnapshotv2) |",
+      "| Overview | `GET` | `/api/overview` | none | none | none | 200, 304 | `400` `INVALID_REQUEST`: query string over 2048 bytes, a repeated query key, or a malformed/over-512-byte path parameter<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`503` `ESTATE_BUNDLE_*` (BundleErrorBody): the estate bundle failed to load<br>`503` `NOT_READY`: before the first cycle is published | ETag + If-None-Match → 304; `private, no-cache`; Vary: Accept-Encoding | [`OverviewSnapshotV2`](#fields-overviewsnapshotv2) |",
     );
     expect(lines).toContain(
       "- **Overview:** Before the first cycle, the server may answer 200 with the same body type and no `ETag`, `X-Pulse-*` or `Vary` headers.",
@@ -317,7 +319,7 @@ describe("renderOperationsTable", () => {
     const row = (name: string): string => lines.find((line) => line.startsWith(`| ${name} | `)) as string;
     expect(row("Session")).toContain("`X-Pulse-Client` (header, optional): ");
     expect(row("Session")).toContain("| `private, no-store` |");
-    expect(row("Live events")).toContain("| `GET /api/events (SSE)` |");
+    expect(row("Live events")).toContain("| `GET` | `/api/events` (SSE) | none |");
     expect(row("Live events")).toContain("| `no-cache` (event stream) |");
     expect(row("Check history")).toContain(
       "`endpoint` (path, required): exact Gatus endpoint name; may contain an encoded slash (`%2F`)<br>`range` (query, optional): `1h`, `6h`, `24h`, `7d`; default: `24h`; no other query key is accepted",
@@ -329,7 +331,7 @@ describe("renderOperationsTable", () => {
 
   test("errors are ordered by status, then code, with the bundle codes collapsed", () => {
     const row = lines.find((line) => line.startsWith("| Alert history | ")) as string;
-    const codes = [...(row.split(" | ")[4] as string).matchAll(/`(\d{3})` `([A-Z_*]+)`/g)].map((m) => `${m[1]} ${m[2]}`);
+    const codes = [...(row.split(" | ")[7] as string).matchAll(/`(\d{3})` `([A-Z_*]+)`/g)].map((m) => `${m[1]} ${m[2]}`);
     expect(codes).toEqual([
       "400 INVALID_REQUEST", "400 INVALID_REQUEST", "404 QUERY_NOT_FOUND", "404 TARGET_NOT_FOUND",
       "422 QUERY_NOT_APPLICABLE", "422 RANGE_UNSUPPORTED", "500 INTERNAL_ERROR", "502 HISTORY_LIMIT_EXCEEDED",
@@ -351,6 +353,47 @@ describe("renderOperationsTable", () => {
       expect((caught as ContractToolError).code).toBe("SCENARIO_INVALID");
       expect((caught as ContractToolError).subject).toBe(first.label);
     }
+  });
+
+  test("no response body without exactly [204], and auth none on a non-GET, are SCENARIO_INVALID", () => {
+    const first = OPERATIONS[0] as ContractOperation;
+    const bad: ContractOperation[] = [
+      { ...first, responseRoot: null },
+      { ...first, responseRoot: null, success: [200, 204] },
+      { ...first, method: "POST" },
+      { ...first, method: "DELETE", success: [204], responseRoot: null },
+    ];
+    for (const op of bad) {
+      let caught: unknown;
+      try {
+        renderOperationsTable([op]);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(ContractToolError);
+      expect((caught as ContractToolError).code).toBe("SCENARIO_INVALID");
+      expect((caught as ContractToolError).subject).toBe(first.label);
+    }
+  });
+
+  test("an authorised non-GET renders its auth, request body and a 204 response", () => {
+    const first = OPERATIONS[0] as ContractOperation;
+    const op: ContractOperation = {
+      ...first,
+      label: "DELETE /api/example",
+      name: "Example",
+      method: "DELETE",
+      path: "/api/example",
+      auth: "device-credential",
+      params: [],
+      requestRoot: "SessionPayload",
+      success: [204],
+      responseRoot: null,
+      notes: [],
+    };
+    const row = renderOperationsTable([op]).split("\n")[2] as string;
+    expect(row.startsWith("| Example | `DELETE` | `/api/example` | `Authorization: Bearer <credential>` | none | [`SessionPayload`](#fields-sessionpayload) | 204 |")).toBe(true);
+    expect(row.endsWith("| none (204) |")).toBe(true);
   });
 });
 
@@ -603,7 +646,10 @@ describe("OPERATIONS", () => {
       expect(op.method).toBe("GET");
       expect(op.label.endsWith(` ${op.path}`)).toBe(true);
       expect(op.fixtureGroups.length).toBeGreaterThan(0);
-      expect((SHAPE_ROOTS as readonly string[]).includes(op.responseRoot)).toBe(true);
+      expect(op.auth).toBe("none");
+      expect(op.requestRoot).toBeNull();
+      expect(op.responseRoot).not.toBeNull();
+      expect((SHAPE_ROOTS as readonly string[]).includes(op.responseRoot ?? "")).toBe(true);
     }
     const paths = OPERATIONS.map((op) => op.path);
     for (const excluded of ["/api/engine", "/api/proposals", "/api/connect-link", "/healthz", "/metrics"]) {
@@ -749,7 +795,11 @@ describe("contract/CONTRACT.md", () => {
     const links = [...CONTRACT_MD.matchAll(/\]\(#([^)]+)\)/g)].map((m) => m[1]);
     expect(links.length).toBeGreaterThan(10);
     for (const link of links) expect(anchors.has(link)).toBe(true);
-    for (const op of OPERATIONS) expect(anchors.has(`fields-${op.responseRoot.toLowerCase()}`)).toBe(true);
+    for (const op of OPERATIONS) {
+      for (const root of [op.requestRoot, op.responseRoot]) {
+        if (root !== null) expect(anchors.has(`fields-${root.toLowerCase()}`)).toBe(true);
+      }
+    }
   });
 
   test("contains each normative sentence", () => {

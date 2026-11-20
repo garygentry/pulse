@@ -13,10 +13,16 @@ import { canonicalJson } from "@pulse/web-data/cycle";
 import { classifyShapeDiff } from "../../scripts/contract/classify-shape-diff.js";
 import { ContractToolError } from "../../scripts/contract/errors.js";
 import { generateContract } from "../../scripts/contract/generate.js";
+import { OPERATIONS } from "../../scripts/contract/operations.js";
 import type { ShapeNode, ShapeSnapshot } from "../../scripts/contract/shape-types.js";
 import { currentShape, GENERATION_TIMEOUT, REPO_ROOT } from "./generated.js";
 
 const SHAPE_DIR = join(REPO_ROOT, "contract/shape");
+
+/** Every request root named in the operations table. */
+const REQUEST_ROOTS: ReadonlySet<string> = new Set(
+  OPERATIONS.flatMap((op) => (op.requestRoot === null ? [] : [op.requestRoot])),
+);
 const DECODER = new TextDecoder();
 
 /** The bytes the generator writes for a snapshot: canonical JSON and one trailing newline. */
@@ -39,13 +45,15 @@ function frozenDrift(frozenText: string | null, current: ShapeSnapshot): string 
   const header =
     "wire types changed; bump CONTRACT_VERSION in packages/web-data/src/contract/version.ts and run bun run contract:gen";
   if (frozenText === null) return header;
-  const { changes } = classifyShapeDiff(JSON.parse(frozenText) as ShapeSnapshot, current);
+  const { changes } = classifyShapeDiff(JSON.parse(frozenText) as ShapeSnapshot, current, {
+    requestRoots: REQUEST_ROOTS,
+  });
   return [header, ...changes.map((change) => `  ${change.class} ${change.change} ${change.path}`)].join("\n");
 }
 
 /** Why the version of `current` is too low for its changes since the snapshot `previous`, or null. */
 function bumpProblem(previous: ShapeSnapshot, current: ShapeSnapshot): string | null {
-  const diff = classifyShapeDiff(previous, current);
+  const diff = classifyShapeDiff(previous, current, { requestRoots: REQUEST_ROOTS });
   const p = previous.version;
   const c = current.version;
   const paths = [...new Set(diff.changes.filter((change) => change.class === diff.class).map((change) => change.path))].join(", ");

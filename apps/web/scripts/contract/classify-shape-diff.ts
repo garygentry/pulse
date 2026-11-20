@@ -18,7 +18,31 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function diffNode(previous: ShapeNode, current: ShapeNode, out: ShapeChange[]): void {
+/** Options for {@link classifyShapeDiff}. */
+export interface ClassifyShapeDiffOptions {
+  /**
+   * Root type names that are request bodies (a `ContractOperation.requestRoot`). Paths under these roots are
+   * classified with the request rules. Default: the empty set, which is exactly the contract 1.0 behaviour.
+   */
+  readonly requestRoots?: ReadonlySet<string>;
+}
+
+/**
+ * The root type name a shape path belongs to: the prefix before the first `.`, `[`, `{` or `(`, or the whole path
+ * when it has none. Same grammar as the fixture generator's shape-path parser.
+ *
+ * @example shapeRootOf("DeviceRegistrationRequest.preferences.info") === "DeviceRegistrationRequest"
+ */
+export function shapeRootOf(path: string): string {
+  const at = path.search(/[.[{(]/);
+  return at === -1 ? path : path.slice(0, at);
+}
+
+/**
+ * Compare one node present on both sides. Under a request root the server is the reader and the client the writer,
+ * so a member becoming optional is additive; under a response root every optionality change is breaking.
+ */
+function diffNode(previous: ShapeNode, current: ShapeNode, out: ShapeChange[], request: boolean): void {
   const path = current.path;
   const kind = comparableKind(current.kind);
   if (comparableKind(previous.kind) !== kind) {
@@ -32,7 +56,10 @@ function diffNode(previous: ShapeNode, current: ShapeNode, out: ShapeChange[]): 
     if (gained) out.push({ path, change: "member-added", class: kind === "scalar-union" ? "breaking" : "additive" });
     if (lost) out.push({ path, change: "member-removed", class: "breaking" });
   }
-  if (previous.optional !== current.optional) out.push({ path, change: "optional-changed", class: "breaking" });
+  if (previous.optional !== current.optional) {
+    const relaxed = request && current.optional;
+    out.push({ path, change: "optional-changed", class: relaxed ? "additive" : "breaking" });
+  }
   if (previous.nullable !== current.nullable) out.push({ path, change: "nullable-changed", class: "breaking" });
 }
 
@@ -41,9 +68,21 @@ function diffNode(previous: ShapeNode, current: ShapeNode, out: ShapeChange[]): 
  *
  * A root that exists on one side only yields a single `root-added` / `root-removed` change. Inside
  * a shared root, every path that exists on one side only is reported, including the children of an
- * added or removed subtree.
+ * added or removed subtree. A path whose root is in `options.requestRoots` uses the request rules
+ * (a required member added, or a member becoming required, is breaking; a member becoming optional is
+ * additive); every other path uses the response rules, unchanged from contract 1.0.
+ *
+ * @param previous - The older snapshot (normally the frozen `shape/<prev>.json`)
+ * @param current - The newer snapshot (normally the current extraction)
+ * @param options - Request roots; omit for the contract 1.0 behaviour
+ * @returns Changes sorted by path then change, and the worst class
  */
-export function classifyShapeDiff(previous: ShapeSnapshot, current: ShapeSnapshot): ShapeDiff {
+export function classifyShapeDiff(
+  previous: ShapeSnapshot,
+  current: ShapeSnapshot,
+  options: ClassifyShapeDiffOptions = {},
+): ShapeDiff {
+  const requestRoots = options.requestRoots ?? new Set<string>();
   const changes: ShapeChange[] = [];
   const rootNames = new Set([...Object.keys(previous.roots), ...Object.keys(current.roots)]);
   for (const root of rootNames) {
@@ -57,12 +96,15 @@ export function classifyShapeDiff(previous: ShapeSnapshot, current: ShapeSnapsho
       changes.push({ path: root, change: "root-removed", class: "breaking" });
       continue;
     }
+    const request = requestRoots.has(root);
     const beforeByPath = new Map(before.map((node) => [node.path, node]));
     const afterByPath = new Map(after.map((node) => [node.path, node]));
     for (const [path, node] of afterByPath) {
       const old = beforeByPath.get(path);
-      if (old === undefined) changes.push({ path, change: "field-added", class: "additive" });
-      else diffNode(old, node, changes);
+      if (old === undefined) {
+        const cls = request && !node.optional ? "breaking" : "additive";
+        changes.push({ path, change: "field-added", class: cls });
+      } else diffNode(old, node, changes, request);
     }
     for (const path of beforeByPath.keys()) {
       if (!afterByPath.has(path)) changes.push({ path, change: "field-removed", class: "breaking" });
