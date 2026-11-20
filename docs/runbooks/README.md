@@ -81,6 +81,7 @@ resolves to these pages.
 | `pipeline-health` | [Pipeline health](/pipeline-health/) | AlertRuleEvalErrors, AlertNotificationsFailing, AlertNotificationLatencyHigh, AlertRemoteWriteBacklog, SyntheticRulesNotLoaded |
 | `deadman` | [Dead man's switch](/deadman/) | DeadMansSwitch (absence is the alarm) |
 | `canary` | [Alert-path canary](/canary/) | PulseAlertPathCanary (absence is the alarm) |
+| `push` | [Push gateway](/push/) | PushGatewayMisconfigured, PushDeliveryFailing, PushWebhookRefused |
 
 ## The worked estate
 

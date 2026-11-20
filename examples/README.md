@@ -5,6 +5,8 @@ CLI workspace — a `pulse.config.yaml`, an `estate/estate.yaml` declaration, an
 committed `rendered/` golden tree — with no `package.json` (these are *data*, not a
 workspace).
 
+`alertmanager/` holds an Alertmanager configuration snippet (the push receiver), not an estate.
+
 | Fixture | What it is | Highlights |
 |---------|------------|------------|
 | [`minimal/`](./minimal/) | The smallest valid estate — the quickstart/onboarding path. | One `managed-linux` host, a plain-URL `deadman_hook`, no services/channels/suppressions. Renders 5 files (no `prober/`). |

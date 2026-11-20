@@ -1,0 +1,43 @@
+# examples/alertmanager/push-receiver.yml
+# Example: deliver Alertmanager notifications to the Pulse push gateway, IN ADDITION to the
+# existing receivers. Documentation only: the shipped stack's Alertmanager config is not changed.
+# See docs/operator/push.md ("Wiring Alertmanager").
+#
+# Merge the two blocks into your Alertmanager configuration:
+#   1. add the `pulse-push` receiver to `receivers:`;
+#   2. add the route below as the FIRST entry of `route.routes:` (a child route; Alertmanager
+#      refuses `continue` on the root route itself);
+#   3. add a catch-all `- receiver: <your root receiver>` as the LAST entry of `route.routes:`.
+#      Once the push route has matched, Alertmanager no longer falls back to the root receiver,
+#      so without this entry an alert that no other child route matches would reach push only.
+#
+# The shared credential is read from a file mounted into the Alertmanager container. Never write
+# it into this file. Its content must equal the web service's PULSE_PUSH_WEBHOOK_SECRET; generate
+# one with `openssl rand -base64 48` (see docs/operator/secret-recipes.md).
+
+route:
+  routes:
+    # FIRST child route, no matchers: every alert group is offered to push first. `continue: true`
+    # makes Alertmanager keep evaluating the sibling routes, so email/Telegram routing is
+    # unchanged and push never replaces, gates or delays it.
+    - receiver: pulse-push
+      continue: true
+    # ... your existing child routes follow here, unchanged.
+    # LAST: the catch-all for your root receiver (step 3 above), e.g.
+    # - receiver: pulse-default-ops
+
+receivers:
+  - name: pulse-push
+    webhook_configs:
+      # `web` is the Pulse web service on the compose network (internal only; never expose it).
+      - url: http://web:8080/api/push/alertmanager
+        # Resolutions update the phone's notification quietly.
+        send_resolved: true
+        # Keeps a storm inside the webhook's limits. Alertmanager truncates the call and reports
+        # truncatedAlerts, so phones still get one summary instead of a refused call. Alertmanager
+        # does not retry a 4xx answer, so a refused call is lost.
+        max_alerts: 500
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/secrets/pulse-push-webhook

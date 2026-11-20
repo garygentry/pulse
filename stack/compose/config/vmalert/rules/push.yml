@@ -1,0 +1,34 @@
+# stack/compose/config/vmalert/rules/push.yml
+# Static, estate-agnostic. Push gateway health.
+#
+# Every operand is aggregated (sum/max) and joined with `and on()`, so the scrape labels (job,
+# instance, estate) never break the vector match and the absent() arm can join. The rules are
+# silent while push is disabled: the state gauge then reads disabled and no other push series
+# exists. They reach the operator through the existing human routes (email/Telegram), which never
+# depend on push.
+groups:
+  - name: push-gateway
+    rules:
+      - alert: PushGatewayMisconfigured
+        expr: pulse_web_push_state{state="misconfigured"} == 1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Push gateway is misconfigured", runbook_url: "https://runbooks.pulse.local/push" }
+      - alert: PushDeliveryFailing
+        expr: |
+          (sum(pulse_web_push_devices) > 0)
+          and on() (sum(increase(pulse_web_push_notifications_total{outcome=~"failed|dropped"}[30m])) > 0)
+          and on() (
+                (time() - max(pulse_web_push_last_success_timestamp_seconds)) > 1800
+             or on() absent(pulse_web_push_last_success_timestamp_seconds)
+          )
+        for: 15m
+        labels: { severity: critical }
+        annotations: { summary: "Push notifications are failing", runbook_url: "https://runbooks.pulse.local/push" }
+      - alert: PushWebhookRefused
+        expr: |
+          (sum(pulse_web_push_devices) > 0)
+          and on() (sum(increase(pulse_web_push_webhook_total{outcome=~"unauthorized|malformed|too_large"}[30m])) > 0)
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: "Alertmanager calls to the push webhook are being refused", runbook_url: "https://runbooks.pulse.local/push" }

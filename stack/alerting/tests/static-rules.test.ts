@@ -1,5 +1,5 @@
 // stack/alerting/tests/static-rules.test.ts
-// Tier-A structural guard for the six committed static vmalert rule families
+// Tier-A structural guard for the seven committed static vmalert rule families
 // (stack/compose/config/vmalert/rules/*.yml, authored per 02-static-rule-library.md). Reads every
 // file and asserts: (1) every `alert:` is PascalCase ^[A-Z][A-Za-z0-9]+$ (REQ-RULE-02); (2) every
 // rule carries a `severity` label from {critical,warning,info,deadman} (REQ-RULE-04); (3) `deadman`
@@ -19,6 +19,7 @@ const FILES = [
   "pipeline-health.yml",
   "churn.yml",
   "deadman.yml",
+  "push.yml",
 ] as const;
 
 const PASCAL_CASE = /^[A-Z][A-Za-z0-9]+$/;
@@ -68,8 +69,8 @@ function loadRules(): RuleFileEntry[] {
 const RULES = loadRules();
 
 describe("static vmalert rule library — structural guard", () => {
-  test("all six rule files are present and non-empty", () => {
-    // Every family contributes at least one rule (16 static alerts across six files).
+  test("all seven rule files are present and non-empty", () => {
+    // Every family contributes at least one rule (19 static alerts across seven files).
     expect(RULES.length).toBeGreaterThanOrEqual(16);
     const seen = new Set(RULES.map((r) => r.file));
     for (const file of FILES) expect(seen.has(file)).toBe(true);

@@ -103,6 +103,7 @@ d("promtool rule unit tests (Tier B)", () => {
     "churn.test.yaml",
     "deadman.test.yaml",
     "canary.test.yaml",
+    "push.test.yaml",
     // Issue #23: the missing-mount detector fires without synthetic.yml, and stays silent with it.
     "synthetic-mount.test.yaml",
     "synthetic-mount-loaded.test.yaml",

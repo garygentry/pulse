@@ -1,0 +1,144 @@
+# stack/alerting/tests/fixtures/promtool/push.test.yaml
+# Push gateway family (push.yml). promtool's clock starts at Unix 0, so time() is
+# the elapsed seconds. Series mirror the web render: counters are zero-initialised and the scrape adds
+# job/instance labels, which the aggregated rules must ignore.
+rule_files:
+  - push.yml
+evaluation_interval: 1m
+tests:
+  # 1. Devices present, failures climbing, no success ever (last_success absent) → PushDeliveryFailing
+  #    pending until for:15m elapses, then firing. The webhook is healthy, so PushWebhookRefused is silent.
+  - interval: 1m
+    input_series:
+      - series: 'pulse_web_push_state{state="configured", job="web", instance="web:8080"}'
+        values: "1x40"
+      - series: 'pulse_web_push_state{state="misconfigured", job="web", instance="web:8080"}'
+        values: "0x40"
+      - series: 'pulse_web_push_devices{job="web", instance="web:8080"}'
+        values: "2x40"
+      - series: 'pulse_web_push_notifications_total{kind="firing", outcome="failed", job="web", instance="web:8080"}'
+        values: "0+1x40"
+      - series: 'pulse_web_push_notifications_total{kind="firing", outcome="delivered", job="web", instance="web:8080"}'
+        values: "0x40"
+      - series: 'pulse_web_push_webhook_total{outcome="accepted", job="web", instance="web:8080"}'
+        values: "0+1x40"
+      - series: 'pulse_web_push_webhook_total{outcome="unauthorized", job="web", instance="web:8080"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PushDeliveryFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PushDeliveryFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Push notifications are failing"
+              runbook_url: "https://runbooks.pulse.local/push"
+      - eval_time: 20m
+        alertname: PushWebhookRefused
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PushGatewayMisconfigured
+        exp_alerts: []
+
+  # 2. Alertmanager's calls are refused for the shared credential (unauthorized climbing), nothing is
+  #    planned → PushWebhookRefused fires; PushDeliveryFailing stays silent (no failed/dropped series).
+  - interval: 1m
+    input_series:
+      - series: 'pulse_web_push_state{state="configured", job="web", instance="web:8080"}'
+        values: "1x40"
+      - series: 'pulse_web_push_devices{job="web", instance="web:8080"}'
+        values: "1x40"
+      - series: 'pulse_web_push_webhook_total{outcome="unauthorized", job="web", instance="web:8080"}'
+        values: "0+1x40"
+      - series: 'pulse_web_push_webhook_total{outcome="accepted", job="web", instance="web:8080"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PushWebhookRefused
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Alertmanager calls to the push webhook are being refused"
+              runbook_url: "https://runbooks.pulse.local/push"
+      - eval_time: 20m
+        alertname: PushDeliveryFailing
+        exp_alerts: []
+
+  # 3. Healthy: deliveries succeed and last_success tracks the clock. An occasional failure does not
+  #    fire, because the success arm (time() - last_success <= 1800) is false → every rule silent.
+  - interval: 1m
+    input_series:
+      - series: 'pulse_web_push_state{state="configured", job="web", instance="web:8080"}'
+        values: "1x40"
+      - series: 'pulse_web_push_state{state="misconfigured", job="web", instance="web:8080"}'
+        values: "0x40"
+      - series: 'pulse_web_push_devices{job="web", instance="web:8080"}'
+        values: "3x40"
+      - series: 'pulse_web_push_notifications_total{kind="firing", outcome="delivered", job="web", instance="web:8080"}'
+        values: "0+2x40"
+      - series: 'pulse_web_push_notifications_total{kind="firing", outcome="failed", job="web", instance="web:8080"}'
+        values: "0+1x40"
+      - series: 'pulse_web_push_last_success_timestamp_seconds{job="web", instance="web:8080"}'
+        values: "0+60x40"
+      - series: 'pulse_web_push_webhook_total{outcome="accepted", job="web", instance="web:8080"}'
+        values: "0+1x40"
+      - series: 'pulse_web_push_webhook_total{outcome="unauthorized", job="web", instance="web:8080"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PushDeliveryFailing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PushWebhookRefused
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PushGatewayMisconfigured
+        exp_alerts: []
+
+  # 4. Push disabled (the shipped stack): only the state gauge exists → every rule silent.
+  - interval: 1m
+    input_series:
+      - series: 'pulse_web_push_state{state="disabled", job="web", instance="web:8080"}'
+        values: "1x40"
+      - series: 'pulse_web_push_state{state="configured", job="web", instance="web:8080"}'
+        values: "0x40"
+      - series: 'pulse_web_push_state{state="misconfigured", job="web", instance="web:8080"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PushDeliveryFailing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PushWebhookRefused
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PushGatewayMisconfigured
+        exp_alerts: []
+
+  # 5. (additional) Misconfigured for longer than for:10m → PushGatewayMisconfigured fires with the
+  #    scrape labels; devices reads 0, so the delivery rules stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'pulse_web_push_state{state="misconfigured", job="web", instance="web:8080"}'
+        values: "1x20"
+      - series: 'pulse_web_push_devices{job="web", instance="web:8080"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PushGatewayMisconfigured
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              state: misconfigured
+              job: web
+              instance: "web:8080"
+            exp_annotations:
+              summary: "Push gateway is misconfigured"
+              runbook_url: "https://runbooks.pulse.local/push"
+      - eval_time: 15m
+        alertname: PushDeliveryFailing
+        exp_alerts: []

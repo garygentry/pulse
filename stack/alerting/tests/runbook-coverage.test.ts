@@ -53,13 +53,13 @@ function frontmatterSlug(mdPath: string): string | undefined {
   return frontmatter?.match(/^slug:\s*(\S+)\s*$/m)?.[1];
 }
 
-// Static-file slugs (availability, canary, capacity, churn, deadman, engine, pipeline-health) plus
+// Static-file slugs (availability, canary, capacity, churn, deadman, engine, pipeline-health, push) plus
 // the dynamic-builder slugs (deep-health, backup-freshness) — the complete set an operator can be
 // paged onto.
 const allSlugs = [...new Set([...staticRuleSlugs(), ...Object.values(RUNBOOK_SLUGS)])].sort();
 
 describe("runbook coverage — every runbook_url slug has an authored runbook (issue #28)", () => {
-  test("the static rules contribute the expected seven family slugs", () => {
+  test("the static rules contribute the expected eight family slugs", () => {
     // Guards against a rule file silently dropping (or typo-ing) its runbook_url so the slug set
     // never quietly shrinks below the known families.
     expect([...staticRuleSlugs()].sort()).toEqual([
@@ -70,6 +70,7 @@ describe("runbook coverage — every runbook_url slug has an authored runbook (i
       "deadman",
       "engine",
       "pipeline-health",
+      "push",
     ]);
   });
 
