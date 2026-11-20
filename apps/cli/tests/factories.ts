@@ -25,6 +25,8 @@ export interface RunOptions {
   cwd?: string;
   /** Whether stderr is a TTY (drives colour). Defaults to `false` (no escape bytes in tests). */
   stderrIsTTY?: boolean;
+  /** fetch for `pulse push`. Absent ⇒ the bridge has no fetch ⇒ main uses the global fetch. */
+  fetch?: typeof fetch;
 }
 
 /**
@@ -52,6 +54,7 @@ export async function runCli(args: string[], opts: RunOptions = {}): Promise<Run
       exitCode = code;
       throw new ExitSignal(code);
     },
+    ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
   };
 
   try {

@@ -10,6 +10,8 @@ import type { RenderKind } from "@pulse/renderer";
 
 import { parseProposalsArgs } from "./commands/proposals/args.js";
 import type { ProposalsInvocation } from "./commands/proposals/args.js";
+import { parsePushArgs } from "./commands/push/args.js";
+import type { PushInvocation } from "./commands/push/args.js";
 
 /** Global flags valid on every verb (04 §3.1). */
 export interface GlobalFlags {
@@ -62,10 +64,12 @@ export type ParsedInvocation =
   /** The proposals family; its tail is parsed by `parseProposalsArgs`. */
   | { kind: "command"; command: "proposals"; global: GlobalFlags; proposals: ProposalsInvocation }
   /** `connect-link`; `url` is present only when `--url` was passed. */
-  | { kind: "command"; command: "connect-link"; global: GlobalFlags; connectLink: { url?: string } };
+  | { kind: "command"; command: "connect-link"; global: GlobalFlags; connectLink: { url?: string } }
+  /** The push family; its tail is parsed by `parsePushArgs`. */
+  | { kind: "command"; command: "push"; global: GlobalFlags; push: PushInvocation };
 
 /** The verbs (REQ-CLI-01, REQ-PROP-07). Order is presentation-only. */
-const VERBS = ["init", "render", "validate", "coverage", "proposals", "connect-link"] as const;
+const VERBS = ["init", "render", "validate", "coverage", "proposals", "connect-link", "push"] as const;
 type Verb = (typeof VERBS)[number];
 
 /**
@@ -119,7 +123,7 @@ export class UsageError extends Error {
 /**
  * Parse a raw argv tail (`process.argv.slice(2)`) into a {@link ParsedInvocation}.
  *
- * Routing: the **verb** is the first token equal to one of the four verbs; every other token is
+ * Routing: the **verb** is the first token equal to one of the verbs; every other token is
  * a flag (global or per-verb) and may appear before or after the verb. `--version` (with or
  * without a verb, in any position) short-circuits to `{ kind: "version" }` (REQ-CLI-06).
  *
@@ -137,7 +141,7 @@ export function parseInvocation(argv: string[]): ParsedInvocation {
     if (argv.includes("--version")) return { kind: "version" };
     throw new UsageError(
       argv.length === 0
-        ? "no command given (expected one of: init, render, validate, coverage, proposals, connect-link)"
+        ? "no command given (expected one of: init, render, validate, coverage, proposals, connect-link, push)"
         : `unknown command: ${JSON.stringify(argv[0])}`,
     );
   }
@@ -157,6 +161,14 @@ export function parseInvocation(argv: string[]): ParsedInvocation {
       global: readGlobalFlags(parsed.values),
       proposals: parsed.invocation,
     };
+  }
+
+  if (verb === "push") {
+    // Positionals are enabled only in the push module's own options bag (like proposals).
+    const parsed = parsePushArgs(flagArgs, GLOBAL_OPTIONS);
+    if (!parsed.ok) throw new UsageError(parsed.message);
+    if (parsed.version) return { kind: "version" };
+    return { kind: "command", command: "push", global: readGlobalFlags(parsed.values), push: parsed.invocation };
   }
 
   const options =

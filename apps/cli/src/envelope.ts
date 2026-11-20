@@ -3,6 +3,7 @@
 import type { Finding } from "@pulse/core";
 import { SUPPORTED_SCHEMA_MAJORS } from "@pulse/core";
 import type { CoverageEntry, DriftEntry } from "@pulse/renderer";
+import type { DeviceSummary, PushTestResult } from "@pulse/web-data/wire";
 
 import type { ExitCode } from "./exit.js";
 import { PULSE_VERSION } from "./version.js";
@@ -21,7 +22,8 @@ export type PulseCommand =
   | "validate"
   | "coverage"
   | "proposals"
-  | "connect-link";
+  | "connect-link"
+  | "push";
 export type { ProposalsData, ProposalSummary } from "./commands/proposals/types.js";
 
 /** The envelope `meta` block: provenance every command emits identically. */
@@ -100,6 +102,29 @@ export interface ConnectLinkData {
   readonly baseUrl: string;
   /** Where the address came from. */
   readonly source: ConnectLinkSource;
+}
+
+/** `push pair` result payload. The link is a secret: it pairs one device. */
+export interface PushPairData {
+  /** `pulse://connect?…&pair=<token>` connect link (a secret). */
+  readonly link: string;
+  /** ISO-8601 UTC instant the pairing token expires. */
+  readonly expiresAt: string;
+}
+
+/** `push devices` result payload. */
+export interface PushDevicesData {
+  /** Every paired device; `[]` when none. */
+  readonly devices: readonly DeviceSummary[];
+}
+
+/** `push test` result payload: one outcome per tested device. */
+export type PushTestData = PushTestResult;
+
+/** `push revoke` result payload. */
+export interface PushRevokeData {
+  /** The revoked device's id. */
+  readonly deviceId: string;
 }
 
 /** The inputs `buildEnvelope` assembles into a `PulseEnvelope<D>`. */

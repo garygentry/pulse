@@ -32,6 +32,8 @@ import { runConnectLink } from "./commands/connect-link.js";
 import { runProposals } from "./commands/proposals/index.js";
 import type { ProposalsInvocation } from "./commands/proposals/args.js";
 import { ProposalToolError } from "./commands/proposals/git.js";
+import { runPush } from "./commands/push/index.js";
+import type { PushInvocation } from "./commands/push/args.js";
 
 /** Everything a command handler (05) needs; assembled by the shell before routing (04 §8.1). */
 export interface CommandContext {
@@ -45,6 +47,13 @@ export interface CommandContext {
   init?: InitInvocationFlags;
   /** Present only for `proposals`. */
   proposals?: ProposalsInvocation;
+  /** Present only for `push`: the parsed tail and the fetch seam. */
+  push?: {
+    /** The parsed `pulse push …` invocation. */
+    readonly invocation: PushInvocation;
+    /** `io.fetch ?? globalThis.fetch`. */
+    readonly fetchImpl: typeof fetch;
+  };
   /** The output writer — handlers emit progress via `note`/`detail`, never stdout directly. */
   out: OutputWriter;
 }
@@ -91,6 +100,8 @@ export interface ProcessBridge {
   stderrIsTTY: boolean;
   /** Terminate with a code; never returns. */
   exit(code: number): never;
+  /** fetch for `pulse push`. Absent ⇒ the global fetch. Tests inject a stub; nothing else uses it. */
+  readonly fetch?: typeof fetch;
 }
 
 /** The real process bridge used by the compiled binary / `bin` entry. */
@@ -153,6 +164,7 @@ export async function main(argv: string[], io: ProcessBridge = realBridge): Prom
       ...(inv.command === "connect-link" && inv.connectLink.url !== undefined
         ? { externalUrlFlag: inv.connectLink.url }
         : {}),
+      ...(inv.command === "push" && inv.push.server !== null ? { serverFlag: inv.push.server } : {}),
       env: io.env,
       cwd: io.cwd(),
     });
@@ -164,9 +176,19 @@ export async function main(argv: string[], io: ProcessBridge = realBridge): Prom
       ...(inv.command === "render" ? { render: inv.render } : {}),
       ...(inv.command === "init" ? { init: inv.init } : {}),
       ...(inv.command === "proposals" ? { proposals: inv.proposals } : {}),
+      ...(inv.command === "push"
+        ? {
+            push: {
+              invocation: inv.push,
+              // Wrapped so the global is never called unbound.
+              fetchImpl: io.fetch ?? (((input, init) => fetch(input, init)) as typeof fetch),
+            },
+          }
+        : {}),
     };
 
-    const result = route(inv.command, ctx, io.cwd(), io.env); // handlers live in 05 (synchronous)
+    // Awaited inside this try, so a rejected handler reaches the same catch and failHard (exit 2).
+    const result = await route(inv.command, ctx, io.cwd(), io.env);
 
     const exitCode: ExitCode = computeOutcomeExit({
       findings: result.findings,
@@ -194,20 +216,20 @@ export async function main(argv: string[], io: ProcessBridge = realBridge): Prom
 
 /**
  * Route a verb to its `05` handler, unpacking the handler's typed inputs from `ctx`. The
- * `switch` is exhaustive over {@link PulseCommand}. Synchronous — every handler and every
- * engine call it makes (`loadAndValidate`, `render`, `materialize`, `computeCoverage`) is sync.
+ * `switch` is exhaustive over {@link PulseCommand}. Async: every existing handler is still
+ * synchronous and is returned as-is (wrapped in a resolved Promise); only `push` awaits network I/O.
  *
  * @param command - The parsed verb.
  * @param ctx - The assembled command context (config, flags, writer).
  * @param cwd - The working directory (`init` scaffolds relative to it).
  * @param env - The process environment (`proposals` reads the secret from it).
  */
-function route(
+async function route(
   command: PulseCommand,
   ctx: CommandContext,
   cwd: string,
   env: NodeJS.ProcessEnv,
-): CommandResult<unknown> {
+): Promise<CommandResult<unknown>> {
   switch (command) {
     case "validate":
       return runValidate(ctx.config.estateDir);
@@ -234,6 +256,8 @@ function route(
     case "connect-link":
       // The address is already resolved (flag > env > file) by `resolveConfig`.
       return runConnectLink({ address: ctx.config.externalUrl }, ctx.out);
+    case "push":
+      return runPush(ctx.push!.invocation, ctx, { env, fetchImpl: ctx.push!.fetchImpl, now: () => new Date() });
   }
 }
 

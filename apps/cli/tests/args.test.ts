@@ -174,6 +174,27 @@ describe("parseInvocation — connect-link", () => {
   });
 
   test("the no-verb message lists connect-link", () => {
-    expect(() => parseInvocation([])).toThrow(/proposals, connect-link\)/);
+    expect(() => parseInvocation([])).toThrow(/proposals, connect-link(, |\))/);
+  });
+});
+
+describe("parseInvocation — push", () => {
+  test("the no-verb message lists every verb, including push", () => {
+    expect(() => parseInvocation([])).toThrow(
+      "no command given (expected one of: init, render, validate, coverage, proposals, connect-link, push)",
+    );
+  });
+
+  test("push devices parses to the push member via parsePushArgs", () => {
+    expect(parseInvocation(["push", "devices", "--json"])).toEqual({
+      kind: "command",
+      command: "push",
+      global: { json: true, strict: false, verbose: false, quiet: false },
+      push: { sub: "devices", server: null, insecureLocal: false },
+    });
+  });
+
+  test("a push usage fault is a UsageError", () => {
+    expect(() => parseInvocation(["push"])).toThrow(UsageError);
   });
 });
