@@ -41,6 +41,8 @@ export interface FakeTimers extends Timers {
   runAll(maxSteps?: number): number;
   /** Advance the clock by `ms`, running each timer at its own due time on the way. Returns the count run. */
   advance(ms: number): number;
+  /** Run exactly the next timer (advancing the clock to its due time when later). Returns false when none is set. */
+  step(): boolean;
   /** Number of scheduled (not yet fired or cancelled) timers. */
   pending(): number;
 }
@@ -110,6 +112,13 @@ export function createFakeTimers(clock: FakeClock): FakeTimers {
       const ran = runUntil(target, 100_000);
       clock.set(target);
       return ran;
+    },
+    step: () => {
+      const t = next();
+      if (t === undefined) return false;
+      if (t.due > clock.nowMs()) clock.set(t.due);
+      fire(t);
+      return true;
     },
     pending: () => timers.size,
   };
