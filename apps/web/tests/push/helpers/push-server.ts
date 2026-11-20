@@ -13,6 +13,7 @@ import type { StaticAssets } from "../../../src/server/assets.js";
 import { loadServerConfig } from "../../../src/server/config.js";
 import { buildPushRuntime, type PushRuntime } from "../../../src/server/push/bootstrap.js";
 import { PUSH_ENV, PUSH_PATHS } from "../../../src/server/push/constants.js";
+import type { Clock } from "../../../src/server/push/ids.js";
 import { createServerRuntime, type ServerRuntime } from "../../../src/server/refresh.js";
 import { createFetchHandler, dispatchMutation } from "../../../src/server/router.js";
 import { makeEstateBundleFixture } from "../../factories/estate-bundle.js";
@@ -55,6 +56,8 @@ export interface PushTestServerOptions {
   readonly env?: Readonly<Record<string, string>>;
   /** "stub-cycle" publishes one cycle whose overview has {@link STUB_CYCLE_ALERTS} firing alerts; "none" (default) publishes none. */
   readonly runtime?: "stub-cycle" | "none";
+  /** Push runtime clock; absent uses the system clock. Timers stay real. */
+  readonly clock?: Clock;
 }
 
 /** Firing alerts in the overview the "stub-cycle" runtime publishes. */
@@ -199,7 +202,10 @@ export async function startPushTestServer(opts: PushTestServerOptions = {}): Pro
     apns = await startFakeApns({ tls, providerPublicKey: built.publicKey });
     // The same order as the server entry: config, push runtime, server runtime, attach, fetch handler.
     const config = loadServerConfig(env);
-    push = await buildPushRuntime(config, { apns: { origins: apns.origins, ca: apns.ca } });
+    push = await buildPushRuntime(config, {
+      apns: { origins: apns.origins, ca: apns.ca },
+      ...(opts.clock !== undefined ? { clock: opts.clock } : {}),
+    });
     const alerts = opts.runtime === "stub-cycle" ? STUB_CYCLE_ALERTS : 0;
     runtime = createServerRuntime(config, { fetchImpl: engineStub(alerts) });
     push.attachRuntime(runtime);
