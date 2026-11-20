@@ -8,7 +8,9 @@ import type {
   PushTarget,
 } from "@pulse/web-data/wire";
 import { CONTRACT_LIMITS, truncateUtf8 } from "@pulse/web-data/contract";
-import { AUDIBLE_LEVEL, alertCollapseId } from "./plan.js";
+import type { ApnsRequest } from "./apns/client.js";
+import { PUSH_LIMITS } from "./constants.js";
+import { AUDIBLE_LEVEL, alertCollapseId, type PlannedNotification } from "./plan.js";
 import { PushInvariantError } from "./refusal.js";
 import { ownLabel, type AmAlert } from "./webhook.js";
 
@@ -247,4 +249,102 @@ export function buildPayload(draft: PayloadDraft): PushPayload {
     sanitizeText(text.body),
     CONTRACT_LIMITS.push.payloadBytes,
   );
+}
+
+/** A payload and the APNs request that carries it. */
+export interface BuiltPush {
+  /** The deeply frozen body object. */
+  readonly payload: PushPayload;
+  /** Headers + the serialised body (≤ CONTRACT_LIMITS.push.payloadBytes). */
+  readonly request: ApnsRequest;
+}
+
+/** Fields of a draft that only the request needs. */
+export interface RequestFields {
+  /** APNs expiration, epoch seconds. */
+  readonly expiration: number;
+  /** The configured APNs topic (bundle id). */
+  readonly topic: string;
+}
+
+const TEST_TITLE = "Pulse test notification";
+const TEST_BODY = "Push delivery to this device works.";
+
+function requestFor(
+  payload: PushPayload,
+  audible: boolean,
+  collapseId: string | null,
+  expiration: number,
+  topic: string,
+): ApnsRequest {
+  const headers: {
+    "apns-push-type": "alert";
+    "apns-topic": string;
+    "apns-priority": "10" | "5";
+    "apns-expiration": string;
+    "apns-collapse-id"?: string;
+  } = {
+    "apns-push-type": "alert",
+    "apns-topic": topic,
+    "apns-priority": audible ? "10" : "5",
+    "apns-expiration": String(expiration),
+  };
+  if (collapseId !== null) headers["apns-collapse-id"] = collapseId;
+  return Object.freeze({ headers: Object.freeze(headers), body: serializePayload(payload) });
+}
+
+/**
+ * Build payload + request in one step (contract fixtures, tests). Deterministic: no clock is read.
+ * `request.headers["apns-collapse-id"]` equals `payload.pulse.collapseId`.
+ *
+ * @param draft - The alert or summary draft.
+ * @param fields - Expiration and topic for the request headers.
+ * @returns The payload and its request.
+ */
+export function buildPushPayload(draft: PayloadDraft, fields: RequestFields): BuiltPush {
+  const payload = buildPayload(draft);
+  const audible = payload.aps.sound !== undefined;
+  const request = requestFor(payload, audible, payload.pulse.collapseId, fields.expiration, fields.topic);
+  return Object.freeze({ payload, request });
+}
+
+/**
+ * Build the APNs request for an already planned item at send time. Re-serialises `planned.payload` (deterministic,
+ * byte-identical to the size-checked serialisation) and derives the headers from `planned.audible`,
+ * `planned.collapseId` and `planned.expiration`.
+ *
+ * @param planned - The planned notification.
+ * @param topic - The configured APNs topic.
+ * @returns The request to send.
+ */
+export function toApnsRequest(planned: PlannedNotification, topic: string): ApnsRequest {
+  return requestFor(planned.payload, planned.audible, planned.collapseId, planned.expiration, topic);
+}
+
+/**
+ * Build a test notification: audible, `active`, priority 10, no collapse id, category PULSE_TEST, target home, the
+ * badge when available, and expiration `floor(nowMs / 1000) + PUSH_LIMITS.testExpirationSeconds`. Deterministic: the
+ * time is an input.
+ *
+ * @param badge - Current badge, or null to omit `aps.badge`.
+ * @param nowMs - Build time, epoch milliseconds.
+ * @param topic - The configured APNs topic.
+ * @returns The payload and its request (without an `apns-collapse-id` header).
+ */
+export function buildTestPayload(badge: number | null, nowMs: number, topic: string): BuiltPush {
+  const pulse: PushPayload["pulse"] = Object.freeze({
+    v: 1,
+    kind: "test",
+    collapseId: null,
+    target: Object.freeze({ screen: "home" }),
+  });
+  const payload = assemblePayload(TEST_TITLE, TEST_BODY, {
+    category: "PULSE_TEST",
+    level: "active",
+    audible: true,
+    badge,
+    pulse,
+  });
+  const expiration = Math.floor(nowMs / 1000) + PUSH_LIMITS.testExpirationSeconds;
+  return Object.freeze({ payload, request: requestFor(payload, true, null, expiration, topic) });
 }
