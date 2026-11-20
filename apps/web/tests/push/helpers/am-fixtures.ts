@@ -1,10 +1,12 @@
 // Alertmanager v4 webhook body builders with public-safe labels.
 //
-// The plain types below mirror the webhook validator's accepted subset; they are declared locally so the helpers
-// do not depend on the server's parser.
+// The fixture types extend the server's AmAlert/AmNotification with the members Alertmanager also sends, so a
+// fixture can be passed to the planner directly or serialised as a webhook body.
+
+import type { AmAlert, AmNotification } from "../../../src/server/push/webhook.js";
 
 /** One alert of an Alertmanager v4 webhook body. */
-export interface AmAlertFixture {
+export interface AmAlertFixture extends AmAlert {
   status: "firing" | "resolved";
   labels: Record<string, string>;
   annotations: Record<string, string>;
@@ -15,7 +17,7 @@ export interface AmAlertFixture {
 }
 
 /** An Alertmanager v4 webhook body. */
-export interface AmNotificationFixture {
+export interface AmNotificationFixture extends AmNotification {
   version: "4";
   groupKey: string;
   truncatedAlerts: number;
