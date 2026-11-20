@@ -15,7 +15,8 @@ import type { TestTls } from "./tls.js";
 
 /** One scripted reaction to a request for a token. */
 export type FakeApnsScript =
-  | { readonly kind: "status"; readonly status: number; readonly reason?: string }
+  /** Answer `status`; with `reason` the body is `{"reason"}` JSON, with `body` it is that raw text (reason wins). */
+  | { readonly kind: "status"; readonly status: number; readonly reason?: string; readonly body?: string }
   | { readonly kind: "delay"; readonly ms: number; readonly then: FakeApnsScript }
   /** Reset the stream without a response. */
   | { readonly kind: "drop" }
@@ -152,7 +153,10 @@ export async function startFakeApns(opts: StartFakeApnsOptions): Promise<FakeApn
     if (stream.destroyed || stream.closed) return;
     switch (step.kind) {
       case "status": {
-        if (step.reason === undefined) {
+        if (step.reason === undefined && step.body !== undefined) {
+          stream.respond({ ":status": step.status, "content-type": "text/plain" });
+          stream.end(step.body);
+        } else if (step.reason === undefined) {
           stream.respond({ ":status": step.status });
           stream.end();
         } else {
