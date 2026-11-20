@@ -60,3 +60,6 @@ specs/
 .DS_Store
 *.orig
 *.rej
+# Rauf runtime — transient files that must never be tracked
+**/.rauf/supervisors/
+**/.rauf/.forge-supervisor.json
