@@ -25,7 +25,10 @@ import * as storeModule from "../../src/server/push/registry/store.js";
 import * as sweepModule from "../../src/server/push/sweep.js";
 import * as routesMetricsModule from "../../src/server/routes/metrics.js";
 import { __resetMetricsForTest, renderMetrics } from "../../src/server/routes/metrics.js";
-import { getRuntimeStatus } from "../../src/server/refresh.js";
+import { getRuntimeStatus, type ServerRuntime } from "../../src/server/refresh.js";
+import { amAlert, amNotification } from "./helpers/am-fixtures.js";
+import { startFakeApns, type FakeApns } from "./helpers/fake-apns.js";
+import { createTestTls } from "./helpers/tls.js";
 import { createFakeClock, createFakeTimers, type FakeTimers } from "./helpers/fakes.js";
 import { writeTestKeyFile } from "./helpers/keys.js";
 
@@ -61,7 +64,13 @@ const storeHook: {
 } = { throwNext: false, failWrites: false, lastDeps: null, last: null, removalSubscribers: 0 };
 
 /** Per-test controls for the queues. */
-const queueHook = { throwOnClose: false };
+const queueHook: { throwOnClose: boolean; monitor: queueModule.DeliveryMonitor | null } = {
+  throwOnClose: false,
+  monitor: null,
+};
+
+/** The last non-null metrics provider installed while the suite is active. */
+let lastProvider: (() => routesMetricsModule.PushMetricsSnapshot) | null = null;
 
 /** Recorded memory.dropDevice ids. */
 const droppedMemory: string[] = [];
@@ -134,6 +143,7 @@ mock.module("../../src/server/push/dispatch/queue.js", () => ({
   createDeviceQueues: (deps: queueModule.DeviceQueuesDeps, hooks?: queueModule.DeviceQueuesHooks) => {
     const queues = real.createDeviceQueues(deps, hooks);
     if (!active) return queues;
+    queueHook.monitor = deps.monitor;
     return wrap(queues, {
       close: () => {
         events.push("queues close");
@@ -198,6 +208,7 @@ mock.module("../../src/server/routes/metrics.js", () => ({
   ...routesMetricsModule,
   setPushMetricsProvider: (provider: (() => routesMetricsModule.PushMetricsSnapshot) | null) => {
     if (active && provider === null) events.push("metrics null");
+    if (active && provider !== null) lastProvider = provider;
     real.setPushMetricsProvider(provider);
   },
 }));
@@ -226,6 +237,7 @@ const TOPIC = "com.example.pulse";
 let root: string;
 let keyPath: string;
 let keyPem: string;
+let keyPublic: import("node:crypto").KeyObject;
 let caseNo = 0;
 
 beforeAll(() => {
@@ -234,6 +246,7 @@ beforeAll(() => {
   const key = writeTestKeyFile(root);
   keyPath = key.path;
   keyPem = key.pem;
+  keyPublic = key.publicKey;
 });
 
 afterAll(() => {
@@ -378,6 +391,8 @@ beforeEach(() => {
   storeHook.last = null;
   storeHook.removalSubscribers = 0;
   queueHook.throwOnClose = false;
+  queueHook.monitor = null;
+  lastProvider = null;
   onLine.length = 0;
   logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
     const line = String(args[0]);
@@ -581,8 +596,8 @@ describe("bootstrap: configured", () => {
     expect(fs.calls.filter((c) => c.startsWith("readFile"))).toHaveLength(2);
 
     expect(metricsText()).toContain("pulse_web_push_devices 0");
-    // The interim configured routes answer 503 for push paths and null elsewhere.
-    expect((await dispatch(rt, "GET", "/api/push/status"))?.status).toBe(503);
+    // The configured routes serve push paths and resolve null elsewhere.
+    expect((await dispatch(rt, "GET", "/api/push/status"))?.status).toBe(200);
     expect(await dispatch(rt, "GET", "/api/overview")).toBeNull();
   });
 
@@ -600,6 +615,15 @@ describe("bootstrap: configured", () => {
       expect.stringContaining("remote operator commands (pulse push) are off"),
     ]);
     expect(eventsNamed("push_started")[0]).toMatchObject({ webhook: "off", admin: "off" });
+    expect(currentServerCapabilities()).toEqual(["push"]);
+
+    // The webhook surface is off: 503 PUSH_UNAVAILABLE, and push stays advertised.
+    const res = await dispatch(rt, "POST", "/api/push/alertmanager", {
+      authorization: `Bearer ${WEBHOOK_SECRET}`,
+      "content-type": "application/json",
+    });
+    expect(res?.status).toBe(503);
+    expect(((await res?.json()) as { code: string }).code).toBe("PUSH_UNAVAILABLE");
     expect(currentServerCapabilities()).toEqual(["push"]);
   });
 
@@ -723,3 +747,124 @@ describe("bootstrap: close()", () => {
     expect(events).toEqual(["capability unregister", "metrics null"]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Configured routes end to end (real clock and timers, fake APNs)
+// ---------------------------------------------------------------------------------------------------------------
+
+const tls = createTestTls();
+const APNS_TOKEN = "ab".repeat(32);
+
+describe.skipIf(tls === null)(`bootstrap: configured routes${tls === null ? " (skipped: openssl missing)" : ""}`, () => {
+  let fake: FakeApns | null = null;
+
+  afterEach(async () => {
+    await fake?.close();
+    fake = null;
+  });
+
+  async function call(rt: PushRuntime, method: string, pathname: string, headers: Record<string, string>, body?: unknown) {
+    const init: RequestInit = { method, headers };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const res = await rt.dispatcher({ request: new Request(`http://localhost${pathname}`, init), pathname, peerIp: "127.0.0.1" });
+    if (res === null) throw new Error(`no push answer for ${method} ${pathname}`);
+    return res;
+  }
+
+  const JSON_TYPE = { "content-type": "application/json" };
+
+  /** Start the fake, build a configured runtime against it, pair and register one device. */
+  async function pairedRuntime(): Promise<{ rt: PushRuntime; fake: FakeApns }> {
+    if (tls === null) throw new Error("unreachable");
+    const started = await startFakeApns({ tls, providerPublicKey: keyPublic });
+    fake = started;
+    const rt = await build(configFor(pushEnv(freshDataDir())), { apns: { origins: started.origins, ca: started.ca } });
+    expect(rt.state).toBe("configured");
+
+    const issued = await call(rt, "POST", "/api/push/admin/pairing-tokens", {
+      ...JSON_TYPE,
+      authorization: `Bearer ${OPERATOR_SECRET}`,
+    }, { baseUrl: "https://pulse.example.com" });
+    expect(issued.status).toBe(201);
+    const { link } = (await issued.json()) as { link: string };
+    const token = new URLSearchParams(link.slice(link.indexOf("?") + 1)).get("pair");
+    if (token === null) throw new Error("no pair token");
+
+    const redeemed = await call(rt, "POST", "/api/push/pairings/redeem", JSON_TYPE, { token, displayName: "Example iPhone" });
+    expect(redeemed.status).toBe(201);
+    const { credential } = (await redeemed.json()) as { credential: string };
+
+    const registered = await call(rt, "PUT", "/api/push/device", { ...JSON_TYPE, authorization: `Bearer ${credential}` }, {
+      apnsToken: APNS_TOKEN,
+      environment: "sandbox",
+      preferences: { critical: true, warning: true, info: true },
+    });
+    expect(registered.status).toBe(200);
+    return { rt, fake: started };
+  }
+
+  async function sendWebhook(rt: PushRuntime): Promise<void> {
+    const res = await call(rt, "POST", "/api/push/alertmanager", {
+      ...JSON_TYPE,
+      authorization: `Bearer ${WEBHOOK_SECRET}`,
+    }, amNotification({ alerts: [amAlert({ severity: "critical" })] }));
+    expect(res.status).toBe(202);
+  }
+
+  async function waitFor(predicate: () => boolean, label: string): Promise<void> {
+    const deadline = Date.now() + 5000;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+      await Bun.sleep(10);
+    }
+  }
+
+  test("metrics snapshot: devices follows the redeem, lastSuccessAtMs follows a fake-APNs delivery", async () => {
+    const { rt, fake: apns } = await pairedRuntime();
+    const provider = lastProvider;
+    if (provider === null || queueHook.monitor === null) throw new Error("no provider or monitor");
+    expect(provider()).toMatchObject({ state: "configured", devices: 1, lastSuccessAtMs: null });
+
+    await sendWebhook(rt);
+    const monitor = queueHook.monitor;
+    await waitFor(() => apns.requests.length === 1 && monitor.lastSuccessAtMs() !== null, "delivery");
+    const snapshot = provider();
+    expect(snapshot.lastSuccessAtMs).not.toBeNull();
+    expect(snapshot.lastSuccessAtMs).toBe(monitor.lastSuccessAtMs());
+    expect(snapshot.devices).toBe(1);
+    expect(metricsText()).toContain("pulse_web_push_last_success_timestamp_seconds");
+  }, 15_000);
+
+  test("attachRuntime: a notification planned after attachRuntime carries the badge; before, none", async () => {
+    const { rt, fake: apns } = await pairedRuntime();
+
+    await sendWebhook(rt);
+    await waitFor(() => apns.requests.length === 1, "first delivery");
+    const before = apns.requests[0]?.body as { aps: Record<string, unknown> };
+    expect("badge" in before.aps).toBe(false);
+
+    rt.attachRuntime(badgeRuntime(4));
+    // A resolution for the same alert is a new notification that is always sent.
+    const res = await call(rt, "POST", "/api/push/alertmanager", {
+      ...JSON_TYPE,
+      authorization: `Bearer ${WEBHOOK_SECRET}`,
+    }, amNotification({ alerts: [amAlert({ severity: "critical", status: "resolved" })] }));
+    expect(res.status).toBe(202);
+    await waitFor(() => apns.requests.length === 2, "second delivery");
+    const after = apns.requests[1]?.body as { aps: Record<string, unknown> };
+    expect(after.aps.badge).toBe(4);
+  }, 15_000);
+});
+
+/** A ServerRuntime stub exposing only what the badge source reads, with `alerts` current alerts. */
+function badgeRuntime(alerts: number): ServerRuntime {
+  const cycle = {
+    observation: { sources: { "alertmanager-alerts": { state: "current" } } },
+    overview: { value: { alerts: Array.from({ length: alerts }, (_, i) => ({ fingerprint: String(i) })) } },
+  };
+  const stub = {
+    getContext: () => ({ cycle }),
+    getStatus: () => ({ model: { loaded: true, formatVersion: 2, error: null } }),
+  };
+  return stub as unknown as ServerRuntime;
+}

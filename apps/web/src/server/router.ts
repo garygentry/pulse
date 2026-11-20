@@ -7,6 +7,7 @@
 // shared JSON 405 — no body is read, no write/audit API is imported. Unknown `/api/*` returns the
 // shared JSON 404 (never an accidental SPA shell); non-API GET keeps the SPA/asset/error-shell
 // behavior. A top-level catch maps an unexpected handler exception to a safe `INTERNAL_ERROR`.
+// `/api/push/*` is first offered to the push dispatcher (push-gateway); `null` falls through.
 
 import { resolveIdentity, type Identity } from "@pulse/web-data/identity";
 
@@ -20,6 +21,7 @@ import { overviewErrorBody } from "./routes/overview.js";
 import { ERROR_PAGE_CSP, renderErrorPage } from "./estate/error-page.js"; // error-page HTML (§4.4)
 import { loadStaticAssets, type StaticAssets } from "./assets.js"; // dist/client loader (01 build)
 import { log } from "./log.js";
+import { NO_PUSH, isPushAnswer, isPushPath, pushRouteLabel, type PushDispatcher } from "./push/routes.js";
 import {
   newCspNonce,
   shellContentSecurityPolicy,
@@ -115,6 +117,15 @@ function labelFor(pathname: string): string {
 }
 
 /**
+ * The final label for a request. A response produced by the push dispatcher is labelled with its push template. An
+ * unmatched push path never reaches this branch (the dispatcher returned null), so it keeps `"api-notfound"`.
+ */
+function finalLabel(pathname: string, method: string, res: Response | null, fallback: string): string {
+  if (res !== null && isPushPath(pathname) && isPushAnswer(res)) return pushRouteLabel(method, pathname) ?? fallback;
+  return fallback;
+}
+
+/**
  * Build the `Bun.serve` fetch handler.
  *
  * @param runtime - The shared runtime (context projection + operational status; §2).
@@ -122,16 +133,18 @@ function labelFor(pathname: string): string {
  * @param mutationDispatcher - The mutation seam for non-GET requests (default: the M1 no-op
  *   `dispatchMutation`). This is the injection point M2 registers against from `server/index.ts`, so
  *   the write path plugs in without editing this file; the GET route registry stays GET-only.
+ * @param pushDispatcher - The push seam for `/api/push/*` (default: the no-op `NO_PUSH`).
  * @returns The `(request, services?) => Promise<Response>` handler passed to `Bun.serve`.
  */
 export function createFetchHandler(
   runtime: ServerRuntime,
   assets: StaticAssets = loadStaticAssets(),
   mutationDispatcher: MutationDispatcher = dispatchMutation,
+  pushDispatcher: PushDispatcher = NO_PUSH,
 ): (request: Request, services?: RequestServices) => Promise<Response> {
   return async (request: Request, services: RequestServices = DEFAULT_SERVICES): Promise<Response> => {
     const { pathname } = new URL(request.url);
-    const routeLabel = labelFor(pathname); // stable low-cardinality label for the metric (§10)
+    let routeLabel = labelFor(pathname); // stable low-cardinality label for the metric (§10)
     let status = 200;
     // Every response leaves with the security headers for its type (security-headers.ts): the base
     // set everywhere, plus CSP/COOP/Permissions-Policy on HTML documents.
@@ -139,7 +152,8 @@ export function createFetchHandler(
     // if such a response occurs; the shell and the error page both carry their own).
     const shellCsp = (): string => shellContentSecurityPolicy(assets.inlineScriptHashes?.() ?? []);
     try {
-      const res = await dispatch(request, pathname, runtime, assets, services, mutationDispatcher);
+      const res = await dispatch(request, pathname, runtime, assets, services, mutationDispatcher, pushDispatcher);
+      routeLabel = finalLabel(pathname, request.method, res, routeLabel); // push template label
       status = res.status;
       return withSecurityHeaders(res, shellCsp);
     } catch (err) {
@@ -157,8 +171,9 @@ export function createFetchHandler(
 
 /**
  * The pure dispatch (exported for router unit tests — no port binding, prober idiom). Dispatch order
- * per §5: non-GET → mutation seam → JSON 405; then GET bundle-error handling; compiled route match;
- * `/assets/*`; unknown `/api/*` → JSON 404; otherwise the SPA shell.
+ * per §5: `/api/push/*` (any method) → push seam; non-GET → mutation seam → JSON 405; then GET
+ * bundle-error handling; compiled route match; `/assets/*`; unknown `/api/*` → JSON 404; otherwise the
+ * SPA shell. A `null` push result falls through unchanged.
  */
 export async function dispatch(
   req: Request,
@@ -167,7 +182,17 @@ export async function dispatch(
   assets: StaticAssets,
   services: RequestServices = DEFAULT_SERVICES,
   mutationDispatcher: MutationDispatcher = dispatchMutation,
+  pushDispatcher: PushDispatcher = NO_PUSH,
 ): Promise<Response> {
+  // (0) Push seam. Consulted for every method, before the mutation branch and so before identity resolution and the
+  //     bundle-error check: the push routes answer in bundle-error mode and in every auth mode. The dispatcher never
+  //     rejects and reads no body for a path it does not own. `null` (push disabled, or an unmatched push path)
+  //     falls through to today's behaviour.
+  if (isPushPath(pathname)) {
+    const pushed = await pushDispatcher({ request: req, pathname, peerIp: services.peerIp });
+    if (pushed !== null) return pushed;
+  }
+
   // (1) Non-GET → the named no-op mutation seam, then the shared JSON 405 (§5). The M1 seam never
   //     returns a response, reads no body, and imports no write/audit API (REQ-SEC-02).
   if (req.method !== "GET") {
