@@ -14,9 +14,11 @@ Contents: [About](#about) · [Versioning](#versioning) · [Handshake](#handshake
 
 ## About this contract
 
-This contract defines the read operations, response fields, events, limits and connect-link format that a separately
-installed Pulse client may rely on. It covers the session, the overview, alerts, estate and timeline views, the four
-history families (estate, target, alerts and checks), and the live event stream.
+This contract defines the operations, request and response fields, events, limits, push payload and connect-link
+format that a separately installed Pulse client may rely on. Its reads cover the session, the overview, alerts,
+estate and timeline views, the four history families (estate, target, alerts and checks), and the live event
+stream. It also has three client-originated operations for push notifications: redeeming a pairing token, and
+registering or removing a device. A pairing token or a device credential authorises them. Reads need no credential.
 
 This contract is a promise to first-party Pulse clients maintained in this repository. It makes no stability
 promise to any third-party client.
@@ -43,6 +45,8 @@ A contract version is `major.minor`, two non-negative integers (`ContractVersion
 - adding an event type;
 - adding an endpoint;
 - adding an optional request parameter;
+- adding an optional request-body member;
+- adding a member to a request field's enum;
 - adding a connect-link parameter.
 
 **Breaking** changes bump `major` and reset `minor` to 0:
@@ -51,10 +55,15 @@ A contract version is `major.minor`, two non-negative integers (`ContractVersion
 - changing a field's optionality or nullability;
 - removing an enum member;
 - narrowing a parameter's valid values;
+- adding a required request-body member, or making an optional one required;
+- removing a member from a request field's enum (narrowing its valid values);
 - removing an endpoint or an event type.
 
 CI enforces these rules against the frozen baseline `shape/<major>.<minor>.json`. A change to the shape of a response
-without the matching version bump fails the test suite.
+without the matching version bump fails the test suite. Request bodies are checked with the request rules: the roots
+named in the operations table's Request body column are classified so that a new required member, a member becoming
+required, or a removed enum member is breaking, while a new optional member, a member becoming optional, or a new enum
+member is additive. Response bodies keep the rules above.
 
 The server speaks exactly one contract version. Serving two versions side by side is out of scope.
 
@@ -82,8 +91,9 @@ which side must be updated, and show no monitoring data.
 
 **Capabilities.** `contract.capabilities` lists the optional features the server can provide right now. A capability
 is listed only while the feature is available. Contract 1.1 defines one capability, `push`. It is listed only while the
-server can accept pairing and registration right now, and is absent when push is not configured or is misconfigured. A
-client shows push features, and calls the push operations, only while `push` is listed. A client must hide any feature
+server can accept pairing and registration right now. It is absent when push is not configured or is misconfigured. A
+client shows push features, and calls the push operations, only while `push` is listed. The `session/push-capability`
+fixture shows it present. A client must hide any feature
 whose capability is absent, and must ignore capability names it does not know.
 
 The session's top-level `capabilities` object is a different thing: it holds the per-identity write permissions and
@@ -127,7 +137,10 @@ these rules. Its validators stay strict. The rules bind every separately install
 
 ## Operations
 
-Every contract operation is a `GET`. The table lists each one with its parameters, statuses, errors and caching.
+Reads are `GET` operations and need no credential. The three push operations are `POST`, `PUT` and `DELETE`. Their
+Auth column names what authorises them, and their Request body column names the JSON body they take (see
+[Request bodies](#request-bodies)). The table lists each operation with its parameters, statuses, errors and
+caching.
 
 <!-- generated:operations -->
 | Operation | Method | Path | Auth | Parameters | Request body | Success | Errors | Caching | Response |
@@ -1151,15 +1164,35 @@ data: {"identities":{…},"observation":{…}}
 - A violation returns `400 INVALID_REQUEST`.
 - History accepts only the `range` key. Any other key is a 400. The current views and the session ignore unknown keys.
   A client should send none.
+- A push request body is `Content-Type: application/json` (optionally `; charset=utf-8`) and at most 4096 bytes
+  (`CONTRACT_LIMITS.request.bodyBytes`). A larger body returns `413 PAYLOAD_TOO_LARGE`. Any other media type,
+  malformed JSON, an unknown member, a missing member or an invalid value returns `400 INVALID_REQUEST`, and the
+  request has no effect.
 
 <a id="auth"></a>
 
 ## Authentication
 
-- No contract operation needs client credentials, in any authentication mode (`PULSE_WEB_AUTH_MODE`).
+- Reads need no client credentials, in any authentication mode (`PULSE_WEB_AUTH_MODE`). This does not change.
 - `identity` in the session response may be `null`. A client must not treat that as an error.
-- Any access control in front of the server, such as a VPN or a proxy, is deployment configuration and is outside the
-  contract.
+- **Pairing token.** `POST /api/push/pairings/redeem` is authorised by the one-time token in the body's `token`
+  member, which the client takes from the `pair` parameter of a connect link. A token is 22 base64url characters,
+  valid for 10 minutes, redeemable once, and invalidated by a server restart. Every failure (missing, malformed,
+  unknown, expired, already used) is the same `403 PAIRING_REFUSED`, with an identical body. A client must not try
+  to tell them apart. After too many failures the server answers `429 RATE_LIMITED` with `Retry-After`, and every
+  outstanding token stops working. The operator issues a new one.
+- **Device credential.** A successful redemption returns `credential`, 43 base64url characters, exactly once. The
+  client stores it in the Keychain. It must never log it, show it, put it in a URL, or send it anywhere except the
+  header `Authorization: Bearer <credential>` on `PUT` and `DELETE /api/push/device`. The header must appear exactly
+  once. A missing, repeated, malformed, unknown or revoked credential gets the same `401 UNAUTHORIZED`, with an
+  identical body.
+- **On 401**, the client discards the stored credential and tells the user the device must be paired again. It does
+  not retry with the same credential.
+- **Refresh.** A registered device repeats `PUT /api/push/device` at least every 30 days whenever the app runs,
+  including background launches. A device not seen for 90 days is removed by the server.
+- A credential identifies one device only. It can never read or change another device's registration.
+- Any access control in front of the server, such as a VPN or a proxy, is deployment configuration and is outside
+  the contract. The push operations do not depend on it: they work in every authentication mode.
 
 <a id="not-in-contract"></a>
 
@@ -1171,7 +1204,11 @@ A client must not depend on any of the following:
 - the proposals routes;
 - `/healthz` and `/metrics`;
 - `GET /api/connect-link`, which serves the web UI only;
-- every non-GET method (they currently return `405 METHOD_NOT_ALLOWED`);
+- every other non-GET method (they return `405 METHOD_NOT_ALLOWED`);
+- `POST /api/push/alertmanager`, the Alertmanager webhook;
+- the web UI's push routes: `GET /api/push/status`, `POST /api/push/pairing-tokens`,
+  `DELETE /api/push/pairing-tokens/current` and `DELETE /api/push/devices/:id`;
+- the operator routes under `/api/push/admin/`;
 - the response headers `X-Pulse-Observation` and `X-Pulse-Payload-Id`;
 - in `LiveTick`, `identities.engine` and the content of `observation` beyond `generation` and `seq`;
 - static assets and the HTML shell.
@@ -1188,12 +1225,7 @@ A connect link tells a client where the server is. It is what the QR code on the
   version.
 - Parameters appear in the order `v`, `url`, then extras sorted by name. An extra name matches
   `LINK_PARAM_NAME_PATTERN` (`^[a-z][a-z0-9-]{0,31}$`), and `v` and `url` are reserved. A client must ignore extras it
-  does not know. Adding one needs no format version bump. Contract 1.1 defines one extra parameter, `pair`: a pairing
-  token (22 base64url characters, `PAIR_TOKEN_PATTERN`) that authorises this device to register for push
-  notifications. **A link carrying `pair` is a secret.** A client must not log it, persist it, share it or show it
-  again after reading it; it uses the token once, for redemption, and then discards it. A link without `pair` carries
-  no secret. A client ignores a malformed `pair` as if it were absent, and a client without push support ignores `pair`
-  like any unknown parameter.
+  does not know. Adding one needs no format version bump.
 - A base URL built by the server is normalised: https only, no credentials, query or fragment, a lower-case host, no
   default port and no trailing slash. Producers emit links of at most 256 characters (`CONNECT_LINK_MAX_LENGTH`).
 
@@ -1214,14 +1246,59 @@ length limit.
 On success the client uses the normalised base URL, and then performs the [handshake](#handshake) before it shows any
 data.
 
-The `connect-link` fixtures pin every rule.
+Contract 1.1 defines one extra parameter, `pair`: a pairing token (22 base64url characters, `PAIR_TOKEN_PATTERN`)
+that authorises this device to register for push notifications (see [Authentication](#auth)). The server adds it
+only when an operator explicitly asks to pair a device.
+
+**A link carrying `pair` is a secret.** A client must not log it, persist it, share it or show it again after
+reading it. It uses the token once, for redemption, and then discards it. A link without `pair` carries no secret,
+as before. A client validates `pair` against `PAIR_TOKEN_PATTERN` and ignores a malformed value as if it were
+absent. A client that does not support push ignores `pair` like any unknown parameter.
+
+The `connect-link` fixtures pin every rule, including `with-pair-token`.
 
 <a id="push-payload"></a>
 
 ## Push payload
 
-A push notification's body is one `PushPayload` JSON object of at most 4096 bytes. A client must ignore unknown
-members in `aps`, in `pulse` and at the top level.
+A push notification's body is one `PushPayload` JSON object of at most 4096 bytes. `aps` is Apple's standard
+dictionary. `pulse` is Pulse's own. A client must ignore unknown members in both, and at the top level.
+
+**Per-kind rules.**
+
+| `pulse.kind` | `pulse.alert` | `pulse.summary` | `pulse.collapseId` | `aps.category` | `pulse.target` |
+|---|---|---|---|---|---|
+| `alert` | present | absent | the alert's identity | `PULSE_ALERT_FIRING` or `PULSE_ALERT_RESOLVED`, matching `alert.status` | `{screen: "alert", fingerprint}` |
+| `summary` | absent | present | the group's identity | `PULSE_ALERT_SUMMARY` | `{screen: "alerts"}` |
+| `test` | absent | absent | `null` | `PULSE_TEST` | `{screen: "home"}` |
+
+- A later notification with the same `collapseId` replaces the earlier one.
+- `aps.sound` is present only on an audible notification. A quiet one (a repeat, a resolution, or a summary with no
+  newly firing alert) has no `sound` and uses `passive`.
+- `pulse.alert.severity` and `pulse.summary.severity` always carry the real severity, even when delivery is quiet.
+  `summary.severity` is the highest severity among the newly firing alerts it covers, or `null` when there are none.
+- `aps.badge` is the number of firing alerts the server's alerts view shows. It is absent when the server cannot
+  tell, and the client then leaves its badge unchanged.
+- Title and body may contain alert names and target labels, and nothing else from the deployment. Over-long text is
+  truncated (title 128, body 512 UTF-8 bytes) so the notification is always sent.
+- `pulse.v` is 1 throughout contract 1.x.
+
+| Severity | Audible interruption level |
+|---|---|
+| `critical` | `time-sensitive` |
+| `warning` | `active` |
+| `info` | `passive` |
+| `unknown` | `active` |
+
+| Category | Meaning |
+|---|---|
+| `PULSE_ALERT_FIRING` | an alert is firing |
+| `PULSE_ALERT_RESOLVED` | an alert resolved |
+| `PULSE_ALERT_SUMMARY` | several alerts changed in one group |
+| `PULSE_TEST` | an operator's test notification |
+
+Payload fixtures are under `fixtures/push-payload/`. They have no web consumer and are checked against these rules
+instead.
 
 <a id="fields-pushpayload"></a>
 
@@ -1267,19 +1344,22 @@ Each index entry has these fields:
 
 - `path`, `group`, `operation`, `scenario`: where the fixture is and what it exercises.
 - `kind`: what the file holds. `response` and `error` are HTTP bodies, `event` is one event's data, `stream` is a raw
-  SSE transcript, `handshake` is a handshake case, and `connect-link` is a connect-link case.
+  SSE transcript, `handshake` is a handshake case, `connect-link` is a connect-link case, `request` is a request body a
+  client sends (a rejecting one names the error code the server answers in `rejection`), and `payload` is a push
+  notification body.
 - `status`: the HTTP status for `response` and `error` fixtures, otherwise `null`.
 - `expect`: `accept` when a conforming client must decode the fixture, `reject` when it must refuse it. A client
   accepts an error fixture by decoding it as the documented error.
 - `webValidator`: internal to the web client. Other clients ignore it.
 - `client` and `expectedOutcome` (handshake fixtures): the client requirement and the decision the
   [handshake](#handshake) table must give.
-- `rejection` (rejecting connect-link fixtures): the rejection the [connect link](#connect-link) checks must give.
+- `rejection` (rejecting connect-link fixtures and rejecting request fixtures): the rejection the
+  [connect link](#connect-link) checks must give, or the error code the server answers for a refused request body.
 
 A decoder is correct when it gives the result the index records for every fixture.
 
 <!-- generated:fixtures -->
-Index format 1, contract 1.1, 194 fixtures.
+Index format 1, contract 1.1, 207 fixtures.
 
 | Fixture | Operation | Scenario | Kind | Status | Expect | Expected result |
 |---|---|---|---|---|---|---|
@@ -1434,13 +1514,25 @@ Index format 1, contract 1.1, 194 fixtures.
 | [`fixtures/overview/unknown-enum-target-status.json`](fixtures/overview/unknown-enum-target-status.json) | `GET /api/overview` | `unknown-enum-target-status` | response | 200 | accept | — |
 | [`fixtures/overview/unknown-fields.json`](fixtures/overview/unknown-fields.json) | `GET /api/overview` | `unknown-fields` | response | 200 | accept | — |
 | [`fixtures/push-device/all-muted.json`](fixtures/push-device/all-muted.json) | `PUT /api/push/device` | `all-muted` | request | — | accept | — |
+| [`fixtures/push-device/invalid-request.json`](fixtures/push-device/invalid-request.json) | `PUT /api/push/device` | `invalid-request` | error | 400 | accept | — |
+| [`fixtures/push-device/payload-too-large.json`](fixtures/push-device/payload-too-large.json) | `PUT /api/push/device` | `payload-too-large` | error | 413 | accept | — |
+| [`fixtures/push-device/push-unavailable.json`](fixtures/push-device/push-unavailable.json) | `PUT /api/push/device` | `push-unavailable` | error | 503 | accept | — |
+| [`fixtures/push-device/registered.json`](fixtures/push-device/registered.json) | `PUT /api/push/device` | `registered` | response | 200 | accept | — |
 | [`fixtures/push-device/reject-missing-preferences.json`](fixtures/push-device/reject-missing-preferences.json) | `PUT /api/push/device` | `reject-missing-preferences` | request | — | reject | rejection `INVALID_REQUEST` |
 | [`fixtures/push-device/reject-token-format.json`](fixtures/push-device/reject-token-format.json) | `PUT /api/push/device` | `reject-token-format` | request | — | reject | rejection `INVALID_REQUEST` |
 | [`fixtures/push-device/reject-unknown-environment.json`](fixtures/push-device/reject-unknown-environment.json) | `PUT /api/push/device` | `reject-unknown-environment` | request | — | reject | rejection `INVALID_REQUEST` |
 | [`fixtures/push-device/sandbox.json`](fixtures/push-device/sandbox.json) | `PUT /api/push/device` | `sandbox` | request | — | accept | — |
 | [`fixtures/push-device/typical.json`](fixtures/push-device/typical.json) | `PUT /api/push/device` | `typical` | request | — | accept | — |
+| [`fixtures/push-device/unauthorized.json`](fixtures/push-device/unauthorized.json) | `PUT /api/push/device` | `unauthorized` | error | 401 | accept | — |
 | [`fixtures/push-device/unknown-enum-push-environment.json`](fixtures/push-device/unknown-enum-push-environment.json) | `PUT /api/push/device` | `unknown-enum-push-environment` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-pairing/device-cap-reached.json`](fixtures/push-pairing/device-cap-reached.json) | `POST /api/push/pairings/redeem` | `device-cap-reached` | error | 409 | accept | — |
+| [`fixtures/push-pairing/invalid-request.json`](fixtures/push-pairing/invalid-request.json) | `POST /api/push/pairings/redeem` | `invalid-request` | error | 400 | accept | — |
 | [`fixtures/push-pairing/max-length-name.json`](fixtures/push-pairing/max-length-name.json) | `POST /api/push/pairings/redeem` | `max-length-name` | request | — | accept | — |
+| [`fixtures/push-pairing/pairing-refused.json`](fixtures/push-pairing/pairing-refused.json) | `POST /api/push/pairings/redeem` | `pairing-refused` | error | 403 | accept | — |
+| [`fixtures/push-pairing/payload-too-large.json`](fixtures/push-pairing/payload-too-large.json) | `POST /api/push/pairings/redeem` | `payload-too-large` | error | 413 | accept | — |
+| [`fixtures/push-pairing/push-unavailable.json`](fixtures/push-pairing/push-unavailable.json) | `POST /api/push/pairings/redeem` | `push-unavailable` | error | 503 | accept | — |
+| [`fixtures/push-pairing/rate-limited.json`](fixtures/push-pairing/rate-limited.json) | `POST /api/push/pairings/redeem` | `rate-limited` | error | 429 | accept | — |
+| [`fixtures/push-pairing/redeemed.json`](fixtures/push-pairing/redeemed.json) | `POST /api/push/pairings/redeem` | `redeemed` | response | 201 | accept | — |
 | [`fixtures/push-pairing/reject-name-charset.json`](fixtures/push-pairing/reject-name-charset.json) | `POST /api/push/pairings/redeem` | `reject-name-charset` | request | — | reject | rejection `INVALID_REQUEST` |
 | [`fixtures/push-pairing/reject-name-too-long.json`](fixtures/push-pairing/reject-name-too-long.json) | `POST /api/push/pairings/redeem` | `reject-name-too-long` | request | — | reject | rejection `INVALID_REQUEST` |
 | [`fixtures/push-pairing/reject-unknown-field.json`](fixtures/push-pairing/reject-unknown-field.json) | `POST /api/push/pairings/redeem` | `reject-unknown-field` | request | — | reject | rejection `INVALID_REQUEST` |
@@ -1467,6 +1559,7 @@ Index format 1, contract 1.1, 194 fixtures.
 | [`fixtures/session/empty.json`](fixtures/session/empty.json) | `GET /api/session` | `empty` | response | 200 | accept | — |
 | [`fixtures/session/error-invalid-request.json`](fixtures/session/error-invalid-request.json) | `GET /api/session` | `error-invalid-request` | error | 400 | accept | — |
 | [`fixtures/session/max-size.json`](fixtures/session/max-size.json) | `GET /api/session` | `max-size` | response | 200 | accept | — |
+| [`fixtures/session/push-capability.json`](fixtures/session/push-capability.json) | `GET /api/session` | `push-capability` | response | 200 | accept | — |
 | [`fixtures/session/typical.json`](fixtures/session/typical.json) | `GET /api/session` | `typical` | response | 200 | accept | — |
 | [`fixtures/session/unknown-capability.json`](fixtures/session/unknown-capability.json) | `GET /api/session` | `unknown-capability` | response | 200 | accept | — |
 | [`fixtures/session/unknown-enum-auth-mode.json`](fixtures/session/unknown-enum-auth-mode.json) | `GET /api/session` | `unknown-enum-auth-mode` | response | 200 | accept | — |
@@ -1486,9 +1579,13 @@ Index format 1, contract 1.1, 194 fixtures.
 Every checklist below ends the same way: run `bun run contract:gen`, commit everything under `contract/`, and make
 sure `bun test` passes.
 
-1. **Endpoint.** Add the wire type to `packages/web-data` and its root to `SHAPE_ROOTS`. Add the route (GET only). Add
-   a `ContractOperation` to `OPERATIONS`, with its error rows. Add a scenario module (typical, empty, all-optional,
-   max-size and each error) to `scenarios/index.ts`. Add any caps to `CONTRACT_LIMITS` and any enum entries to
+1. **Endpoint.** Add the wire type(s) to `packages/web-data` and their roots to `SHAPE_ROOTS`, with a `fields:` marker
+   pair under [Response fields](#fields) or [Request bodies](#request-bodies). Add the route. Add a
+   `ContractOperation` to `OPERATIONS` with its method, `auth` (`none` for every GET), `requestRoot` (or `null`),
+   `responseRoot` (`null` only for a bodiless 204) and error rows. Add a scenario module to `scenarios/index.ts`:
+   for a read, typical, empty, all-optional, max-size and each error; for a non-GET, `request` fixtures (accepted
+   and rejected, each rejection naming its code) plus the success response and each error. Add a
+   `UNKNOWN_ENUM_BASE` entry for every new root. Add any caps to `CONTRACT_LIMITS` and any enum entries to
    `ENUM_FALLBACKS`. Bump `minor`.
 2. **Capability.** Append the name to `KNOWN_SERVER_CAPABILITIES`. Call `registerCapabilityProvider` with a synchronous
    in-process predicate that is true only while the feature works. Add a session fixture with the capability present.
@@ -1497,7 +1594,8 @@ sure `bun test` passes.
    as `tick`. Add a fixture and an `.sse` transcript. Document it under [Live events](#events). Bump `minor`. Old
    clients ignore it under the [tolerance rules](#tolerance).
 4. **Fixture.** Add a scenario to the group's module. Never write fixture JSON by hand. Use only the allowlisted
-   placeholders (`pulse.example.com`, `192.0.2.x`, `2001:db8::`). Keep max-size fixtures small: put every collection
+   placeholders (`pulse.example.com`, `192.0.2.x`, `2001:db8::`, `Example iPhone`, `AAAAAAAAAAAAAAAAAAAAAA` for
+   pairing tokens, and 64-hex APNs tokens). Keep max-size fixtures small: put every collection
    exactly at its cap with minimal items (shortest valid strings, optional fields omitted, nested arrays empty); write
    one max-size fixture per operation and never combine it with all-optional; fill only capped collections (estate
    fills only `liveTargets`, `findings` and `declaredVersusScraped`). Stay within the budget enforced by

@@ -160,7 +160,9 @@ const EXTERNAL_ALLOWLIST: readonly AllowedEdge[] = [
   { from: SCRIPTS, to: `${PUSH_REL}dispatch/queue.ts`, typesOnly: true },
   // The contract operations and scenario rows reuse the route paths, the planner's collapse-id and severity
   // helpers and the webhook alert type rather than restating them.
-  { from: SCRIPTS, to: `${PUSH_REL}constants.ts`, names: ["PUSH_PATHS"] },
+  { from: SCRIPTS, to: `${PUSH_REL}constants.ts`, names: ["PUSH_PATHS", "PUSH_LIMITS"] },
+  // The fixture stub runtime holds its placeholder operator secret the way the server does.
+  { from: SCRIPTS, to: `${PUSH_REL}secrets.ts`, names: ["loadPushSecret"] },
   { from: SCRIPTS, to: `${PUSH_REL}plan.ts`, names: ["groupCollapseId", "severityOf"] },
   { from: SCRIPTS, to: `${PUSH_REL}webhook.ts`, typesOnly: true },
 ];

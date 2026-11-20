@@ -44,7 +44,12 @@ import {
   historyEstateRoute,
   historyTargetRoute,
 } from "../../src/server/routes/history.js";
-import { PUSH_PATHS } from "../../src/server/push/constants.js";
+import { createDisabledPushRuntime } from "../../src/server/push/bootstrap.js";
+import { PUSH_LIMITS, PUSH_PATHS } from "../../src/server/push/constants.js";
+import type { StaticAssets } from "../../src/server/assets.js";
+import type { ServerRuntime } from "../../src/server/refresh.js";
+import { dispatch, dispatchMutation } from "../../src/server/router.js";
+import { createStubPushRuntime, resetHandlerGlobals, type StubPushRuntime } from "../../scripts/contract/stub-context.js";
 import { ROUTES } from "../../src/server/routes/registry.js";
 import type { RouteDefinition, RouteRequest, ServerContext } from "../../src/shared/registry.js";
 
@@ -768,6 +773,100 @@ describe("OPERATIONS", () => {
     }
   });
 
+  test(
+    "push error statuses equal what the stub server answers, and 405 is the disabled router's answer",
+    async () => {
+      const typicalRedeem = { token: "AAAAAAAAAAAAAAAAAAAAAA", displayName: "Example iPhone" };
+      const typicalDevice = {
+        apnsToken: "0123456789abcdef".repeat(4),
+        environment: "production",
+        preferences: { critical: true, warning: true, info: true },
+      };
+      const oversize = JSON.stringify("a".repeat(CONTRACT_LIMITS.request.bodyBytes - 1));
+      const bearer = (credential: string) => ({ authorization: `Bearer ${credential}` });
+      type Producer = (stub: StubPushRuntime) => Promise<Response>;
+      type Case = { readonly producer: Producer; readonly options?: Parameters<typeof createStubPushRuntime>[0] };
+      const redeem = (stub: StubPushRuntime, body: unknown) => stub.send("POST", PUSH_PATHS.redeem, { body });
+      const put = async (stub: StubPushRuntime, body: unknown) =>
+        stub.send("PUT", PUSH_PATHS.device, { body, headers: bearer((await stub.pair()).credential) });
+      const producers: Readonly<Record<string, Readonly<Record<number, Case>>>> = {
+        [`POST ${PUSH_PATHS.redeem}`]: {
+          400: { producer: (stub) => redeem(stub, "{") },
+          403: { producer: (stub) => redeem(stub, typicalRedeem) },
+          409: {
+            options: { maxDevices: 1 },
+            producer: async (stub) => {
+              await stub.pair();
+              return redeem(stub, { ...typicalRedeem, token: await stub.issueToken() });
+            },
+          },
+          413: { producer: (stub) => redeem(stub, oversize) },
+          429: {
+            producer: async (stub) => {
+              for (let i = 0; i < PUSH_LIMITS.limiterMaxFailures; i += 1) await redeem(stub, typicalRedeem);
+              return redeem(stub, typicalRedeem);
+            },
+          },
+          503: { options: { state: "misconfigured" }, producer: (stub) => redeem(stub, typicalRedeem) },
+        },
+        [`PUT ${PUSH_PATHS.device}`]: {
+          400: { producer: (stub) => put(stub, "{") },
+          401: { producer: (stub) => stub.send("PUT", PUSH_PATHS.device, { body: typicalDevice }) },
+          413: { producer: (stub) => put(stub, oversize) },
+          503: {
+            options: { state: "misconfigured" },
+            producer: (stub) => stub.send("PUT", PUSH_PATHS.device, { body: typicalDevice, headers: bearer("A".repeat(43)) }),
+          },
+        },
+        [`DELETE ${PUSH_PATHS.device}`]: {
+          401: { producer: (stub) => stub.send("DELETE", PUSH_PATHS.device) },
+          503: {
+            options: { state: "misconfigured" },
+            producer: (stub) => stub.send("DELETE", PUSH_PATHS.device, { headers: bearer("A".repeat(43)) }),
+          },
+        },
+      };
+      const DRIVEN = new Set([400, 401, 403, 409, 413, 429, 503]);
+      const runtime = {
+        getContext: () => ({ estate: null, cycle: null, identity: null, snapshot: null }),
+        identityConfig: { mode: "none" },
+        getStatus: () => ({ sources: {}, model: { loaded: true, formatVersion: 1, error: null }, lastSnapshotAt: null }),
+      } as unknown as ServerRuntime;
+      const assets: StaticAssets = { get: () => undefined, shell: () => "" };
+      const disabled = createDisabledPushRuntime().dispatcher;
+      try {
+        for (const op of OPERATIONS.filter((candidate) => candidate.auth !== "none")) {
+          const table = producers[op.label];
+          expect(table).toBeDefined();
+          for (const row of op.errors) {
+            if (row.status === 405) {
+              const request = new Request(`https://pulse.example.com${op.path}`, { method: op.method });
+              const res = await dispatch(request, op.path, runtime, assets, { peerIp: null, disableTimeout() {} }, dispatchMutation, disabled);
+              expect(`${op.label} ${res.status}`).toBe(`${op.label} 405`);
+              expect(((await res.json()) as { code: string }).code).toBe(row.code);
+              continue;
+            }
+            if (!DRIVEN.has(row.status)) continue; // 500 is not driven
+            const driven = table![row.status];
+            expect(`${op.label} ${row.status} ${driven !== undefined}`).toBe(`${op.label} ${row.status} true`);
+            const stub = await createStubPushRuntime(driven!.options ?? {});
+            try {
+              const res = await driven!.producer(stub);
+              expect(`${op.label} ${res.status}`).toBe(`${op.label} ${row.status}`);
+              expect(((await res.json()) as { code: string }).code).toBe(row.code);
+              expect(res.headers.has("retry-after")).toBe(row.headers?.includes("Retry-After") === true);
+            } finally {
+              await stub.close();
+            }
+          }
+        }
+      } finally {
+        resetHandlerGlobals();
+      }
+    },
+    GENERATION_TIMEOUT,
+  );
+
   test("the request guard text carries the real request limits", () => {
     expect(MAX_QUERY_BYTES).toBe(2048);
     expect(MAX_PARAM_BYTES).toBe(512);
@@ -857,6 +956,35 @@ describe("contract/CONTRACT.md", () => {
       "`identities.engine` and everything in `observation` except `generation` and `seq` are not part of the contract. A client must ignore them.",
       "A decoder is correct when it gives the result the index records for every fixture.",
       "Error bodies are `ErrorEnvelope` `{code, message, details?}` unless marked `BundleErrorBody`. A client must branch on `code`, never on `message`.",
+      // Push: what the contract covers, and the version it is at.
+      "It also has three client-originated operations for push notifications: redeeming a pairing token, and registering or removing a device.",
+      "The current contract version is `1.1`",
+      // Authentication.
+      "Every failure (missing, malformed, unknown, expired, already used) is the same `403 PAIRING_REFUSED`, with an identical body. A client must not try to tell them apart.",
+      "It must never log it, show it, put it in a URL, or send it anywhere except the header `Authorization: Bearer <credential>` on `PUT` and `DELETE /api/push/device`. The header must appear exactly once.",
+      "**On 401**, the client discards the stored credential and tells the user the device must be paired again. It does not retry with the same credential.",
+      "The push operations do not depend on it: they work in every authentication mode.",
+      // Not in the contract.
+      "every other non-GET method (they return `405 METHOD_NOT_ALLOWED`);",
+      "`POST /api/push/alertmanager`, the Alertmanager webhook;",
+      "the web UI's push routes: `GET /api/push/status`, `POST /api/push/pairing-tokens`, `DELETE /api/push/pairing-tokens/current` and `DELETE /api/push/devices/:id`;",
+      "the operator routes under `/api/push/admin/`;",
+      // Versioning: the request-body rules.
+      "adding an optional request-body member;",
+      "adding a member to a request field's enum;",
+      "adding a required request-body member, or making an optional one required;",
+      "removing a member from a request field's enum (narrowing its valid values);",
+      "Request bodies are checked with the request rules:",
+      // Connect link.
+      "**A link carrying `pair` is a secret.** A client must not log it, persist it, share it or show it again after reading it. It uses the token once, for redemption, and then discards it.",
+      "A client validates `pair` against `PAIR_TOKEN_PATTERN` and ignores a malformed value as if it were absent.",
+      // Push payload.
+      "A client must ignore unknown members in both, and at the top level.",
+      "A quiet one (a repeat, a resolution, or a summary with no newly firing alert) has no `sound` and uses `passive`.",
+      "It is absent when the server cannot tell, and the client then leaves its badge unchanged.",
+      "`pulse.v` is 1 throughout contract 1.x.",
+      // Extending.
+      "Add a `ContractOperation` to `OPERATIONS` with its method, `auth` (`none` for every GET), `requestRoot` (or `null`), `responseRoot` (`null` only for a bodiless 204) and error rows.",
     ]) {
       expect(flat).toContain(sentence);
     }

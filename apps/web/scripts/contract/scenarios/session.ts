@@ -1,5 +1,6 @@
 // Session fixtures. Every session body is the real `/api/session` handler's output.
 
+import { PUSH_CAPABILITY, registerCapabilityProvider, unregisterCapabilityProvider } from "@pulse/web-data/contract";
 import type { AuthMode, Identity } from "@pulse/web-data/identity";
 
 import { setWritePathProvider } from "../../../src/server/mutations/session-provider.js";
@@ -43,11 +44,14 @@ export interface SessionCall {
   readonly authMode?: AuthMode;
   /** Install a healthy write path for the call, so capabilities are granted. Default false. */
   readonly healthyWritePath?: boolean;
+  /** Register an always-available `push` capability provider for the call. Default false. */
+  readonly pushCapability?: boolean;
 }
 
 /** Call the real session handler and return its decoded 200 body. */
 export async function sessionBody(call: SessionCall = {}): Promise<unknown> {
   if (call.healthyWritePath === true) setWritePathProvider(() => HEALTHY_WRITE_PATH);
+  if (call.pushCapability === true) registerCapabilityProvider(PUSH_CAPABILITY, () => true);
   try {
     const context = stubContext({
       identity: call.identity ?? null,
@@ -56,6 +60,7 @@ export async function sessionBody(call: SessionCall = {}): Promise<unknown> {
     return await responseBody(await sessionRoute.handler(stubRouteRequest("/api/session"), context), 200);
   } finally {
     setWritePathProvider(null);
+    if (call.pushCapability === true) unregisterCapabilityProvider(PUSH_CAPABILITY);
   }
 }
 
@@ -64,6 +69,15 @@ function assertAllCapabilities(body: unknown, scenario: string): void {
   const flags = Object.values(jsonObject(jsonObject(body, `session/${scenario}`).capabilities, `session/${scenario}`));
   if (flags.length === 0 || flags.some((flag) => flag !== true)) {
     throw new ContractToolError("SCENARIO_INVALID", `session/${scenario}`, "expected every session capability to be true");
+  }
+}
+
+/** Guard: the push-capability call must advertise exactly `["push"]`. */
+function assertPushCapability(body: unknown): void {
+  const subject = "session/push-capability";
+  const capabilities = jsonObject(jsonObject(body, subject).contract, subject).capabilities;
+  if (JSON.stringify(capabilities) !== JSON.stringify([PUSH_CAPABILITY])) {
+    throw new ContractToolError("SCENARIO_INVALID", subject, `expected contract.capabilities to be ["${PUSH_CAPABILITY}"]`);
   }
 }
 
@@ -84,6 +98,9 @@ export const sessionScenarios: ScenarioModule = {
     jsonObject(jsonObject(unknownCapability, "session/unknown-capability").contract, "session/unknown-capability").capabilities =
       ["future-capability"];
 
+    const pushCapability = await sessionBody({ pushCapability: true });
+    assertPushCapability(pushCapability);
+
     return [
       jsonFixture(this, "empty", "response", 200, empty),
       jsonFixture(this, "typical", "response", 200, typical),
@@ -91,6 +108,7 @@ export const sessionScenarios: ScenarioModule = {
       jsonFixture(this, "max-size", "response", 200, maxSize),
       jsonFixture(this, "error-invalid-request", "error", 400, await errorEnvelopeBody("INVALID_REQUEST", 400)),
       jsonFixture(this, "unknown-capability", "response", 200, unknownCapability),
+      jsonFixture(this, "push-capability", "response", 200, pushCapability),
     ];
   },
 };
