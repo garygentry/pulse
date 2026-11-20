@@ -41,6 +41,13 @@ describe("CONTRACT_LIMITS", () => {
     expect(CONTRACT_LIMITS.body.gzipBytes).toBe(CURRENT_MAX_GZIP_BYTES);
   });
 
+  test("pins the request and push caps", () => {
+    expect(CONTRACT_LIMITS.request).toEqual({ bodyBytes: 4096 });
+    expect(CONTRACT_LIMITS.push).toEqual({
+      payloadBytes: 4096, titleBytes: 128, bodyBytes: 512, displayNameBytes: 64, apnsTokenMaxChars: 200,
+    });
+  });
+
   test("every value is a non-negative safe integer and the table is frozen", () => {
     expect(Object.isFrozen(CONTRACT_LIMITS)).toBe(true);
     for (const [section, caps] of Object.entries(CONTRACT_LIMITS)) {

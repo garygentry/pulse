@@ -3,7 +3,7 @@
 
 export { CONTRACT_VERSION, CONTRACT_VERSION_PATTERN, decideCompatibility, formatContractVersion, parseContractVersion } from "./version.js";
 export type { ClientRequirement, CompatibilityOutcome, ContractVersion } from "./version.js";
-export { KNOWN_SERVER_CAPABILITIES, SERVER_CAPABILITY_PATTERN, currentServerCapabilities, registerCapabilityProvider, __resetCapabilityProvidersForTest } from "./capabilities.js";
+export { KNOWN_SERVER_CAPABILITIES, SERVER_CAPABILITY_PATTERN, currentServerCapabilities, registerCapabilityProvider, unregisterCapabilityProvider, __resetCapabilityProvidersForTest } from "./capabilities.js";
 export type { CapabilityProvider, ServerCapability } from "./capabilities.js";
 export { CONTRACT_LIMITS, capList, truncateUtf8 } from "./limits.js";
 export type { ContractLimits, OverviewLimits } from "./limits.js";
@@ -18,5 +18,9 @@ export {
 export type { ConnectLinkBuildResult, ConnectLinkParseResult, ConnectLinkRefusal, ConnectLinkRejection, NormaliseResult } from "./connect-link.js";
 export { encodeQrMatrix } from "./qr.js";
 export type { QrEcc, QrMatrix } from "./qr.js";
+export {
+  APNS_TOKEN_PATTERN, BEARER_CREDENTIAL_PATTERN, DEVICE_CREDENTIAL_PATTERN, DEVICE_ID_PATTERN, DISPLAY_NAME_PATTERN,
+  PAIR_LINK_PARAM, PAIR_TOKEN_PATTERN, PUSH_CAPABILITY, PUSH_CATEGORIES,
+} from "./push.js";
 export { ContractError } from "./errors.js";
 export type { ContractErrorCode } from "./errors.js";

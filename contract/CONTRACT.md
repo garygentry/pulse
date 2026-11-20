@@ -941,6 +941,12 @@ listed here, and a client must ignore them (see [Tolerance rules](#tolerance)).
 | history | whole body (`bodyBytes`) | 33554432 (32 MiB) | bytes | the request fails with `502 HISTORY_LIMIT_EXCEEDED`; never trimmed |
 | current views (whole body) | canonical plain JSON (`plainBytes`) | 5242880 (5 MiB) | bytes | the cycle is not published; the server keeps serving the previous cycle, or `503 NOT_READY` before the first |
 | current views (whole body) | gzip (`gzipBytes`) | 1048576 (1 MiB) | bytes | the cycle is not published; the server keeps serving the previous cycle, or `503 NOT_READY` before the first |
+| requests | request body, every client-originated operation (`bodyBytes`) | 4096 (4 KiB) | bytes | the request fails with `413 PAYLOAD_TOO_LARGE` |
+| push payload and registration | push payload (whole notification body) (`payloadBytes`) | 4096 (4 KiB) | bytes | never sent over the limit: title and body are truncated until it fits |
+| push payload and registration | notification title (`titleBytes`) | 128 | bytes | truncated by the server at the last whole UTF-8 code point; no marker |
+| push payload and registration | notification body (`bodyBytes`) | 512 | bytes | truncated by the server at the last whole UTF-8 code point; no marker |
+| push payload and registration | device display name (`displayNameBytes`) | 64 | bytes | the request fails with `400 INVALID_REQUEST` |
+| push payload and registration | APNs device token (`apnsTokenMaxChars`) | 200 | characters | the request fails with `400 INVALID_REQUEST` |
 <!-- /generated:limits -->
 
 The server never sends a contract response above a stated maximum.

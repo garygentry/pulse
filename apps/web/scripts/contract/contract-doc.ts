@@ -328,6 +328,14 @@ export const LIMIT_LABELS = {
     bodyBytes: "whole body",
   },
   body: { plainBytes: "canonical plain JSON", gzipBytes: "gzip" },
+  request: { bodyBytes: "request body, every client-originated operation" },
+  push: {
+    payloadBytes: "push payload (whole notification body)",
+    titleBytes: "notification title",
+    bodyBytes: "notification body",
+    displayNameBytes: "device display name",
+    apnsTokenMaxChars: "APNs device token",
+  },
 } as const satisfies LimitText;
 
 /** What happens above each maximum. A key added to CONTRACT_LIMITS without a rule fails typecheck. */
@@ -360,9 +368,30 @@ export const OVER_CAP = {
     bodyBytes: REJECTED,
   },
   body: { plainBytes: NOT_PUBLISHED, gzipBytes: NOT_PUBLISHED },
+  request: { bodyBytes: "the request fails with `413 PAYLOAD_TOO_LARGE`" },
+  push: {
+    payloadBytes: "never sent over the limit: title and body are truncated until it fits",
+    titleBytes: TRUNCATED,
+    bodyBytes: TRUNCATED,
+    displayNameBytes: "the request fails with `400 INVALID_REQUEST`",
+    apnsTokenMaxChars: "the request fails with `400 INVALID_REQUEST`",
+  },
 } as const satisfies LimitText;
 
 const MIB = 1024 * 1024;
+
+/** Display name of a limits group in the first table column; groups not listed render their raw key. */
+const GROUP_CELL: Readonly<Record<string, string>> = Object.freeze({
+  body: "current views (whole body)",
+  request: "requests",
+  push: "push payload and registration",
+});
+
+function unitCell(key: string): string {
+  if (key.endsWith("Bytes")) return "bytes";
+  if (key.endsWith("Chars")) return "characters";
+  return "items";
+}
 
 function maximumCell(value: number, isBytes: boolean): string {
   if (isBytes && value >= MIB && value % MIB === 0) return `${value} (${value / MIB} MiB)`;
@@ -382,10 +411,10 @@ export function renderLimitsTable(limits: ContractLimits = CONTRACT_LIMITS): str
     for (const [key, value] of Object.entries(caps)) {
       const isBytes = key.endsWith("Bytes");
       rows.push([
-        group === "body" ? "current views (whole body)" : group,
+        GROUP_CELL[group] ?? group,
         `${labels[group]?.[key] ?? key} (${code(key)})`,
         maximumCell(value, isBytes),
-        isBytes ? "bytes" : "items",
+        unitCell(key),
         rules[group]?.[key] ?? "",
       ]);
     }

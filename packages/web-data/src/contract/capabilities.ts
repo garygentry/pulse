@@ -58,6 +58,15 @@ export function currentServerCapabilities(): readonly ServerCapability[] {
   return Object.freeze(out);
 }
 
+/**
+ * Remove a previously registered provider. Unknown or never-registered names are a no-op (idempotent), so close()
+ * paths can call it unconditionally. No grammar or known-name check: removing can never make the registry invalid.
+ * @param name - The capability name, e.g. "push".
+ */
+export function unregisterCapabilityProvider(name: ServerCapability): void {
+  providers.delete(name);
+}
+
 /** Test-only: remove every registered provider. */
 export function __resetCapabilityProvidersForTest(): void {
   providers.clear();

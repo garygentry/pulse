@@ -63,6 +63,18 @@ export const CONTRACT_LIMITS = Object.freeze({
     /** Plain bytes. */ plainBytes: CURRENT_MAX_PLAIN_BYTES,
     /** Gzip bytes. */ gzipBytes: CURRENT_MAX_GZIP_BYTES,
   } as const),
+  /** Request-body bound for every client-originated contract operation. */
+  request: Object.freeze({
+    /** Whole request body, UTF-8 bytes. */ bodyBytes: 4096,
+  } as const),
+  /** Push payload and device-registration bounds. */
+  push: Object.freeze({
+    /** Whole serialised APNs payload (Apple's limit for alert pushes). */ payloadBytes: 4096,
+    /** Notification title. */ titleBytes: 128,
+    /** Notification body. */ bodyBytes: 512,
+    /** Device display name, after trimming. */ displayNameBytes: 64,
+    /** APNs device token, hex characters. */ apnsTokenMaxChars: 200,
+  } as const),
 } as const);
 
 /** Type of CONTRACT_LIMITS (literal-typed). */

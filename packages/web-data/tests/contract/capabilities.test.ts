@@ -8,6 +8,7 @@ import {
   __seedCapabilityProviderForTest,
   currentServerCapabilities,
   registerCapabilityProvider,
+  unregisterCapabilityProvider,
 } from "../../src/contract/capabilities.js";
 import { ContractError } from "../../src/contract/errors.js";
 
@@ -93,6 +94,24 @@ describe("currentServerCapabilities", () => {
   test("reset removes every provider", () => {
     __seedCapabilityProviderForTest("alpha", () => true);
     __resetCapabilityProvidersForTest();
+    expect(currentServerCapabilities()).toEqual([]);
+  });
+});
+
+describe("unregisterCapabilityProvider", () => {
+  test("removes a seeded provider and leaves the others", () => {
+    __seedCapabilityProviderForTest("alpha", () => true);
+    __seedCapabilityProviderForTest("beta", () => true);
+    unregisterCapabilityProvider("alpha");
+    expect(currentServerCapabilities()).toEqual(["beta"]);
+  });
+
+  test("is idempotent: repeated, unknown and invalid names are no-ops that never throw", () => {
+    __seedCapabilityProviderForTest("alpha", () => true);
+    unregisterCapabilityProvider("alpha");
+    expect(() => unregisterCapabilityProvider("alpha")).not.toThrow();
+    expect(() => unregisterCapabilityProvider("never-registered")).not.toThrow();
+    expect(() => unregisterCapabilityProvider("Not A Name")).not.toThrow();
     expect(currentServerCapabilities()).toEqual([]);
   });
 });

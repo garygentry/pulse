@@ -385,11 +385,29 @@ describe("renderLimitsTable", () => {
     rows.forEach((row, i) => {
       const [group, key] = leaves[i] as [string, string];
       expect(row).toContain(`(\`${key}\`) | `);
-      expect(row.startsWith(`| ${group === "body" ? "current views (whole body)" : group} | `)).toBe(true);
+      const groupCell: Readonly<Record<string, string>> = {
+        body: "current views (whole body)",
+        request: "requests",
+        push: "push payload and registration",
+      };
+      expect(row.startsWith(`| ${groupCell[group] ?? group} | `)).toBe(true);
       expect(row.endsWith(" |  |")).toBe(false);
     });
     expect(Object.keys(LIMIT_LABELS)).toEqual(Object.keys(CONTRACT_LIMITS));
     expect(Object.keys(OVER_CAP)).toEqual(Object.keys(CONTRACT_LIMITS));
+  });
+
+  test("renders the request and push rows with their group cells and units", () => {
+    for (const expected of [
+      "| requests | request body, every client-originated operation (`bodyBytes`) | 4096 (4 KiB) | bytes | the request fails with `413 PAYLOAD_TOO_LARGE` |",
+      "| push payload and registration | push payload (whole notification body) (`payloadBytes`) | 4096 (4 KiB) | bytes | never sent over the limit: title and body are truncated until it fits |",
+      "| push payload and registration | notification title (`titleBytes`) | 128 | bytes | truncated by the server at the last whole UTF-8 code point; no marker |",
+      "| push payload and registration | notification body (`bodyBytes`) | 512 | bytes | truncated by the server at the last whole UTF-8 code point; no marker |",
+      "| push payload and registration | device display name (`displayNameBytes`) | 64 | bytes | the request fails with `400 INVALID_REQUEST` |",
+      "| push payload and registration | APNs device token (`apnsTokenMaxChars`) | 200 | characters | the request fails with `400 INVALID_REQUEST` |",
+    ]) {
+      expect(lines).toContain(expected);
+    }
   });
 });
 

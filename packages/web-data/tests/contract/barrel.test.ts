@@ -23,6 +23,7 @@ const RUNTIME_EXPORTS: Readonly<Record<string, Kind>> = {
   SERVER_CAPABILITY_PATTERN: "regexp",
   currentServerCapabilities: "function",
   registerCapabilityProvider: "function",
+  unregisterCapabilityProvider: "function",
   __resetCapabilityProvidersForTest: "function",
   // limits
   CONTRACT_LIMITS: "object",
@@ -49,6 +50,16 @@ const RUNTIME_EXPORTS: Readonly<Record<string, Kind>> = {
   isLoopbackHost: "function",
   normaliseBaseUrl: "function",
   parseConnectLink: "function",
+  // push
+  APNS_TOKEN_PATTERN: "regexp",
+  BEARER_CREDENTIAL_PATTERN: "regexp",
+  DEVICE_CREDENTIAL_PATTERN: "regexp",
+  DEVICE_ID_PATTERN: "regexp",
+  DISPLAY_NAME_PATTERN: "regexp",
+  PAIR_LINK_PARAM: "string",
+  PAIR_TOKEN_PATTERN: "regexp",
+  PUSH_CAPABILITY: "string",
+  PUSH_CATEGORIES: "object",
   // qr
   encodeQrMatrix: "function",
   // errors
