@@ -16,6 +16,20 @@ import type { ConnectLinkSource } from "./envelope.js";
 /** Env var naming the server's external address; shared with the web server so the two agree. */
 export const EXTERNAL_URL_ENV = "PULSE_WEB_EXTERNAL_URL" as const;
 
+/** Env var naming the Pulse server the push commands talk to. */
+export const SERVER_URL_ENV = "PULSE_SERVER_URL" as const;
+
+/** Where a push server address came from, before the externalUrl fallback. */
+export type PushServerSource = "flag" | "env" | "config";
+
+/** A raw, un-normalised push server address and its source. */
+export interface PushServerAddress {
+  /** The address as given. */
+  readonly value: string;
+  /** Its source: `--server`, PULSE_SERVER_URL, or `server` in pulse.config.yaml. */
+  readonly source: PushServerSource;
+}
+
 /** A raw, un-normalised connect-link address and where it came from. */
 export interface ConnectLinkAddress {
   /** The address as given. */
@@ -36,6 +50,8 @@ export interface PulseConfigFile {
   proposalsDir?: string;
   /** The server's external https address, used by `pulse connect-link`. */
   externalUrl?: string;
+  /** The Pulse server base URL used by `pulse push`. The operator secret is never read from this file. */
+  server?: string;
 }
 
 /**
@@ -61,6 +77,11 @@ export interface ResolvedConfig {
    * raw: it is neither normalised nor resolved against cwd.
    */
   externalUrl?: ConnectLinkAddress;
+  /**
+   * The push server address (flag > PULSE_SERVER_URL > file `server`), present ONLY when some
+   * source set it. The value is raw (not normalised).
+   */
+  server?: PushServerAddress;
 }
 
 /** Built-in defaults (tech spec §3.4) — the file is optional; these apply when nothing overrides. */
@@ -76,6 +97,8 @@ export interface ConfigInputs {
   proposalsDirFlag?: string;
   /** `connect-link --url <address>` (highest precedence for `externalUrl`). */
   externalUrlFlag?: string;
+  /** `push --server <url>` (highest precedence for `server`). */
+  serverFlag?: string;
   /** The process environment (`PULSE_*` keys are read). */
   env: NodeJS.ProcessEnv;
   /** Working directory used to locate the default `pulse.config.yaml`. */
@@ -116,6 +139,7 @@ export function resolveConfig(inputs: ConfigInputs): ResolvedConfig {
     inputs.proposalsDirFlag ?? nonEmpty(env.PULSE_PROPOSALS_DIR) ?? file.proposalsDir;
 
   const externalUrl = resolveConnectLinkAddress(inputs.externalUrlFlag, env, file);
+  const server = resolvePushServerAddress(inputs.serverFlag, env, file);
 
   return {
     estateDir: isAbsolute(estateDir) ? estateDir : resolvePath(cwd, estateDir),
@@ -125,7 +149,26 @@ export function resolveConfig(inputs: ConfigInputs): ResolvedConfig {
       ? { proposalsDir: isAbsolute(proposalsDir) ? proposalsDir : resolvePath(cwd, proposalsDir) }
       : {}),
     ...(externalUrl !== undefined ? { externalUrl } : {}),
+    ...(server !== undefined ? { server } : {}),
   };
+}
+
+/**
+ * Pick the push server address: `flag`, then `env[PULSE_SERVER_URL]`, then `file.server`. An
+ * empty or whitespace-only env or file value counts as unset. Returns `undefined` when none is
+ * set. Pure; never throws.
+ */
+function resolvePushServerAddress(
+  flag: string | undefined,
+  env: NodeJS.ProcessEnv,
+  file: PulseConfigFile,
+): PushServerAddress | undefined {
+  if (flag !== undefined) return { value: flag, source: "flag" };
+  const fromEnv = env[SERVER_URL_ENV];
+  if (fromEnv !== undefined && fromEnv.trim() !== "") return { value: fromEnv, source: "env" };
+  const fromFile = file.server;
+  if (fromFile !== undefined && fromFile.trim() !== "") return { value: fromFile, source: "config" };
+  return undefined;
 }
 
 /**
@@ -191,6 +234,7 @@ function validateConfigShape(text: string, path: string): PulseConfigFile {
   if ("strict" in obj) out.strict = asBool(obj.strict, "strict", path);
   if ("proposalsDir" in obj) out.proposalsDir = asString(obj.proposalsDir, "proposalsDir", path);
   if ("externalUrl" in obj) out.externalUrl = asString(obj.externalUrl, "externalUrl", path);
+  if ("server" in obj) out.server = asString(obj.server, "server", path);
   // REQ-SEC-04: the secret is env-only. A secret-looking key in the file is a config fault; its
   // value is never echoed.
   for (const k of Object.keys(obj)) {

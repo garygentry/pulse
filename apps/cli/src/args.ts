@@ -73,7 +73,7 @@ type Verb = (typeof VERBS)[number];
  * (and with no verb). `satisfies` preserves the literal `type` values `parseArgs` requires while
  * catching typos at compile time.
  */
-const GLOBAL_OPTIONS = {
+export const GLOBAL_OPTIONS = {
   json: { type: "boolean", default: false },
   strict: { type: "boolean", default: false },
   verbose: { type: "boolean", default: false },

@@ -12,6 +12,7 @@ import { ConfigIoError } from "@pulse/core";
 import { resolveConfig } from "../src/config.js";
 import type { ConfigInputs } from "../src/config.js";
 import type { GlobalFlags } from "../src/args.js";
+import { runCli } from "./factories.js";
 
 /** Default (all-off) global flags; overrides layer on top. */
 function makeFlags(overrides: Partial<GlobalFlags> = {}): GlobalFlags {
@@ -353,6 +354,105 @@ describe("resolveConfig — externalUrl precedence (flag > PULSE_WEB_EXTERNAL_UR
         expect((err as ConfigIoError).code).toBe("INVALID_ARG");
         expect((err as ConfigIoError).message).toContain("'externalUrl' must be a string");
       }
+    }
+  });
+});
+
+describe("resolveConfig — push server precedence (flag > PULSE_SERVER_URL > file server)", () => {
+  /** Resolve in a fresh cwd, optionally holding a pulse.config.yaml. */
+  function resolveWith(
+    file: string | null,
+    overrides: Pick<ConfigInputs, "serverFlag"> & { env?: NodeJS.ProcessEnv } = {},
+  ) {
+    const cwd = mkdtempSync(join(tmpdir(), "pulse-server-"));
+    try {
+      if (file !== null) writeFileSync(join(cwd, "pulse.config.yaml"), file);
+      const { env, ...rest } = overrides;
+      return resolveConfig({ flags: makeFlags(), env: env ?? {}, cwd, ...rest });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+  const FILE = "server: https://file.example.com\n";
+  const ENV = { PULSE_SERVER_URL: "https://env.example.com" };
+
+  test("absent (not undefined) when no source sets it", () => {
+    expect("server" in resolveWith(null)).toBe(false);
+  });
+
+  test("the file value is used when nothing else is set", () => {
+    expect(resolveWith(FILE).server).toEqual({ value: "https://file.example.com", source: "config" });
+  });
+
+  test("env beats file", () => {
+    expect(resolveWith(FILE, { env: ENV }).server).toEqual({ value: "https://env.example.com", source: "env" });
+  });
+
+  test("flag beats env and file", () => {
+    expect(resolveWith(FILE, { env: ENV, serverFlag: "https://flag.example.com" }).server).toEqual({
+      value: "https://flag.example.com",
+      source: "flag",
+    });
+  });
+
+  test("an empty or whitespace-only env value falls through to the file", () => {
+    for (const blank of ["", "   ", "\t\n"]) {
+      expect(resolveWith(FILE, { env: { PULSE_SERVER_URL: blank } }).server?.source).toBe("config");
+      expect("server" in resolveWith(null, { env: { PULSE_SERVER_URL: blank } })).toBe(false);
+    }
+  });
+
+  test("an empty or whitespace-only file value counts as unset", () => {
+    for (const file of ['server: ""\n', 'server: "   "\n']) {
+      expect("server" in resolveWith(file)).toBe(false);
+      expect(resolveWith(file, { env: ENV }).server?.source).toBe("env");
+    }
+  });
+
+  test("server and externalUrl resolve independently; the value is kept raw", () => {
+    const cfg = resolveWith("server: https://pulse.example.com/\nexternalUrl: https://ext.example.com\n");
+    expect(cfg.server).toEqual({ value: "https://pulse.example.com/", source: "config" });
+    expect(cfg.externalUrl).toEqual({ value: "https://ext.example.com", source: "config" });
+  });
+
+  test("a non-string server in the file throws ConfigIoError INVALID_ARG (exit 2)", async () => {
+    try {
+      resolveWith("server: 5\n");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConfigIoError);
+      expect((err as ConfigIoError).code).toBe("INVALID_ARG");
+      expect((err as ConfigIoError).message).toContain("'server' must be a string");
+    }
+    const cwd = mkdtempSync(join(tmpdir(), "pulse-server-exit-"));
+    try {
+      writeFileSync(join(cwd, "pulse.config.yaml"), "server: 5\n");
+      const r = await runCli(["validate"], { cwd });
+      expect(r.exitCode).toBe(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a pushOperatorSecret key is rejected without echoing its value", async () => {
+    const sentinel = "sentinel-operator-secret-value-0123456789abcdef";
+    try {
+      resolveWith(`pushOperatorSecret: ${sentinel}\n`);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConfigIoError);
+      expect((err as ConfigIoError).code).toBe("INVALID_ARG");
+      expect((err as ConfigIoError).message).toContain("'pushOperatorSecret' is not allowed");
+      expect((err as ConfigIoError).message).not.toContain(sentinel);
+    }
+    const cwd = mkdtempSync(join(tmpdir(), "pulse-server-secret-"));
+    try {
+      writeFileSync(join(cwd, "pulse.config.yaml"), `pushOperatorSecret: ${sentinel}\n`);
+      const r = await runCli(["validate"], { cwd });
+      expect(r.exitCode).toBe(2);
+      expect(r.stdout + r.stderr).not.toContain(sentinel);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
     }
   });
 });
