@@ -8,9 +8,13 @@ import type { PushDevicesData, PushPairData, PushRevokeData, PushTestData } from
 import type { OutputWriter } from "../../output.js";
 import type { CommandResult } from "../result.js";
 import type { PushInvocation } from "./args.js";
-import { createPushClient, readPushOperatorSecret } from "./client.js";
+import { createPushClient, PUSH_HTTP_TIMEOUT_MS, PUSH_TEST_TIMEOUT_MS, readPushOperatorSecret } from "./client.js";
 import type { FailureContext, PushClient } from "./client.js";
+import { runDevices } from "./devices.js";
+import { runPair } from "./pair.js";
+import { runRevoke } from "./revoke.js";
 import { PUSH_SERVER_SOURCE_LABEL, resolvePushServer } from "./server.js";
+import { runTest } from "./test.js";
 
 /** Dependencies of the push runners; all injectable. */
 export interface PushRunDeps {
@@ -75,8 +79,22 @@ export async function runPush(
     secret: secret.secret,
     trace: (line) => ctx.out.detail(line),
   });
-  void client;
 
-  // 6. Sub-command runners are not wired yet.
-  throw new Error(`pulse push ${invocation.sub} is not implemented`);
+  // 6. Dispatch to the sub-command runner.
+  const input = (timeoutMs: number): PushSubcommandInput => ({
+    client,
+    failure: { baseUrl: resolution.baseUrl, insecure: resolution.insecure, timeoutMs },
+    out: ctx.out,
+    now: deps.now,
+  });
+  switch (invocation.sub) {
+    case "pair":
+      return runPair({ ...input(PUSH_HTTP_TIMEOUT_MS), baseUrl: resolution.baseUrl });
+    case "devices":
+      return runDevices(input(PUSH_HTTP_TIMEOUT_MS));
+    case "revoke":
+      return runRevoke({ ...input(PUSH_HTTP_TIMEOUT_MS), deviceId: invocation.id });
+    case "test":
+      return runTest({ ...input(PUSH_TEST_TIMEOUT_MS), deviceId: invocation.device });
+  }
 }

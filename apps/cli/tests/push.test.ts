@@ -1,7 +1,10 @@
 /** push.test.ts — `pulse push`: argument parsing, the --insecure-local rule, server resolution, the operator
  *  secret, the HTTP client and its response-to-finding mapping, and the async shell wiring. */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { FINDING_CODES } from "@pulse/core";
 
@@ -22,6 +25,19 @@ import {
 } from "../src/commands/push/client.js";
 import type { FailureContext, PushCallFailure, PushCallKind, PushStatusClass } from "../src/commands/push/client.js";
 import { PUSH_PATHS } from "../../web/src/server/push/constants.js";
+import { encodeQrMatrix } from "@pulse/web-data/contract";
+import type { DeviceSummary } from "@pulse/web-data/wire";
+
+import type { PulseEnvelope } from "../src/envelope.js";
+import { createOutputWriter } from "../src/output.js";
+import { renderQrHalfBlocks } from "../src/qr-terminal.js";
+import { runPair } from "../src/commands/push/pair.js";
+import {
+  formatDeviceTable,
+  formatInstant,
+  formatTestLines,
+  sanitiseForTerminal,
+} from "../src/commands/push/format.js";
 import { runCli } from "./factories.js";
 import {
   PUSH_SERVER_SOURCE_LABEL,
@@ -997,12 +1013,14 @@ describe("runCli push — shell wiring", () => {
     expect(r.stderr).not.toContain("push_server_missing");
   });
 
-  test("with server and secret the unimplemented sub-command is a fault (exit 2), secret never printed", async () => {
-    const r = await run(["push", "devices", "--server", BASE, "--json", "--verbose"], { [OPERATOR_SECRET_ENV]: SECRET });
-    expect(r.exitCode).toBe(2);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("pulse push devices is not implemented");
+  test("with server and secret the sub-command runs; --verbose shows the server line and no secret", async () => {
+    const r = await run(["push", "devices", "--server", BASE, "--json", "--verbose"], { [OPERATOR_SECRET_ENV]: SECRET }, [
+      json(200, { devices: [] }),
+    ]);
+    expect(r.exitCode).toBe(0);
+    expect(r.calls).toHaveLength(1);
     expect(r.stderr).toContain(`Server: ${BASE} (from --server)`);
+    expect(r.stderr).toContain(`GET ${BASE}/api/push/admin/devices`);
   });
 
   test("--insecure-local prints its warning even with --quiet", async () => {
@@ -1019,5 +1037,556 @@ describe("runCli push — shell wiring", () => {
     expect(r.exitCode).toBe(1);
     expect(r.calls).toHaveLength(0);
     expect(r.stderr).toContain("push_operator_secret_missing");
+  });
+});
+
+// ── runCli: the four sub-commands, channels, arguments, address precedence, exit codes ──────────────────────
+
+const OK_ENV: NodeJS.ProcessEnv = { [OPERATOR_SECRET_ENV]: SECRET };
+
+interface CliRun {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly exitCode: number;
+  readonly calls: Recorded[];
+  /** The parsed envelope (only for --json runs that exited 0/1). */
+  readonly envelope: PulseEnvelope | null;
+}
+
+/** Run the CLI with a stub fetch; record the streams for the shared afterEach; check the envelope invariants. */
+async function cli(args: string[], answers: Answer[] = [], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}) {
+  const stub = stubFetch(answers);
+  const r = await runCli(args, { env: opts.env ?? OK_ENV, fetch: stub.fetch, ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
+  captured.push(r.stdout, r.stderr);
+  let envelope: PulseEnvelope | null = null;
+  if (args.includes("--json") && r.exitCode !== 2) {
+    envelope = JSON.parse(r.stdout) as PulseEnvelope;
+    expect(r.stdout).toBe(`${JSON.stringify(envelope, null, 2)}\n`);
+    expect(envelope.command).toBe("push");
+    expect(envelope.ok).toBe(r.exitCode === 0);
+  }
+  if (r.exitCode === 2) expect(r.stdout).toBe("");
+  return { ...r, calls: stub.calls, envelope } satisfies CliRun;
+}
+
+const codesOf = (r: CliRun): string[] => (r.envelope?.findings ?? []).map((f) => f.code);
+
+const IPHONE: DeviceSummary = {
+  id: "dev_AbCdEfGhIjK",
+  displayName: "Example iPhone",
+  pairedAt: "2026-11-18T09:12:00.000Z",
+  seenAt: "2026-11-20T08:01:00.000Z",
+  environment: "production",
+  preferences: { critical: true, warning: true, info: true },
+  tokenSuffix: "a1b2c3",
+  lastDelivery: { outcome: "delivered", at: "2026-11-20T07:55:00.000Z", reason: null },
+};
+const IPAD: DeviceSummary = {
+  id: "dev_LmNoPqRsTuV",
+  displayName: "Example iPad",
+  pairedAt: "2026-11-19T14:30:00.000Z",
+  seenAt: "2026-11-19T14:31:00.000Z",
+  environment: "sandbox",
+  preferences: { critical: true, warning: true, info: false },
+  tokenSuffix: "d4e5f6",
+  lastDelivery: { outcome: "failed", at: "2026-11-19T15:02:00.000Z", reason: "BadDeviceToken" },
+};
+
+const TABLE_SAMPLE = [
+  "ID               NAME            PAIRED             SEEN               ENV         NOTIFY            LAST DELIVERY",
+  "dev_AbCdEfGhIjK  Example iPhone  2026-11-18 09:12Z  2026-11-20 08:01Z  production  all               delivered 2026-11-20 07:55Z",
+  "dev_LmNoPqRsTuV  Example iPad    2026-11-19 14:30Z  2026-11-19 14:31Z  sandbox     critical,warning  failed 2026-11-19 15:02Z (BadDeviceToken)",
+];
+
+const QR_GLYPH = /[▀▄█]/;
+const SECRET_LINE = "Treat this link as a secret; it pairs one device.";
+
+describe("push formatters", () => {
+  test("sanitiseForTerminal replaces every control with ? and truncates by UTF-8 bytes", () => {
+    expect(sanitiseForTerminal("a‮b\u0007c\u0000d\u009fe⁦f", 64)).toBe("a?b?c?d?e?f");
+    expect(sanitiseForTerminal("\u0007\u0007", 64)).toBe("??");
+    expect(sanitiseForTerminal("ééé", 4)).toBe("éé");
+    expect(sanitiseForTerminal("Example iPhone", 64)).toBe("Example iPhone");
+  });
+
+  test("formatInstant gives minute-precision UTC and ? when unparseable", () => {
+    expect(formatInstant("2026-11-20T10:10:59.999Z")).toBe("2026-11-20 10:10Z");
+    expect(formatInstant("2026-11-20T12:10:00+02:00")).toBe("2026-11-20 10:10Z");
+    expect(formatInstant("not a date")).toBe("?");
+    expect(formatInstant("")).toBe("?");
+  });
+
+  test("formatDeviceTable matches the documented sample", () => {
+    expect(formatDeviceTable([IPHONE, IPAD])).toEqual(TABLE_SAMPLE);
+  });
+
+  test("NOTIFY is all/none/joined names and ENV and LAST DELIVERY fall back to -", () => {
+    const fresh: DeviceSummary = {
+      ...IPHONE,
+      environment: null,
+      preferences: { critical: false, warning: false, info: false },
+      lastDelivery: null,
+    };
+    const infoOnly: DeviceSummary = { ...IPHONE, preferences: { critical: false, warning: false, info: true } };
+    const [, row1, row2] = formatDeviceTable([fresh, infoOnly]);
+    expect(row1!.split(/\s{2,}/)).toEqual(["dev_AbCdEfGhIjK", "Example iPhone", "2026-11-18 09:12Z", "2026-11-20 08:01Z", "-", "none", "-"]);
+    expect(row2!.split(/\s{2,}/)[5]).toBe("info");
+  });
+
+  test("formatTestLines pads the outcome to 13 and appends a sanitised reason", () => {
+    expect(
+      formatTestLines([
+        { deviceId: IPHONE.id, displayName: "Example iPhone", outcome: "delivered" },
+        { deviceId: IPAD.id, displayName: "Example iPad", outcome: "rejected", reason: "Bad\u0007DeviceToken" },
+      ]),
+    ).toEqual([
+      "delivered    Example iPhone (dev_AbCdEfGhIjK)",
+      "rejected     Example iPad (dev_LmNoPqRsTuV): Bad?DeviceToken",
+    ]);
+  });
+});
+
+describe("runPair with an injected clock", () => {
+  test("the expiry line is computed from now(), the QR is a note and the link a diagnostic", async () => {
+    const { client } = clientWith([json(201, { link: LINK, expiresAt: EXPIRES })]);
+    const lines: string[] = [];
+    const out = createOutputWriter({ json: false, verbosity: "quiet", color: false, stdout: () => {}, stderr: (s) => void lines.push(s) });
+    const r = await runPair({
+      client,
+      failure: CTX,
+      out,
+      now: () => new Date("2026-11-20T12:03:10.000Z"),
+      baseUrl: BASE,
+    });
+    captured.push(...lines);
+    expect(r).toEqual({ findings: [], data: { link: LINK, expiresAt: EXPIRES }, outcomeFailed: false });
+    expect(lines.join("")).toBe(`${LINK}\nExpires at 2026-11-20 12:10Z (in about 7 min; one use).\n${SECRET_LINE}\n`);
+  });
+
+  test("an expiry in the past reads 0 min", async () => {
+    const { client } = clientWith([json(201, { link: LINK, expiresAt: EXPIRES })]);
+    const lines: string[] = [];
+    const out = createOutputWriter({ json: false, verbosity: "quiet", color: false, stdout: () => {}, stderr: (s) => void lines.push(s) });
+    await runPair({ client, failure: CTX, out, now: () => new Date("2026-11-21T00:00:00.000Z"), baseUrl: BASE });
+    captured.push(...lines);
+    expect(lines.join("")).toContain("(in about 0 min; one use).");
+  });
+});
+
+describe("runCli push pair", () => {
+  afterEach(() => {
+    setSystemTime();
+  });
+
+  const issued = () => json(201, { link: LINK, expiresAt: EXPIRES });
+
+  test("posts {baseUrl} and prints the QR, the link, the expiry and the secrecy line", async () => {
+    setSystemTime(new Date("2026-11-20T12:00:20.000Z"));
+    const r = await cli(["push", "pair", "--server", BASE], [issued()]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("");
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0]!.method).toBe("POST");
+    expect(r.calls[0]!.url).toBe(`${BASE}/api/push/admin/pairing-tokens`);
+    expect(r.calls[0]!.body).toBe('{"baseUrl":"https://pulse.example.com"}');
+    expect(r.stderr).toMatch(QR_GLYPH);
+    expect(r.stderr).toContain(renderQrHalfBlocks(encodeQrMatrix(LINK)));
+    expect(r.stderr).toContain(
+      `\n\n${LINK}\nExpires at 2026-11-20 12:10Z (in about 10 min; one use).\n${SECRET_LINE}\n`,
+    );
+  });
+
+  test("--quiet hides every QR glyph but keeps the link, the expiry and the secrecy line", async () => {
+    setSystemTime(new Date("2026-11-20T12:00:20.000Z"));
+    const r = await cli(["push", "pair", "--server", BASE, "--quiet"], [issued()]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).not.toMatch(QR_GLYPH);
+    expect(r.stderr).toBe(`${LINK}\nExpires at 2026-11-20 12:10Z (in about 10 min; one use).\n${SECRET_LINE}\n`);
+  });
+
+  test("--json: one canonical envelope with data {link, expiresAt}; the QR and link stay on stderr", async () => {
+    const r = await cli(["push", "pair", "--server", BASE, "--json"], [issued()]);
+    expect(r.exitCode).toBe(0);
+    expect(r.envelope!.data).toEqual({ link: LINK, expiresAt: EXPIRES });
+    expect(r.envelope!.findings).toEqual([]);
+    expect(r.stdout).not.toMatch(QR_GLYPH);
+    expect(r.stderr).toMatch(QR_GLYPH);
+    expect(r.stderr).toContain(LINK);
+  });
+
+  test("--verbose never passes the link to the trace", async () => {
+    const r = await cli(["push", "pair", "--server", BASE, "--verbose"], [issued()]);
+    const traceLines = r.stderr.split("\n").filter((l) => l.startsWith("POST ") || l.startsWith("Server: "));
+    expect(traceLines.length).toBeGreaterThan(0);
+    for (const line of traceLines) expect(line).not.toContain(TOKEN);
+    expect(r.stderr.split(TOKEN)).toHaveLength(2);
+  });
+
+  test("409 no-usable-address gives PUSH_PAIR_NO_ADDRESS, data null, exit 1", async () => {
+    const r = await cli(["push", "pair", "--server", BASE, "--json"], [
+      envelope(409, "PUSH_NO_USABLE_ADDRESS", { reason: "no-usable-address" }),
+    ]);
+    expect(r.exitCode).toBe(1);
+    expect(codesOf(r)).toEqual([FINDING_CODES.PUSH_PAIR_NO_ADDRESS]);
+    expect(r.envelope!.data).toBeNull();
+  });
+});
+
+describe("runCli push devices", () => {
+  test("prints the documented table and the count line", async () => {
+    const r = await cli(["push", "devices", "--server", BASE], [json(200, { devices: [IPHONE, IPAD] })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(`${TABLE_SAMPLE.join("\n")}\n2 device(s).\n`);
+    expect(r.calls[0]!.method).toBe("GET");
+    expect(r.calls[0]!.url).toBe(`${BASE}/api/push/admin/devices`);
+  });
+
+  test("a display name with U+202E and BEL prints with ?", async () => {
+    const hostile = { ...IPHONE, displayName: "Evil‮Name\u0007" };
+    const r = await cli(["push", "devices", "--server", BASE], [json(200, { devices: [hostile] })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toContain("Evil?Name?");
+    expect(r.stderr).not.toContain("‮");
+    expect(r.stderr).not.toContain("\u0007");
+  });
+
+  test("an empty list prints No devices paired. and exits 0", async () => {
+    const r = await cli(["push", "devices", "--server", BASE], [json(200, { devices: [] })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe("No devices paired.\n");
+  });
+
+  test("--quiet keeps the table and hides the count line", async () => {
+    const r = await cli(["push", "devices", "--server", BASE, "--quiet"], [json(200, { devices: [IPHONE, IPAD] })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe(`${TABLE_SAMPLE.join("\n")}\n`);
+  });
+
+  test("--json data.devices deep-equals the stub payload", async () => {
+    const r = await cli(["push", "devices", "--server", BASE, "--json"], [json(200, { devices: [IPHONE, IPAD] })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.envelope!.data).toEqual({ devices: [IPHONE, IPAD] });
+    expect(r.stderr).toContain(TABLE_SAMPLE[0]!);
+  });
+});
+
+describe("runCli push revoke", () => {
+  test("204 gives exit 0, the Revoked line and data {deviceId}", async () => {
+    const r = await cli(["push", "revoke", ID, "--server", BASE, "--json"], [new Response(null, { status: 204 })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0]!.method).toBe("DELETE");
+    expect(new URL(r.calls[0]!.url).pathname).toBe("/api/push/admin/devices/dev_AbCdEfGhIjK");
+    expect(r.envelope!.data).toEqual({ deviceId: ID });
+    expect(r.stderr).toBe(`Revoked ${ID}. Its credential no longer works and nothing more is sent to it.\n`);
+  });
+
+  test("404 then a 200 probe gives PUSH_DEVICE_NOT_FOUND with the documented text", async () => {
+    const r = await cli(["push", "revoke", ID, "--server", BASE], [
+      envelope(404, "API_NOT_FOUND"),
+      json(200, { devices: [] }),
+    ]);
+    expect(r.exitCode).toBe(1);
+    expect(r.calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+      `DELETE /api/push/admin/devices/${ID}`,
+      "GET /api/push/admin/devices",
+    ]);
+    expect(r.stderr).toContain(`[push_device_not_found] No paired device has the id ${ID}.`);
+    expect(r.stderr).toContain("fix: Run pulse push devices to list device ids.");
+  });
+});
+
+describe("runCli push test", () => {
+  const delivered = (d: DeviceSummary) => ({ deviceId: d.id, displayName: d.displayName, outcome: "delivered" });
+
+  test("all delivered: exit 0, one line per device and the summary", async () => {
+    const r = await cli(["push", "test", "--server", BASE], [json(200, { results: [delivered(IPHONE), delivered(IPAD)] })]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe(
+      "delivered    Example iPhone (dev_AbCdEfGhIjK)\ndelivered    Example iPad (dev_LmNoPqRsTuV)\n2 of 2 device(s) received the test notification.\n",
+    );
+  });
+
+  test("one rejected: exit 1, PUSH_TEST_FAILED, --json data carries both results", async () => {
+    const results = [
+      delivered(IPHONE),
+      { deviceId: IPAD.id, displayName: IPAD.displayName, outcome: "rejected", reason: "BadDeviceToken" },
+    ];
+    const r = await cli(["push", "test", "--server", BASE, "--json"], [json(200, { results })]);
+    expect(r.exitCode).toBe(1);
+    expect(codesOf(r)).toEqual([FINDING_CODES.PUSH_TEST_FAILED]);
+    expect(r.envelope!.findings[0]!.message).toBe("1 of 2 device(s) did not receive the test notification.");
+    expect(r.envelope!.data).toEqual({ results });
+    expect(r.stderr).toContain("rejected     Example iPad (dev_LmNoPqRsTuV): BadDeviceToken\n");
+    expect(r.stderr).toContain("1 of 2 device(s) received the test notification.");
+  });
+
+  test("text mode renders the failed sample with the finding after the lines", async () => {
+    const results = [
+      delivered(IPHONE),
+      { deviceId: IPAD.id, displayName: IPAD.displayName, outcome: "rejected", reason: "BadDeviceToken" },
+    ];
+    const r = await cli(["push", "test", "--server", BASE], [json(200, { results })]);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr.indexOf("1 of 2 device(s) received")).toBeLessThan(r.stderr.indexOf("[push_test_failed]"));
+    expect(r.stderr).toContain(
+      'fix: See the per-device lines above: "rejected" carries Apple\'s reason, "token-removed" means the device was removed and must pair again, and "unreachable" means Apple\'s push service could not be reached.',
+    );
+  });
+
+  test("empty results: exit 1, PUSH_NO_DEVICES and data {results: []}", async () => {
+    const r = await cli(["push", "test", "--server", BASE, "--json"], [json(200, { results: [] })]);
+    expect(r.exitCode).toBe(1);
+    expect(codesOf(r)).toEqual([FINDING_CODES.PUSH_NO_DEVICES]);
+    expect(r.envelope!.findings[0]!.message).toBe("No device has registered for notifications yet.");
+    expect(r.envelope!.findings[0]!.fix).toBe(
+      "Pair a device with pulse push pair, open the app so it registers, then run this again.",
+    );
+    expect(r.envelope!.data).toEqual({ results: [] });
+  });
+
+  test('--device sends {"deviceId":"dev_AbCdEfGhIjK"} and no --device sends {}', async () => {
+    const withDevice = await cli(["push", "test", "--device", ID, "--server", BASE], [json(200, { results: [delivered(IPHONE)] })]);
+    expect(withDevice.exitCode).toBe(0);
+    expect(withDevice.calls[0]!.method).toBe("POST");
+    expect(withDevice.calls[0]!.url).toBe(`${BASE}/api/push/admin/test`);
+    expect(withDevice.calls[0]!.body).toBe('{"deviceId":"dev_AbCdEfGhIjK"}');
+    const all = await cli(["push", "test", "--server", BASE], [json(200, { results: [delivered(IPHONE)] })]);
+    expect(all.calls[0]!.body).toBe("{}");
+  });
+
+  test("a timeout on test reports 60 s", async () => {
+    const r = await cli(["push", "test", "--server", BASE, "--json"], [
+      { reject: new DOMException("timed out", "TimeoutError") },
+    ]);
+    expect(r.exitCode).toBe(1);
+    expect(codesOf(r)).toEqual([FINDING_CODES.PUSH_SERVER_UNREACHABLE]);
+    expect(r.envelope!.findings[0]!.message).toContain("60 s");
+    expect(r.envelope!.data).toBeNull();
+  });
+});
+
+describe("runCli push — failures map to one finding and exit 1", () => {
+  const ROWS: ReadonlyArray<{ name: string; args: string[]; answers: Answer[]; code: string; detail?: string }> = [
+    { name: "network error", args: ["devices"], answers: [{ reject: new TypeError("fetch failed") }], code: FINDING_CODES.PUSH_SERVER_UNREACHABLE },
+    {
+      name: "timeout says 10 s",
+      args: ["devices"],
+      answers: [{ reject: new DOMException("timed out", "TimeoutError") }],
+      code: FINDING_CODES.PUSH_SERVER_UNREACHABLE,
+      detail: "10 s",
+    },
+    { name: "401", args: ["devices"], answers: [envelope(401, "UNAUTHORIZED")], code: FINDING_CODES.PUSH_OPERATOR_REFUSED },
+    { name: "404 on GET devices", args: ["devices"], answers: [envelope(404, "API_NOT_FOUND")], code: FINDING_CODES.PUSH_NOT_CONFIGURED },
+    { name: "405 on DELETE", args: ["revoke", ID], answers: [new Response("", { status: 405 })], code: FINDING_CODES.PUSH_NOT_CONFIGURED },
+    { name: "503 PUSH_UNAVAILABLE", args: ["devices"], answers: [envelope(503, "PUSH_UNAVAILABLE")], code: FINDING_CODES.PUSH_MISCONFIGURED },
+    { name: "503 other body", args: ["devices"], answers: [new Response("busy", { status: 503 })], code: FINDING_CODES.PUSH_SERVER_UNREACHABLE },
+    {
+      name: "409 address-too-long",
+      args: ["pair"],
+      answers: [envelope(409, "PUSH_NO_USABLE_ADDRESS", { reason: "address-too-long" })],
+      code: FINDING_CODES.PUSH_PAIR_NO_ADDRESS,
+    },
+    { name: "400", args: ["devices"], answers: [envelope(400, "INVALID_REQUEST")], code: FINDING_CODES.PUSH_SERVER_UNREACHABLE },
+    { name: "429", args: ["devices"], answers: [envelope(429, "RATE_LIMITED")], code: FINDING_CODES.PUSH_SERVER_UNREACHABLE },
+    { name: "500", args: ["devices"], answers: [envelope(500, "INTERNAL_ERROR")], code: FINDING_CODES.PUSH_SERVER_UNREACHABLE },
+    {
+      name: "200 HTML body",
+      args: ["devices"],
+      answers: [new Response("<html></html>", { status: 200, headers: { "Content-Type": "text/html" } })],
+      code: FINDING_CODES.PUSH_SERVER_UNREACHABLE,
+    },
+    {
+      name: "201 link without pair",
+      args: ["pair"],
+      answers: [json(201, { link: `pulse://connect?v=1&url=${encodeURIComponent(BASE)}`, expiresAt: EXPIRES })],
+      code: FINDING_CODES.PUSH_SERVER_UNREACHABLE,
+    },
+    {
+      name: "body over 1 MiB",
+      args: ["devices"],
+      answers: [new Response("x".repeat(PUSH_MAX_RESPONSE_CHARS + 1), { status: 200 })],
+      code: FINDING_CODES.PUSH_SERVER_UNREACHABLE,
+    },
+  ];
+
+  for (const row of ROWS) {
+    test(row.name, async () => {
+      const r = await cli(["push", ...row.args, "--server", BASE, "--json"], row.answers);
+      expect(r.exitCode).toBe(1);
+      expect(codesOf(r)).toEqual([row.code]);
+      expect(r.envelope!.data).toBeNull();
+      if (row.detail !== undefined) expect(r.envelope!.findings[0]!.message).toContain(row.detail);
+    });
+  }
+});
+
+describe("runCli push — arguments (exit 2, stdout empty)", () => {
+  const ROWS: ReadonlyArray<{ name: string; args: string[]; message: string }> = [
+    { name: "no sub-command", args: [], message: "push: missing sub-command (expected one of: pair, devices, revoke, test)" },
+    { name: "unknown sub-command", args: ["list"], message: 'push: unknown sub-command "list"' },
+    { name: "revoke with no id", args: ["revoke"], message: "push revoke: missing <id>" },
+    {
+      name: "revoke bad-id",
+      args: ["revoke", "bad-id"],
+      message: 'push revoke: malformed device id "bad-id" (expected dev_ followed by 11 base64url characters)',
+    },
+    { name: "revoke with two ids", args: ["revoke", ID, "dev_ZyXwVuTsRqP"], message: 'push revoke: unexpected argument "dev_ZyXwVuTsRqP"' },
+    { name: "pair extra", args: ["pair", "extra"], message: 'push pair: unexpected argument "extra"' },
+    { name: "--device on devices", args: ["devices", "--device", ID], message: "--device is only valid for 'push test'" },
+    {
+      name: "test --device bad",
+      args: ["test", "--device", "bad"],
+      message: 'push test: malformed --device id "bad" (expected dev_ followed by 11 base64url characters)',
+    },
+    { name: '--server ""', args: ["devices", "--server", ""], message: "--server needs an https address" },
+    {
+      name: "--insecure-local with no --server",
+      args: ["devices", "--insecure-local"],
+      message: "--insecure-local requires --server http://127.0.0.1:<port> or http://localhost:<port>",
+    },
+    {
+      name: "--insecure-local --server http://192.0.2.10:8080",
+      args: ["devices", "--insecure-local", "--server", "http://192.0.2.10:8080"],
+      message: "--insecure-local accepts only http://127.0.0.1:<port> or http://localhost:<port>",
+    },
+    {
+      name: "--insecure-local --server https://pulse.example.com",
+      args: ["devices", "--insecure-local", "--server", BASE],
+      message: "--insecure-local accepts only http://127.0.0.1:<port> or http://localhost:<port>",
+    },
+    { name: "--verbose --quiet", args: ["devices", "--server", BASE, "--verbose", "--quiet"], message: "--verbose and --quiet are mutually exclusive" },
+  ];
+
+  for (const row of ROWS) {
+    test(row.name, async () => {
+      const r = await cli(["push", ...row.args], []);
+      expect(r.exitCode).toBe(2);
+      expect(r.calls).toHaveLength(0);
+      expect(r.stderr).toBe(`pulse: usage error: ${row.message}\n`);
+    });
+  }
+
+  test("an unknown flag is a usage error naming it", async () => {
+    const r = await cli(["push", "devices", "--bogus"], []);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toStartWith("pulse: usage error: ");
+    expect(r.stderr).toContain("--bogus");
+  });
+
+  test("the --insecure-local rejections and --server messages never echo the raw value", async () => {
+    const cases = [
+      ["devices", "--insecure-local", "--server", CREDENTIALED],
+      ["revoke", "bad-id", "--server", CREDENTIALED],
+      ["test", "--device", "bad", "--server", CREDENTIALED],
+      ["devices", "--device", ID, "--server", CREDENTIALED],
+    ];
+    for (const args of cases) {
+      const r = await cli(["push", ...args], []);
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).not.toContain(CREDENTIALED);
+      expect(r.stderr).not.toContain("user:pw");
+    }
+  });
+
+  test("pulse push --version prints the version text and exits 0", async () => {
+    const r = await cli(["push", "--version"], []);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("pulse ");
+    expect(r.calls).toHaveLength(0);
+  });
+
+  test("with no args the message lists push", async () => {
+    const r = await cli([], []);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("push");
+  });
+});
+
+describe("runCli push — address precedence", () => {
+  const FLAG = "https://pulse.example.com";
+  const ENV_SERVER = "https://pulse.example.net";
+  const FILE_SERVER = "https://pulse.example.org";
+  const ENV_EXTERNAL = "https://ops.example.com";
+  const FILE_EXTERNAL = "https://edge.example.com";
+
+  let dir: string | null = null;
+  afterEach(() => {
+    if (dir !== null) rmSync(dir, { recursive: true, force: true });
+    dir = null;
+  });
+  function cwdWith(config: string): string {
+    dir = mkdtempSync(join(tmpdir(), "pulse-push-cfg-"));
+    writeFileSync(join(dir, "pulse.config.yaml"), config, "utf8");
+    return dir;
+  }
+  const devicesOk = () => [json(200, { devices: [] })];
+  const baseOf = (r: CliRun): string => new URL(r.calls[0]!.url).origin;
+
+  test("--server > PULSE_SERVER_URL > file server > PULSE_WEB_EXTERNAL_URL > file externalUrl", async () => {
+    const cwd = cwdWith(`server: ${FILE_SERVER}\nexternalUrl: ${FILE_EXTERNAL}\n`);
+    const env = { ...OK_ENV, PULSE_SERVER_URL: ENV_SERVER, PULSE_WEB_EXTERNAL_URL: ENV_EXTERNAL };
+    expect(baseOf(await cli(["push", "devices", "--server", FLAG], devicesOk(), { env, cwd }))).toBe(FLAG);
+    expect(baseOf(await cli(["push", "devices"], devicesOk(), { env, cwd }))).toBe(ENV_SERVER);
+    const { PULSE_SERVER_URL: _a, ...noEnvServer } = env;
+    expect(baseOf(await cli(["push", "devices"], devicesOk(), { env: noEnvServer, cwd }))).toBe(FILE_SERVER);
+    const cwdExternalOnly = cwdWith(`externalUrl: ${FILE_EXTERNAL}\n`);
+    expect(baseOf(await cli(["push", "devices"], devicesOk(), { env: noEnvServer, cwd: cwdExternalOnly }))).toBe(ENV_EXTERNAL);
+    expect(baseOf(await cli(["push", "devices"], devicesOk(), { env: OK_ENV, cwd: cwdExternalOnly }))).toBe(FILE_EXTERNAL);
+  });
+
+  test("blank env and file values fall through", async () => {
+    const cwd = cwdWith(`server: "  "\nexternalUrl: ${FILE_EXTERNAL}\n`);
+    const env = { ...OK_ENV, PULSE_SERVER_URL: "   ", PULSE_WEB_EXTERNAL_URL: "" };
+    expect(baseOf(await cli(["push", "devices"], devicesOk(), { env, cwd }))).toBe(FILE_EXTERNAL);
+  });
+
+  test("each source is normalised (trailing slash dropped)", async () => {
+    const r = await cli(["push", "devices", "--verbose"], devicesOk(), {
+      env: { ...OK_ENV, PULSE_SERVER_URL: "https://pulse.example.com/" },
+    });
+    expect(r.calls[0]!.url).toBe("https://pulse.example.com/api/push/admin/devices");
+    expect(r.stderr).toContain("Server: https://pulse.example.com (from PULSE_SERVER_URL)");
+  });
+
+  test("a refused chosen source is PUSH_SERVER_MISSING naming PULSE_SERVER_URL, no fall-through, no request", async () => {
+    const cwd = cwdWith(`server: ${FILE_SERVER}\n`);
+    const r = await cli(["push", "devices", "--json"], [], {
+      env: { ...OK_ENV, PULSE_SERVER_URL: "http://pulse.example.com", PULSE_WEB_EXTERNAL_URL: ENV_EXTERNAL },
+      cwd,
+    });
+    expect(r.exitCode).toBe(1);
+    expect(r.calls).toHaveLength(0);
+    expect(codesOf(r)).toEqual([FINDING_CODES.PUSH_SERVER_MISSING]);
+    expect(r.envelope!.findings[0]!.message).toContain("PULSE_SERVER_URL");
+  });
+
+  test("no source at all is PUSH_SERVER_MISSING and exit 1", async () => {
+    const cwd = cwdWith("estateDir: estate\n");
+    const r = await cli(["push", "devices", "--json"], [], { cwd });
+    expect(r.exitCode).toBe(1);
+    expect(r.calls).toHaveLength(0);
+    expect(codesOf(r)).toEqual([FINDING_CODES.PUSH_SERVER_MISSING]);
+  });
+
+  test("a server: 5 key in the file is exit 2", async () => {
+    const r = await cli(["push", "devices"], [], { cwd: cwdWith("server: 5\n") });
+    expect(r.exitCode).toBe(2);
+    expect(r.calls).toHaveLength(0);
+  });
+
+  test("a pushOperatorSecret key in the file is exit 2 and its value is not echoed", async () => {
+    const r = await cli(["push", "devices", "--server", BASE], [], { cwd: cwdWith(`pushOperatorSecret: ${SECRET}\n`) });
+    expect(r.exitCode).toBe(2);
+    expect(r.calls).toHaveLength(0);
+    expect(r.stderr).toContain("pushOperatorSecret");
+  });
+
+  test("--insecure-local: the warning shows under --quiet and requests go to http://127.0.0.1:<port>", async () => {
+    const r = await cli(["push", "devices", "--server", "http://127.0.0.1:8080", "--insecure-local", "--quiet"], devicesOk());
+    expect(r.exitCode).toBe(0);
+    expect(r.calls[0]!.url).toBe("http://127.0.0.1:8080/api/push/admin/devices");
+    expect(r.stderr).toContain("warning: --insecure-local: talking to http://127.0.0.1:8080 over plain HTTP");
   });
 });

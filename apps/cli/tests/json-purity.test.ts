@@ -141,3 +141,63 @@ describe("NO_COLOR and non-TTY stderr suppress colour/control sequences (REQ-CLI
     expect(r.stdout).not.toContain(ESC);
   });
 });
+
+describe("push --json stdout is exactly one pure envelope", () => {
+  const BASE = "https://pulse.example.com";
+  const env = { PULSE_PUSH_OPERATOR_SECRET: "json-purity-operator-secret-0123456789abcdefghij" };
+  const stub = (status: number, body: unknown): typeof fetch =>
+    (async () =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch;
+
+  function expectPure(stdout: string): PulseEnvelope {
+    const parsed = JSON.parse(stdout) as PulseEnvelope;
+    expect(stdout).toBe(`${JSON.stringify(parsed, null, 2)}\n`);
+    expect(parsed.command).toBe("push");
+    expect(parsed.ok).toBe(parsed.exitCode === 0);
+    expect(parsed.meta.envelopeVersion).toBe(ENVELOPE_VERSION);
+    expect(parsed.meta.schemaMajors).toEqual([...SUPPORTED_SCHEMA_MAJORS]);
+    expect(parsed.meta.pulseVersion).toBe(PULSE_VERSION);
+    expect(Object.keys(parsed.meta).sort()).toEqual(["envelopeVersion", "pulseVersion", "schemaMajors"]);
+    return parsed;
+  }
+
+  test("push devices --json: canonical envelope, table on stderr only", async () => {
+    const device = {
+      id: "dev_AbCdEfGhIjK",
+      displayName: "Example iPhone",
+      pairedAt: "2026-11-18T09:12:00.000Z",
+      seenAt: "2026-11-20T08:01:00.000Z",
+      environment: "production",
+      preferences: { critical: true, warning: true, info: true },
+      tokenSuffix: "a1b2c3",
+      lastDelivery: null,
+    };
+    const r = await runCli(["push", "devices", "--server", BASE, "--json"], {
+      cwd: repo,
+      env,
+      fetch: stub(200, { devices: [device] }),
+    });
+    expect(r.exitCode).toBe(0);
+    const parsed = expectPure(r.stdout);
+    expect(parsed.data).toEqual({ devices: [device] });
+    expect(r.stdout).not.toContain("LAST DELIVERY");
+    expect(r.stderr).toContain("LAST DELIVERY");
+  });
+
+  test("push pair --json: stdout parses and the QR is on stderr only", async () => {
+    const link = `pulse://connect?v=1&url=${encodeURIComponent(BASE)}&pair=AAAAAAAAAAAAAAAAAAAAAA`;
+    const r = await runCli(["push", "pair", "--server", BASE, "--json"], {
+      cwd: repo,
+      env,
+      fetch: stub(201, { link, expiresAt: "2026-11-20T12:10:00.000Z" }),
+    });
+    expect(r.exitCode).toBe(0);
+    const parsed = expectPure(r.stdout);
+    expect(parsed.data).toEqual({ link, expiresAt: "2026-11-20T12:10:00.000Z" });
+    expect(r.stdout).not.toMatch(/[▀▄█]/);
+    expect(r.stderr).toMatch(/[▀▄█]/);
+  });
+});
