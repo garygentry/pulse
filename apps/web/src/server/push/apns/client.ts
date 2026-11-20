@@ -1,4 +1,8 @@
-// APNs HTTP/2 client: request and result types (the client itself is added alongside the JWT signer).
+// APNs HTTP/2 client: request, result, classification and dependency types (the client factory is added later).
+
+import type { PushEnvironment } from "@pulse/web-data/wire";
+import type { Timers } from "../dispatch/queue.js";
+import type { Clock } from "../ids.js";
 
 /** Built request: headers + serialised body (≤ 4096 bytes). */
 export interface ApnsRequest {
@@ -35,3 +39,58 @@ export type ApnsResult =
       /** Request timeout, connection failure, or HTTP/2 session failure. */
       readonly error: "timeout" | "connection" | "session";
     };
+
+/** Classification of an ApnsResult: what the queue or test send does next. */
+export type ApnsClassification =
+  | {
+      /** APNs accepted the request. */
+      readonly kind: "delivered";
+    }
+  | {
+      /** Retry with backoff until the deadline. */
+      readonly kind: "transient";
+      /** Sanitised reason. */
+      readonly reason: string;
+    }
+  | {
+      /** Fail without retry. */
+      readonly kind: "permanent";
+      /** Sanitised reason. */
+      readonly reason: string;
+    }
+  | {
+      /** The token is dead; the device is removed. */
+      readonly kind: "dead-token";
+      /** Sanitised reason; "Unregistered" when APNs gave none. */
+      readonly reason: string;
+    }
+  | {
+      /** Re-sign the provider JWT and resend (403 ExpiredProviderToken). */
+      readonly kind: "auth-expired";
+    }
+  | {
+      /** Provider authentication failed (403 Invalid/MissingProviderToken); not retried. */
+      readonly kind: "auth-failed";
+      /** Sanitised reason. */
+      readonly reason: string;
+    };
+
+/** Test/override seam. Production uses the fixed APNs origins and the system CA. */
+export interface ApnsDeps {
+  /** HTTPS origin per APNs environment. */
+  readonly origins: Readonly<Record<PushEnvironment, string>>;
+  /** Extra trusted CA (tests); absent uses the system CA. */
+  readonly ca?: string | Buffer;
+  /** Time source for JWT refresh and timeouts. */
+  readonly clock: Clock;
+  /** Timer source for timeouts, pings and idle close. */
+  readonly timers: Timers;
+}
+
+/** An APNs HTTP/2 client with one session per environment. */
+export interface ApnsClient {
+  /** Send one request to `deviceToken` (`APNS_TOKEN_PATTERN`); never rejects, failures are `kind: "error"`. */
+  send(environment: PushEnvironment, deviceToken: string, request: ApnsRequest): Promise<ApnsResult>;
+  /** Close every HTTP/2 session. */
+  close(): Promise<void>;
+}
