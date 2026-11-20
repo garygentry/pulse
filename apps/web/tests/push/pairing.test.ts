@@ -9,6 +9,12 @@ import type { ExternalUrlState } from "../../src/server/config.js";
 import type { AtomicWriteOptions, AtomicWriteResult } from "../../src/server/mutations/stores/atomic-file.js";
 import { PUSH_LIMITS } from "../../src/server/push/constants.js";
 import {
+  handleCancelWebToken,
+  handleIssueAdminToken,
+  handleIssueWebToken,
+} from "../../src/server/push/handlers/pairing-tokens.js";
+import { handleRedeem, type PushHandlerDeps } from "../../src/server/push/handlers/redeem.js";
+import {
   createPairingService,
   createRedemptionLimiter,
   type PairingServiceForTest,
@@ -662,5 +668,148 @@ describe("pairing: limiter", () => {
     }
     expect(r2.svc.snapshotForTest().limiterFailures).toEqual([]);
     expect(r2.svc.snapshotForTest().tokens.has(hashCredential(t2))).toBe(true);
+  });
+});
+
+// ── handlers (HTTP mapping) ─────────────────────────────────────────────────────────────────────
+
+function handlerDeps(r: Rig): PushHandlerDeps {
+  return { pairing: r.svc, store: r.store, clock: r.clock };
+}
+
+function webIssueRequest(origin: string | null): Request {
+  return new Request(`${BASE}/api/push/pairing-tokens`, {
+    method: "POST",
+    headers: origin === null ? {} : { Origin: origin },
+  });
+}
+
+async function issuedLink(res: Response): Promise<string> {
+  expect(res.status).toBe(201);
+  expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(res.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
+  const body = JSON.parse(await res.text()) as Record<string, unknown>;
+  expect(Object.keys(body).sort()).toEqual(["expiresAt", "link"]);
+  const link = String(body.link);
+  secrets.add(link);
+  const token = new URL(link).searchParams.get("pair") ?? "";
+  track(token);
+  expect(PAIR_TOKEN_PATTERN.test(token)).toBe(true);
+  return token;
+}
+
+async function redeemVia(deps: PushHandlerDeps, token: string): Promise<Response> {
+  const res = await handleRedeem(deps, { token, displayName: "Example iPhone" });
+  if (res.status === 201) {
+    const body = JSON.parse(await res.clone().text()) as { credential: string };
+    track(body.credential);
+  }
+  return res;
+}
+
+describe("pairing: handlers", () => {
+  test("used, unknown, malformed and expired tokens give byte-identical 403 bodies with no details", async () => {
+    const r = await rig();
+    const deps = handlerDeps(r);
+    const used = issueToken(r.svc);
+    const ok = await redeemVia(deps, used);
+    expect(ok.status).toBe(201);
+    expect(ok.headers.get("Cache-Control")).toBe("private, no-store");
+    const okBody = JSON.parse(await ok.text()) as Record<string, unknown>;
+    expect(Object.keys(okBody).sort()).toEqual(["credential", "deviceId"]);
+
+    const expired = issueToken(r.svc);
+    const unknown = "B".repeat(22);
+    const refusals: Response[] = [];
+    refusals.push(await redeemVia(deps, used));
+    refusals.push(await redeemVia(deps, unknown));
+    refusals.push(await redeemVia(deps, "short"));
+    r.clock.advance(TTL);
+    refusals.push(await redeemVia(deps, expired));
+
+    const texts = await Promise.all(refusals.map((res) => res.text()));
+    for (const res of refusals) {
+      expect(res.status).toBe(403);
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(res.headers.get("Retry-After")).toBeNull();
+    }
+    expect(new Set(texts).size).toBe(1);
+    const body = JSON.parse(texts[0] as string) as Record<string, unknown>;
+    expect(body.code).toBe("PAIRING_REFUSED");
+    expect("details" in body).toBe(false);
+  });
+
+  test("web and admin issue give 201 PairingTokenIssued with no-store; the web Origin is the fallback base", async () => {
+    const r = await rig({ externalUrl: UNSET });
+    const deps = handlerDeps(r);
+    const webToken = await issuedLink(handleIssueWebToken(deps, webIssueRequest(BASE)));
+    const cliToken = await issuedLink(handleIssueAdminToken(deps, { baseUrl: BASE }));
+    expect(webToken).not.toBe(cliToken);
+    expect(r.svc.snapshotForTest().tokens.size).toBe(2);
+  });
+
+  test("issue refusals are 409 INVALID_REQUEST with details.reason, and store no token", async () => {
+    const r = await rig({ externalUrl: UNSET });
+    const deps = handlerDeps(r);
+    const cases: Array<[Response, string]> = [
+      [handleIssueWebToken(deps, webIssueRequest(null)), "no-usable-address"],
+      [handleIssueWebToken(deps, webIssueRequest("http://pulse.example.com")), "no-usable-address"],
+      [handleIssueAdminToken(deps, {}), "no-usable-address"],
+      [handleIssueAdminToken(deps, { baseUrl: `https://pulse.example.com/${"a".repeat(190)}` }), "address-too-long"],
+    ];
+    for (const [res, reason] of cases) {
+      expect(res.status).toBe(409);
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(JSON.parse(await res.text())).toEqual(
+        expect.objectContaining({ code: "INVALID_REQUEST", details: { reason } }),
+      );
+    }
+    expect(r.svc.snapshotForTest().tokens.size).toBe(0);
+  });
+
+  test("cancel gives 204 with and without an outstanding web token", async () => {
+    const r = await rig();
+    const deps = handlerDeps(r);
+    await issuedLink(handleIssueWebToken(deps, webIssueRequest(null)));
+    expect(r.svc.outstandingWeb()).not.toBeNull();
+    for (let i = 0; i < 2; i++) {
+      const res = handleCancelWebToken(deps);
+      expect(res.status).toBe(204);
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(await res.text()).toBe("");
+      expect(r.svc.outstandingWeb()).toBeNull();
+    }
+    expect(pairingCounts()).toEqual(counts({ issued: 1, cancelled: 1 }));
+  });
+
+  test("a tripped limiter gives 429 with Retry-After", async () => {
+    const r = await rig();
+    const deps = handlerDeps(r);
+    for (let i = 0; i < PUSH_LIMITS.limiterMaxFailures; i++) {
+      expect((await redeemVia(deps, "short")).status).toBe(403);
+    }
+    r.clock.advance(1500);
+    const res = await redeemVia(deps, "short");
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe(String(Math.ceil((WINDOW - 1500) / 1000)));
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect((JSON.parse(await res.text()) as { code: string }).code).toBe("RATE_LIMITED");
+  });
+
+  test("cap reached gives 409 DEVICE_CAP_REACHED and a write failure gives 503 PUSH_UNAVAILABLE", async () => {
+    const full = await rig({ maxDevices: 1, seeded: 1 });
+    const capRes = await redeemVia(handlerDeps(full), issueToken(full.svc));
+    expect(capRes.status).toBe(409);
+    expect((JSON.parse(await capRes.text()) as { code: string }).code).toBe("DEVICE_CAP_REACHED");
+
+    const r = await rig();
+    const token = issueToken(r.svc);
+    r.gate.hold();
+    const pending = { res: redeemVia(handlerDeps(r), token) };
+    await r.gate.until(1);
+    r.gate.release(ENOSPC);
+    const res = await pending.res;
+    expect(res.status).toBe(503);
+    expect((JSON.parse(await res.text()) as { code: string }).code).toBe("PUSH_UNAVAILABLE");
   });
 });
