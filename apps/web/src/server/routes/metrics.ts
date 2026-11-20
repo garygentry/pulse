@@ -25,6 +25,9 @@ import type { RefusalReason } from "../mutations/refusal.js";
 import type { WritePathSnapshot } from "../mutations/write-path.js";
 import { WRITE_PATH_STORES } from "../mutations/write-path.js";
 import type { HandshakeLabels } from "@pulse/web-data/contract";
+import type { PushState } from "@pulse/web-data/wire";
+// Type-only: erased at build time, so routes/ keeps no runtime edge into push/.
+import type { NotificationKind } from "../push/plan.js";
 import { CONTRACT_VERSION, KNOWN_CLIENTS, formatContractVersion } from "@pulse/web-data/contract";
 
 const METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
@@ -164,6 +167,180 @@ function readWritePathStatus(): WritePathSnapshot | null {
   }
 }
 
+// ── Push gateway telemetry state ────────────────────────────────────────────────────────────────────
+
+/** Closed `outcome` vocabulary of pulse_web_push_webhook_total. */
+export type PushWebhookOutcome = "accepted" | "unauthorized" | "malformed" | "too_large" | "unavailable";
+/** Closed `outcome` vocabulary of pulse_web_push_notifications_total. */
+export type PushNotificationOutcome = "delivered" | "failed" | "dropped" | "filtered" | "token_removed";
+/** Closed `event` vocabulary of pulse_web_push_pairing_events_total. */
+export type PushPairingEvent =
+  | "issued"
+  | "redeemed"
+  | "refused"
+  | "cap_reached"
+  | "rate_limited"
+  | "cancelled"
+  | "revoked"
+  | "expired"
+  | "removed_dead";
+
+/** What the installed push provider reports at scrape time. */
+export interface PushMetricsSnapshot {
+  /** Current gateway state, for `pulse_web_push_state`. */
+  readonly state: PushState;
+  /** Devices in the registry; null when disabled. */
+  readonly devices: number | null;
+  /** Last successful delivery, epoch milliseconds; `null` before the first one. */
+  readonly lastSuccessAtMs: number | null;
+}
+
+/** `state` label values of pulse_web_push_state, in render order. */
+const PUSH_STATES = ["disabled", "configured", "misconfigured"] as const satisfies readonly PushState[];
+
+/** `outcome` label values of pulse_web_push_webhook_total, in render order. */
+export const PUSH_WEBHOOK_OUTCOMES = Object.freeze([
+  "accepted",
+  "unauthorized",
+  "malformed",
+  "too_large",
+  "unavailable",
+] as const satisfies readonly PushWebhookOutcome[]);
+
+/** `kind` label values of pulse_web_push_notifications_total, in render order. */
+export const PUSH_NOTIFICATION_KINDS = Object.freeze([
+  "firing",
+  "resolved",
+  "repeat",
+  "summary",
+  "test",
+] as const satisfies readonly NotificationKind[]);
+
+/** `outcome` label values of pulse_web_push_notifications_total, in render order. */
+export const PUSH_NOTIFICATION_OUTCOMES = Object.freeze([
+  "delivered",
+  "failed",
+  "dropped",
+  "filtered",
+  "token_removed",
+] as const satisfies readonly PushNotificationOutcome[]);
+
+/** `event` label values of pulse_web_push_pairing_events_total, in render order. */
+export const PUSH_PAIRING_EVENTS = Object.freeze([
+  "issued",
+  "redeemed",
+  "refused",
+  "cap_reached",
+  "rate_limited",
+  "cancelled",
+  "revoked",
+  "expired",
+  "removed_dead",
+] as const satisfies readonly PushPairingEvent[]);
+
+/** Guard sets: any value outside the closed set is dropped silently (the HANDSHAKE_CLIENTS pattern). */
+const PUSH_STATE_SET: ReadonlySet<string> = new Set(PUSH_STATES);
+const PUSH_WEBHOOK_OUTCOME_SET: ReadonlySet<string> = new Set(PUSH_WEBHOOK_OUTCOMES);
+const PUSH_NOTIFICATION_KIND_SET: ReadonlySet<string> = new Set(PUSH_NOTIFICATION_KINDS);
+const PUSH_NOTIFICATION_OUTCOME_SET: ReadonlySet<string> = new Set(PUSH_NOTIFICATION_OUTCOMES);
+const PUSH_PAIRING_EVENT_SET: ReadonlySet<string> = new Set(PUSH_PAIRING_EVENTS);
+
+/** Compile-time proof that each array lists every union member (no runtime cost). */
+type _AssertAll<U, A extends readonly U[]> = [U] extends [A[number]] ? true : never;
+const _pushVocabComplete: [
+  _AssertAll<PushState, typeof PUSH_STATES>,
+  _AssertAll<PushWebhookOutcome, typeof PUSH_WEBHOOK_OUTCOMES>,
+  _AssertAll<NotificationKind, typeof PUSH_NOTIFICATION_KINDS>,
+  _AssertAll<PushNotificationOutcome, typeof PUSH_NOTIFICATION_OUTCOMES>,
+  _AssertAll<PushPairingEvent, typeof PUSH_PAIRING_EVENTS>,
+] = [true, true, true, true, true];
+void _pushVocabComplete;
+
+const pushWebhookTotal = new Map<PushWebhookOutcome, number>(); // key: outcome
+const pushNotificationsTotal = new Map<string, number>(); // key: `${kind}|${outcome}`
+const pushPairingEventsTotal = new Map<PushPairingEvent, number>(); // key: event
+let pushAdminRefusalsTotal = 0;
+let pushMetricsProvider: (() => PushMetricsSnapshot) | null = null;
+
+/** True for a positive safe integer (the accepted increment for the `n` argument). */
+function isPositiveCount(n: number): boolean {
+  return Number.isSafeInteger(n) && n > 0;
+}
+
+/**
+ * +1 pulse_web_push_webhook_total{outcome}. Called once per webhook request by the webhook handler,
+ * after the outcome is known. A value outside PUSH_WEBHOOK_OUTCOMES is dropped silently (never throws,
+ * never logs).
+ * @param outcome - The closed webhook outcome.
+ */
+export function recordPushWebhook(outcome: PushWebhookOutcome): void {
+  if (!PUSH_WEBHOOK_OUTCOME_SET.has(outcome)) return;
+  pushWebhookTotal.set(outcome, (pushWebhookTotal.get(outcome) ?? 0) + 1);
+}
+
+/**
+ * += n on pulse_web_push_notifications_total{kind,outcome}.
+ * - `kind` is the planned kind. `filtered` is counted per alert under the kind it would have had.
+ * - A summary counts once per device as `summary`.
+ * - Test sends count as `kind="test"`.
+ * A kind or outcome outside the closed sets, or an `n` that is not a positive safe integer, is dropped
+ * silently, so the series set can never grow beyond 5 × 5.
+ * @param kind - The NotificationKind of the item.
+ * @param outcome - The closed delivery outcome.
+ * @param n - Increment, default 1 (the planner batches `filtered`).
+ */
+export function recordPushNotification(kind: NotificationKind, outcome: PushNotificationOutcome, n: number = 1): void {
+  if (!PUSH_NOTIFICATION_KIND_SET.has(kind) || !PUSH_NOTIFICATION_OUTCOME_SET.has(outcome)) return;
+  if (!isPositiveCount(n)) return;
+  const key = `${kind}|${outcome}`;
+  pushNotificationsTotal.set(key, (pushNotificationsTotal.get(key) ?? 0) + n);
+}
+
+/**
+ * +1 pulse_web_push_pairing_events_total{event}. `revoked`, `expired` and `removed_dead` are recorded
+ * ONLY by the device store's removal path, their single emitter; the other events by the pairing
+ * service. The matching log line is written by the same caller, not here.
+ * @param event - The closed pairing/registry event.
+ */
+export function recordPushPairingEvent(event: PushPairingEvent): void {
+  if (!PUSH_PAIRING_EVENT_SET.has(event)) return;
+  pushPairingEventsTotal.set(event, (pushPairingEventsTotal.get(event) ?? 0) + 1);
+}
+
+/** +1 pulse_web_push_admin_refusals_total, once per 401 from the operator-secret authoriser. */
+export function recordPushAdminRefusal(): void {
+  pushAdminRefusalsTotal += 1;
+}
+
+/**
+ * Install the push gauge source (non-disabled runtime), or clear it with null (disabled runtime, and
+ * close()). With no provider installed the gateway renders as `disabled`.
+ * @param provider - Snapshot thunk, or null.
+ */
+export function setPushMetricsProvider(provider: (() => PushMetricsSnapshot) | null): void {
+  pushMetricsProvider = provider;
+}
+
+/** Result of one provider read. `error` = the provider threw or returned an invalid snapshot. */
+type PushSnapshotRead =
+  | { readonly kind: "none" }
+  | { readonly kind: "ok"; readonly snapshot: PushMetricsSnapshot }
+  | { readonly kind: "error" };
+
+/** Read the provider defensively: a scrape never fails because of push. */
+function readPushSnapshot(): PushSnapshotRead {
+  if (pushMetricsProvider === null) return { kind: "none" };
+  try {
+    const snapshot: unknown = pushMetricsProvider();
+    if (snapshot === null || typeof snapshot !== "object") return { kind: "error" };
+    const state: unknown = (snapshot as { state?: unknown }).state;
+    if (typeof state !== "string" || !PUSH_STATE_SET.has(state)) return { kind: "error" };
+    return { kind: "ok", snapshot: snapshot as PushMetricsSnapshot };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
 /** Increment `pulse_web_refresh_total{source,outcome}` — called by the legacy refresh loop (§6.2). */
 export function recordRefresh(source: SourceKey, outcome: RefreshOutcome): void {
   const key = `${source}|${outcome}`;
@@ -236,6 +413,11 @@ export function __resetMetricsForTest(): void {
   auditWriteFailuresTotal.clear();
   ackAutoClearsTotal = 0;
   writePathStatusProvider = null;
+  pushWebhookTotal.clear();
+  pushNotificationsTotal.clear();
+  pushPairingEventsTotal.clear();
+  pushAdminRefusalsTotal = 0;
+  pushMetricsProvider = null;
 }
 
 /**
@@ -402,7 +584,80 @@ export function renderMetrics(
       lines.push(`pulse_web_write_path_status{store="${store}",reason="${wp[store].reason ?? "ok"}"} 1`);
     }
   }
+  renderPushMetrics(lines);
   return lines.join("\n") + "\n";
+}
+
+/** HELP text per push family (fixed strings, no runtime value). */
+const PUSH_HELP = Object.freeze({
+  state: "Push gateway state; 1 on the current state (disabled, configured, misconfigured).",
+  devices: "Devices in the push registry.",
+  webhook: "Alertmanager push webhook calls by outcome.",
+  notifications: "Push notifications by kind and outcome.",
+  lastSuccess: "Unix time of the last notification Apple accepted.",
+  pairing: "Pairing and device registry events.",
+  adminRefusals: "Operator push API calls refused for the operator secret.",
+} as const);
+
+/**
+ * Append the push families.
+ * - pulse_web_push_state is ALWAYS emitted (3 series). No provider → `disabled` = 1. A provider error →
+ *   all three 0 (state unknown, so neither the disabled assumption nor the misconfigured rule fires).
+ * - Every other family is emitted only for an `ok` snapshot whose state is not `disabled`.
+ * - Counter families render the FULL closed label space, zero-initialised, in array order, so rate()
+ *   and increase() see a series from 0 and the output is deterministic.
+ * - pulse_web_push_last_success_timestamp_seconds is emitted only when lastSuccessAtMs is set.
+ * Every label value comes from a closed constant array, so no value is escaped.
+ */
+function renderPushMetrics(lines: string[]): void {
+  const read = readPushSnapshot();
+  const current: PushState | null = read.kind === "none" ? "disabled" : read.kind === "ok" ? read.snapshot.state : null;
+
+  lines.push(`# HELP pulse_web_push_state ${PUSH_HELP.state}`);
+  lines.push(`# TYPE pulse_web_push_state gauge`);
+  for (const s of PUSH_STATES) {
+    lines.push(`pulse_web_push_state{state="${s}"} ${s === current ? 1 : 0}`);
+  }
+  if (read.kind !== "ok" || read.snapshot.state === "disabled") return;
+  const snap = read.snapshot;
+
+  const devices = typeof snap.devices === "number" && Number.isSafeInteger(snap.devices) && snap.devices >= 0 ? snap.devices : 0;
+  lines.push(`# HELP pulse_web_push_devices ${PUSH_HELP.devices}`);
+  lines.push(`# TYPE pulse_web_push_devices gauge`);
+  lines.push(`pulse_web_push_devices ${devices}`);
+
+  lines.push(`# HELP pulse_web_push_webhook_total ${PUSH_HELP.webhook}`);
+  lines.push(`# TYPE pulse_web_push_webhook_total counter`);
+  for (const o of PUSH_WEBHOOK_OUTCOMES) {
+    lines.push(`pulse_web_push_webhook_total{outcome="${o}"} ${pushWebhookTotal.get(o) ?? 0}`);
+  }
+
+  lines.push(`# HELP pulse_web_push_notifications_total ${PUSH_HELP.notifications}`);
+  lines.push(`# TYPE pulse_web_push_notifications_total counter`);
+  for (const k of PUSH_NOTIFICATION_KINDS) {
+    for (const o of PUSH_NOTIFICATION_OUTCOMES) {
+      lines.push(
+        `pulse_web_push_notifications_total{kind="${k}",outcome="${o}"} ${pushNotificationsTotal.get(`${k}|${o}`) ?? 0}`,
+      );
+    }
+  }
+
+  const last = snap.lastSuccessAtMs;
+  if (typeof last === "number" && Number.isFinite(last) && last > 0) {
+    lines.push(`# HELP pulse_web_push_last_success_timestamp_seconds ${PUSH_HELP.lastSuccess}`);
+    lines.push(`# TYPE pulse_web_push_last_success_timestamp_seconds gauge`);
+    lines.push(`pulse_web_push_last_success_timestamp_seconds ${Math.floor(last / 1000)}`);
+  }
+
+  lines.push(`# HELP pulse_web_push_pairing_events_total ${PUSH_HELP.pairing}`);
+  lines.push(`# TYPE pulse_web_push_pairing_events_total counter`);
+  for (const e of PUSH_PAIRING_EVENTS) {
+    lines.push(`pulse_web_push_pairing_events_total{event="${e}"} ${pushPairingEventsTotal.get(e) ?? 0}`);
+  }
+
+  lines.push(`# HELP pulse_web_push_admin_refusals_total ${PUSH_HELP.adminRefusals}`);
+  lines.push(`# TYPE pulse_web_push_admin_refusals_total counter`);
+  lines.push(`pulse_web_push_admin_refusals_total ${pushAdminRefusalsTotal}`);
 }
 
 /** Escape a Prometheus label value (`\`, `"`, newline). */

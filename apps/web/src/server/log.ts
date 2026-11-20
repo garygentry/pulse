@@ -67,7 +67,42 @@ export interface LogEvent {
     /** Ack auto-clear reconcile removed acks this cycle (count > 0 only): `{ ok: true, count }`. */
     | "ack_auto_cleared"
     /** acks.json failed to parse/validate at load; file preserved: `{ ok: false, path }`. */
-    | "ack_store_corrupt";
+    | "ack_store_corrupt"
+    /** Push bootstrap finished (state ≠ disabled only): `{ ok: state === "configured", state, webhook: "on"|"off",
+     *  admin: "on"|"off", devices }`. Disabled push logs nothing. */
+    | "push_started"
+    /** Pairing lifecycle: `{ ok, pairingEvent: PushPairingEvent, source?: "web"|"cli", deviceId?, displayName? }`.
+     *  The field is `pairingEvent` because `event` is this union's discriminant. `displayName` appears only when
+     *  pairingEvent is `redeemed`, after DISPLAY_NAME_PATTERN validation. Never the token or link. */
+    | "push_pairing"
+    /** The redemption limiter tripped and voided outstanding tokens: `{ ok: false }`. Once per trip. */
+    | "push_pairing_rate_limited"
+    /** A device left the registry: `{ ok: true, deviceId, reason: DeviceRemovalReason }`.
+     *  Emitted only by the device store, after the removal is committed. */
+    | "push_device_removed"
+    /** A notification failed permanently or transiently: `{ ok: false, deviceId, kind, classification,
+     *  status: number|null, reason }`. Rate-limited to one line per device per 60 s. Never the APNs token. */
+    | "push_delivery_failed"
+    /** A queued notification was dropped: `{ ok: false, deviceId, kind, cause: "deadline"|"overflow" }`.
+     *  Shares push_delivery_failed's per-device limit. */
+    | "push_delivery_dropped"
+    /** APNs refused the provider token (key id, team id or key mismatch): `{ ok: false, status, reason }`.
+     *  Edge-triggered: logged on the first refusal after a success or start-up. */
+    | "push_apns_auth_failed"
+    /** devices.json failed to parse or validate, and was preserved untouched: `{ ok: false, path: "devices.json" }`. */
+    | "push_registry_corrupt"
+    /** An atomic registry write failed: `{ ok: false, step, code }` from AtomicWriteResult. */
+    | "push_registry_write_failed"
+    /** Registry writes entered the sticky-failure state, and the push capability is withdrawn: `{ ok: false }`. Edge. */
+    | "push_registry_degraded"
+    /** Registry writes recovered, and the capability is restored: `{ ok: true }`. Edge. */
+    | "push_registry_recovered"
+    /** A valid webhook call was accepted: `{ ok: true, alerts, truncatedAlerts, devices }`. Counts only, no labels. */
+    | "push_webhook_received"
+    /** An unexpected exception in push code: `{ ok: false, route }`. On a request path `route` is the template
+     *  label (pushRouteLabel). On a background path it is one of "bootstrap" | "intake" | "dispatch" | "apns" |
+     *  "sweep" | "registry.onRemoved". No message and no stack: a push error text could contain request data. */
+    | "push_internal_error";
   /** True for success/steady events, false for failures/warnings. */
   ok?: boolean;
   /** Any additional structured context (source key, path, error text, version, …). */
@@ -81,4 +116,75 @@ export interface LogEvent {
  */
 export function log(evt: LogEvent): void {
   console.log(JSON.stringify({ ts: new Date().toISOString(), ...evt }));
+}
+
+/**
+ * Allows at most one emission per key per `intervalMs`, measured from the last allowed emission. The push
+ * queue uses it for push_delivery_failed and push_delivery_dropped, keyed by deviceId. Both events share one
+ * limiter, so a device produces at most one such line per interval whatever mix of failures and drops it has.
+ * Suppression affects only the log line; counters are incremented for every item.
+ */
+export interface KeyedLogLimiter {
+  /** True when a line for `key` may be written now. Records the emission when it returns true. */
+  allow(key: string): boolean;
+  /** Forget a key (called when a device is removed). */
+  forget(key: string): void;
+  /** Keys currently tracked (tests). */
+  size(): number;
+}
+
+/**
+ * Create a per-key log limiter.
+ * - `allow(k)` is true when `k` is untracked or `now − last[k] ≥ intervalMs`, and then sets `last[k] = now`;
+ *   otherwise it is false and changes nothing, so suppressed calls do not extend the window.
+ * - A clock that steps backwards (now < last) is allowed, so a frozen clock cannot silence a key forever.
+ * @param intervalMs - Minimum spacing per key. Must be a positive finite number; otherwise RangeError.
+ * @param nowMs - Injectable clock, default Date.now.
+ * @param maxKeys - Tracking bound, default 1024. When full, entries older than intervalMs are pruned first; if
+ *   it is still full, the oldest entry is evicted, so memory stays bounded whatever the key source.
+ * @returns The limiter.
+ */
+export function createKeyedLogLimiter(
+  intervalMs: number,
+  nowMs: () => number = Date.now,
+  maxKeys: number = 1024,
+): KeyedLogLimiter {
+  if (typeof intervalMs !== "number" || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new RangeError("intervalMs must be a positive finite number");
+  }
+  if (!Number.isSafeInteger(maxKeys) || maxKeys <= 0) {
+    throw new RangeError("maxKeys must be a positive integer");
+  }
+  // Insertion order = order of last allowed emission (a re-allowed key is re-inserted at the end).
+  const last = new Map<string, number>();
+
+  function makeRoom(now: number): void {
+    if (last.size < maxKeys) return;
+    for (const [k, t] of last) {
+      if (now < t || now - t >= intervalMs) last.delete(k);
+    }
+    while (last.size >= maxKeys) {
+      const oldest = last.keys().next();
+      if (oldest.done === true) break;
+      last.delete(oldest.value);
+    }
+  }
+
+  return {
+    allow(key: string): boolean {
+      const now = nowMs();
+      const prev = last.get(key);
+      if (prev !== undefined && now >= prev && now - prev < intervalMs) return false;
+      if (prev !== undefined) last.delete(key);
+      else makeRoom(now);
+      last.set(key, now);
+      return true;
+    },
+    forget(key: string): void {
+      last.delete(key);
+    },
+    size(): number {
+      return last.size;
+    },
+  };
 }
