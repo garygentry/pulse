@@ -20,6 +20,8 @@ import type { ExternalUrlSoftRefusal } from "../shared/connect-link.js";
 import { ENV, GATUS_STALE_SECONDS_DEFAULT } from "../shared/constants.js";
 import { ConfigError } from "../shared/errors.js";
 import { log } from "./log.js";
+import { parsePushConfig } from "./push/config.js";
+import type { PushConfigState } from "./push/config.js";
 import { WRITE_PATH_DEFAULTS, WRITE_PATH_ENV } from "./mutations/constants.js";
 
 export type { ExternalUrlSoftRefusal } from "../shared/connect-link.js";
@@ -61,6 +63,9 @@ export interface ServerConfig {
   /** `PULSE_WEB_EXTERNAL_URL`: the server's external https base for phone connect links. `unset` when
    *  absent/empty (behaves as before). A credential-bearing or unparseable value is a fatal ConfigError. */
   readonly externalUrl: ExternalUrlState;
+  /** Push gateway configuration. Parsed by parsePushConfig, never fatal, never logged here.
+   *  Holds the APNs KeyObject and the secrets' digests only; serialises the secrets as "[secret]". */
+  readonly push: PushConfigState;
 }
 
 // ── External URL (phone connect links) ─────────────────────────────────────────────────────────
@@ -235,6 +240,7 @@ export function resolveEstateTimezone(
  * - `PULSE_GRAFANA_URL` unset → `null` (deep links disabled).
  * - `PULSE_GATUS_STALE_SECONDS` parses to a positive integer; a non-numeric value logs a warning
  *   and uses {@link GATUS_STALE_SECONDS_DEFAULT}.
+ * - `push` is parsed by `parsePushConfig` (last); a push misconfiguration is never fatal.
  *
  * @param env - The environment map (test seam). Default: `process.env`.
  * @returns The parsed, validated configuration.
@@ -260,7 +266,7 @@ export function loadServerConfig(
     identity: parseIdentity(env),
   };
   const writePath = parseWritePath(env, base.identity.mode);
-  return { ...base, writePath, externalUrl: parseExternalUrl(env) };
+  return { ...base, writePath, externalUrl: parseExternalUrl(env), push: parsePushConfig(env) };
 }
 
 /**

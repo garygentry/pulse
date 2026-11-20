@@ -1,5 +1,10 @@
-// Deterministic fakes for the push suites: a manual clock, manual timers and a seeded entropy source.
+// Deterministic fakes for the push suites: a manual clock, manual timers, a seeded entropy source and an in-memory
+// file seam.
 
+import { dirname } from "node:path";
+
+import type { AtomicWriteOptions, AtomicWriteResult, AtomicWriteStep } from "../../../src/server/mutations/stores/atomic-file.js";
+import type { PushFs } from "../../../src/server/push/data-dir.js";
 import type { Timers } from "../../../src/server/push/dispatch/queue.js";
 import type { Clock, RandomSource } from "../../../src/server/push/ids.js";
 
@@ -128,5 +133,150 @@ export function createSeededRandom(seed: number): RandomSource {
       return out;
     },
     unit: () => nextU32() / 4_294_967_296,
+  };
+}
+
+/** The operations of {@link memoryPushFs} that can be told to fail. `storeWrite` is the atomic store writer. */
+export type MemoryFsOp = "mkdir" | "writeFile" | "unlink" | "readFile" | "storeWrite";
+
+/** How an operation fails: an errno code, and for `storeWrite` the atomic-write step reported. */
+export interface MemoryFsFailure {
+  /** Errno code carried by the rejection (or reported by `storeWrite`); null for an error without a code. */
+  readonly code: string | null;
+  /** `storeWrite` only: the failing step (default "rename"). */
+  readonly step?: AtomicWriteStep;
+}
+
+/** One file held by {@link memoryPushFs}. */
+export interface MemoryFile {
+  /** Current content (a private copy). */
+  readonly bytes: Uint8Array;
+  /** Mode it was written with. */
+  readonly mode: number;
+}
+
+/** An in-memory PushFs plus the registry store's read/write seams, with on-demand failures. */
+export interface MemoryPushFs extends PushFs {
+  /** Files by absolute path. */
+  readonly files: Map<string, MemoryFile>;
+  /** Directories by absolute path → mode. "/" always exists. */
+  readonly dirs: Map<string, number>;
+  /** Every call, in order, as `<op> <path>`. */
+  readonly calls: string[];
+  /** Store reader (same as `readFile`): `DeviceStoreDeps.readFile`. */
+  storeReadFile(path: string): Promise<Uint8Array>;
+  /** Store writer with the atomic-write contract: never rejects, resolves `{ok:false, kind:"io"}` on failure. */
+  storeWriteFile(path: string, bytes: Uint8Array, options: AtomicWriteOptions): Promise<AtomicWriteResult>;
+  /** Fail the next call of `op` (queued; each queued failure is used once, before any `failAlways`). */
+  failNext(op: MemoryFsOp, failure: MemoryFsFailure): void;
+  /** Fail every call of `op` until cleared with `null`. */
+  failAlways(op: MemoryFsOp, failure: MemoryFsFailure | null): void;
+  /** Seed a file directly (creates its parent directories). */
+  seed(path: string, content: Uint8Array | string, mode?: number): void;
+  /** The file's content as UTF-8, or undefined. */
+  text(path: string): string | undefined;
+}
+
+function fsError(code: string | null): Error {
+  const err = new Error(code ?? "simulated failure") as Error & { code?: string };
+  if (code !== null) err.code = code;
+  return err;
+}
+
+/** Build an in-memory file seam. Writes require the parent directory to exist (ENOENT otherwise). */
+export function memoryPushFs(): MemoryPushFs {
+  const files = new Map<string, MemoryFile>();
+  const dirs = new Map<string, number>([["/", 0o755]]);
+  const calls: string[] = [];
+  const once = new Map<MemoryFsOp, MemoryFsFailure[]>();
+  const always = new Map<MemoryFsOp, MemoryFsFailure>();
+
+  const takeFailure = (op: MemoryFsOp): MemoryFsFailure | undefined => {
+    const queue = once.get(op);
+    if (queue !== undefined && queue.length > 0) return queue.shift();
+    return always.get(op);
+  };
+  const ensureDir = (path: string, mode: number): void => {
+    if (dirs.has(path)) return;
+    const parent = dirname(path);
+    if (parent !== path) ensureDir(parent, mode);
+    dirs.set(path, mode);
+  };
+  const putFile = (path: string, bytes: Uint8Array, mode: number): void => {
+    if (!dirs.has(dirname(path))) throw fsError("ENOENT");
+    if (dirs.has(path)) throw fsError("EISDIR");
+    files.set(path, { bytes: bytes.slice(), mode });
+  };
+  const readFile = async (path: string): Promise<Uint8Array> => {
+    calls.push(`readFile ${path}`);
+    const failure = takeFailure("readFile");
+    if (failure !== undefined) throw fsError(failure.code);
+    if (dirs.has(path)) throw fsError("EISDIR");
+    const file = files.get(path);
+    if (file === undefined) throw fsError("ENOENT");
+    return file.bytes.slice();
+  };
+
+  return {
+    files,
+    dirs,
+    calls,
+    mkdir: async (path, options) => {
+      calls.push(`mkdir ${path}`);
+      const failure = takeFailure("mkdir");
+      if (failure !== undefined) throw fsError(failure.code);
+      if (files.has(path)) throw fsError("EEXIST");
+      ensureDir(path, options.mode);
+      return undefined;
+    },
+    writeFile: async (path, data, options) => {
+      calls.push(`writeFile ${path}`);
+      const failure = takeFailure("writeFile");
+      if (failure !== undefined) throw fsError(failure.code);
+      putFile(path, data, options.mode);
+    },
+    unlink: async (path) => {
+      calls.push(`unlink ${path}`);
+      const failure = takeFailure("unlink");
+      if (failure !== undefined) throw fsError(failure.code);
+      if (!files.delete(path)) throw fsError("ENOENT");
+    },
+    readFile,
+    storeReadFile: readFile,
+    storeWriteFile: async (path, bytes, options) => {
+      calls.push(`storeWrite ${path}`);
+      const failure = takeFailure("storeWrite");
+      if (failure !== undefined) {
+        return { ok: false, kind: "io", step: failure.step ?? "rename", code: failure.code };
+      }
+      if (options.exclusive === true && files.has(path)) {
+        return { ok: false, kind: "exists", step: "link", code: "EEXIST" };
+      }
+      try {
+        putFile(path, bytes, options.mode ?? 0o640);
+      } catch (err) {
+        const code = (err as { code?: string }).code ?? null;
+        return { ok: false, kind: "io", step: "open", code };
+      }
+      return { ok: true, durable: true };
+    },
+    failNext: (op, failure) => {
+      const queue = once.get(op) ?? [];
+      queue.push(failure);
+      once.set(op, queue);
+    },
+    failAlways: (op, failure) => {
+      if (failure === null) always.delete(op);
+      else always.set(op, failure);
+    },
+    seed: (path, content, mode = 0o600) => {
+      ensureDir(dirname(path), 0o700);
+      const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+      files.set(path, { bytes: bytes.slice(), mode });
+    },
+    text: (path) => {
+      const file = files.get(path);
+      return file === undefined ? undefined : new TextDecoder().decode(file.bytes);
+    },
   };
 }
