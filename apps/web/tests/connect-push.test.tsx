@@ -1,6 +1,7 @@
 // apps/web/tests/connect-push.test.tsx — the push sections of /connect: the client data layer (parsers, the push
-// writer's error mapping, the status GET mapping, the countdown text) and the status hook.
-import { expect, it } from "bun:test";
+// writer's error mapping, the status GET mapping, the countdown text), the status hook, the pair-flow reducer and
+// the rendered sections on the page (role queries).
+import { afterEach, beforeEach, expect, it, jest, setSystemTime } from "bun:test";
 import type { DeviceSummary, PairingTokenIssued, PushStatusPayload } from "@pulse/web-data/wire";
 import { CONNECT_LINK_MAX_LENGTH } from "@pulse/web-data/contract";
 
@@ -21,7 +22,11 @@ import { announcementFor, formatRemaining } from "../src/client/views/connect/pu
 import { PUSH_POLL_MS, usePushStatus } from "../src/client/views/connect/push/use-push-status.js";
 import { ICONS } from "../src/client/ui/lib/icons.js";
 import { TONES } from "../src/client/ui/lib/status.js";
-import { act, describeUi, renderHook, waitFor } from "./rtl.js";
+import { pairReducer, type PairEvent, type PairFlowState } from "../src/client/views/connect/push/pair-section.js";
+import { ConnectView } from "../src/client/views/connect/view.js";
+import type { ConnectLinkPayload } from "../src/shared/connect-link.js";
+import { restoreRealTimers } from "./dom.js";
+import { act, describeUi, fireEvent, render, renderHook, screen, userEvent, waitFor, within } from "./rtl.js";
 
 const DEVICE: DeviceSummary = {
   id: "dev_AAAAAAAAAAA",
@@ -383,5 +388,552 @@ describeUi("connect push: data layer", () => {
     await waitFor(() => expect(seen).not.toBeNull());
     unmount();
     expect(seen!.aborted).toBe(true);
+  });
+});
+
+// ---- pairReducer -----------------------------------------------------------------------------------------------
+
+describeUi("connect push: pairReducer", () => {
+  const KNOWN: ReadonlySet<string> = new Set([DEVICE.id]);
+  const EXPIRES = ISSUED.expiresAt;
+  const EXPIRES_MS = Date.parse(EXPIRES);
+  const OUT: PairFlowState = { kind: "outstanding", link: LINK, expiresAt: EXPIRES, knownIds: KNOWN };
+  const UNKNOWN: PairFlowState = { kind: "outstanding-unknown", expiresAt: EXPIRES };
+  const NEW_DEVICE: DeviceSummary = { ...DEVICE, id: "dev_BBBBBBBBBBB", displayName: "Test iPad" };
+  const status = (outstanding: string | null, devices: readonly DeviceSummary[] = [DEVICE], nowMs = EXPIRES_MS - 60_000): PairEvent => ({
+    type: "status",
+    status: { ...CONFIGURED, devices: [...devices], outstanding: outstanding === null ? null : { expiresAt: outstanding } },
+    nowMs,
+  });
+  const ALL: Record<string, PairFlowState> = {
+    idle: { kind: "idle" },
+    issuing: { kind: "issuing" },
+    outstanding: OUT,
+    "outstanding-unknown": UNKNOWN,
+    cancelling: { kind: "cancelling", from: OUT },
+    expired: { kind: "expired" },
+    cancelled: { kind: "cancelled" },
+    paired: { kind: "paired", displayName: "Test iPad" },
+    error: { kind: "error", error: "network" },
+  };
+
+  const ROWS: readonly (readonly [string, PairFlowState, PairEvent, PairFlowState])[] = [
+    ...(["idle", "expired", "cancelled", "paired", "error", "outstanding-unknown"] as const).map(
+      (k) => [`${k} + issue`, ALL[k]!, { type: "issue" }, { kind: "issuing" }] as const,
+    ),
+    ["issuing + issued", ALL["issuing"]!, { type: "issued", issued: ISSUED, knownIds: KNOWN }, OUT],
+    ["issuing + issue-failed", ALL["issuing"]!, { type: "issue-failed", error: "forbidden" }, { kind: "error", error: "forbidden" }],
+    ["idle + status with a code", ALL["idle"]!, status(EXPIRES), UNKNOWN],
+    ["idle + status without a code", ALL["idle"]!, status(null), ALL["idle"]!],
+    ["outstanding + status: new device", OUT, status(null, [DEVICE, NEW_DEVICE]), { kind: "paired", displayName: "Test iPad" }],
+    ["outstanding + status: gone at expiry", OUT, status(null, [DEVICE], EXPIRES_MS), { kind: "expired" }],
+    ["outstanding + status: gone before expiry", OUT, status(null, [DEVICE]), { kind: "cancelled" }],
+    ["outstanding + status: another expiry", OUT, status("2026-11-20T12:15:00.000Z"), { kind: "outstanding-unknown", expiresAt: "2026-11-20T12:15:00.000Z" }],
+    ["outstanding + status: same code", OUT, status(EXPIRES), OUT],
+    ["outstanding + status: revoke during the window is not a pairing", OUT, status(null, []), { kind: "cancelled" }],
+    ["outstanding-unknown + status: gone", UNKNOWN, status(null), ALL["idle"]!],
+    ["outstanding-unknown + status: still there", UNKNOWN, status(EXPIRES), UNKNOWN],
+    ["outstanding + expire", OUT, { type: "expire" }, { kind: "expired" }],
+    ["outstanding-unknown + expire", UNKNOWN, { type: "expire" }, { kind: "expired" }],
+    ["outstanding + cancel", OUT, { type: "cancel" }, { kind: "cancelling", from: OUT }],
+    ["outstanding-unknown + cancel", UNKNOWN, { type: "cancel" }, { kind: "cancelling", from: UNKNOWN }],
+    ["cancelling + cancelled", ALL["cancelling"]!, { type: "cancelled" }, { kind: "cancelled" }],
+    ["cancelling + cancel-failed", ALL["cancelling"]!, { type: "cancel-failed", error: "unavailable" }, OUT],
+    ...(["expired", "cancelled", "paired", "error"] as const).map(
+      (k) => [`${k} + dismiss`, ALL[k]!, { type: "dismiss" }, { kind: "idle" }] as const,
+    ),
+  ];
+
+  it.each(ROWS)("%s", (_name, from, event, to) => {
+    expect(pairReducer(from, event)).toEqual(to);
+  });
+
+  // Every (state, event) pair not in the table leaves the state unchanged (same object).
+  const EVENTS: readonly PairEvent[] = [
+    { type: "issue" },
+    { type: "issued", issued: ISSUED, knownIds: KNOWN },
+    { type: "issue-failed", error: "network" },
+    status(null),
+    status(EXPIRES),
+    { type: "expire" },
+    { type: "cancel" },
+    { type: "cancelled" },
+    { type: "cancel-failed", error: "network" },
+    { type: "dismiss" },
+  ];
+  it("returns the state unchanged for every unlisted pair", () => {
+    const listed = new Set(ROWS.map(([, from, event]) => `${from.kind}|${event.type}`));
+    let checked = 0;
+    for (const from of Object.values(ALL)) {
+      for (const event of EVENTS) {
+        if (listed.has(`${from.kind}|${event.type}`)) continue;
+        expect(pairReducer(from, event)).toBe(from);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(50);
+  });
+});
+
+// ---- the page ------------------------------------------------------------------------------------------------
+
+const BASE = "https://pulse.example.com";
+const CONNECT_LINK = "pulse://connect?v=1&url=https%3A%2F%2Fpulse.example.com";
+const CONNECT_PAYLOAD: ConnectLinkPayload = { configured: { link: CONNECT_LINK, baseUrl: BASE }, refusal: null };
+const CAPTION = "Includes a one-time pairing code — don't share this screen";
+const NOW = Date.parse("2026-11-20T12:00:00.000Z");
+const STATUS_PATH = "GET /api/push/status";
+const NO_DEVICES: PushStatusPayload = { ...CONFIGURED, devices: [] };
+const OUTSTANDING: PushStatusPayload = { ...NO_DEVICES, outstanding: { expiresAt: ISSUED.expiresAt } };
+
+/** The connect-link fetch: always the configured link. */
+const connectFetch = (async () =>
+  new Response(JSON.stringify(CONNECT_PAYLOAD), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+
+type Answer = Response | Error | (() => Response | Error);
+
+/** A push fetch stub answering per "METHOD path" from a queue (the last answer repeats), recording each call. */
+function pushStub(initial: Record<string, Answer | Answer[]>): {
+  readonly fetch: typeof fetch;
+  readonly log: string[];
+  set(key: string, ...answers: Answer[]): void;
+} {
+  const queues = new Map<string, Answer[]>(Object.entries(initial).map(([k, v]) => [k, Array.isArray(v) ? [...v] : [v]]));
+  const log: string[] = [];
+  const impl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const key = `${init?.method ?? "GET"} ${String(input)}`;
+    log.push(key);
+    const queue = queues.get(key);
+    if (queue === undefined || queue.length === 0) return json(404, envelope("API_NOT_FOUND", "x"));
+    const answer = queue.length > 1 ? queue.shift()! : queue[0]!;
+    const value = typeof answer === "function" ? answer() : answer;
+    if (value instanceof Error) throw value;
+    return value.clone();
+  };
+  return {
+    fetch: impl as typeof fetch,
+    log,
+    set(key, ...answers) {
+      queues.set(key, answers);
+    },
+  };
+}
+
+const routerWith = (query: Record<string, string>) =>
+  ({ current: () => ({ query }) }) as unknown as NonNullable<Parameters<typeof ConnectView>[0]["router"]>;
+
+/** Drain pending promise callbacks inside act (fetch stubs resolve on microtasks). */
+async function flush(rounds = 6): Promise<void> {
+  for (let i = 0; i < rounds; i += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+
+/** Advance fake time in whole seconds, letting each second's fetches and renders settle. */
+async function advance(ms: number): Promise<void> {
+  for (let left = ms; left > 0; left -= 1000) {
+    await act(async () => {
+      jest.advanceTimersByTime(Math.min(1000, left));
+    });
+    await flush(3);
+  }
+}
+
+/** Render the page with a usable connect link and the given push stub; wait for the first status. */
+async function renderPage(push: ReturnType<typeof pushStub>, opts: { readonly origin?: string; readonly fake?: boolean } = {}) {
+  const view = render(<ConnectView fetchImpl={connectFetch} origin={opts.origin ?? BASE} pushFetchImpl={push.fetch} />);
+  if (opts.fake === true) await flush();
+  else await waitFor(() => expect(push.log.length).toBeGreaterThan(0));
+  await flush();
+  return view;
+}
+
+const pairRegion = (): HTMLElement | null => screen.queryByRole("region", { name: "Pair a device" });
+const devicesRegion = (): HTMLElement | null => screen.queryByRole("region", { name: "Paired devices" });
+const headingTexts = (): string[] => screen.getAllByRole("heading").map((h) => h.textContent ?? "");
+
+describeUi("connect push: page", () => {
+  // The fixtures carry fixed timestamps (a code expiring at 12:10Z), so every case reads the clock
+  // at NOW; otherwise an outstanding code is already expired once the wall clock passes it.
+  beforeEach(() => {
+    setSystemTime(NOW);
+  });
+  afterEach(() => {
+    if (jest.isFakeTimers()) restoreRealTimers();
+    setSystemTime();
+  });
+
+  // 1, 2: push unavailable renders exactly the no-push page.
+  it.each([
+    ["404 (disabled)", () => json(404, envelope("API_NOT_FOUND", "x"))],
+    ["405", () => json(405, envelope("API_METHOD_NOT_ALLOWED", "x"))],
+    ["misconfigured", () => json(200, MISCONFIGURED)],
+    ["a network error", () => new TypeError("Failed to fetch")],
+    ["a malformed body", () => json(200, { state: "configured" })],
+  ] as const)("push %s: no push region, same headings as without push", async (_name, answer) => {
+    const plain = render(<ConnectView fetchImpl={connectFetch} origin={BASE} pushFetchImpl={null} />);
+    await screen.findByRole("region", { name: "Connect link" });
+    const expected = headingTexts();
+    const html = plain.container.innerHTML;
+    plain.unmount();
+
+    const push = pushStub({ [STATUS_PATH]: answer });
+    const view = await renderPage(push);
+    await screen.findByRole("region", { name: "Connect link" });
+    expect(push.log).toEqual([STATUS_PATH]);
+    expect(pairRegion()).toBeNull();
+    expect(devicesRegion()).toBeNull();
+    expect(headingTexts()).toEqual(expected);
+    expect(view.container.innerHTML.replace(/_r_[a-z0-9]+_/g, "")).toBe(html.replace(/_r_[a-z0-9]+_/g, ""));
+  });
+
+  // 3
+  it("kiosk: no push request and no push region", async () => {
+    const push = pushStub({ [STATUS_PATH]: json(200, CONFIGURED) });
+    render(<ConnectView fetchImpl={connectFetch} origin={BASE} pushFetchImpl={push.fetch} router={routerWith({ kiosk: "1" })} />);
+    await screen.findByRole("region", { name: "Connect link" });
+    await flush();
+    expect(push.log).toEqual([]);
+    expect(pairRegion()).toBeNull();
+    expect(devicesRegion()).toBeNull();
+  });
+
+  it("fetchImpl alone (no pushFetchImpl) makes no push request", async () => {
+    const calls: string[] = [];
+    const recording = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return connectFetch(input);
+    }) as unknown as typeof fetch;
+    render(<ConnectView fetchImpl={recording} origin={BASE} />);
+    await screen.findByRole("region", { name: "Connect link" });
+    await flush();
+    expect(calls).toEqual(["/api/connect-link"]);
+    expect(devicesRegion()).toBeNull();
+  });
+
+  // 4
+  it("configured, no devices: an empty state and the device count", async () => {
+    await renderPage(pushStub({ [STATUS_PATH]: json(200, NO_DEVICES) }));
+    const region = await screen.findByRole("region", { name: "Paired devices" });
+    const empty = within(region).getAllByRole("status").find((el) => el.textContent?.includes("No devices paired"));
+    expect(empty).toBeDefined();
+    expect(within(region).getByText("0 of 20 devices")).toBeInTheDocument();
+    expect(within(region).queryByRole("list")).toBeNull();
+  });
+
+  // 5
+  it("issues no pairing code on load", async () => {
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES) });
+    await renderPage(push);
+    await screen.findByRole("region", { name: "Pair a device" });
+    await flush();
+    expect(push.log).toEqual([STATUS_PATH]);
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+  });
+
+  // 6
+  it("issue: the page QR and link become the code link with the warning caption", async () => {
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES), "POST /api/push/pairing-tokens": json(201, ISSUED) });
+    await renderPage(push);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair a device" }));
+    expect(await screen.findByRole("img", { name: LINK })).toBeInTheDocument();
+    expect(push.log).toContain("POST /api/push/pairing-tokens");
+    const connect = screen.getByRole("region", { name: "Connect link" });
+    expect(within(connect).getByText(CAPTION)).toBeInTheDocument();
+    expect(within(connect).getByText(LINK)).toBeInTheDocument();
+    expect(within(connect).queryByText(CONNECT_LINK)).toBeNull();
+    // Focus moved from the unmounted button to the new callout's action.
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+
+  // 7, 8
+  it("countdown ticks each second, announces per minute, and expiry reverts the QR", async () => {
+    jest.useFakeTimers({ now: NOW });
+    const push = pushStub({ [STATUS_PATH]: [json(200, NO_DEVICES), json(200, OUTSTANDING)], "POST /api/push/pairing-tokens": json(201, ISSUED) });
+    await renderPage(push, { fake: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pair a device" }));
+    });
+    await flush();
+    expect(screen.getByRole("img", { name: LINK })).toBeInTheDocument();
+    const live = (): HTMLElement => pairRegion()!.querySelector<HTMLElement>('[aria-live="polite"]')!;
+    expect(live()).toHaveAttribute("aria-atomic", "true");
+    expect(live()).toHaveTextContent("Pairing code expires in 10 minutes");
+    await advance(1000);
+    expect(screen.getByText("Pairing code active — expires in 9:59")).toBeInTheDocument();
+    expect(live()).toHaveTextContent("Pairing code expires in 10 minutes");
+    await advance(59_000);
+    expect(screen.getByText("Pairing code active — expires in 9:00")).toBeInTheDocument();
+    expect(live()).toHaveTextContent("Pairing code expires in 9 minutes");
+    await advance(480_000);
+    expect(screen.getByText("Pairing code active — expires in 1:00")).toBeInTheDocument();
+    expect(live()).toHaveTextContent(/^Pairing code expires in 1 minute$/);
+    await advance(60_000);
+    const expired = screen.getAllByRole("status").find((el) => el.textContent?.includes("Pairing code expired"));
+    expect(expired).toBeDefined();
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+    expect(screen.queryByText(CAPTION)).toBeNull();
+    expect(live()).toHaveTextContent(/^$/);
+  });
+
+  // 9
+  it("cancel: DELETE the current code, announce cancelled, revert the QR", async () => {
+    const push = pushStub({
+      [STATUS_PATH]: json(200, NO_DEVICES),
+      "POST /api/push/pairing-tokens": json(201, ISSUED),
+      "DELETE /api/push/pairing-tokens/current": new Response(null, { status: 204 }),
+    });
+    await renderPage(push);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair a device" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("status").some((el) => el.textContent?.includes("Pairing code cancelled"))).toBe(true),
+    );
+    expect(push.log).toContain("DELETE /api/push/pairing-tokens/current");
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Issue new code" })).toHaveFocus();
+  });
+
+  // 10
+  it("cancel failure (503): an alert with the unavailable copy, the code QR stays", async () => {
+    const push = pushStub({
+      [STATUS_PATH]: json(200, NO_DEVICES),
+      "POST /api/push/pairing-tokens": json(201, ISSUED),
+      "DELETE /api/push/pairing-tokens/current": json(503, envelope("PUSH_UNAVAILABLE", "x")),
+    });
+    await renderPage(push);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair a device" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(pushErrorText("unavailable"));
+    expect(screen.getByRole("img", { name: LINK })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  // 11, 12, 13, 16: polls while a code is outstanding
+  it("paired: the next poll with a new device announces it, reverts the QR and lists it", async () => {
+    jest.useFakeTimers({ now: NOW });
+    const added: DeviceSummary = { ...DEVICE, id: "dev_BBBBBBBBBBB", displayName: "Test iPad" };
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES), "POST /api/push/pairing-tokens": json(201, ISSUED) });
+    await renderPage(push, { fake: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pair a device" }));
+    });
+    await flush();
+    push.set(STATUS_PATH, json(200, { ...NO_DEVICES, devices: [added] }));
+    await advance(5000);
+    const paired = screen.getAllByRole("status").find((el) => el.textContent?.includes("Device paired"));
+    expect(paired).toHaveTextContent("Test iPad");
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+    expect(within(devicesRegion()!).getByRole("listitem")).toHaveTextContent("Test iPad");
+    expect(screen.getByRole("button", { name: "Pair another device" })).toBeInTheDocument();
+  });
+
+  it("voided elsewhere: the code is gone before expiry with no new device → cancelled", async () => {
+    jest.useFakeTimers({ now: NOW });
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES), "POST /api/push/pairing-tokens": json(201, ISSUED) });
+    await renderPage(push, { fake: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pair a device" }));
+    });
+    await flush();
+    await advance(5000);
+    expect(screen.getAllByRole("status").some((el) => el.textContent?.includes("Pairing code cancelled"))).toBe(true);
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+  });
+
+  it("replaced elsewhere: a different expiry shows the outstanding-unknown callout and reverts the QR", async () => {
+    jest.useFakeTimers({ now: NOW });
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES), "POST /api/push/pairing-tokens": json(201, ISSUED) });
+    await renderPage(push, { fake: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pair a device" }));
+    });
+    await flush();
+    push.set(STATUS_PATH, json(200, { ...NO_DEVICES, outstanding: { expiresAt: "2026-11-20T12:08:00.000Z" } }));
+    await advance(5000);
+    expect(screen.getByText(/^A pairing code is outstanding \(expires in \d+:\d\d\)$/)).toHaveTextContent("(expires in 7:55)");
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+    expect(screen.queryByText(CAPTION)).toBeNull();
+  });
+
+  it("polls every 5 s only while a code is outstanding", async () => {
+    jest.useFakeTimers({ now: NOW });
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES), "POST /api/push/pairing-tokens": json(201, ISSUED) });
+    await renderPage(push, { fake: true });
+    expect(push.log).toEqual([STATUS_PATH]);
+    await advance(15_000);
+    expect(push.log).toEqual([STATUS_PATH]);
+    push.set(STATUS_PATH, json(200, OUTSTANDING));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pair a device" }));
+    });
+    await flush();
+    expect(push.log).toEqual([STATUS_PATH, "POST /api/push/pairing-tokens"]);
+    await advance(4000);
+    expect(push.log.filter((k) => k === STATUS_PATH)).toHaveLength(1);
+    await advance(1000);
+    expect(push.log.filter((k) => k === STATUS_PATH)).toHaveLength(2);
+    await advance(5000);
+    expect(push.log.filter((k) => k === STATUS_PATH)).toHaveLength(3);
+    await advance(5000);
+    expect(push.log.filter((k) => k === STATUS_PATH)).toHaveLength(4);
+  });
+
+  // 14
+  it("reload with a code outstanding: says so, offers Cancel and Issue new code, keeps the plain QR", async () => {
+    await renderPage(pushStub({ [STATUS_PATH]: json(200, OUTSTANDING) }));
+    expect(await screen.findByText(/^A pairing code is outstanding \(expires in \d+:\d\d\)$/)).toBeInTheDocument();
+    const region = pairRegion()!;
+    expect(within(region).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(within(region).getByRole("button", { name: "Issue new code" })).toBeInTheDocument();
+    expect(within(region).queryByRole("button", { name: "Pair a device" })).toBeNull();
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+  });
+
+  // 15
+  it.each([
+    ["409 no-usable-address", () => json(409, envelope("INVALID_REQUEST", "x", { reason: "no-usable-address" })), "no-usable-address"],
+    ["409 address-too-long", () => json(409, envelope("INVALID_REQUEST", "x", { reason: "address-too-long" })), "address-too-long"],
+    ["503", () => json(503, envelope("PUSH_UNAVAILABLE", "x")), "unavailable"],
+    ["403", () => json(403, envelope("INVALID_REQUEST", "x")), "forbidden"],
+    ["a network failure", () => new TypeError("Failed to fetch"), "network"],
+  ] as const)("issue error %s: an alert with the matching copy and Try again", async (_name, answer, error) => {
+    const push = pushStub({ [STATUS_PATH]: json(200, NO_DEVICES), "POST /api/push/pairing-tokens": answer });
+    await renderPage(push);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair a device" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not create a pairing code");
+    expect(alert).toHaveTextContent(pushErrorText(error));
+    expect(within(alert).getByRole("button", { name: "Try again" })).toHaveFocus();
+    expect(screen.getByRole("img", { name: CONNECT_LINK })).toBeInTheDocument();
+  });
+
+  // 17
+  it("device rows: name, times, environment, muted severities and a delivery badge", async () => {
+    const devices: DeviceSummary[] = [
+      DEVICE,
+      { ...DEVICE, id: "dev_BBBBBBBBBBB", displayName: "Test iPad", environment: "sandbox", preferences: { critical: true, warning: false, info: false }, lastDelivery: { outcome: "failed", at: DEVICE.seenAt, reason: "BadDeviceToken" } },
+      { ...DEVICE, id: "dev_CCCCCCCCCCC", displayName: "Spare iPhone", environment: null, preferences: { critical: false, warning: false, info: false }, lastDelivery: { outcome: "dropped", at: DEVICE.seenAt, reason: null } },
+      { ...DEVICE, id: "dev_DDDDDDDDDDD", displayName: "Lab iPad", preferences: { critical: true, warning: true, info: true }, lastDelivery: null },
+    ];
+    await renderPage(pushStub({ [STATUS_PATH]: json(200, { ...CONFIGURED, devices }) }));
+    const region = await screen.findByRole("region", { name: "Paired devices" });
+    const items = within(within(region).getByRole("list", { name: "Paired devices" })).getAllByRole("listitem");
+    expect(items).toHaveLength(4);
+    const [ops, ipad, spare, lab] = items as [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+    expect(ops).toHaveTextContent("Ops iPhone");
+    const times = ops.querySelectorAll("time");
+    expect([...times].map((t) => t.getAttribute("dateTime"))).toEqual([DEVICE.pairedAt, DEVICE.seenAt]);
+    expect(ops).toHaveTextContent("Production");
+    expect(ops).toHaveTextContent("Muted: info");
+    expect(within(ops).getByText("Delivered")).toBeInTheDocument();
+    expect(ipad).toHaveTextContent("Sandbox (development build)");
+    expect(ipad).toHaveTextContent("Muted: warning, info");
+    expect(within(ipad).getByText("Failed")).toBeInTheDocument();
+    expect(ipad).toHaveTextContent("BadDeviceToken");
+    expect(spare).toHaveTextContent("Not registered yet");
+    expect(spare).toHaveTextContent("Muted: all severities");
+    expect(within(spare).getByText("Dropped")).toBeInTheDocument();
+    expect(lab).not.toHaveTextContent("Muted");
+    expect(within(lab).getByText("No delivery yet")).toBeInTheDocument();
+    expect(within(region).getByText("4 of 20 devices")).toBeInTheDocument();
+  });
+
+  // 18
+  it("renders a display name as text only, control characters replaced", async () => {
+    const odd = { ...DEVICE, displayName: "Ops\u0007<b>x</b>" };
+    await renderPage(pushStub({ [STATUS_PATH]: json(200, { ...CONFIGURED, devices: [odd] }) }));
+    const item = within(await screen.findByRole("region", { name: "Paired devices" })).getByRole("listitem");
+    expect(item).toHaveTextContent("Ops�<b>x</b>");
+    expect(item.querySelector("b")).toBeNull();
+    expect(screen.getByRole("button", { name: "Revoke Ops�<b>x</b>" })).toBeInTheDocument();
+  });
+
+  // 19
+  it("revoke by keyboard: confirm in an alertdialog, then the row is gone", async () => {
+    const push = pushStub({
+      [STATUS_PATH]: [json(200, CONFIGURED), json(200, NO_DEVICES)],
+      [`DELETE /api/push/devices/${DEVICE.id}`]: new Response(null, { status: 204 }),
+    });
+    await renderPage(push);
+    const user = userEvent.setup();
+    const revoke = await screen.findByRole("button", { name: "Revoke Ops iPhone" });
+    for (let i = 0; i < 40 && document.activeElement !== revoke; i += 1) await user.tab();
+    expect(revoke).toHaveFocus();
+    await user.keyboard("{Enter}");
+    const dialog = await screen.findByRole("alertdialog", { name: "Revoke Ops iPhone?" });
+    expect(dialog.querySelector('[data-slot="connect-push-revoke"]')).not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(revoke).toHaveFocus();
+    expect(push.log).toEqual([STATUS_PATH]);
+
+    await user.keyboard("{Enter}");
+    const again = await screen.findByRole("alertdialog", { name: "Revoke Ops iPhone?" });
+    await user.tab();
+    expect(within(again).getByRole("button", { name: "Revoke device" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(push.log).toEqual([STATUS_PATH, `DELETE /api/push/devices/${DEVICE.id}`, STATUS_PATH]);
+    expect(within(devicesRegion()!).queryByRole("listitem")).toBeNull();
+    expect(screen.getByText("0 of 20 devices")).toBeInTheDocument();
+  });
+
+  // 20
+  it("revoke failure (503): an alert inside the dialog, which stays open", async () => {
+    const push = pushStub({
+      [STATUS_PATH]: json(200, CONFIGURED),
+      [`DELETE /api/push/devices/${DEVICE.id}`]: json(503, envelope("PUSH_UNAVAILABLE", "x")),
+    });
+    await renderPage(push);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Revoke Ops iPhone" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Revoke Ops iPhone?" });
+    await user.click(within(dialog).getByRole("button", { name: "Revoke device" }));
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Could not revoke the device");
+    expect(alert).toHaveTextContent(pushErrorText("unavailable"));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(push.log).toEqual([STATUS_PATH, `DELETE /api/push/devices/${DEVICE.id}`]);
+  });
+
+  // 21
+  it("at the device limit: a warning, and pairing stays available", async () => {
+    await renderPage(pushStub({ [STATUS_PATH]: json(200, { ...CONFIGURED, maxDevices: 1 }) }));
+    const region = await screen.findByRole("region", { name: "Paired devices" });
+    const warning = within(region).getAllByRole("status").find((el) => el.textContent?.includes("Device limit reached"));
+    expect(warning).toHaveTextContent("This server already has 1 paired devices. Revoke one before pairing another.");
+    expect(screen.getByRole("button", { name: "Pair a device" })).toBeInTheDocument();
+  });
+
+  // 22
+  it("connect link refused: no pair section, devices still listed", async () => {
+    const push = pushStub({ [STATUS_PATH]: json(200, CONFIGURED) });
+    render(
+      <ConnectView
+        fetchImpl={(async () => json(200, { configured: null, refusal: null })) as unknown as typeof fetch}
+        origin="http://pulse.example.com"
+        pushFetchImpl={push.fetch}
+      />,
+    );
+    expect(await screen.findByRole("region", { name: "Paired devices" })).toBeInTheDocument();
+    expect(pairRegion()).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pair a device" })).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("No connect link");
+  });
+
+  it("section roots carry their data-slot", async () => {
+    await renderPage(pushStub({ [STATUS_PATH]: json(200, CONFIGURED) }));
+    expect(await screen.findByRole("region", { name: "Pair a device" })).toHaveAttribute("data-slot", "connect-push-pair");
+    expect(devicesRegion()).toHaveAttribute("data-slot", "connect-push-devices");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 });

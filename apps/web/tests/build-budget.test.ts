@@ -93,8 +93,10 @@ export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
  * initial route) measured 406,453 B; raised to 397 KB (406,528 B) to cover exactly that chunk.
  * Contract 1.1 adds six push error codes and their catalog messages, which the API client needs to
  * recognise a push error envelope: measured 406,706 B; raised to 398 KB (407,552 B).
+ * The /connect push sections (pair flow, devices list, revoke dialog) bundle the push client UI:
+ * measured 412,959–413,939 B; raised to 405 KB (414,720 B), the smallest ceiling that fits.
  */
-export const TOTAL_JS_BUDGET_BYTES = 398 * 1024;
+export const TOTAL_JS_BUDGET_BYTES = 405 * 1024;
 /** Total CSS ceiling (gz), all entry + chunk .css. Baseline ≈ 14 KB; charter starting ceiling.
  *  Re-measured with Tailwind and the legacy layer coexisting: 37,190 B (React-only build 31,162 B),
  *  so the ceiling (measured + ~10%) held unchanged as the temporary coexistence ceiling. Raised when

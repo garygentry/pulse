@@ -1,11 +1,12 @@
 // apps/web/src/client/views/connect/view.tsx — the `/connect` page: a connect link for the phone app as a
 // scannable code and as copyable text, or the reason no link can be shown.
-import { useMemo, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { CONNECT_LINK_MAX_LENGTH, encodeQrMatrix, type QrMatrix } from "@pulse/web-data/contract";
 import { Callout, CodeBlock, ErrorState, LoadingState, PageHeader, Section } from "@/ui";
 
 import type { ViewProps } from "../../../shared/registry.js";
 import { isKiosk } from "../../shell/kiosk.js";
+import { PushSections, type PairingLinkOverride } from "./push/push-sections.js";
 import { QrCode } from "./qr-code.js";
 import { useConnectLink, type ConnectLinkState } from "./use-connect-link.js";
 
@@ -21,6 +22,12 @@ export interface ConnectViewProps extends Partial<ViewProps> {
   readonly fetchImpl?: typeof fetch;
   /** Replaces `window.location.origin` as the address being browsed. */
   readonly origin?: string;
+  /**
+   * Replaces `fetch` for the push routes. Defaults to the global `fetch` only when `fetchImpl` is also
+   * undefined (production); when a test injects `fetchImpl` alone it defaults to `null` (no push request).
+   * `null` disables push explicitly.
+   */
+  readonly pushFetchImpl?: typeof fetch | null;
 }
 
 /** Copy for the refused state: the title names the cause, the body says how to fix it. The refused
@@ -94,8 +101,15 @@ function Refused({ state }: { readonly state: RefusedState }): ReactElement {
   );
 }
 
-function Usable({ state }: { readonly state: UsableState }): ReactElement {
-  const { link } = state;
+function Usable({
+  state,
+  pairing,
+}: {
+  readonly state: UsableState;
+  readonly pairing: PairingLinkOverride | null;
+}): ReactElement {
+  // While a pairing code is outstanding the page shows its link instead of the plain connect link.
+  const link = pairing?.link ?? state.link;
   // Encoding is the expensive part; a link too long for a scannable code has no matrix.
   const matrix = useMemo((): QrMatrix | null => {
     try {
@@ -114,7 +128,7 @@ function Usable({ state }: { readonly state: UsableState }): ReactElement {
     );
   }
   return (
-    <Section title="Connect link" description={sourceCaption(state)}>
+    <Section title="Connect link" description={pairing?.caption ?? sourceCaption(state)}>
       <div data-slot="connect-link" className="flex flex-col items-center gap-4 md:flex-row md:items-start">
         {/* Holds the code at its full size beside the link: without it the row shrinks both. */}
         <div className="w-full max-w-64 shrink-0 md:w-72 md:max-w-72">
@@ -127,11 +141,14 @@ function Usable({ state }: { readonly state: UsableState }): ReactElement {
 }
 
 /** The `/connect` page. Anyone who can load the web UI can see it; it has no gate of its own. */
-export function ConnectView({ router, fetchImpl, origin }: ConnectViewProps): ReactElement {
+export function ConnectView({ router, fetchImpl, origin, pushFetchImpl }: ConnectViewProps): ReactElement {
   const { state, retry } = useConnectLink(fetchImpl, origin);
+  const [pairing, setPairing] = useState<PairingLinkOverride | null>(null);
   // Kiosk drops the shell's outlet padding, so the page brings its own gutter there. The page is in
   // no rotation, so the flag is read once per render rather than subscribed to.
   const kiosk = router !== undefined && isKiosk(router.current().query);
+  // A kiosk is a shared wallboard: no pairing code and no device list there.
+  const resolvedPushFetch = kiosk ? null : pushFetchImpl !== undefined ? pushFetchImpl : fetchImpl === undefined ? fetch : null;
 
   return (
     <div
@@ -146,7 +163,8 @@ export function ConnectView({ router, fetchImpl, origin }: ConnectViewProps): Re
         <ErrorState title="Could not load the connect link" message={state.error.message} onRetry={retry} />
       ) : null}
       {state.kind === "refused" ? <Refused state={state} /> : null}
-      {state.kind === "usable" ? <Usable state={state} /> : null}
+      {state.kind === "usable" ? <Usable state={state} pairing={pairing} /> : null}
+      <PushSections fetchImpl={resolvedPushFetch} linkUsable={state.kind === "usable"} onLinkChange={setPairing} />
     </div>
   );
 }
