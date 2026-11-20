@@ -7,7 +7,8 @@
 //   • checks the active nav item is `aria-current="page"`;
 //   • runs axe (wcag2a + wcag2aa) and expects zero violations.
 // Then the keyboard path: the skip link is the first tab stop and moves focus to <main>, and the
-// sidebar nav routes by keyboard. The per-view suites hold their own fixtures and states; this one
+// sidebar nav routes by keyboard. The /connect push sections get their own case with stubbed push routes
+// (load, a pairing code shown, the revoke dialog open). The per-view suites hold their own fixtures and states; this one
 // proves the composed app on live mock data.
 //
 // SELF-SKIPS when Chromium is not provisioned (see _harness.browserDescribe).
@@ -57,6 +58,57 @@ const MODES = [
   { theme: "light", density: "wallboard" },
   { theme: "dark", density: "wallboard" },
 ] as const;
+
+// Placeholder-only push fixtures for the /connect push case (public-safe values).
+const PUSH_CONNECT_LINK = "pulse://connect?v=1&url=https%3A%2F%2Fpulse.example.com";
+const PUSH_PAIR_LINK = `${PUSH_CONNECT_LINK}&pair=AAAAAAAAAAAAAAAAAAAAAA`;
+const PUSH_DEVICES = [
+  {
+    id: "dev_AAAAAAAAAAA",
+    displayName: "Ops iPhone",
+    pairedAt: "2025-12-31T10:00:00.000Z",
+    seenAt: "2026-01-01T11:00:00.000Z",
+    environment: "production",
+    preferences: { critical: true, warning: true, info: false },
+    tokenSuffix: "abcdef",
+    lastDelivery: { outcome: "delivered", at: "2026-01-01T11:30:00.000Z", reason: null },
+  },
+  {
+    id: "dev_AAAAAAAAAAB",
+    displayName: "Test iPad",
+    pairedAt: "2025-12-31T12:00:00.000Z",
+    seenAt: "2026-01-01T11:10:00.000Z",
+    environment: "sandbox",
+    preferences: { critical: true, warning: false, info: false },
+    tokenSuffix: "fedcba",
+    lastDelivery: { outcome: "failed", at: "2026-01-01T11:20:00.000Z", reason: "BadDeviceToken" },
+  },
+] as const;
+
+/** Stub the connect link, the push status and the web pairing-token issue for `page`. After the
+ *  issue the status reports the code as outstanding, so a status poll keeps the code shown. */
+async function stubConnectPush(page: Page): Promise<void> {
+  const json = (body: unknown) => ({
+    status: 200,
+    contentType: "application/json",
+    headers: { "cache-control": "private, no-store" },
+    body: JSON.stringify(body),
+  });
+  let expiresAt: string | null = null;
+  await page.route("**/api/connect-link", (route) =>
+    route.fulfill(json({ configured: { link: PUSH_CONNECT_LINK, baseUrl: "https://pulse.example.com" }, refusal: null })),
+  );
+  await page.route("**/api/push/status", (route) =>
+    route.fulfill(
+      json({ state: "configured", devices: PUSH_DEVICES, outstanding: expiresAt === null ? null : { expiresAt }, maxDevices: 20 }),
+    ),
+  );
+  await page.route("**/api/push/pairing-tokens", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+    return route.fulfill({ ...json({ link: PUSH_PAIR_LINK, expiresAt }), status: 201 });
+  });
+}
 
 browserDescribe()("browser: every route is axe-clean in both themes at desk and wallboard density", () => {
   let dev: ReturnType<typeof Bun.spawn> | null = null;
@@ -138,6 +190,39 @@ browserDescribe()("browser: every route is axe-clean in both themes at desk and 
       expect(failures, failures.join("\n")).toEqual([]);
     }, 300_000);
   }
+
+  // The push sections on /connect only render for a configured push server, which the mock dev
+  // server is not, so the status, connect-link and issue routes are stubbed in the browser.
+  test("connect push sections: one h1, zero wcag2a/aa violations on load, after pairing and with the revoke dialog open", async () => {
+    const { AxeBuilder } = await import("@axe-core/playwright");
+    const failures: string[] = [];
+    for (const mode of MODES) {
+      const page = await open(mode);
+      await stubConnectPush(page);
+      const label = `${mode.theme}, ${mode.density}`;
+      const scan = async (step: string): Promise<void> => {
+        const results = await new AxeBuilder({ page }).options({ resultTypes: ["violations"] }).withTags(["wcag2a", "wcag2aa"]).analyze();
+        for (const v of results.violations) {
+          failures.push(`/connect ${step} (${label}): ${v.id} ${JSON.stringify(v.nodes.slice(0, 3).map((n) => n.target))}`);
+        }
+      };
+
+      await visit(page, "/connect");
+      const devices = page.locator('[data-slot="connect-push-devices"]');
+      await devices.getByRole("listitem").nth(1).waitFor({ timeout: 30_000 });
+      expect(await page.locator("h1").count(), `/connect h1 (${label})`).toBe(1);
+      await scan("load");
+
+      await page.getByRole("button", { name: "Pair a device" }).click();
+      await page.getByRole("img", { name: PUSH_PAIR_LINK }).waitFor({ timeout: 10_000 });
+      await scan("pairing code shown");
+
+      await devices.getByRole("button", { name: "Revoke Ops iPhone" }).click();
+      await page.getByRole("alertdialog").waitFor({ timeout: 10_000 });
+      await scan("revoke dialog");
+    }
+    expect(failures, failures.join("\n")).toEqual([]);
+  }, 300_000);
 
   // Kiosk drops the shell's outlet padding (full-bleed page fit), so each wallboard page brings its
   // own side gutter. A view that forgets it sits flush at x=0 (GitHub #48: alerts; #58: estate).
