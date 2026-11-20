@@ -117,6 +117,24 @@ the road:
 - Define `TELEGRAM_BOT_TOKEN` in your git-ignored `.env` (Recipe A) or map it in `.env.op`
   (Recipe B), exactly like any other channel credential.
 
+## Push gateway secrets
+
+The optional push gateway ([push notifications](/push-gateway/)) uses three secrets:
+
+1. **`PULSE_PUSH_WEBHOOK_SECRET`** — set on the web service and shared with Alertmanager through a
+   credentials file mounted into the Alertmanager container.
+2. **`PULSE_PUSH_OPERATOR_SECRET`** — set on the web service and in the operator's shell, where the
+   `pulse push` CLI reads it from the environment.
+3. **The APNs `.p8` key** — a file mounted read-only into the web container. It is never placed in
+   `.env`.
+
+Generate each shared secret with `openssl rand -base64 48` (64 characters, above the 32-byte
+minimum). Write the Alertmanager credentials file with `printf '%s' "$VALUE" > <file>`, so no
+trailing newline is added. Both recipes above apply: keep the values in the git-ignored `.env`
+(Recipe A) or map them to `op://` references and use `op run` (Recipe B). To rotate a secret,
+change both sides together and restart both services. No secret is ever printed by the server, the
+CLI or `/metrics`.
+
 ## No-literal guarantee & extending to other backends
 
 Two layers enforce the no-literal invariant:

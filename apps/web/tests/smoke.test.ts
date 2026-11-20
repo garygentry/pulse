@@ -1020,6 +1020,13 @@ describe("smoke:web — operator docs are complete and safe (10 §8, AC-2)", () 
       "PULSE_VMALERT_URL",
       "PULSE_GRAFANA_URL",
       "PULSE_WEB_AUTH_MODE",
+      "PULSE_PUSH_APNS_KEY_FILE",
+      "PULSE_PUSH_APNS_KEY_ID",
+      "PULSE_PUSH_APNS_TEAM_ID",
+      "PULSE_PUSH_APNS_TOPIC",
+      "PULSE_PUSH_WEBHOOK_SECRET",
+      "PULSE_PUSH_OPERATOR_SECRET",
+      "PULSE_PUSH_MAX_DEVICES",
     ]) {
       expect(readme, env).toContain(env);
     }
@@ -1042,9 +1049,17 @@ describe("smoke:web — operator docs are complete and safe (10 §8, AC-2)", () 
       "pulse_web_history_cache_hits_total",
       "pulse_web_history_active",
       "pulse_web_history_queued",
+      "pulse_web_push_state",
+      "pulse_web_push_devices",
+      "pulse_web_push_webhook_total",
+      "pulse_web_push_notifications_total",
+      "pulse_web_push_last_success_timestamp_seconds",
+      "pulse_web_push_pairing_events_total",
+      "pulse_web_push_admin_refusals_total",
     ]) {
       expect(readme, fam).toContain(fam);
     }
+    expect(readme).toContain("/api/push/alertmanager");
   });
 
   test("docs never tell users to supply PromQL; the write path is documented as inert in auth mode none", () => {

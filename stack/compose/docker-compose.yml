@@ -243,12 +243,21 @@ services:
       PULSE_WEB_EXTERNAL_URL: ${PULSE_WEB_EXTERNAL_URL:-}         # optional https base for phone connect links; empty → unset
       # Write path (inert while the auth mode stays unset = `none`; see docs/operator/write-path.md):
       PULSE_WEB_DATA_DIR: /data                                   # write-path root (audit/acks/proposals)
+      # Push gateway (optional; every value empty → push disabled; see docs/operator/push.md):
+      PULSE_PUSH_APNS_KEY_FILE: ${PULSE_PUSH_APNS_KEY_FILE:-}
+      PULSE_PUSH_APNS_KEY_ID: ${PULSE_PUSH_APNS_KEY_ID:-}
+      PULSE_PUSH_APNS_TEAM_ID: ${PULSE_PUSH_APNS_TEAM_ID:-}
+      PULSE_PUSH_APNS_TOPIC: ${PULSE_PUSH_APNS_TOPIC:-}
+      PULSE_PUSH_WEBHOOK_SECRET: ${PULSE_PUSH_WEBHOOK_SECRET:-}
+      PULSE_PUSH_OPERATOR_SECRET: ${PULSE_PUSH_OPERATOR_SECRET:-}
+      PULSE_PUSH_MAX_DEVICES: ${PULSE_PUSH_MAX_DEVICES:-}
       PULSE_PROPOSAL_SECRET: ${PULSE_PROPOSAL_SECRET:-}           # ≥32 bytes; empty → proposeEstateEdit false
     volumes:
       # Read-only rendered tree — the model artifact is delivered by mount, never baked (REQ-PKG-04,
       # REQ-MODEL-04). Same ${PULSE_RENDERED_DIR:-../rendered} pattern as the other consumers.
       - ${PULSE_RENDERED_DIR:-../rendered}:/rendered:ro
       - pulse-web-data:/data                                      # writable write-path volume (REQ-CFG-04)
+      # - ${PULSE_PUSH_APNS_KEY_HOST_PATH}:/run/secrets/apns.p8:ro   # push: APNs .p8 key (docs/operator/push.md)
     networks: [pulse]
     depends_on:
       victoriametrics: { condition: service_healthy }

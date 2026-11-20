@@ -123,6 +123,49 @@ The write path (audit log, acks and proposals under `PULSE_WEB_DATA_DIR`) is ine
 `none`; see [docs/operator/write-path.md](../../docs/operator/write-path.md). No estate YAML or
 source path is read beyond the rendered bundle model path.
 
+### Push gateway (optional)
+
+Every variable below is optional; with all four `PULSE_PUSH_APNS_*` unset push is `disabled`.
+Setting any of them requires all four plus an absolute `PULSE_WEB_DATA_DIR` (in every auth mode). A
+push misconfiguration is never fatal: it logs value-free `config_warning` lines and only push stays
+off. See [docs/operator/push.md](../../docs/operator/push.md).
+
+| Env var | Default / on absence |
+|---|---|
+| `PULSE_PUSH_APNS_KEY_FILE` | unset → push disabled. Absolute path to the APNs `.p8` key (PKCS#8 EC P-256), read once at start |
+| `PULSE_PUSH_APNS_KEY_ID` | unset → push disabled. 10 upper-case letters or digits |
+| `PULSE_PUSH_APNS_TEAM_ID` | unset → push disabled. 10 upper-case letters or digits |
+| `PULSE_PUSH_APNS_TOPIC` | unset → push disabled. The app bundle id |
+| `PULSE_PUSH_WEBHOOK_SECRET` | unset or under 32 bytes → the Alertmanager webhook answers 503 |
+| `PULSE_PUSH_OPERATOR_SECRET` | unset or under 32 bytes → `/api/push/admin/*` answers 503 |
+| `PULSE_PUSH_MAX_DEVICES` | `20` (integer 1–100) |
+
+### Push gateway routes
+
+Push is a separate, opt-in surface beside the read-only API. Every `/api/push/*` route is inert
+(behaves exactly as an unknown path: 404 for GET, 405 otherwise) unless push is configured; while
+misconfigured, `GET /api/push/status` reports it and every other push route answers 503
+`PUSH_UNAVAILABLE`. Each route has exactly one authoriser, and every answer carries
+`Cache-Control: private, no-store`:
+
+| Route | Authoriser |
+|---|---|
+| `POST /api/push/pairings/redeem` | single-use pairing token in the body (contract) |
+| `PUT /api/push/device` | device credential bearer (contract) |
+| `DELETE /api/push/device` | device credential bearer (contract) |
+| `POST /api/push/alertmanager` | webhook secret bearer (internal network only) |
+| `GET /api/push/status` | browser read gate |
+| `POST /api/push/pairing-tokens` | browser write gate (same-origin; trusted identity in `proxy-header`) |
+| `DELETE /api/push/pairing-tokens/current` | browser write gate |
+| `DELETE /api/push/devices/:id` | browser write gate |
+| `POST /api/push/admin/pairing-tokens` | operator secret bearer |
+| `GET /api/push/admin/devices` | operator secret bearer |
+| `DELETE /api/push/admin/devices/:id` | operator secret bearer |
+| `POST /api/push/admin/test` | operator secret bearer |
+
+These routes are outside the mutation pipeline: they take no idempotency key and write no audit
+record.
+
 ## Client views
 
 The SPA shell (side nav, theme and density toggles, command palette on Ctrl+K / ⌘K) hosts five
@@ -267,6 +310,12 @@ pulse_web_history_queued
 The write path adds `pulse_web_mutations_total`, `pulse_web_mutation_refusals_total`,
 `pulse_web_audit_write_failures_total`, `pulse_web_ack_auto_clears_total` and
 `pulse_web_write_path_status`; see [docs/operator/write-path.md](../../docs/operator/write-path.md).
+
+The push gateway adds `pulse_web_push_state{state}` (always present), and, once push is not
+`disabled`, `pulse_web_push_devices`, `pulse_web_push_webhook_total{outcome}`,
+`pulse_web_push_notifications_total{kind,outcome}`, `pulse_web_push_last_success_timestamp_seconds`,
+`pulse_web_push_pairing_events_total{event}` and `pulse_web_push_admin_refusals_total`; see
+[docs/operator/push.md](../../docs/operator/push.md).
 
 `source` labels are exactly the closed `SourceId` set; `history` `query` labels are exact catalog
 query ids plus fixed operation names; route labels use declared templates or the fixed

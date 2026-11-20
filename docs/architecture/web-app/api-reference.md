@@ -6,8 +6,9 @@ publishes, and the **environment variables** it reads. All of those are document
 
 ## HTTP routes
 
-The service listens on a fixed port **8080**. Every route is `GET`-only; any other method returns
-`405 Method Not Allowed`.
+The service listens on a fixed port **8080**. Every route in this table is `GET`-only; any other method
+returns `405 Method Not Allowed`. The optional push gateway adds its own non-GET routes; see
+[Push gateway](#push-gateway-apipush).
 
 | Method | Path | Response | Notes |
 |---|---|---|---|
@@ -23,6 +24,43 @@ The service listens on a fixed port **8080**. Every route is `GET`-only; any oth
 In error-page mode, `/healthz` and `/metrics` stay live and `/assets/*` is still served, while `/`
 returns the diagnostic error page and `/api/overview` returns `503`. `/api/session`, `/api/events`
 and `/api/connect-link` do not need the estate model and keep returning `200`.
+
+## Push gateway (`/api/push/*`)
+
+The push gateway is an opt-in surface, off unless the `PULSE_PUSH_APNS_*` variables are set (see
+`docs/operator/push.md`). Its routes are matched before every other route, whatever the method.
+
+- **Disabled** (the default): every `/api/push/*` path behaves exactly like an unknown path —
+  `404 API_NOT_FOUND` for `GET`, `405 METHOD_NOT_ALLOWED` otherwise.
+- **Misconfigured**: `GET /api/push/status` returns `{state: "misconfigured", devices: [], outstanding: null, maxDevices}`;
+  every other push route returns `503 PUSH_UNAVAILABLE`.
+- **Configured**: the table below. A surface that is off (the webhook without `PULSE_PUSH_WEBHOOK_SECRET`,
+  the operator routes without `PULSE_PUSH_OPERATOR_SECRET`) returns `503 PUSH_UNAVAILABLE`.
+
+Every push answer carries `Cache-Control: private, no-store`. A known path with the wrong method returns
+`405` with an `Allow` header. The two contract operations (redeem and device registration) are specified
+in [`contract/CONTRACT.md`](../../../contract/CONTRACT.md); the others are not part of the client contract.
+
+| Method | Path | Class | Authoriser | Success | Refusals |
+|---|---|---|---|---|---|
+| `POST` | `/api/push/pairings/redeem` | contract | pairing token in the body | `201` `PairingRedeemResponse` | `400 INVALID_REQUEST`, `403 PAIRING_REFUSED`, `409 DEVICE_CAP_REACHED`, `413 PAYLOAD_TOO_LARGE`, `429 RATE_LIMITED` (`Retry-After`), `503 PUSH_UNAVAILABLE` |
+| `PUT` | `/api/push/device` | contract | `Authorization: Bearer <device credential>` | `200` `DeviceRegistrationResponse` | `400 INVALID_REQUEST`, `401 UNAUTHORIZED`, `413 PAYLOAD_TOO_LARGE`, `503 PUSH_UNAVAILABLE` |
+| `DELETE` | `/api/push/device` | contract | device credential | `204` | `401 UNAUTHORIZED`, `503 PUSH_UNAVAILABLE` |
+| `POST` | `/api/push/alertmanager` | webhook | `Authorization: Bearer <webhook secret>` | `202` `{"accepted":true}` | `400 INVALID_REQUEST` (malformed or unsupported version), `401 UNAUTHORIZED`, `413 PAYLOAD_TOO_LARGE` (1 MiB), `503 PUSH_UNAVAILABLE` |
+| `GET` | `/api/push/status` | web-only | browser gate, read variant | `200` `PushStatusPayload` | `403 INVALID_REQUEST` (untrusted identity in `proxy-header` mode) |
+| `POST` | `/api/push/pairing-tokens` | web-only | browser gate (same-origin; trusted identity in `proxy-header`) | `201` `{link, expiresAt}` | `403 INVALID_REQUEST`, `409 INVALID_REQUEST` with `details.reason` `no-usable-address` or `address-too-long`, `503 PUSH_UNAVAILABLE` |
+| `DELETE` | `/api/push/pairing-tokens/current` | web-only | browser gate | `204` | `403 INVALID_REQUEST`, `503 PUSH_UNAVAILABLE` |
+| `DELETE` | `/api/push/devices/:id` | web-only | browser gate | `204` | `403 INVALID_REQUEST`, `404 API_NOT_FOUND`, `503 PUSH_UNAVAILABLE` |
+| `POST` | `/api/push/admin/pairing-tokens` | operator | `Authorization: Bearer <operator secret>` | `201` `{link, expiresAt}` | `400 INVALID_REQUEST`, `401 UNAUTHORIZED`, `409 INVALID_REQUEST` (`details.reason`), `413 PAYLOAD_TOO_LARGE`, `503 PUSH_UNAVAILABLE` |
+| `GET` | `/api/push/admin/devices` | operator | operator secret | `200` `{devices}` | `401 UNAUTHORIZED`, `503 PUSH_UNAVAILABLE` |
+| `DELETE` | `/api/push/admin/devices/:id` | operator | operator secret | `204` | `401 UNAUTHORIZED`, `404 API_NOT_FOUND`, `503 PUSH_UNAVAILABLE` |
+| `POST` | `/api/push/admin/test` | operator | operator secret | `200` `PushTestResult` | `400 INVALID_REQUEST`, `401 UNAUTHORIZED`, `404 API_NOT_FOUND`, `413 PAYLOAD_TOO_LARGE`, `503 PUSH_UNAVAILABLE` |
+
+Every authorisation failure is one uniform `401 UNAUTHORIZED` (a missing, malformed, unknown or revoked
+credential gives the same body). Body routes require a JSON media type (otherwise `400 INVALID_REQUEST`,
+without reading the body), cap the body at 4096 bytes for the contract routes, and parse it strictly: an
+unknown member is `400 INVALID_REQUEST` with the failing field paths. An unexpected server fault is
+`500 INTERNAL_ERROR`.
 
 ## JSON shapes
 

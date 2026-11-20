@@ -75,6 +75,16 @@ host port** by default (`expose: ["8080"]` only — host publication is the expo
 | `PULSE_GRAFANA_URL` | no | Absent → drill-down deep links to Grafana are disabled. |
 | `PULSE_GATUS_STALE_SECONDS` | no | Freshness cutoff for Gatus results; default 300. |
 | `PULSE_WEB_EXTERNAL_URL` | no | The server's external https address for phone connect links, e.g. `https://pulse.example.com`. Empty → the web UI uses the address you are browsing. A value with credentials (or one that is not a URL) stops startup; an `http://` or loopback address logs a warning and no link is offered. |
+| `PULSE_PUSH_APNS_KEY_FILE` | no | Push gateway; see [push notifications](/push-gateway/). |
+| `PULSE_PUSH_APNS_KEY_ID` | no | Push gateway; see [push notifications](/push-gateway/). |
+| `PULSE_PUSH_APNS_TEAM_ID` | no | Push gateway; see [push notifications](/push-gateway/). |
+| `PULSE_PUSH_APNS_TOPIC` | no | Push gateway; see [push notifications](/push-gateway/). |
+| `PULSE_PUSH_WEBHOOK_SECRET` | no | Push gateway; see [push notifications](/push-gateway/). |
+| `PULSE_PUSH_OPERATOR_SECRET` | no | Push gateway; see [push notifications](/push-gateway/). |
+| `PULSE_PUSH_MAX_DEVICES` | no | Push gateway; see [push notifications](/push-gateway/). |
+
+`PULSE_WEB_DATA_DIR` (set to `/data` by the shipped compose file) is required for push in every auth
+mode, because push stores its device registry there.
 
 The service `depends_on` VictoriaMetrics + Alertmanager (`service_healthy`) and Gatus
 (`service_started` — the pinned Gatus image is shell-less and carries no healthcheck).

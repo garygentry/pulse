@@ -31,6 +31,12 @@ no authentication of their own — they must stay on the `pulse` network.
 | Gatus | `gatus:8080` | **No** — internal only | Status API; the web overview already surfaces it. |
 | Prober / exporters | in-network `:9120`/`:91xx` | **No** — internal only | Metric endpoints, scraped by VM only. |
 
+**Push gateway routes.** When push is configured, `/api/push/alertmanager` is **internal-network
+only**: Alertmanager reaches it on the compose network as `web:8080`, and a reverse proxy should not
+route it. If the proxy forwards the whole web service, deny `/api/push/alertmanager` and
+`/api/push/admin/` there. The phone needs only `/api/push/pairings/redeem` and `/api/push/device`
+through the proxy (see [push notifications](/push-gateway/)).
+
 > If you need to reach Alertmanager or VictoriaMetrics interactively, do it over an SSH tunnel
 > to a loopback-published port (below), never through a public proxy.
 
@@ -204,8 +210,9 @@ git check-ignore stack/compose/docker-compose.override.yml
 ## Connecting a phone
 
 A phone client finds the server through a **connect link**: a `pulse://connect?…` link that carries the
-server's external address, usually scanned as a QR code. The link holds no secret — it only says where the
-server is — so the phone still goes through the same proxy and login as a browser.
+server's external address, usually scanned as a QR code. A plain connect link holds no secret — it only says
+where the server is — so the phone still goes through the same proxy and login as a browser. A link that also
+carries a pairing code (`pair=`) is a secret: it pairs one device (see [push notifications](/push-gateway/)).
 
 The address in a link must be **https** and must not be a loopback address, so set up one of the
 reverse-proxy recipes above first. Recipe B (loopback publish) cannot be reached from a phone.

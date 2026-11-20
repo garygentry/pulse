@@ -314,8 +314,18 @@ The canary **complements** the deadman — deadman proves eval + pipeline; canar
 delivery through the channels an operator actually reads. It is authored as a static rule
 (`stack/compose/config/vmalert/rules/canary.yml`); adjust its cadence there.
 
+## Push notifications to phones
+
+The optional push gateway in the web service can deliver the same notifications to paired iPhones.
+Its example Alertmanager receiver runs as the first child route with `continue: true`, so every
+existing route, receiver and channel keeps working exactly as before; push is only an extra
+copy. The gateway's own health rules (`push.yml`) page through the existing email/Telegram channels,
+which never depend on push. Setup is in [push notifications](/push-gateway/), and the alerts are
+explained in the [push runbook](/push/).
+
 ## Where to go next
 
 - **Activate routing / channels** → the [rollout-session runbook](/rollout-session/).
 - **Wire credentials for the receivers** → [secret recipes](/secret-recipes/).
 - **The overview that surfaces these alerts** → [web overview](/web-overview/).
+- **Send alerts to phones as well** → [push notifications](/push-gateway/).

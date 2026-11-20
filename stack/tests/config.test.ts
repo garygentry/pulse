@@ -454,6 +454,32 @@ test("the web service passes PULSE_WEB_EXTERNAL_URL through with an empty defaul
   expect(value).toBe("");
 });
 
+const PUSH_PASS_THROUGHS = [
+  "PULSE_PUSH_APNS_KEY_FILE",
+  "PULSE_PUSH_APNS_KEY_ID",
+  "PULSE_PUSH_APNS_TEAM_ID",
+  "PULSE_PUSH_APNS_TOPIC",
+  "PULSE_PUSH_WEBHOOK_SECRET",
+  "PULSE_PUSH_OPERATOR_SECRET",
+  "PULSE_PUSH_MAX_DEVICES",
+] as const;
+
+test("the web service passes the seven PULSE_PUSH_* variables through with empty defaults", () => {
+  const env = composeConfigAllProfiles().services.web?.environment;
+  expect(env, "web service declares no environment map").toBeDefined();
+  for (const name of PUSH_PASS_THROUGHS) {
+    const value = Array.isArray(env)
+      ? env.find((e) => e.startsWith(`${name}=`))?.slice(name.length + 1)
+      : env?.[name];
+    expect(value, `${name} is not passed through with an empty default`).toBe("");
+  }
+});
+
+test("the web service carries the commented APNs key mount line", () => {
+  const raw = readFileSync(COMPOSE_FILE, "utf8");
+  expect(raw).toContain("# - ${PULSE_PUSH_APNS_KEY_HOST_PATH}:/run/secrets/apns.p8:ro");
+});
+
 /* ===========================================================================================
  * §3.1 — Fixture integrity (REQ-REPRO-01, CON-03)
  * ========================================================================================= */
