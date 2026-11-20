@@ -1,9 +1,62 @@
-// Push routing: the request-body pipeline shared by every push route that takes a JSON body.
+// Push routing: the push dispatcher and the request-body pipeline shared by every push route that takes a JSON body.
 
 import type { ZodType, ZodTypeDef } from "zod";
 
 import { checkContentType, parseStrictBody, readBoundedJson } from "../mutations/guards.js";
-import { fromGuardReason, type PushRefusal } from "./refusal.js";
+import { authoriseBrowser } from "./auth.js";
+import type { PushDispatcher, PushServices } from "./bootstrap.js";
+import { PUSH_PATHS } from "./constants.js";
+import { buildPushStatus, pushStatusResponse } from "./handlers/status.js";
+import { handleWebhook } from "./handlers/webhook.js";
+import { fromGuardReason, pushErrorResponse, type PushRefusal } from "./refusal.js";
+
+export type { PushDispatcher } from "./bootstrap.js";
+
+/** The no-op dispatcher: the default of the router's push parameter, so existing callers are unchanged. */
+export const NO_PUSH: PushDispatcher = async () => null;
+
+/** True for any pathname under `/api/push/`. */
+export function isPushPath(pathname: string): boolean {
+  return pathname.startsWith(PUSH_PATHS.prefix);
+}
+
+/**
+ * Build the push dispatcher from bootstrap's services. Never rejects; resolves null for a non-push path.
+ *
+ * Interim body: the misconfigured state serves `GET /api/push/status` (behind the browser read gate) and the
+ * webhook's counted 503; every other push path answers 503 PUSH_UNAVAILABLE. The configured route table
+ * (method checks, authorisers, bodies, handlers) replaces this body; the signature stays.
+ *
+ * @param services - Everything bootstrap assembled for the current state.
+ */
+export function createPushDispatcher(services: PushServices): PushDispatcher {
+  return async (ctx) => {
+    if (!isPushPath(ctx.pathname)) return null;
+    try {
+      if (services.state === "misconfigured") {
+        const method = ctx.request.method;
+        if (ctx.pathname === PUSH_PATHS.status && method === "GET") {
+          const gate = authoriseBrowser(ctx.request, ctx.peerIp, services.identity, "read");
+          if (!gate.ok) return pushErrorResponse(gate.refusal);
+          return pushStatusResponse(
+            buildPushStatus({
+              state: "misconfigured",
+              devices: [],
+              outstandingExpiresAt: null,
+              maxDevices: services.maxDevices,
+            }),
+          );
+        }
+        if (ctx.pathname === PUSH_PATHS.webhook && method === "POST") {
+          return await handleWebhook({ request: ctx.request, peerIp: ctx.peerIp }, { available: false });
+        }
+      }
+      return pushErrorResponse("unavailable");
+    } catch {
+      return pushErrorResponse("internal");
+    }
+  };
+}
 
 /** Result of {@link readPushBody}. */
 export type PushBodyResult<B> =
