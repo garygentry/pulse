@@ -24,7 +24,14 @@ import {
 import { getRuntimeStatus } from "../../src/server/refresh.js";
 import { createKeyedLogLimiter } from "../../src/server/log.js";
 import type { NotificationKind } from "../../src/server/push/plan.js";
-import { createSeededRandom } from "./helpers/fakes.js";
+import { createDeliveryMonitor } from "../../src/server/push/dispatch/queue.js";
+import {
+  buildPushMetricsProvider,
+  installPushMetrics,
+  type PushMetricsSource,
+} from "../../src/server/push/metrics.js";
+import type { DeviceRecord } from "../../src/server/push/registry/schema.js";
+import { createFakeClock, createSeededRandom } from "./helpers/fakes.js";
 
 const DISABLED_LINES = [
   "# HELP pulse_web_push_state Push gateway state; 1 on the current state (disabled, configured, misconfigured).",
@@ -442,5 +449,55 @@ describe("createKeyedLogLimiter", () => {
     const lim = createKeyedLogLimiter(60_000, () => 5, 16);
     for (let i = 0; i < 10_000; i++) lim.allow(`k${i}`);
     expect(lim.size()).toBe(16);
+  });
+});
+
+describe("push metrics: snapshot provider", () => {
+  const records = [{ id: "dev_AAAAAAAAAAA" }, { id: "dev_BBBBBBBBBBB" }] as unknown as DeviceRecord[];
+  const store = { list: (): readonly DeviceRecord[] => records };
+
+  function configured(): PushMetricsSource & { readonly note: (ms: number) => void } {
+    const monitor = createDeliveryMonitor({ clock: createFakeClock(0), log: () => {} });
+    return { state: "configured", store, delivery: monitor, note: (ms) => monitor.noteSuccess(ms) };
+  }
+
+  test("a configured source reports state, store.list().length and the monitor's last success", () => {
+    const source = configured();
+    const provider = buildPushMetricsProvider(source);
+    expect(provider()).toEqual({ state: "configured", devices: store.list().length, lastSuccessAtMs: null });
+    source.note(1_763_640_000_000);
+    expect(provider()).toEqual({ state: "configured", devices: 2, lastSuccessAtMs: 1_763_640_000_000 });
+  });
+
+  test("a misconfigured source with no store reports 0 devices and no last success", () => {
+    const provider = buildPushMetricsProvider({
+      state: "misconfigured",
+      store: null,
+      delivery: { lastSuccessAtMs: () => null },
+    });
+    expect(provider()).toEqual({ state: "misconfigured", devices: 0, lastSuccessAtMs: null });
+  });
+
+  test("install makes /metrics render the configured state", () => {
+    const uninstall = installPushMetrics(configured());
+    expect(pushSamples()).toContain('pulse_web_push_state{state="configured"} 1');
+    expect(sample("pulse_web_push_devices")).toBe(2);
+    uninstall();
+    expect(pushLines()).toEqual(DISABLED_LINES);
+  });
+
+  test("an older runtime's uninstall leaves the newer provider installed", () => {
+    const uninstallA = installPushMetrics(configured());
+    const uninstallB = installPushMetrics({
+      state: "misconfigured",
+      store: null,
+      delivery: { lastSuccessAtMs: () => null },
+    });
+    uninstallA();
+    expect(pushSamples()).toContain('pulse_web_push_state{state="misconfigured"} 1');
+    uninstallB();
+    expect(pushLines()).toEqual(DISABLED_LINES);
+    uninstallB();
+    expect(pushLines()).toEqual(DISABLED_LINES);
   });
 });

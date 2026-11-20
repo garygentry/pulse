@@ -6,11 +6,12 @@ import { afterEach, beforeEach, describe, expect, spyOn, test, type Mock } from 
 import { PUSH_CACHE_CONTROL } from "../../src/server/push/constants.js";
 import { handleRegisterDevice, handleRemoveSelf } from "../../src/server/push/handlers/device.js";
 import { handleListAdminDevices, handleRevokeDevice } from "../../src/server/push/handlers/devices.js";
+import { buildPushStatus, pushStatusResponse } from "../../src/server/push/handlers/status.js";
 import type { PushHandlerDeps } from "../../src/server/push/handlers/redeem.js";
 import { createPairingService } from "../../src/server/push/pairing.js";
 import type { DeviceRecord, DeviceRemovalReason } from "../../src/server/push/registry/schema.js";
 import { createDeviceStore, type RegistryStore } from "../../src/server/push/registry/store.js";
-import { removeDevice } from "../../src/server/push/registry/summary.js";
+import { removeDevice, toDeviceSummary } from "../../src/server/push/registry/summary.js";
 import {
   PUSH_PAIRING_EVENTS,
   __resetMetricsForTest,
@@ -378,5 +379,58 @@ describe("removeDevice", () => {
     fs.failNext("storeWrite", { code: "ENOSPC" });
     expect(await removeDevice(store, d1.id, "revoked")).toBe("write-failed");
     expect(store.get(d1.id)).toBeDefined();
+  });
+});
+
+describe("buildPushStatus", () => {
+  const early = device(1, { pairedAt: "2026-09-01T00:00:00.000Z", apnsToken: TOKEN_A, environment: "production" });
+  const late = device(2, { pairedAt: "2026-10-15T12:00:00.000Z" });
+
+  test("configured: devices come back pairedAt ascending as DeviceSummary objects", () => {
+    const payload = buildPushStatus({
+      state: "configured",
+      devices: [late, early].map(toDeviceSummary),
+      outstandingExpiresAt: null,
+      maxDevices: 20,
+    });
+    expect(payload.state).toBe("configured");
+    expect(payload.devices.map((d) => d.id)).toEqual([early.id, late.id]);
+    for (const d of payload.devices) expect(Object.keys(d).sort()).toEqual(SUMMARY_KEYS);
+    expect(payload.devices[0]).toEqual(toDeviceSummary(early));
+    expect(payload.devices[0]?.tokenSuffix).toBe(TOKEN_A.slice(-6));
+    expect(payload.outstanding).toBeNull();
+    expect(payload.maxDevices).toBe(20);
+  });
+
+  test("configured: outstanding carries only the expiry", () => {
+    const expiresAt = "2026-11-01T00:10:00.000Z";
+    const payload = buildPushStatus({ state: "configured", devices: [], outstandingExpiresAt: expiresAt, maxDevices: 5 });
+    expect(payload.outstanding).toEqual({ expiresAt });
+    expect(Object.keys(payload.outstanding ?? {})).toEqual(["expiresAt"]);
+  });
+
+  test("misconfigured yields exactly the empty body whatever the inputs", () => {
+    const payload = buildPushStatus({
+      state: "misconfigured",
+      devices: [toDeviceSummary(early)],
+      outstandingExpiresAt: "2026-11-01T00:10:00.000Z",
+      maxDevices: 20,
+    });
+    expect(payload).toStrictEqual({ state: "misconfigured", devices: [], outstanding: null, maxDevices: 20 });
+  });
+
+  test("pushStatusResponse: 200 JSON with no-store, body parses back to the payload", async () => {
+    const payload = buildPushStatus({
+      state: "configured",
+      devices: [late, early].map(toDeviceSummary),
+      outstandingExpiresAt: "2026-11-01T00:10:00.000Z",
+      maxDevices: 20,
+    });
+    const res = pushStatusResponse(payload);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/json");
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("cache-control")).toBe(PUSH_CACHE_CONTROL);
+    expect(JSON.parse(await res.text())).toEqual(JSON.parse(JSON.stringify(payload)));
   });
 });
