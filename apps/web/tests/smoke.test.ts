@@ -24,7 +24,7 @@
  * compose file path, the fixture interpolation env, and the never-throwing `run()` spawn wrapper.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -41,7 +41,9 @@ import { loadProposalSecret, loadServerConfig } from "../src/server/config.js";
 import { inlineScriptHashes } from "../src/server/security-headers.js";
 import { buildWriteRuntime, type WriteRuntime } from "../src/server/mutations/bootstrap.js";
 import { createServerRuntime, type ServerRuntime } from "../src/server/refresh.js";
-import { dispatch } from "../src/server/router.js";
+import { createFetchHandler, dispatch, dispatchMutation, type RequestServices } from "../src/server/router.js";
+import { buildPushRuntime, type PushRuntime } from "../src/server/push/bootstrap.js";
+import { __resetCapabilityProvidersForTest } from "@pulse/web-data/contract";
 import type { StaticAssets } from "../src/server/assets.js";
 import { makeEstateBundleFixture } from "./factories/estate-bundle.js";
 
@@ -708,6 +710,195 @@ describe("smoke:web (in-process) — SC-07 degraded write path: reads served, re
     const sbody = (await sess.json()) as { identity: unknown; capabilities: Record<string, boolean> };
     expect(sbody.identity).not.toBeNull();
     expect(sbody.capabilities).toEqual({ silence: false, ack: false, proposeEstateEdit: false });
+  });
+});
+
+/* ===========================================================================================
+ * PUSH GATEWAY COMPATIBILITY (in-process)
+ *
+ * The push runtime is composed exactly as `server/index.ts` composes it: config, then
+ * `buildPushRuntime(config)` in every auth mode, then the server runtime, `attachRuntime`, and one
+ * `createFetchHandler(runtime, assets, mutationDispatcher, push.dispatcher)` call. Unconfigured, push
+ * changes no route; misconfigured, it warns and advertises nothing while every dashboard route serves.
+ * ========================================================================================= */
+
+/** What `main()` builds, in its order, for an injected env. */
+interface MainComposition {
+  readonly push: PushRuntime;
+  readonly write: WriteRuntime | null;
+  readonly runtime: ServerRuntime;
+  readonly handler: (request: Request, services?: RequestServices) => Promise<Response>;
+  /** The construction order, for the composition assertions. */
+  readonly order: readonly string[];
+}
+
+/** Mirror `main()`'s order (index.ts) with an injected env and mock upstreams. */
+async function composeLikeMain(env: Record<string, string | undefined>): Promise<MainComposition> {
+  const order: string[] = [];
+  const config = loadServerConfig(env);
+  order.push("config");
+  const push = await buildPushRuntime(config);
+  order.push(`push:${push.state}`);
+  let write: WriteRuntime | null = null;
+  const fetchImpl = makeRouter(() => new Set());
+  if (config.identity.mode === "proxy-header") {
+    write = await buildWriteRuntime(config, { secret: loadProposalSecret(env), fetchImpl });
+    order.push("write");
+  }
+  const runtime = createServerRuntime(config, {
+    ...(write?.runtimeDeps ?? {}),
+    fetchImpl,
+    monotonicNow: () => 0,
+    wallNow: () => new Date(),
+  });
+  order.push("runtime");
+  write?.attachRuntime(runtime);
+  push.attachRuntime(runtime);
+  order.push("attach");
+  const handler = createFetchHandler(
+    runtime,
+    STUB_ASSETS,
+    write === null ? dispatchMutation : write.dispatcher,
+    push.dispatcher,
+  );
+  return { push, write, runtime, handler, order };
+}
+
+/** Capture every structured log line written while `fn` runs. */
+async function captureLogs<T>(fn: () => Promise<T>): Promise<{ result: T; lines: Array<Record<string, unknown>> }> {
+  const lines: Array<Record<string, unknown>> = [];
+  const spy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+    try {
+      lines.push(JSON.parse(String(args[0])) as Record<string, unknown>);
+    } catch {
+      // not a structured line
+    }
+  });
+  try {
+    return { result: await fn(), lines };
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+describe("smoke:web (in-process) — push gateway compatibility (REQ-COMPAT-01, REQ-CFG-02, REQ-CFG-03)", () => {
+  let dir: string;
+  let composed: MainComposition | null = null;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pulse-web-smoke-push-"));
+  });
+
+  afterEach(async () => {
+    if (composed !== null) {
+      await composed.push.close();
+      await composed.write?.close();
+      composed.runtime.close();
+    }
+    composed = null;
+    __resetCapabilityProvidersForTest();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const get = (c: MainComposition, path: string, init?: RequestInit, services?: RequestServices) =>
+    c.handler(new Request(`http://web:8080${path}`, init), services);
+
+  test("push is inert when unconfigured: no capability, POST /api/push/alertmanager 405, GET /api/push/status 404", async () => {
+    const env = { ...inProcessEnv(writeFixtureBundle(dir)), PULSE_WEB_DATA_DIR: join(dir, "data") };
+    const { result: c, lines } = await captureLogs(() => composeLikeMain(env));
+    composed = c;
+    expect(c.push.state).toBe("disabled");
+    expect(lines.filter((l) => String(l.event).startsWith("push_"))).toEqual([]);
+    // The write path's own "ignored in auth mode none" warning predates push; push adds none.
+    expect(lines.filter((l) => l.event === "config_warning" && JSON.stringify(l).includes("PULSE_PUSH_"))).toEqual([]);
+
+    const sess = await get(c, "/api/session");
+    expect(sess.status).toBe(200);
+    expect(((await sess.json()) as { contract: { capabilities: string[] } }).contract.capabilities).toEqual([]);
+
+    const post = await get(c, "/api/push/alertmanager", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(post.status).toBe(405);
+    expect(((await post.json()) as { code: string }).code).toBe("METHOD_NOT_ALLOWED");
+
+    const status = await get(c, "/api/push/status");
+    expect(status.status).toBe(404);
+    expect(((await status.json()) as { code: string }).code).toBe("API_NOT_FOUND");
+  });
+
+  test("push misconfigured (KEY_ID only): dashboard routes serve 200, a config_warning names the key file, no capability", async () => {
+    const env = {
+      ...inProcessEnv(writeFixtureBundle(dir)),
+      PULSE_WEB_DATA_DIR: join(dir, "data"),
+      PULSE_PUSH_APNS_KEY_ID: "ABCDE12345",
+    };
+    const { result: c, lines } = await captureLogs(() => composeLikeMain(env));
+    composed = c;
+    expect(c.push.state).toBe("misconfigured");
+    const warnings = lines.filter((l) => l.event === "config_warning");
+    expect(warnings.some((l) => l.envVar === "PULSE_PUSH_APNS_KEY_FILE")).toBe(true);
+    for (const w of warnings) expect(JSON.stringify(w)).not.toContain("ABCDE12345");
+
+    await c.runtime.runOnce();
+    expect((await get(c, "/api/overview")).status).toBe(200);
+    expect((await get(c, "/")).status).toBe(200);
+    const sess = await get(c, "/api/session");
+    expect(sess.status).toBe(200);
+    expect(((await sess.json()) as { contract: { capabilities: string[] } }).contract.capabilities).toEqual([]);
+  });
+
+  test("composition mirrors main(): the push runtime is built in auth modes none and proxy-header", async () => {
+    // index.ts itself: built once, before the auth-mode branch, attached after the write runtime, passed last.
+    const source = readFileSync(resolve(import.meta.dir, "../src/server/index.ts"), "utf8");
+    const built = source.indexOf("push = await buildPushRuntime(config)");
+    const branch = source.indexOf('if (config.identity.mode === "proxy-header")');
+    expect(built).toBeGreaterThan(source.indexOf("loadServerConfig()"));
+    expect(built).toBeLessThan(branch);
+    expect(source.indexOf("push.attachRuntime(runtime)")).toBeGreaterThan(source.indexOf("write?.attachRuntime(runtime)"));
+    expect(source).toMatch(/createFetchHandler\(\s*runtime,\s*assets,\s*write === null \? dispatchMutation : write\.dispatcher,\s*push\.dispatcher,?\s*\)/);
+    expect(source.split("createFetchHandler(").length - 1).toBe(1);
+    expect(source).not.toContain("SIGTERM");
+
+    const base = {
+      ...inProcessEnv(writeFixtureBundle(dir)),
+      PULSE_WEB_DATA_DIR: join(dir, "data"),
+      PULSE_PUSH_APNS_KEY_ID: "ABCDE12345",
+    };
+    const modes = [
+      { mode: "none", env: base, services: undefined, headers: {} },
+      {
+        mode: "proxy-header",
+        env: {
+          ...base,
+          PULSE_WEB_AUTH_MODE: "proxy-header",
+          PULSE_WEB_TRUSTED_PROXIES: "10.0.0.0/24",
+          PULSE_PROPOSAL_SECRET: "smoke-push-secret-0123456789-abcdefghij",
+        },
+        services: { peerIp: "10.0.0.7", disableTimeout() {} },
+        headers: { "remote-user": "alice" },
+      },
+    ] as const;
+    for (const m of modes) {
+      const c = await composeLikeMain(m.env);
+      composed = c;
+      expect(c.order, m.mode).toEqual(
+        m.mode === "none"
+          ? ["config", "push:misconfigured", "runtime", "attach"]
+          : ["config", "push:misconfigured", "write", "runtime", "attach"],
+      );
+      // The push dispatcher reached through the composed handler answers its own route.
+      const status = await get(c, "/api/push/status", { headers: m.headers }, m.services);
+      expect(status.status, m.mode).toBe(200);
+      expect(((await status.json()) as { state: string }).state, m.mode).toBe("misconfigured");
+      await c.push.close();
+      await c.write?.close();
+      c.runtime.close();
+      composed = null;
+      __resetCapabilityProvidersForTest();
+    }
   });
 });
 

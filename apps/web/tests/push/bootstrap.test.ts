@@ -868,3 +868,54 @@ function badgeRuntime(alerts: number): ServerRuntime {
   };
   return stub as unknown as ServerRuntime;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// In-process server harness self-test (the composition the CLI smoke and e2e suites build on)
+// ---------------------------------------------------------------------------------------------------------------
+
+describe.skipIf(tls === null)(`push server harness${tls === null ? " (skipped: openssl missing)" : ""}`, () => {
+  test("pair → register → webhook gives one fake-APNs receipt; close() stops the listener", async () => {
+    // Loaded lazily so the module mocks above are in place before the bootstrap module graph is evaluated.
+    const { startPushTestServer } = await import("./helpers/push-server.js");
+    const server = await startPushTestServer();
+    let closed = false;
+    try {
+      expect(server.runtime.state).toBe("configured");
+      expect(server.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+
+      const { link, token } = await server.pair();
+      expect(new URL(link).searchParams.get("url")).toBe("https://pulse.example.com");
+      expect(link).toContain(token);
+      const { deviceId, credential } = await server.register(link);
+      expect(deviceId).toMatch(/^dev_/);
+      expect(credential.length).toBe(43);
+
+      const res = await server.webhook(amNotification({ alerts: [amAlert({ severity: "critical" })] }));
+      expect(res.status).toBe(202);
+      const deadline = Date.now() + 5000;
+      while (server.apns.requests.length === 0 && Date.now() < deadline) await Bun.sleep(10);
+      await Bun.sleep(50);
+      expect(server.apns.requests).toHaveLength(1);
+      expect(server.apns.requests[0]?.jwtValid).toBe(true);
+      expect(server.apns.requests[0]?.environment).toBe("sandbox");
+
+      // The real listener serves the same handler.
+      const status = await fetch(`${server.baseUrl}/api/push/status`);
+      expect(status.status).toBe(200);
+      expect(((await status.json()) as { devices: unknown[] }).devices).toHaveLength(1);
+
+      const baseUrl = server.baseUrl;
+      await server.close();
+      closed = true;
+      let refused = false;
+      try {
+        await fetch(`${baseUrl}/healthz`);
+      } catch {
+        refused = true;
+      }
+      expect(refused).toBe(true);
+    } finally {
+      if (!closed) await server.close();
+    }
+  }, 20_000);
+});
