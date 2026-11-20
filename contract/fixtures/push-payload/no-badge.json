@@ -1,0 +1,1 @@
+{"aps":{"alert":{"body":"Firing on host-002.example.net","title":"ExampleDiskFull"},"category":"PULSE_ALERT_FIRING","interruption-level":"active","sound":"default"},"pulse":{"alert":{"fingerprint":"0000000000000002","severity":"warning","status":"firing"},"collapseId":"a-0000000000000002","kind":"alert","target":{"fingerprint":"0000000000000002","screen":"alert"},"v":1}}

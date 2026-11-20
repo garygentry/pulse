@@ -555,6 +555,12 @@ describe("createHistoryController", () => {
       "ESTATE_BUNDLE_VERSION",
       "ESTATE_BUNDLE_STRUCTURE",
       "ESTATE_BUNDLE_INCOHERENT",
+      "PAIRING_REFUSED",
+      "DEVICE_CAP_REACHED",
+      "RATE_LIMITED",
+      "UNAUTHORIZED",
+      "PAYLOAD_TOO_LARGE",
+      "PUSH_UNAVAILABLE",
     ];
 
     test("every ApiErrorCode is covered by the tables", () => {

@@ -29,6 +29,7 @@ function thrown(fn: () => void): ContractError {
 
 describe("registerCapabilityProvider", () => {
   test("every known capability matches the grammar, and the list is frozen", () => {
+    expect([...KNOWN_SERVER_CAPABILITIES]).toEqual(["push"]);
     expect(Object.isFrozen(KNOWN_SERVER_CAPABILITIES)).toBe(true);
     for (const name of KNOWN_SERVER_CAPABILITIES) expect(SERVER_CAPABILITY_PATTERN.test(name)).toBe(true);
   });
@@ -39,6 +40,17 @@ describe("registerCapabilityProvider", () => {
     expect(error.subject).toBe("future-thing");
     expect(error.name).toBe("ContractError");
     expect(error).toBeInstanceOf(Error);
+    expect(currentServerCapabilities()).toEqual([]);
+  });
+
+  test("a known name registers, reports while available, and unregisters", () => {
+    let available = true;
+    registerCapabilityProvider("push", () => available);
+    expect(currentServerCapabilities()).toEqual(["push"]);
+    available = false;
+    expect(currentServerCapabilities()).toEqual([]);
+    unregisterCapabilityProvider("push");
+    available = true;
     expect(currentServerCapabilities()).toEqual([]);
   });
 

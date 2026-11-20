@@ -5,9 +5,9 @@ This document is the contract between the Pulse web server and separately instal
 
 Contents: [About](#about) · [Versioning](#versioning) · [Handshake](#handshake) ·
 [Announcing the client](#announcing) · [Tolerance rules](#tolerance) · [Operations](#operations) ·
-[Response fields](#fields) · [Limits](#limits) · [Enum fallbacks](#enum-fallbacks) · [Caching](#caching) ·
+[Response fields](#fields) · [Request bodies](#request-bodies) · [Limits](#limits) · [Enum fallbacks](#enum-fallbacks) · [Caching](#caching) ·
 [Live events](#events) · [Request limits](#request-limits) · [Authentication](#auth) ·
-[Not in the contract](#not-in-contract) · [Connect link](#connect-link) · [Fixtures](#fixtures) ·
+[Not in the contract](#not-in-contract) · [Connect link](#connect-link) · [Push payload](#push-payload) · [Fixtures](#fixtures) ·
 [Extending the contract](#extending)
 
 <a id="about"></a>
@@ -26,7 +26,7 @@ under `fixtures/`, the fixture index and the shape baselines under `shape/` are 
 running route handlers. Generated sections are marked and must not be edited by hand: a hand edit is overwritten by
 the next generation, and the test suite fails first.
 
-The current contract version is `1.0` (`CONTRACT_VERSION`). The [Fixtures](#fixtures) section repeats the version the
+The current contract version is `1.1` (`CONTRACT_VERSION`). The [Fixtures](#fixtures) section repeats the version the
 generated content was built for.
 
 <a id="versioning"></a>
@@ -81,8 +81,10 @@ On `client-too-old` or `server-too-old` a client must stop: show the incompatibl
 which side must be updated, and show no monitoring data.
 
 **Capabilities.** `contract.capabilities` lists the optional features the server can provide right now. A capability
-is listed only while the feature is available. Contract 1.0 defines no capability, so the list is `[]`. A client must
-hide any feature whose capability is absent, and must ignore capability names it does not know.
+is listed only while the feature is available. Contract 1.1 defines one capability, `push`. It is listed only while the
+server can accept pairing and registration right now, and is absent when push is not configured or is misconfigured. A
+client shows push features, and calls the push operations, only while `push` is listed. A client must hide any feature
+whose capability is absent, and must ignore capability names it does not know.
 
 The session's top-level `capabilities` object is a different thing: it holds the per-identity write permissions and
 keeps that meaning.
@@ -140,11 +142,21 @@ Every contract operation is a `GET`. The table lists each one with its parameter
 | Alert history | `GET` | `/api/history/alerts` | none | `range` (query, optional): `1h`, `6h`, `24h`, `7d`; default: `6h`; no other query key is accepted | none | 200 | `400` `INVALID_REQUEST`: query string over 2048 bytes, a repeated query key, or a malformed/over-512-byte path parameter<br>`400` `INVALID_REQUEST`: a `range` value outside the allowed ids, or any query key other than `range`<br>`404` `QUERY_NOT_FOUND`: unknown `queryId`<br>`404` `TARGET_NOT_FOUND`: no target or endpoint with that exact id in the current estate<br>`422` `QUERY_NOT_APPLICABLE`: the query does not apply to that kind of target<br>`422` `RANGE_UNSUPPORTED`: the range is longer than the query supports<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`502` `HISTORY_LIMIT_EXCEEDED`: the result exceeds a history maximum<br>`502` `SOURCE_UNAVAILABLE`: the upstream metrics or checks source failed<br>`503` `ESTATE_BUNDLE_*` (BundleErrorBody): the estate bundle failed to load<br>`503` `HISTORY_CANCELLED`: the request was cancelled before it finished<br>`503` `HISTORY_OVERLOADED`: too many history requests are in progress [Retry-After]<br>`503` `MODEL_CHANGED`: the estate model changed while the query ran<br>`504` `SOURCE_TIMEOUT`: the upstream source timed out | always 200, no ETag; `private, no-cache` | [`IntervalHistoryPayload`](#fields-intervalhistorypayload) |
 | Check history | `GET` | `/api/history/checks/:endpoint` | none | `endpoint` (path, required): exact Gatus endpoint name; may contain an encoded slash (`%2F`)<br>`range` (query, optional): `1h`, `6h`, `24h`, `7d`; default: `24h`; no other query key is accepted | none | 200 | `400` `INVALID_REQUEST`: query string over 2048 bytes, a repeated query key, or a malformed/over-512-byte path parameter<br>`400` `INVALID_REQUEST`: a `range` value outside the allowed ids, or any query key other than `range`<br>`404` `QUERY_NOT_FOUND`: unknown `queryId`<br>`404` `TARGET_NOT_FOUND`: no target or endpoint with that exact id in the current estate<br>`422` `QUERY_NOT_APPLICABLE`: the query does not apply to that kind of target<br>`422` `RANGE_UNSUPPORTED`: the range is longer than the query supports<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`502` `HISTORY_LIMIT_EXCEEDED`: the result exceeds a history maximum<br>`502` `SOURCE_UNAVAILABLE`: the upstream metrics or checks source failed<br>`503` `ESTATE_BUNDLE_*` (BundleErrorBody): the estate bundle failed to load<br>`503` `HISTORY_CANCELLED`: the request was cancelled before it finished<br>`503` `HISTORY_OVERLOADED`: too many history requests are in progress [Retry-After]<br>`503` `MODEL_CHANGED`: the estate model changed while the query ran<br>`504` `SOURCE_TIMEOUT`: the upstream source timed out | always 200, no ETag; `private, no-cache` | [`EndpointHistoryPayload`](#fields-endpointhistorypayload) |
 | Live events | `GET` | `/api/events` (SSE) | none | `Last-Event-ID` (header, optional): the `id` of the last tick received | none | 200 | `400` `INVALID_REQUEST`: query string over 2048 bytes, a repeated query key, or a malformed/over-512-byte path parameter<br>`500` `INTERNAL_ERROR`: unexpected server fault | `no-cache` (event stream) | [`LiveTick`](#fields-livetick) |
+| Redeem pairing token | `POST` | `/api/push/pairings/redeem` | pairing token (body `token`) | none | [`PairingRedeemRequest`](#fields-pairingredeemrequest) | 201 | `400` `INVALID_REQUEST`: the media type is not `application/json`, the body is not valid JSON, or it fails validation (unknown member, missing member, bad value)<br>`403` `PAIRING_REFUSED`: the token is missing, malformed, unknown, expired or already used; the response does not say which<br>`405` `METHOD_NOT_ALLOWED`: push is not configured on this server (the `push` capability is absent)<br>`409` `DEVICE_CAP_REACHED`: the server's paired-device limit is reached; an operator must revoke a device first<br>`413` `PAYLOAD_TOO_LARGE`: the body is over 4096 bytes<br>`429` `RATE_LIMITED`: too many failed redemptions recently; every outstanding token was invalidated [Retry-After]<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`503` `PUSH_UNAVAILABLE`: push is configured but unavailable (misconfigured, or the device registry cannot be written) | `private, no-store` | [`PairingRedeemResponse`](#fields-pairingredeemresponse) |
+| Register device | `PUT` | `/api/push/device` | `Authorization: Bearer <credential>` | none | [`DeviceRegistrationRequest`](#fields-deviceregistrationrequest) | 200 | `400` `INVALID_REQUEST`: the media type is not `application/json`, the body is not valid JSON, or it fails validation (unknown member, missing member, bad value)<br>`401` `UNAUTHORIZED`: the `Authorization` header is missing, repeated or malformed, or the credential is unknown or revoked; the response does not say which<br>`405` `METHOD_NOT_ALLOWED`: push is not configured on this server (the `push` capability is absent)<br>`413` `PAYLOAD_TOO_LARGE`: the body is over 4096 bytes<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`503` `PUSH_UNAVAILABLE`: push is configured but unavailable (misconfigured, or the device registry cannot be written) | `private, no-store` | [`DeviceRegistrationResponse`](#fields-deviceregistrationresponse) |
+| Remove device | `DELETE` | `/api/push/device` | `Authorization: Bearer <credential>` | none | none | 204 | `401` `UNAUTHORIZED`: the `Authorization` header is missing, repeated or malformed, or the credential is unknown or revoked; the response does not say which<br>`405` `METHOD_NOT_ALLOWED`: push is not configured on this server (the `push` capability is absent)<br>`500` `INTERNAL_ERROR`: unexpected server fault<br>`503` `PUSH_UNAVAILABLE`: push is configured but unavailable (misconfigured, or the device registry cannot be written) | `private, no-store` | none (204) |
 
 - **Session:** Served even when the estate bundle failed to load. Unknown query keys are ignored.
 - **Overview:** Before the first cycle, the server may answer 200 with the same body type and no `ETag`, `X-Pulse-*` or `Vary` headers.
 - **Live events:** The response is `text/event-stream`. The server sends `retry: 10000` on connect and a heartbeat comment every 5000 ms, and keeps at most 64 streams open.
 - **Live events:** There is no `NOT_READY` response: before the first publication the stream opens and sends only `retry` and heartbeats.
+- **Redeem pairing token:** The body is `Content-Type: application/json`, at most 4096 bytes. `displayName` is 1 to 64 UTF-8 bytes after trimming, from letters, digits, space and `'’.-_()#`.
+- **Redeem pairing token:** `credential` appears in this response only. Store it in the Keychain; never log, display or send it anywhere except the `Authorization` header of the device operations.
+- **Redeem pairing token:** A token is valid for 10 minutes and can be redeemed once. A server restart invalidates it.
+- **Register device:** The body is `Content-Type: application/json`, at most 4096 bytes. Every member is required; a request replaces the APNs token, environment and preferences.
+- **Register device:** Refresh the registration at least every 30 days whenever the app runs, including background launches. A device not seen for 90 days is removed.
+- **Register device:** On `401 UNAUTHORIZED`, discard the stored credential and show that the device must be paired again. Do not retry with the same credential.
+- **Remove device:** No request body. On 204 the credential is invalidated and nothing more is sent to the device; discard it.
 <!-- /generated:operations -->
 
 Paths use `:name` for path parameters, percent-encoded. Error bodies are `ErrorEnvelope` `{code, message, details?}`
@@ -660,7 +672,7 @@ listed here, and a client must ignore them (see [Tolerance rules](#tolerance)).
 | `findings.value.bundleId` | string (pattern) | no | no |  |
 | `findings.value.findings` | array | no | no |  |
 | `findings.value.findings[]` | object | no | no |  |
-| `findings.value.findings[].code` | enum | no | no | `backup_command_host`, `connect_link_no_address`, `connect_link_refused`, `duplicate_command_signal`, `duplicate_estate`, `duplicate_identity`, `gatus_unsafe_name`, `host_local_probe_host`, `incomplete_nas_api`, `inert_alert_binding`, `invalid_enum`, `invalid_hypervisor_endpoint`, `invalid_layer`, `invalid_timezone`, `malformed_yaml`, `missing_chat_id`, `missing_field`, `missing_rationale`, `missing_timezone`, `missing_version`, `proposal_already_decided`, `proposal_cannot_clear_base`, `proposal_dirty_tree`, `proposal_invalid_estate`, `proposal_not_found`, `proposal_overlay_ambiguous`, `proposal_signature_invalid`, `proposal_stale`, `secret_literal`, `unknown_field`, `unresolved_channel`, `unresolved_host`, `unsupported_version`, `web_artifact_leak_detected`, `web_sensitive_channel_option_omitted`, `web_unsafe_provenance`, `web_url_userinfo_removed`, `wrong_type` (unknown: see `finding-code`) |
+| `findings.value.findings[].code` | enum | no | no | `backup_command_host`, `connect_link_no_address`, `connect_link_refused`, `duplicate_command_signal`, `duplicate_estate`, `duplicate_identity`, `gatus_unsafe_name`, `host_local_probe_host`, `incomplete_nas_api`, `inert_alert_binding`, `invalid_enum`, `invalid_hypervisor_endpoint`, `invalid_layer`, `invalid_timezone`, `malformed_yaml`, `missing_chat_id`, `missing_field`, `missing_rationale`, `missing_timezone`, `missing_version`, `proposal_already_decided`, `proposal_cannot_clear_base`, `proposal_dirty_tree`, `proposal_invalid_estate`, `proposal_not_found`, `proposal_overlay_ambiguous`, `proposal_signature_invalid`, `proposal_stale`, `push_device_not_found`, `push_misconfigured`, `push_no_devices`, `push_not_configured`, `push_operator_refused`, `push_operator_secret_missing`, `push_pair_no_address`, `push_server_missing`, `push_server_unreachable`, `push_test_failed`, `secret_literal`, `unknown_field`, `unresolved_channel`, `unresolved_host`, `unsupported_version`, `web_artifact_leak_detected`, `web_sensitive_channel_option_omitted`, `web_unsafe_provenance`, `web_url_userinfo_removed`, `wrong_type` (unknown: see `finding-code`) |
 | `findings.value.findings[].file` | string | no | no |  |
 | `findings.value.findings[].fix` | string | no | no |  |
 | `findings.value.findings[].message` | string | no | no |  |
@@ -884,7 +896,7 @@ listed here, and a client must ignore them (see [Tolerance rules](#tolerance)).
 <!-- generated:fields:ErrorEnvelope -->
 | Field | Type | Optional | Nullable | Values |
 |---|---|---|---|---|
-| `code` | enum | no | no | `API_NOT_FOUND`, `CYCLE_BUILD_FAILED`, `ESTATE_BUNDLE_INCOHERENT`, `ESTATE_BUNDLE_MISSING`, `ESTATE_BUNDLE_STRUCTURE`, `ESTATE_BUNDLE_UNPARSEABLE`, `ESTATE_BUNDLE_UNREADABLE`, `ESTATE_BUNDLE_VERSION`, `HISTORY_CANCELLED`, `HISTORY_LIMIT_EXCEEDED`, `HISTORY_OVERLOADED`, `INTERNAL_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_ALLOWED`, `MODEL_CHANGED`, `NOT_READY`, `QUERY_NOT_APPLICABLE`, `QUERY_NOT_FOUND`, `RANGE_UNSUPPORTED`, `SOURCE_TIMEOUT`, `SOURCE_UNAVAILABLE`, `TARGET_NOT_FOUND` (unknown: see `api-error-code`) |
+| `code` | enum | no | no | `API_NOT_FOUND`, `CYCLE_BUILD_FAILED`, `DEVICE_CAP_REACHED`, `ESTATE_BUNDLE_INCOHERENT`, `ESTATE_BUNDLE_MISSING`, `ESTATE_BUNDLE_STRUCTURE`, `ESTATE_BUNDLE_UNPARSEABLE`, `ESTATE_BUNDLE_UNREADABLE`, `ESTATE_BUNDLE_VERSION`, `HISTORY_CANCELLED`, `HISTORY_LIMIT_EXCEEDED`, `HISTORY_OVERLOADED`, `INTERNAL_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_ALLOWED`, `MODEL_CHANGED`, `NOT_READY`, `PAIRING_REFUSED`, `PAYLOAD_TOO_LARGE`, `PUSH_UNAVAILABLE`, `QUERY_NOT_APPLICABLE`, `QUERY_NOT_FOUND`, `RANGE_UNSUPPORTED`, `RATE_LIMITED`, `SOURCE_TIMEOUT`, `SOURCE_UNAVAILABLE`, `TARGET_NOT_FOUND`, `UNAUTHORIZED` (unknown: see `api-error-code`) |
 | `details` | map | yes | no |  |
 | `details{}` | boolean \| number \| string | no | yes |  |
 | `message` | string | no | no |  |
@@ -902,6 +914,65 @@ listed here, and a client must ignore them (see [Tolerance rules](#tolerance)).
 | `message` | string | no | no |  |
 | `path` | string | no | no |  |
 <!-- /generated:fields:BundleErrorBody -->
+
+<a id="fields-pairingredeemresponse"></a>
+
+### PairingRedeemResponse
+
+<!-- generated:fields:PairingRedeemResponse -->
+| Field | Type | Optional | Nullable | Values |
+|---|---|---|---|---|
+| `credential` | string | no | no |  |
+| `deviceId` | string | no | no |  |
+<!-- /generated:fields:PairingRedeemResponse -->
+
+<a id="fields-deviceregistrationresponse"></a>
+
+### DeviceRegistrationResponse
+
+<!-- generated:fields:DeviceRegistrationResponse -->
+| Field | Type | Optional | Nullable | Values |
+|---|---|---|---|---|
+| `deviceId` | string | no | no |  |
+| `environment` | enum | no | no | `production`, `sandbox` (unknown: see `push-environment`) |
+| `preferences` | object | no | no |  |
+| `preferences.critical` | boolean | no | no |  |
+| `preferences.info` | boolean | no | no |  |
+| `preferences.warning` | boolean | no | no |  |
+| `seenAt` | string | no | no |  |
+<!-- /generated:fields:DeviceRegistrationResponse -->
+
+<a id="request-bodies"></a>
+
+## Request bodies
+
+The bodies the push operations take. Columns as in [Response fields](#fields). The server refuses unknown members.
+
+<a id="fields-pairingredeemrequest"></a>
+
+### PairingRedeemRequest
+
+<!-- generated:fields:PairingRedeemRequest -->
+| Field | Type | Optional | Nullable | Values |
+|---|---|---|---|---|
+| `displayName` | string | no | no |  |
+| `token` | string | no | no |  |
+<!-- /generated:fields:PairingRedeemRequest -->
+
+<a id="fields-deviceregistrationrequest"></a>
+
+### DeviceRegistrationRequest
+
+<!-- generated:fields:DeviceRegistrationRequest -->
+| Field | Type | Optional | Nullable | Values |
+|---|---|---|---|---|
+| `apnsToken` | string | no | no |  |
+| `environment` | enum | no | no | `production`, `sandbox` (unknown: see `push-environment`) |
+| `preferences` | object | no | no |  |
+| `preferences.critical` | boolean | no | no |  |
+| `preferences.info` | boolean | no | no |  |
+| `preferences.warning` | boolean | no | no |  |
+<!-- /generated:fields:DeviceRegistrationRequest -->
 
 <a id="limits"></a>
 
@@ -973,7 +1044,7 @@ A client should size its decode buffers from this table, not from observed respo
 | Group | Fields | Known values | Unknown value |
 |---|---|---|---|
 | `alert-state` | `AlertsPayload.alerts[].state` | `firing`, `inhibited`, `silenced` | treat as `firing` |
-| `api-error-code` | `ErrorEnvelope.code` | `API_NOT_FOUND`, `CYCLE_BUILD_FAILED`, `ESTATE_BUNDLE_INCOHERENT`, `ESTATE_BUNDLE_MISSING`, `ESTATE_BUNDLE_STRUCTURE`, `ESTATE_BUNDLE_UNPARSEABLE`, `ESTATE_BUNDLE_UNREADABLE`, `ESTATE_BUNDLE_VERSION`, `HISTORY_CANCELLED`, `HISTORY_LIMIT_EXCEEDED`, `HISTORY_OVERLOADED`, `INTERNAL_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_ALLOWED`, `MODEL_CHANGED`, `NOT_READY`, `QUERY_NOT_APPLICABLE`, `QUERY_NOT_FOUND`, `RANGE_UNSUPPORTED`, `SOURCE_TIMEOUT`, `SOURCE_UNAVAILABLE`, `TARGET_NOT_FOUND` | Treat as a generic failure and show the message. |
+| `api-error-code` | `ErrorEnvelope.code` | `API_NOT_FOUND`, `CYCLE_BUILD_FAILED`, `DEVICE_CAP_REACHED`, `ESTATE_BUNDLE_INCOHERENT`, `ESTATE_BUNDLE_MISSING`, `ESTATE_BUNDLE_STRUCTURE`, `ESTATE_BUNDLE_UNPARSEABLE`, `ESTATE_BUNDLE_UNREADABLE`, `ESTATE_BUNDLE_VERSION`, `HISTORY_CANCELLED`, `HISTORY_LIMIT_EXCEEDED`, `HISTORY_OVERLOADED`, `INTERNAL_ERROR`, `INVALID_REQUEST`, `METHOD_NOT_ALLOWED`, `MODEL_CHANGED`, `NOT_READY`, `PAIRING_REFUSED`, `PAYLOAD_TOO_LARGE`, `PUSH_UNAVAILABLE`, `QUERY_NOT_APPLICABLE`, `QUERY_NOT_FOUND`, `RANGE_UNSUPPORTED`, `RATE_LIMITED`, `SOURCE_TIMEOUT`, `SOURCE_UNAVAILABLE`, `TARGET_NOT_FOUND`, `UNAUTHORIZED` | Treat as a generic failure and show the message. |
 | `attribution` | `IntervalHistoryPayload.lanes[].attribution` | `matched`, `unmatched` | treat as `unmatched` |
 | `auth-mode` | `SessionPayload.authMode` | `none`, `proxy-header` | Treat as no write access. |
 | `availability-state` | `AlertsPayload.alertmanager.state`<br>`AlertsPayload.vmalert.state`<br>`EstatePayload.coverage.availability.state`<br>`EstatePayload.declaredVersusScraped.availability.state`<br>`EstatePayload.findings.availability.state`<br>`EstatePayload.liveTargets[].availability.state`<br>`LiveTick.observation.sources.alertmanager-alerts.state`<br>`LiveTick.observation.sources.alertmanager-receivers.state`<br>`LiveTick.observation.sources.alertmanager-silences.state`<br>`LiveTick.observation.sources.alertmanager-status.state`<br>`LiveTick.observation.sources.gatus-statuses.state`<br>`LiveTick.observation.sources.grafana-health.state`<br>`LiveTick.observation.sources.victoriametrics-buildinfo.state`<br>`LiveTick.observation.sources.victoriametrics-signals.state`<br>`LiveTick.observation.sources.victoriametrics-targets.state`<br>`LiveTick.observation.sources.vmalert-rules.state`<br>`OverviewSnapshotV2.coverage.availability.state`<br>`OverviewSnapshotV2.engine.availability.state`<br>`OverviewSnapshotV2.hosts[].rollupEvidence.availability.state`<br>`OverviewSnapshotV2.hosts[].services[].statusEvidence.availability.state`<br>`OverviewSnapshotV2.hosts[].statusEvidence.availability.state`<br>`OverviewSnapshotV2.signals[].availability.state` | `current`, `not-configured`, `stale`, `unavailable` | treat as `unavailable` |
@@ -987,13 +1058,20 @@ A client should size its decode buffers from this table, not from observed respo
 | `declared-scrape-health` | `EstatePayload.declaredVersusScraped.value[].health` | `down`, `unknown`, `up` | treat as `unknown` |
 | `declared-scrape-state` | `EstatePayload.declaredVersusScraped.value[].state` | `engine`, `matched`, `missing`, `unexpected`, `unknown` | treat as `unknown` |
 | `delivery-form` | `EstatePayload.estate.hosts[](collectionClass=managed-linux).detail.deliveryForm` | `compose`, `systemd` | Show the value as text. |
-| `finding-code` | `EstatePayload.findings.value.findings[].code` | `backup_command_host`, `connect_link_no_address`, `connect_link_refused`, `duplicate_command_signal`, `duplicate_estate`, `duplicate_identity`, `gatus_unsafe_name`, `host_local_probe_host`, `incomplete_nas_api`, `inert_alert_binding`, `invalid_enum`, `invalid_hypervisor_endpoint`, `invalid_layer`, `invalid_timezone`, `malformed_yaml`, `missing_chat_id`, `missing_field`, `missing_rationale`, `missing_timezone`, `missing_version`, `proposal_already_decided`, `proposal_cannot_clear_base`, `proposal_dirty_tree`, `proposal_invalid_estate`, `proposal_not_found`, `proposal_overlay_ambiguous`, `proposal_signature_invalid`, `proposal_stale`, `secret_literal`, `unknown_field`, `unresolved_channel`, `unresolved_host`, `unsupported_version`, `web_artifact_leak_detected`, `web_sensitive_channel_option_omitted`, `web_unsafe_provenance`, `web_url_userinfo_removed`, `wrong_type` | Show the code as text. |
+| `finding-code` | `EstatePayload.findings.value.findings[].code` | `backup_command_host`, `connect_link_no_address`, `connect_link_refused`, `duplicate_command_signal`, `duplicate_estate`, `duplicate_identity`, `gatus_unsafe_name`, `host_local_probe_host`, `incomplete_nas_api`, `inert_alert_binding`, `invalid_enum`, `invalid_hypervisor_endpoint`, `invalid_layer`, `invalid_timezone`, `malformed_yaml`, `missing_chat_id`, `missing_field`, `missing_rationale`, `missing_timezone`, `missing_version`, `proposal_already_decided`, `proposal_cannot_clear_base`, `proposal_dirty_tree`, `proposal_invalid_estate`, `proposal_not_found`, `proposal_overlay_ambiguous`, `proposal_signature_invalid`, `proposal_stale`, `push_device_not_found`, `push_misconfigured`, `push_no_devices`, `push_not_configured`, `push_operator_refused`, `push_operator_secret_missing`, `push_pair_no_address`, `push_server_missing`, `push_server_unreachable`, `push_test_failed`, `secret_literal`, `unknown_field`, `unresolved_channel`, `unresolved_host`, `unsupported_version`, `web_artifact_leak_detected`, `web_sensitive_channel_option_omitted`, `web_unsafe_provenance`, `web_url_userinfo_removed`, `wrong_type` | Show the code as text. |
 | `finding-severity` | `EstatePayload.findings.value.findings[].severity` | `error`, `info`, `warning` | treat as `info` |
 | `health-state` | `EstatePayload.liveTargets[].state` | `healthy`, `not-configured`, `unhealthy`, `unknown` | treat as `unknown` |
 | `history-severity` | `IntervalHistoryPayload.lanes[].severity` | `critical`, `info`, `unknown`, `warning` | treat as `unknown` |
 | `interval-state` | `EndpointHistoryPayload.incidents[].state`<br>`IntervalHistoryPayload.lanes[].intervals[].state` | `failed`, `firing` | treat as `failed` |
 | `overview-severity` | `OverviewSnapshotV2.alerts[].severity`<br>`OverviewSnapshotV2.hosts[].activeAlerts[].severity`<br>`OverviewSnapshotV2.hosts[].services[].activeAlerts[].severity` | `critical`, `info`, `warning` | Display as the lowest severity, labelled unknown. |
 | `provenance` | `EndpointHistoryPayload.incidents[].provenance`<br>`IntervalHistoryPayload.lanes[].intervals[].provenance` | `gatus`, `vmalert` | Show the value as text. |
+| `push-alert-status` | `PushPayload.pulse.alert.status` | `firing`, `resolved` | treat as `firing` |
+| `push-category` | `PushPayload.aps.category` | `PULSE_ALERT_FIRING`, `PULSE_ALERT_RESOLVED`, `PULSE_ALERT_SUMMARY`, `PULSE_TEST` | Use the default category, with no actions. |
+| `push-environment` | `DeviceRegistrationRequest.environment`<br>`DeviceRegistrationResponse.environment` | `production`, `sandbox` | In a response, treat the registration as needing a refresh. In a request, the server refuses the value with 400 INVALID_REQUEST. |
+| `push-interruption-level` | `PushPayload.aps.interruption-level` | `active`, `passive`, `time-sensitive` | treat as `active` |
+| `push-kind` | `PushPayload.pulse.kind` | `alert`, `summary`, `test` | Ignore the pulse object, show aps.alert as is, and open the home screen on tap. |
+| `push-severity` | `PushPayload.pulse.alert.severity`<br>`PushPayload.pulse.summary.severity` | `critical`, `info`, `unknown`, `warning` | treat as `unknown` |
+| `push-target-screen` | `PushPayload.pulse.target.screen` | `alert`, `alerts`, `home` | treat as `home` |
 | `query-id` | `HistoryPayload.queryId`<br>`TimelinePayload.targets[].queryIds[]` | `alerts.firing`, `endpoint.check.latency`, `engine.active-series`, `engine.disk-usage`, `engine.ingestion-rate`, `engine.notification-failures`, `engine.notification-latency`, `estate.liveness`, `host.cpu.utilization`, `host.disk.utilization`, `host.load.1m`, `host.memory.utilization`, `service.backup-age`, `service.deep-health` | Omit the chart. |
 | `range-id` | `EndpointHistoryPayload.range`<br>`HistoryPayload.range`<br>`IntervalHistoryPayload.range`<br>`TimelinePayload.alertHistory.ranges[]`<br>`TimelinePayload.targets[].ranges[]` | `1h`, `24h`, `6h`, `7d` | Hide the range. |
 | `rule-health` | `AlertsPayload.rules[].health` | `healthy`, `unhealthy`, `unknown` | treat as `unknown` |
@@ -1110,8 +1188,12 @@ A connect link tells a client where the server is. It is what the QR code on the
   version.
 - Parameters appear in the order `v`, `url`, then extras sorted by name. An extra name matches
   `LINK_PARAM_NAME_PATTERN` (`^[a-z][a-z0-9-]{0,31}$`), and `v` and `url` are reserved. A client must ignore extras it
-  does not know. Adding one needs no format version bump. Contract 1.0 defines no extra parameter, and a link carries
-  no secret.
+  does not know. Adding one needs no format version bump. Contract 1.1 defines one extra parameter, `pair`: a pairing
+  token (22 base64url characters, `PAIR_TOKEN_PATTERN`) that authorises this device to register for push
+  notifications. **A link carrying `pair` is a secret.** A client must not log it, persist it, share it or show it
+  again after reading it; it uses the token once, for redemption, and then discards it. A link without `pair` carries
+  no secret. A client ignores a malformed `pair` as if it were absent, and a client without push support ignores `pair`
+  like any unknown parameter.
 - A base URL built by the server is normalised: https only, no credentials, query or fragment, a lower-case host, no
   default port and no trailing slash. Producers emit links of at most 256 characters (`CONNECT_LINK_MAX_LENGTH`).
 
@@ -1133,6 +1215,46 @@ On success the client uses the normalised base URL, and then performs the [hands
 data.
 
 The `connect-link` fixtures pin every rule.
+
+<a id="push-payload"></a>
+
+## Push payload
+
+A push notification's body is one `PushPayload` JSON object of at most 4096 bytes. A client must ignore unknown
+members in `aps`, in `pulse` and at the top level.
+
+<a id="fields-pushpayload"></a>
+
+### PushPayload
+
+<!-- generated:fields:PushPayload -->
+| Field | Type | Optional | Nullable | Values |
+|---|---|---|---|---|
+| `aps` | object | no | no |  |
+| `aps.alert` | object | no | no |  |
+| `aps.alert.body` | string | no | no |  |
+| `aps.alert.title` | string | no | no |  |
+| `aps.badge` | number | yes | no |  |
+| `aps.category` | enum | no | no | `PULSE_ALERT_FIRING`, `PULSE_ALERT_RESOLVED`, `PULSE_ALERT_SUMMARY`, `PULSE_TEST` (unknown: see `push-category`) |
+| `aps.interruption-level` | enum | no | no | `active`, `passive`, `time-sensitive` (unknown: see `push-interruption-level`) |
+| `aps.sound` | constant | yes | no | `default` |
+| `pulse` | object | no | no |  |
+| `pulse.alert` | object | yes | no |  |
+| `pulse.alert.fingerprint` | string | no | no |  |
+| `pulse.alert.severity` | enum | no | no | `critical`, `info`, `unknown`, `warning` (unknown: see `push-severity`) |
+| `pulse.alert.status` | enum | no | no | `firing`, `resolved` (unknown: see `push-alert-status`) |
+| `pulse.collapseId` | string | no | yes |  |
+| `pulse.kind` | enum | no | no | `alert`, `summary`, `test` (unknown: see `push-kind`) |
+| `pulse.summary` | object | yes | no |  |
+| `pulse.summary.firing` | number | no | no |  |
+| `pulse.summary.group` | string | no | no |  |
+| `pulse.summary.resolved` | number | no | no |  |
+| `pulse.summary.severity` | enum | no | yes | `critical`, `info`, `unknown`, `warning` (unknown: see `push-severity`) |
+| `pulse.target` | object | no | no |  |
+| `pulse.target(screen=alert).fingerprint` | string | no | no |  |
+| `pulse.target.screen` | enum | no | no | `alert`, `alerts`, `home` (unknown: see `push-target-screen`) |
+| `pulse.v` | constant | no | no | `1` |
+<!-- /generated:fields:PushPayload -->
 
 <a id="fixtures"></a>
 
@@ -1157,7 +1279,7 @@ Each index entry has these fields:
 A decoder is correct when it gives the result the index records for every fixture.
 
 <!-- generated:fixtures -->
-Index format 1, contract 1.0, 163 fixtures.
+Index format 1, contract 1.1, 194 fixtures.
 
 | Fixture | Operation | Scenario | Kind | Status | Expect | Expected result |
 |---|---|---|---|---|---|---|
@@ -1181,6 +1303,7 @@ Index format 1, contract 1.0, 163 fixtures.
 | [`fixtures/connect-link/missing-url.json`](fixtures/connect-link/missing-url.json) | `connect-link` | `missing-url` | connect-link | — | reject | rejection `missing-url` |
 | [`fixtures/connect-link/unknown-param.json`](fixtures/connect-link/unknown-param.json) | `connect-link` | `unknown-param` | connect-link | — | accept | — |
 | [`fixtures/connect-link/unsupported-version.json`](fixtures/connect-link/unsupported-version.json) | `connect-link` | `unsupported-version` | connect-link | — | reject | rejection `unsupported-version` |
+| [`fixtures/connect-link/with-pair-token.json`](fixtures/connect-link/with-pair-token.json) | `connect-link` | `with-pair-token` | connect-link | — | accept | — |
 | [`fixtures/connect-link/with-path.json`](fixtures/connect-link/with-path.json) | `connect-link` | `with-path` | connect-link | — | accept | — |
 | [`fixtures/connect-link/wrong-scheme.json`](fixtures/connect-link/wrong-scheme.json) | `connect-link` | `wrong-scheme` | connect-link | — | reject | rejection `wrong-scheme` |
 | [`fixtures/errors/api-not-found.json`](fixtures/errors/api-not-found.json) | `GET /api/*` | `api-not-found` | error | 404 | accept | — |
@@ -1222,10 +1345,10 @@ Index format 1, contract 1.0, 163 fixtures.
 | [`fixtures/events/tick-unknown-view.json`](fixtures/events/tick-unknown-view.json) | `SSE /api/events` | `tick-unknown-view` | event | — | accept | — |
 | [`fixtures/events/unknown-enum-view-id.json`](fixtures/events/unknown-enum-view-id.json) | `SSE /api/events` | `unknown-enum-view-id` | event | — | accept | — |
 | [`fixtures/handshake/client-too-old.json`](fixtures/handshake/client-too-old.json) | `handshake` | `client-too-old` | handshake | — | accept | outcome `client-too-old` for client `0.0` |
-| [`fixtures/handshake/compatible.json`](fixtures/handshake/compatible.json) | `handshake` | `compatible` | handshake | — | accept | outcome `compatible` for client `1.0` |
-| [`fixtures/handshake/server-too-old-absent.json`](fixtures/handshake/server-too-old-absent.json) | `handshake` | `server-too-old-absent` | handshake | — | accept | outcome `server-too-old` for client `1.0` |
+| [`fixtures/handshake/compatible.json`](fixtures/handshake/compatible.json) | `handshake` | `compatible` | handshake | — | accept | outcome `compatible` for client `1.1` |
+| [`fixtures/handshake/server-too-old-absent.json`](fixtures/handshake/server-too-old-absent.json) | `handshake` | `server-too-old-absent` | handshake | — | accept | outcome `server-too-old` for client `1.1` |
 | [`fixtures/handshake/server-too-old-major.json`](fixtures/handshake/server-too-old-major.json) | `handshake` | `server-too-old-major` | handshake | — | accept | outcome `server-too-old` for client `2.0` |
-| [`fixtures/handshake/server-too-old-minor.json`](fixtures/handshake/server-too-old-minor.json) | `handshake` | `server-too-old-minor` | handshake | — | accept | outcome `server-too-old` for client `1.1` |
+| [`fixtures/handshake/server-too-old-minor.json`](fixtures/handshake/server-too-old-minor.json) | `handshake` | `server-too-old-minor` | handshake | — | accept | outcome `server-too-old` for client `1.2` |
 | [`fixtures/history-alerts/all-optional.json`](fixtures/history-alerts/all-optional.json) | `GET /api/history/alerts` | `all-optional` | response | 200 | accept | — |
 | [`fixtures/history-alerts/bundle-error.json`](fixtures/history-alerts/bundle-error.json) | `GET /api/history/alerts` | `bundle-error` | error | 503 | accept | — |
 | [`fixtures/history-alerts/empty.json`](fixtures/history-alerts/empty.json) | `GET /api/history/alerts` | `empty` | response | 200 | accept | — |
@@ -1310,6 +1433,36 @@ Index format 1, contract 1.0, 163 fixtures.
 | [`fixtures/overview/unknown-enum-overview-severity.json`](fixtures/overview/unknown-enum-overview-severity.json) | `GET /api/overview` | `unknown-enum-overview-severity` | response | 200 | accept | — |
 | [`fixtures/overview/unknown-enum-target-status.json`](fixtures/overview/unknown-enum-target-status.json) | `GET /api/overview` | `unknown-enum-target-status` | response | 200 | accept | — |
 | [`fixtures/overview/unknown-fields.json`](fixtures/overview/unknown-fields.json) | `GET /api/overview` | `unknown-fields` | response | 200 | accept | — |
+| [`fixtures/push-device/all-muted.json`](fixtures/push-device/all-muted.json) | `PUT /api/push/device` | `all-muted` | request | — | accept | — |
+| [`fixtures/push-device/reject-missing-preferences.json`](fixtures/push-device/reject-missing-preferences.json) | `PUT /api/push/device` | `reject-missing-preferences` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-device/reject-token-format.json`](fixtures/push-device/reject-token-format.json) | `PUT /api/push/device` | `reject-token-format` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-device/reject-unknown-environment.json`](fixtures/push-device/reject-unknown-environment.json) | `PUT /api/push/device` | `reject-unknown-environment` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-device/sandbox.json`](fixtures/push-device/sandbox.json) | `PUT /api/push/device` | `sandbox` | request | — | accept | — |
+| [`fixtures/push-device/typical.json`](fixtures/push-device/typical.json) | `PUT /api/push/device` | `typical` | request | — | accept | — |
+| [`fixtures/push-device/unknown-enum-push-environment.json`](fixtures/push-device/unknown-enum-push-environment.json) | `PUT /api/push/device` | `unknown-enum-push-environment` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-pairing/max-length-name.json`](fixtures/push-pairing/max-length-name.json) | `POST /api/push/pairings/redeem` | `max-length-name` | request | — | accept | — |
+| [`fixtures/push-pairing/reject-name-charset.json`](fixtures/push-pairing/reject-name-charset.json) | `POST /api/push/pairings/redeem` | `reject-name-charset` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-pairing/reject-name-too-long.json`](fixtures/push-pairing/reject-name-too-long.json) | `POST /api/push/pairings/redeem` | `reject-name-too-long` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-pairing/reject-unknown-field.json`](fixtures/push-pairing/reject-unknown-field.json) | `POST /api/push/pairings/redeem` | `reject-unknown-field` | request | — | reject | rejection `INVALID_REQUEST` |
+| [`fixtures/push-pairing/typical.json`](fixtures/push-pairing/typical.json) | `POST /api/push/pairings/redeem` | `typical` | request | — | accept | — |
+| [`fixtures/push-payload/firing-critical.json`](fixtures/push-payload/firing-critical.json) | `push-payload` | `firing-critical` | payload | — | accept | — |
+| [`fixtures/push-payload/firing-info.json`](fixtures/push-payload/firing-info.json) | `push-payload` | `firing-info` | payload | — | accept | — |
+| [`fixtures/push-payload/firing-unknown-severity.json`](fixtures/push-payload/firing-unknown-severity.json) | `push-payload` | `firing-unknown-severity` | payload | — | accept | — |
+| [`fixtures/push-payload/firing-warning.json`](fixtures/push-payload/firing-warning.json) | `push-payload` | `firing-warning` | payload | — | accept | — |
+| [`fixtures/push-payload/no-badge.json`](fixtures/push-payload/no-badge.json) | `push-payload` | `no-badge` | payload | — | accept | — |
+| [`fixtures/push-payload/repeat.json`](fixtures/push-payload/repeat.json) | `push-payload` | `repeat` | payload | — | accept | — |
+| [`fixtures/push-payload/resolved.json`](fixtures/push-payload/resolved.json) | `push-payload` | `resolved` | payload | — | accept | — |
+| [`fixtures/push-payload/summary-mixed.json`](fixtures/push-payload/summary-mixed.json) | `push-payload` | `summary-mixed` | payload | — | accept | — |
+| [`fixtures/push-payload/summary-resolved-only.json`](fixtures/push-payload/summary-resolved-only.json) | `push-payload` | `summary-resolved-only` | payload | — | accept | — |
+| [`fixtures/push-payload/test.json`](fixtures/push-payload/test.json) | `push-payload` | `test` | payload | — | accept | — |
+| [`fixtures/push-payload/truncated-max-length.json`](fixtures/push-payload/truncated-max-length.json) | `push-payload` | `truncated-max-length` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-enum-push-alert-status.json`](fixtures/push-payload/unknown-enum-push-alert-status.json) | `push-payload` | `unknown-enum-push-alert-status` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-enum-push-category.json`](fixtures/push-payload/unknown-enum-push-category.json) | `push-payload` | `unknown-enum-push-category` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-enum-push-interruption-level.json`](fixtures/push-payload/unknown-enum-push-interruption-level.json) | `push-payload` | `unknown-enum-push-interruption-level` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-enum-push-kind.json`](fixtures/push-payload/unknown-enum-push-kind.json) | `push-payload` | `unknown-enum-push-kind` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-enum-push-severity.json`](fixtures/push-payload/unknown-enum-push-severity.json) | `push-payload` | `unknown-enum-push-severity` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-enum-push-target-screen.json`](fixtures/push-payload/unknown-enum-push-target-screen.json) | `push-payload` | `unknown-enum-push-target-screen` | payload | — | accept | — |
+| [`fixtures/push-payload/unknown-field.json`](fixtures/push-payload/unknown-field.json) | `push-payload` | `unknown-field` | payload | — | accept | — |
 | [`fixtures/session/all-optional.json`](fixtures/session/all-optional.json) | `GET /api/session` | `all-optional` | response | 200 | accept | — |
 | [`fixtures/session/empty.json`](fixtures/session/empty.json) | `GET /api/session` | `empty` | response | 200 | accept | — |
 | [`fixtures/session/error-invalid-request.json`](fixtures/session/error-invalid-request.json) | `GET /api/session` | `error-invalid-request` | error | 400 | accept | — |

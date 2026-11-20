@@ -1,0 +1,1 @@
+{"aps":{"alert":{"body":"Resolved on host-001.example.net","title":"ExampleHostDown"},"badge":3,"category":"PULSE_ALERT_RESOLVED","interruption-level":"passive"},"pulse":{"alert":{"fingerprint":"0000000000000001","severity":"critical","status":"resolved"},"collapseId":"a-0000000000000001","kind":"alert","target":{"fingerprint":"0000000000000001","screen":"alert"},"v":1}}

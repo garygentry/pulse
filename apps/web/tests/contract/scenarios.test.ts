@@ -236,6 +236,11 @@ describe("unknown-enum fixtures", () => {
     LiveTick: "events",
     ErrorEnvelope: "errors",
     BundleErrorBody: "errors",
+    PairingRedeemRequest: "push-pairing",
+    PairingRedeemResponse: "push-pairing",
+    DeviceRegistrationRequest: "push-device",
+    DeviceRegistrationResponse: "push-device",
+    PushPayload: "push-payload",
   };
 
   test("there is exactly one per enum fallback entry, in the group of its first path's root", async () => {
@@ -250,7 +255,13 @@ describe("unknown-enum fixtures", () => {
     expect(actual).toEqual(expected);
     const index = await fixtureIndex();
     for (const entry of index.fixtures.filter((candidate) => candidate.scenario.startsWith("unknown-enum-"))) {
-      expect(entry).toMatchObject({ expect: "accept", webValidator: null });
+      // A request body with an unknown enum value is refused by the server; every other kind is read leniently.
+      if (entry.kind === "request" && entry.expect === "reject") {
+        expect(entry).toMatchObject({ rejection: "INVALID_REQUEST", webValidator: null });
+      } else {
+        expect(entry).toMatchObject({ expect: "accept", webValidator: null });
+        expect(entry.rejection).toBeUndefined();
+      }
     }
   }, GENERATION_TIMEOUT);
 

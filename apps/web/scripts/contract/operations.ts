@@ -1,12 +1,13 @@
 // The typed source for the operations table in contract/CONTRACT.md. Every row is derived from the route
 // modules: paths, parameter sets, statuses and request limits are imported where the server exports them.
 
-import { CLIENT_HEADER, CONTRACT_HEADER } from "@pulse/web-data/contract";
+import { CLIENT_HEADER, CONTRACT_HEADER, CONTRACT_LIMITS } from "@pulse/web-data/contract";
 import type { HistoryFailure } from "@pulse/web-data/history";
 import { QUERY_CATALOG, RANGE_IDS, queryIdsForTargetKind } from "@pulse/web-data/queries";
 import { SSE_HEARTBEAT_MS, SSE_MAX_STREAMS, SSE_RETRY_MS } from "@pulse/web-data/wire";
 import type { ApiErrorCode } from "@pulse/web-data/wire";
 
+import { PUSH_PATHS } from "../../src/server/push/constants.js";
 import { MAX_PARAM_BYTES, MAX_QUERY_BYTES } from "../../src/server/routes/compile.js";
 import { CHECKS_DEFAULT_RANGE, HISTORY_STATUS } from "../../src/server/routes/history.js";
 import type { SHAPE_ROOTS } from "./shape-types.js";
@@ -174,6 +175,51 @@ const sorted = (errors: readonly ContractOperationError[]): readonly ContractOpe
 const CURRENT_VIEW_ERRORS = sorted([REQUEST_GUARD, NOT_READY, ...BUNDLE_ERRORS, INTERNAL]);
 const HISTORY_OPERATION_ERRORS = sorted([REQUEST_GUARD, ...HISTORY_ERRORS, ...BUNDLE_ERRORS, INTERNAL]);
 const GUARD_ONLY_ERRORS = sorted([REQUEST_GUARD, INTERNAL]);
+
+/** How every push request body is carried. */
+const PUSH_BODY = `\`Content-Type: application/json\`, at most ${CONTRACT_LIMITS.request.bodyBytes} bytes`;
+
+/** Push body refused: wrong media type, malformed JSON or failed validation. There is no 415. */
+const PUSH_INVALID: ContractOperationError = {
+  code: "INVALID_REQUEST",
+  status: 400,
+  body: "ErrorEnvelope",
+  when: "the media type is not `application/json`, the body is not valid JSON, or it fails validation (unknown member, missing member, bad value)",
+};
+
+/** Device credential refused, uniformly. */
+const PUSH_UNAUTHORIZED: ContractOperationError = {
+  code: "UNAUTHORIZED",
+  status: 401,
+  body: "ErrorEnvelope",
+  when: "the `Authorization` header is missing, repeated or malformed, or the credential is unknown or revoked; the response does not say which",
+};
+
+/** Push disabled: the path is an unknown non-GET route. */
+const PUSH_NOT_CONFIGURED: ContractOperationError = {
+  code: "METHOD_NOT_ALLOWED",
+  status: 405,
+  body: "ErrorEnvelope",
+  when: "push is not configured on this server (the `push` capability is absent)",
+};
+
+/** Push body over the request cap. */
+const PUSH_TOO_LARGE: ContractOperationError = {
+  code: "PAYLOAD_TOO_LARGE",
+  status: 413,
+  body: "ErrorEnvelope",
+  when: `the body is over ${CONTRACT_LIMITS.request.bodyBytes} bytes`,
+};
+
+/** Push configured but unable to serve. */
+const PUSH_UNAVAILABLE: ContractOperationError = {
+  code: "PUSH_UNAVAILABLE",
+  status: 503,
+  body: "ErrorEnvelope",
+  when: "push is configured but unavailable (misconfigured, or the device registry cannot be written)",
+};
+
+const NO_STORE: ContractCaching = { kind: "no-store", cacheControl: "private, no-store" };
 
 const CONDITIONAL: ContractCaching = { kind: "conditional", cacheControl: "private, no-cache", vary: "Accept-Encoding" };
 const ALWAYS_FULL: ContractCaching = { kind: "always-full", cacheControl: "private, no-cache" };
@@ -384,5 +430,86 @@ export const OPERATIONS: readonly ContractOperation[] = deepFreeze([
       "There is no `NOT_READY` response: before the first publication the stream opens and sends only `retry` and heartbeats.",
     ],
     source: "apps/web/src/server/routes/events.ts",
+  },
+  {
+    label: `POST ${PUSH_PATHS.redeem}`,
+    name: "Redeem pairing token",
+    method: "POST",
+    path: PUSH_PATHS.redeem,
+    auth: "pairing-token",
+    params: [],
+    requestRoot: "PairingRedeemRequest",
+    success: [201],
+    responseRoot: "PairingRedeemResponse",
+    errors: sorted([
+      PUSH_INVALID,
+      {
+        code: "PAIRING_REFUSED",
+        status: 403,
+        body: "ErrorEnvelope",
+        when: "the token is missing, malformed, unknown, expired or already used; the response does not say which",
+      },
+      PUSH_NOT_CONFIGURED,
+      {
+        code: "DEVICE_CAP_REACHED",
+        status: 409,
+        body: "ErrorEnvelope",
+        when: "the server's paired-device limit is reached; an operator must revoke a device first",
+      },
+      PUSH_TOO_LARGE,
+      {
+        code: "RATE_LIMITED",
+        status: 429,
+        body: "ErrorEnvelope",
+        when: "too many failed redemptions recently; every outstanding token was invalidated",
+        headers: ["Retry-After"],
+      },
+      INTERNAL,
+      PUSH_UNAVAILABLE,
+    ]),
+    caching: NO_STORE,
+    fixtureGroups: ["push-pairing"],
+    notes: [
+      `The body is ${PUSH_BODY}. \`displayName\` is 1 to 64 UTF-8 bytes after trimming, from letters, digits, space and \`'’.-_()#\`.`,
+      "`credential` appears in this response only. Store it in the Keychain; never log, display or send it anywhere except the `Authorization` header of the device operations.",
+      "A token is valid for 10 minutes and can be redeemed once. A server restart invalidates it.",
+    ],
+    source: "apps/web/src/server/push/handlers/redeem.ts",
+  },
+  {
+    label: `PUT ${PUSH_PATHS.device}`,
+    name: "Register device",
+    method: "PUT",
+    path: PUSH_PATHS.device,
+    auth: "device-credential",
+    params: [],
+    requestRoot: "DeviceRegistrationRequest",
+    success: [200],
+    responseRoot: "DeviceRegistrationResponse",
+    errors: sorted([PUSH_INVALID, PUSH_UNAUTHORIZED, PUSH_NOT_CONFIGURED, PUSH_TOO_LARGE, INTERNAL, PUSH_UNAVAILABLE]),
+    caching: NO_STORE,
+    fixtureGroups: ["push-device"],
+    notes: [
+      `The body is ${PUSH_BODY}. Every member is required; a request replaces the APNs token, environment and preferences.`,
+      "Refresh the registration at least every 30 days whenever the app runs, including background launches. A device not seen for 90 days is removed.",
+      "On `401 UNAUTHORIZED`, discard the stored credential and show that the device must be paired again. Do not retry with the same credential.",
+    ],
+    source: "apps/web/src/server/push/handlers/device.ts",
+  },
+  {
+    label: `DELETE ${PUSH_PATHS.device}`,
+    name: "Remove device",
+    method: "DELETE",
+    path: PUSH_PATHS.device,
+    auth: "device-credential",
+    params: [],
+    requestRoot: null,
+    success: [204],
+    responseRoot: null,
+    errors: sorted([PUSH_UNAUTHORIZED, PUSH_NOT_CONFIGURED, INTERNAL, PUSH_UNAVAILABLE]),
+    caching: NO_STORE,
+    fixtureGroups: ["push-device"],
+    notes: ["No request body. On 204 the credential is invalidated and nothing more is sent to the device; discard it."],
+    source: "apps/web/src/server/push/handlers/device.ts",
   },
 ] satisfies ContractOperation[]);

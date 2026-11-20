@@ -44,6 +44,7 @@ import {
   historyEstateRoute,
   historyTargetRoute,
 } from "../../src/server/routes/history.js";
+import { PUSH_PATHS } from "../../src/server/push/constants.js";
 import { ROUTES } from "../../src/server/routes/registry.js";
 import type { RouteDefinition, RouteRequest, ServerContext } from "../../src/shared/registry.js";
 
@@ -157,15 +158,33 @@ const INDEX: FixtureIndex = {
 // ── Marker grammar and rewrite ───────────────────────────────────────────────────────────────────
 
 describe("generated section names", () => {
-  test("are operations, one fields section per root, limits, enum-fallbacks, fixtures", () => {
+  test("list every section in document order: one fields section per root, the push payload after the fallbacks", () => {
     expect(GENERATED_SECTION_NAMES).toHaveLength(4 + SHAPE_ROOTS.length);
     expect([...GENERATED_SECTION_NAMES]).toEqual([
       "operations",
-      ...SHAPE_ROOTS.map((root) => `fields:${root}` as const),
+      "fields:SessionPayload",
+      "fields:OverviewSnapshotV2",
+      "fields:AlertsPayload",
+      "fields:EstatePayload",
+      "fields:TimelinePayload",
+      "fields:HistoryPayload",
+      "fields:IntervalHistoryPayload",
+      "fields:EndpointHistoryPayload",
+      "fields:LiveTick",
+      "fields:ErrorEnvelope",
+      "fields:BundleErrorBody",
+      "fields:PairingRedeemResponse",
+      "fields:DeviceRegistrationResponse",
+      "fields:PairingRedeemRequest",
+      "fields:DeviceRegistrationRequest",
       "limits",
       "enum-fallbacks",
+      "fields:PushPayload",
       "fixtures",
     ]);
+    expect(new Set<string>(GENERATED_SECTION_NAMES)).toEqual(
+      new Set<string>(["operations", ...SHAPE_ROOTS.map((root) => `fields:${root}`), "limits", "enum-fallbacks", "fixtures"]),
+    );
     expect(Object.isFrozen(GENERATED_SECTION_NAMES)).toBe(true);
   });
 });
@@ -567,7 +586,7 @@ describe("generated sections over the real wire types", () => {
     for (const entry of ENUM_FALLBACKS) expect(first["enum-fallbacks"]).toContain(`| \`${entry.group}\` | `);
     expect(first["fields:SessionPayload"]).toContain("| `authMode` | enum | no | no | `none`, `proxy-header` (unknown: see `auth-mode`) |");
     expect(first["fields:SessionPayload"]).toContain("| `contract.capabilities[]` | string | no | no |  |");
-    expect(first.fixtures.startsWith("Index format 1, contract 1.0, 0 fixtures.\n\n| Fixture |")).toBe(true);
+    expect(first.fixtures.startsWith("Index format 1, contract 1.1, 0 fixtures.\n\n| Fixture |")).toBe(true);
     const filled = renderContractDoc(CONTRACT_MD, first);
     expect(renderContractDoc(filled, first)).toBe(filled);
   }, GENERATION_TIMEOUT);
@@ -632,6 +651,9 @@ describe("OPERATIONS", () => {
       "GET /api/history/alerts",
       "GET /api/history/checks/:endpoint",
       "SSE /api/events",
+      "POST /api/push/pairings/redeem",
+      "PUT /api/push/device",
+      "DELETE /api/push/device",
     ]);
     expect(Object.isFrozen(OPERATIONS)).toBe(true);
     expect(Object.isFrozen(OPERATIONS[0])).toBe(true);
@@ -639,9 +661,9 @@ describe("OPERATIONS", () => {
     expect(new Set(OPERATIONS.map((op) => op.name)).size).toBe(OPERATIONS.length);
   });
 
-  test("every path is a registered GET route, and non-contract routes are absent", () => {
+  test("every unauthenticated path is a registered GET route, and non-contract routes are absent", () => {
     const registered = new Map(ROUTES.map((route) => [route.path, route.method]));
-    for (const op of OPERATIONS) {
+    for (const op of OPERATIONS.filter((candidate) => candidate.auth === "none")) {
       expect(registered.get(op.path)).toBe("GET");
       expect(op.method).toBe("GET");
       expect(op.label.endsWith(` ${op.path}`)).toBe(true);
@@ -655,6 +677,25 @@ describe("OPERATIONS", () => {
     for (const excluded of ["/api/engine", "/api/proposals", "/api/connect-link", "/healthz", "/metrics"]) {
       expect(registered.has(excluded)).toBe(true);
       expect(paths).not.toContain(excluded);
+    }
+  });
+
+  test("the push rows use the push paths, an authorised caller, and a body only where the method carries one", () => {
+    const push = OPERATIONS.filter((op) => op.auth !== "none");
+    expect(push.map((op) => op.label)).toEqual([
+      `POST ${PUSH_PATHS.redeem}`,
+      `PUT ${PUSH_PATHS.device}`,
+      `DELETE ${PUSH_PATHS.device}`,
+    ]);
+    expect(push.map((op) => op.path)).toEqual([PUSH_PATHS.redeem, PUSH_PATHS.device, PUSH_PATHS.device]);
+    for (const op of push) {
+      expect(op.label).toBe(`${op.method} ${op.path}`);
+      expect(op.fixtureGroups.length).toBeGreaterThan(0);
+      expect(op.requestRoot === null).toBe(op.method === "DELETE");
+      expect(op.responseRoot === null).toBe(op.success.length === 1 && op.success[0] === 204);
+      for (const root of [op.requestRoot, op.responseRoot]) {
+        if (root !== null) expect((SHAPE_ROOTS as readonly string[]).includes(root)).toBe(true);
+      }
     }
   });
 
@@ -730,7 +771,7 @@ describe("OPERATIONS", () => {
   test("the request guard text carries the real request limits", () => {
     expect(MAX_QUERY_BYTES).toBe(2048);
     expect(MAX_PARAM_BYTES).toBe(512);
-    for (const op of OPERATIONS) {
+    for (const op of OPERATIONS.filter((candidate) => candidate.auth === "none")) {
       const guard = op.errors.find((e) => e.code === "INVALID_REQUEST" && e.when.startsWith("query string over"));
       expect(guard?.when).toContain(`over ${MAX_QUERY_BYTES} bytes`);
       expect(guard?.when).toContain(`over-${MAX_PARAM_BYTES}-byte`);
@@ -764,6 +805,7 @@ describe("contract/CONTRACT.md", () => {
       ["tolerance", "Tolerance rules"],
       ["operations", "Operations"],
       ["fields", "Response fields"],
+      ["request-bodies", "Request bodies"],
       ["limits", "Limits"],
       ["enum-fallbacks", "Enum fallbacks"],
       ["caching", "Caching"],
@@ -772,6 +814,7 @@ describe("contract/CONTRACT.md", () => {
       ["auth", "Authentication"],
       ["not-in-contract", "Not in the contract"],
       ["connect-link", "Connect link"],
+      ["push-payload", "Push payload"],
       ["fixtures", "Fixtures"],
       ["extending", "Extending the contract"],
     ];
@@ -781,8 +824,11 @@ describe("contract/CONTRACT.md", () => {
     }
   });
 
-  test("has one anchored H3 and marker pair per response root", () => {
-    expect(lines.filter((line) => line.startsWith("### ")).map((line) => line.slice(4))).toEqual([...SHAPE_ROOTS]);
+  test("has one anchored H3 and marker pair per shape root, in section order", () => {
+    const fieldsOrder = GENERATED_SECTION_NAMES.flatMap((name) => (name.startsWith("fields:") ? [name.slice("fields:".length)] : []));
+    const headings = lines.filter((line) => line.startsWith("### ")).map((line) => line.slice(4));
+    expect(headings).toEqual(fieldsOrder);
+    expect(new Set(headings)).toEqual(new Set<string>(SHAPE_ROOTS));
     for (const root of SHAPE_ROOTS) {
       expect(CONTRACT_MD).toContain(
         `<a id="fields-${root.toLowerCase()}"></a>\n\n### ${root}\n\n${openMarker(`fields:${root}`)}\n`,

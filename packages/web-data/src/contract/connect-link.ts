@@ -13,8 +13,8 @@ export const CONNECT_LINK_SCHEME = "pulse:";
 export const CONNECT_LINK_HOST = "connect";
 /** Link format version, independent of CONTRACT_VERSION. */
 export const CONNECT_LINK_FORMAT_VERSION = 1;
-/** Optional link parameters with defined meaning. Empty in this version; additions need no format bump. */
-export const KNOWN_LINK_PARAMS: readonly string[] = Object.freeze([]);
+/** Optional link parameters with defined meaning (`pair` carries a pairing token); additions need no format bump. */
+export const KNOWN_LINK_PARAMS: readonly string[] = Object.freeze(["pair"]);
 /** Reserved parameter names an extra may not use. */
 export const RESERVED_LINK_PARAMS = Object.freeze(["v", "url"] as const);
 /** Grammar for an extra parameter name. */

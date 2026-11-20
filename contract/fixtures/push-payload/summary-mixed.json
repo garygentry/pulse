@@ -1,0 +1,1 @@
+{"aps":{"alert":{"body":"9 firing, 3 resolved in ExampleHostDown…","title":"12 alerts changed"},"badge":9,"category":"PULSE_ALERT_SUMMARY","interruption-level":"time-sensitive","sound":"default"},"pulse":{"collapseId":"g-34d4d4f44d074ae2","kind":"summary","summary":{"firing":9,"group":"g-34d4d4f44d074ae2","resolved":3,"severity":"critical"},"target":{"screen":"alerts"},"v":1}}

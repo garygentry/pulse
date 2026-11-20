@@ -1,0 +1,1 @@
+{"aps":{"alert":{"body":"Push delivery to this device works.","title":"Pulse test notification"},"badge":3,"category":"PULSE_TEST","interruption-level":"active","sound":"default"},"pulse":{"collapseId":null,"kind":"test","target":{"screen":"home"},"v":1}}

@@ -28,12 +28,19 @@ export type GeneratedSectionName =
   | "enum-fallbacks"
   | "fixtures";
 
+/** Request-body roots: documented under "Request bodies", after the response fields. */
+const REQUEST_BODY_ROOTS: ReadonlySet<string> = new Set(["PairingRedeemRequest", "DeviceRegistrationRequest"]);
+/** The push payload root: documented under "Push payload", after the connect link. */
+const PAYLOAD_ROOT = "PushPayload";
+
 /** All section names in document order. */
 export const GENERATED_SECTION_NAMES: readonly GeneratedSectionName[] = Object.freeze([
   "operations",
-  ...SHAPE_ROOTS.map((r) => `fields:${r}` as const),
+  ...SHAPE_ROOTS.filter((r) => !REQUEST_BODY_ROOTS.has(r) && r !== PAYLOAD_ROOT).map((r) => `fields:${r}` as const),
+  ...SHAPE_ROOTS.filter((r) => REQUEST_BODY_ROOTS.has(r)).map((r) => `fields:${r}` as const),
   "limits",
   "enum-fallbacks",
+  `fields:${PAYLOAD_ROOT}` as const,
   "fixtures",
 ]);
 

@@ -1,1 +1,1 @@
-{"authMode":"proxy-header","capabilities":{"ack":true,"proposeEstateEdit":true,"silence":true},"contract":{"capabilities":["future-capability"],"major":1,"minor":0},"identity":{"displayName":"Example Operator","source":"proxy-header","subject":"user-0001"}}
+{"authMode":"proxy-header","capabilities":{"ack":true,"proposeEstateEdit":true,"silence":true},"contract":{"capabilities":["future-capability"],"major":1,"minor":1},"identity":{"displayName":"Example Operator","source":"proxy-header","subject":"user-0001"}}

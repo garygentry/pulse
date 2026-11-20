@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CONTRACT_VERSION } from "@pulse/web-data/contract";
+import { CONTRACT_VERSION, formatContractVersion } from "@pulse/web-data/contract";
 
 import type { StaticAssets } from "../src/server/assets.js";
 import { loadServerConfig } from "../src/server/config.js";
@@ -81,12 +81,11 @@ afterEach(() => __resetMetricsForTest());
 // ── The contract member ──────────────────────────────────────────────────────────────────────────
 
 describe("GET /api/session carries the contract handshake", () => {
-  test("contract is exactly { major, minor, capabilities } at version 1.0 with no capabilities", async () => {
+  test("contract is exactly { major, minor, capabilities } at CONTRACT_VERSION with no capabilities", async () => {
     const { res, text } = await getSession();
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("private, no-store");
     const body = JSON.parse(text) as { contract: Record<string, unknown> };
-    expect(body.contract).toEqual({ major: 1, minor: 0, capabilities: [] });
     expect(body.contract).toEqual({
       major: CONTRACT_VERSION.major,
       minor: CONTRACT_VERSION.minor,
@@ -301,12 +300,12 @@ describe("handshake in bundle-error mode, and the /healthz contract field", () =
   /** Every upstream is unreachable; the handshake must not depend on any of them. */
   const unreachable = (async () => new Response("upstream unreachable", { status: 502 })) as unknown as typeof fetch;
 
-  test("normal mode: /healthz reports contract 1.0", async () => {
+  test("normal mode: /healthz reports CONTRACT_VERSION", async () => {
     const rt = createServerRuntime(loadServerConfig(env()));
     runtime = rt;
     const res = await get(rt, "/healthz");
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { contract?: string }).contract).toBe("1.0");
+    expect(((await res.json()) as { contract?: string }).contract).toBe(formatContractVersion(CONTRACT_VERSION));
   });
 
   test("bundle-error mode: /api/session still serves the contract while /api/overview is 503", async () => {
@@ -329,10 +328,10 @@ describe("handshake in bundle-error mode, and the /healthz contract field", () =
     const session = await get(rt, "/api/session");
     expect(session.status).toBe(200);
     const body = (await session.json()) as { contract: { major: number; minor: number; capabilities: string[] } };
-    expect(body.contract).toEqual({ major: 1, minor: 0, capabilities: [] });
+    expect(body.contract).toEqual({ major: CONTRACT_VERSION.major, minor: CONTRACT_VERSION.minor, capabilities: [] });
 
     const health = await get(rt, "/healthz");
     expect(health.status).toBe(200);
-    expect(((await health.json()) as { contract?: string }).contract).toBe("1.0");
+    expect(((await health.json()) as { contract?: string }).contract).toBe(formatContractVersion(CONTRACT_VERSION));
   });
 });

@@ -9,8 +9,8 @@ export type ServerCapability = string;
 /** Grammar every capability name must satisfy; registerCapabilityProvider enforces it. */
 export const SERVER_CAPABILITY_PATTERN: RegExp = /^[a-z][a-z0-9-]{0,31}$/;
 
-/** Every capability name this contract version defines. Empty in contract 1.0; each addition is a minor bump. */
-export const KNOWN_SERVER_CAPABILITIES: readonly ServerCapability[] = Object.freeze([]);
+/** Every capability name this contract version defines (`push` since 1.1); each addition is a minor bump. */
+export const KNOWN_SERVER_CAPABILITIES: readonly ServerCapability[] = Object.freeze(["push"]);
 
 /** Predicate deciding whether a capability is currently available. Must be synchronous, in-process and side-effect free. */
 export type CapabilityProvider = () => boolean;

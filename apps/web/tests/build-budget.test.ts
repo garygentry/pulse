@@ -91,8 +91,10 @@ export const INITIAL_ROUTE_JS_BUDGET_BYTES = 169 * 1024;
  * first-load ceilings below are the tight guard on what users download.
  * The lazily loaded /connect chunk (qrcode-generator + ipaddr.js, 15.7 KB gz, none of it on the
  * initial route) measured 406,453 B; raised to 397 KB (406,528 B) to cover exactly that chunk.
+ * Contract 1.1 adds six push error codes and their catalog messages, which the API client needs to
+ * recognise a push error envelope: measured 406,706 B; raised to 398 KB (407,552 B).
  */
-export const TOTAL_JS_BUDGET_BYTES = 397 * 1024;
+export const TOTAL_JS_BUDGET_BYTES = 398 * 1024;
 /** Total CSS ceiling (gz), all entry + chunk .css. Baseline ≈ 14 KB; charter starting ceiling.
  *  Re-measured with Tailwind and the legacy layer coexisting: 37,190 B (React-only build 31,162 B),
  *  so the ceiling (measured + ~10%) held unchanged as the temporary coexistence ceiling. Raised when

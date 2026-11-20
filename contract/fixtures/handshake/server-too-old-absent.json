@@ -1,1 +1,1 @@
-{"client":{"major":1,"minMinor":0},"expectedOutcome":"server-too-old","session":{"authMode":"none","capabilities":{"ack":false,"proposeEstateEdit":false,"silence":false},"identity":null}}
+{"client":{"major":1,"minMinor":1},"expectedOutcome":"server-too-old","session":{"authMode":"none","capabilities":{"ack":false,"proposeEstateEdit":false,"silence":false},"identity":null}}

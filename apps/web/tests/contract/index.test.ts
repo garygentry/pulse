@@ -73,18 +73,24 @@ describe("index and files", () => {
     expect(INDEX.contract).toEqual({ ...CONTRACT_VERSION });
   });
 
-  test("kind and status agree, streams are the .sse files, and only connect-link fixtures reject", () => {
+  test("kind, status, expect and rejection agree", () => {
+    const REJECTABLE: ReadonlySet<string> = new Set(["connect-link", "request"]);
     for (const entry of INDEX.fixtures) {
       const hasStatus = entry.kind === "response" || entry.kind === "error";
       expect(`${entry.path} ${typeof entry.status}`).toBe(`${entry.path} ${hasStatus ? "number" : "object"}`);
-      if (entry.kind === "response") expect(entry.status).toBe(200);
+      if (entry.kind === "response") expect(entry.status).toBe(entry.group === "push-pairing" ? 201 : 200);
       if (entry.kind === "error") expect(entry.status).toBeGreaterThanOrEqual(400);
       expect(entry.path.endsWith(".sse")).toBe(entry.kind === "stream");
-      if (entry.expect === "reject") expect(entry.kind).toBe("connect-link");
+      if (entry.expect === "reject") expect(REJECTABLE.has(entry.kind)).toBe(true);
       expect(entry.kind === "handshake").toBe(entry.group === "handshake");
       expect(entry.kind === "connect-link").toBe(entry.group === "connect-link");
+      expect(entry.kind === "payload").toBe(entry.group === "push-payload");
+      if (entry.kind === "payload") expect(entry.expect).toBe("accept");
+      if (entry.kind === "request") expect(["push-pairing", "push-device"]).toContain(entry.group);
       expect(entry.client !== undefined && entry.expectedOutcome !== undefined).toBe(entry.kind === "handshake");
-      expect(entry.rejection !== undefined).toBe(entry.kind === "connect-link" && entry.expect === "reject");
+      expect(entry.rejection !== undefined).toBe(REJECTABLE.has(entry.kind) && entry.expect === "reject");
+      if (entry.kind === "request" && entry.expect === "reject") expect(entry.rejection).toBe("INVALID_REQUEST");
+      if (entry.group.startsWith("push-")) expect(entry.webValidator).toBeNull();
     }
   });
 

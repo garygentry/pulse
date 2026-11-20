@@ -481,6 +481,6 @@ describe("renderMetrics — client handshakes and the build_info contract label"
 
   test("pulse_web_build_info carries the contract version label", () => {
     const text = renderMetrics(status(), Date.now(), view());
-    expect(text).toMatch(/^pulse_web_build_info\{version="[^"]*",contract="1\.0"\} 1$/m);
+    expect(text).toMatch(/^pulse_web_build_info\{version="[^"]*",contract="1\.1"\} 1$/m);
   });
 });

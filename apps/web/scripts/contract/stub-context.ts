@@ -1,6 +1,7 @@
 // A minimal server context for calling the real route handlers from the fixture generator, plus the
 // helpers that turn a handler's `Response` into a fixture body.
 
+import { __resetCapabilityProvidersForTest } from "@pulse/web-data/contract";
 import { canonicalJson } from "@pulse/web-data/cycle";
 import type { AuthMode, Identity } from "@pulse/web-data/identity";
 import type { ApiErrorCode, BundleErrorKind } from "@pulse/web-data/wire";
@@ -135,4 +136,5 @@ export function bundleErrorBody(kind: BundleErrorKind): Promise<unknown> {
 export function resetHandlerGlobals(): void {
   resetWritePathProvider();
   __resetMetricsForTest();
+  __resetCapabilityProvidersForTest();
 }

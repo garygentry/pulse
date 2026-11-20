@@ -155,6 +155,12 @@ describe("exact message catalogs (§8)", () => {
       ESTATE_BUNDLE_STRUCTURE: "The rendered estate bundle is invalid.",
       ESTATE_BUNDLE_INCOHERENT: "The rendered estate bundle is incoherent.",
       INTERNAL_ERROR: "An unexpected server error occurred.",
+      PAIRING_REFUSED: "The pairing code is not valid.",
+      DEVICE_CAP_REACHED: "The maximum number of paired devices has been reached.",
+      RATE_LIMITED: "Too many failed attempts. Try again later.",
+      UNAUTHORIZED: "Missing or invalid credential.",
+      PAYLOAD_TOO_LARGE: "The request body is too large.",
+      PUSH_UNAVAILABLE: "Push notifications are not available on this server.",
     });
   });
 
@@ -283,6 +289,16 @@ describe("closed identifier and status unions (§§2–4)", () => {
         "ESTATE_BUNDLE_MISSING", "ESTATE_BUNDLE_UNREADABLE", "ESTATE_BUNDLE_UNPARSEABLE",
         "ESTATE_BUNDLE_VERSION", "ESTATE_BUNDLE_STRUCTURE", "ESTATE_BUNDLE_INCOHERENT",
         "INTERNAL_ERROR",
+        "PAIRING_REFUSED", "DEVICE_CAP_REACHED", "RATE_LIMITED",
+        "UNAUTHORIZED", "PAYLOAD_TOO_LARGE", "PUSH_UNAVAILABLE",
+      ],
+    ],
+    [
+      COMMON_TS,
+      "PushApiErrorCode",
+      [
+        "PAIRING_REFUSED", "DEVICE_CAP_REACHED", "RATE_LIMITED",
+        "UNAUTHORIZED", "PAYLOAD_TOO_LARGE", "PUSH_UNAVAILABLE",
       ],
     ],
     [

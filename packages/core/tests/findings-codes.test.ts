@@ -109,3 +109,26 @@ describe("FINDING_CODES connect-link additions", () => {
     expect(new Set(codes).size).toBe(2);
   });
 });
+
+describe("FINDING_CODES push additions", () => {
+  test("exposes exactly the ten PUSH_* keys with their lowercase values", () => {
+    const push = Object.fromEntries(Object.entries(FINDING_CODES).filter(([key]) => key.startsWith("PUSH_")));
+    expect(push).toEqual({
+      PUSH_SERVER_MISSING: "push_server_missing",
+      PUSH_SERVER_UNREACHABLE: "push_server_unreachable",
+      PUSH_OPERATOR_SECRET_MISSING: "push_operator_secret_missing",
+      PUSH_OPERATOR_REFUSED: "push_operator_refused",
+      PUSH_NOT_CONFIGURED: "push_not_configured",
+      PUSH_MISCONFIGURED: "push_misconfigured",
+      PUSH_PAIR_NO_ADDRESS: "push_pair_no_address",
+      PUSH_DEVICE_NOT_FOUND: "push_device_not_found",
+      PUSH_NO_DEVICES: "push_no_devices",
+      PUSH_TEST_FAILED: "push_test_failed",
+    });
+  });
+
+  test("the ten additions are assignable to FindingCode", () => {
+    const codes: FindingCode[] = [FINDING_CODES.PUSH_SERVER_MISSING, FINDING_CODES.PUSH_TEST_FAILED];
+    expect(new Set(codes).size).toBe(2);
+  });
+});

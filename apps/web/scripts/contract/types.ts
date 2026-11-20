@@ -4,6 +4,7 @@ import type {
   ConnectLinkRejection,
   ContractVersion,
 } from "@pulse/web-data/contract";
+import type { ApiErrorCode } from "@pulse/web-data/wire";
 
 /** Fixture group: the first directory under `contract/fixtures/`. */
 export type FixtureGroup =
@@ -19,10 +20,25 @@ export type FixtureGroup =
   | "events"
   | "errors"
   | "handshake"
-  | "connect-link";
+  | "connect-link"
+  // push (contract 1.1)
+  | "push-pairing"
+  | "push-device"
+  | "push-payload";
 
-/** What a fixture file holds. */
-export type FixtureKind = "response" | "error" | "event" | "stream" | "handshake" | "connect-link";
+/**
+ * What a fixture file holds. `request` is a client-originated request body (it may be `expect: "reject"` with a
+ * `rejection` naming the error code the server answers). `payload` is a push notification body (always accept).
+ */
+export type FixtureKind =
+  | "response"
+  | "error"
+  | "event"
+  | "stream"
+  | "handshake"
+  | "connect-link"
+  | "request"
+  | "payload";
 
 /** Which bundled web validator must accept a fixture, or null when none applies. */
 export type WebValidatorId = "overview" | "tick" | null;
@@ -49,8 +65,11 @@ export interface FixtureIndexEntry {
   readonly client?: ClientRequirement;
   /** Handshake fixtures only: the expected compatibility decision. */
   readonly expectedOutcome?: CompatibilityOutcome;
-  /** Rejecting connect-link fixtures only: the expected rejection. */
-  readonly rejection?: ConnectLinkRejection;
+  /**
+   * Rejecting fixtures only. For `connect-link`: the `ConnectLinkRejection`. For `request`: the `ApiErrorCode` the
+   * server answers (always `INVALID_REQUEST` in 1.1).
+   */
+  readonly rejection?: ConnectLinkRejection | ApiErrorCode;
 }
 
 /** Content of `contract/index.json`. */

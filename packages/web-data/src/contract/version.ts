@@ -23,7 +23,7 @@ export interface ClientRequirement {
 export type CompatibilityOutcome = "compatible" | "server-too-old" | "client-too-old";
 
 /** The version this server speaks. */
-export const CONTRACT_VERSION: ContractVersion = Object.freeze({ major: 1, minor: 0 });
+export const CONTRACT_VERSION: ContractVersion = Object.freeze({ major: 1, minor: 1 });
 
 /**
  * Grammar shared by parseContractVersion and the X-Pulse-Contract header: no leading zeros, ≤ 4 digits

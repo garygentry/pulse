@@ -134,6 +134,10 @@ export type EstateBundleApiErrorCode =
   | "ESTATE_BUNDLE_MISSING" | "ESTATE_BUNDLE_UNREADABLE"
   | "ESTATE_BUNDLE_UNPARSEABLE" | "ESTATE_BUNDLE_VERSION"
   | "ESTATE_BUNDLE_STRUCTURE" | "ESTATE_BUNDLE_INCOHERENT";
+/** Failure codes answered by the push operations (pairing redemption and device registration). */
+export type PushApiErrorCode =
+  | "PAIRING_REFUSED" | "DEVICE_CAP_REACHED" | "RATE_LIMITED"
+  | "UNAUTHORIZED" | "PAYLOAD_TOO_LARGE" | "PUSH_UNAVAILABLE";
 /** Complete closed catalog of externally surfaced API failure codes. */
 export type ApiErrorCode =
   | "INVALID_REQUEST" | "API_NOT_FOUND" | "METHOD_NOT_ALLOWED"
@@ -141,7 +145,8 @@ export type ApiErrorCode =
   | "RANGE_UNSUPPORTED" | "NOT_READY" | "HISTORY_OVERLOADED"
   | "SOURCE_UNAVAILABLE" | "SOURCE_TIMEOUT" | "HISTORY_LIMIT_EXCEEDED"
   | "MODEL_CHANGED" | "HISTORY_CANCELLED" | "CYCLE_BUILD_FAILED"
-  | EstateBundleApiErrorCode | "INTERNAL_ERROR";
+  | EstateBundleApiErrorCode | "INTERNAL_ERROR"
+  | PushApiErrorCode;
 
 export interface ApiError<C extends string = ApiErrorCode> {
   /** Stable machine-readable failure category. */ readonly code: C;
@@ -187,6 +192,12 @@ export const ERROR_MESSAGES: Readonly<Record<ApiErrorCode, string>> = {
   ESTATE_BUNDLE_STRUCTURE: "The rendered estate bundle is invalid.",
   ESTATE_BUNDLE_INCOHERENT: "The rendered estate bundle is incoherent.",
   INTERNAL_ERROR: "An unexpected server error occurred.",
+  PAIRING_REFUSED: "The pairing code is not valid.",
+  DEVICE_CAP_REACHED: "The maximum number of paired devices has been reached.",
+  RATE_LIMITED: "Too many failed attempts. Try again later.",
+  UNAUTHORIZED: "Missing or invalid credential.",
+  PAYLOAD_TOO_LARGE: "The request body is too large.",
+  PUSH_UNAVAILABLE: "Push notifications are not available on this server.",
 };
 
 /**

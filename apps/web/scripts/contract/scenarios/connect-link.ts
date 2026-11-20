@@ -1,11 +1,18 @@
 // Connect-link fixtures: links a client must accept, and links it must reject with a given reason.
 
-import { buildConnectLink, parseConnectLink, type ConnectLinkRejection } from "@pulse/web-data/contract";
+import {
+  buildConnectLink,
+  PAIR_LINK_PARAM,
+  PAIR_TOKEN_PATTERN,
+  parseConnectLink,
+  type ConnectLinkRejection,
+} from "@pulse/web-data/contract";
 
 import { ContractToolError } from "../errors.js";
 import type { ConnectLinkFixture } from "../types.js";
 import { jsonFixture, PLACEHOLDER } from "./common.js";
 import type { ScenarioModule } from "./index.js";
+import { PAIR_TOKEN_PLACEHOLDER } from "./push-common.js";
 
 const BASE = PLACEHOLDER.baseUrl;
 const ENCODED_BASE = encodeURIComponent(BASE);
@@ -19,6 +26,14 @@ function built(scenario: string, base: string, extras: Readonly<Record<string, s
   return { link: result.link, expect: "accept", baseUrl: result.baseUrl };
 }
 
+/** A link carrying a pairing token, which must match the token grammar. */
+function pairLink(): ConnectLinkFixture {
+  if (!PAIR_TOKEN_PATTERN.test(PAIR_TOKEN_PLACEHOLDER)) {
+    throw new ContractToolError("SCENARIO_INVALID", "connect-link/with-pair-token", "the pairing token placeholder is malformed");
+  }
+  return built("with-pair-token", BASE, { [PAIR_LINK_PARAM]: PAIR_TOKEN_PLACEHOLDER });
+}
+
 function rejected(link: string, rejection: ConnectLinkRejection): ConnectLinkFixture {
   return { link, expect: "reject", rejection };
 }
@@ -27,6 +42,7 @@ const ROWS: readonly (readonly [scenario: string, fixture: () => ConnectLinkFixt
   ["basic", () => built("basic", `${BASE}/`)],
   ["with-path", () => built("with-path", `${BASE}/pulse/`)],
   ["unknown-param", () => built("unknown-param", BASE, { "future-param": "1" })],
+  ["with-pair-token", () => pairLink()],
   ["wrong-scheme", () => rejected(`https://connect?v=1&url=${ENCODED_BASE}`, "wrong-scheme")],
   ["unsupported-version", () => rejected(`pulse://connect?v=2&url=${ENCODED_BASE}`, "unsupported-version")],
   ["missing-url", () => rejected("pulse://connect?v=1", "missing-url")],

@@ -47,6 +47,17 @@ export const FINDING_CODES = {
   // connect link — `pulse connect-link` CLI
   CONNECT_LINK_NO_ADDRESS: "connect_link_no_address",
   CONNECT_LINK_REFUSED: "connect_link_refused",
+  // push (CLI → running server)
+  PUSH_SERVER_MISSING: "push_server_missing",
+  PUSH_SERVER_UNREACHABLE: "push_server_unreachable",
+  PUSH_OPERATOR_SECRET_MISSING: "push_operator_secret_missing",
+  PUSH_OPERATOR_REFUSED: "push_operator_refused",
+  PUSH_NOT_CONFIGURED: "push_not_configured",
+  PUSH_MISCONFIGURED: "push_misconfigured",
+  PUSH_PAIR_NO_ADDRESS: "push_pair_no_address",
+  PUSH_DEVICE_NOT_FOUND: "push_device_not_found",
+  PUSH_NO_DEVICES: "push_no_devices",
+  PUSH_TEST_FAILED: "push_test_failed",
 } as const;
 
 /** A finding code value — the type of `Finding.code` at the type level. */

@@ -91,4 +91,10 @@ export const SHAPE_ROOTS = [
   "LiveTick",
   "ErrorEnvelope",
   "BundleErrorBody",
+  // push (contract 1.1)
+  "PairingRedeemRequest",
+  "PairingRedeemResponse",
+  "DeviceRegistrationRequest",
+  "DeviceRegistrationResponse",
+  "PushPayload",
 ] as const;

@@ -83,7 +83,7 @@ describe("constants", () => {
     expect(CONNECT_LINK_FORMAT_VERSION).toBe(1);
     expect(CONNECT_LINK_MAX_LENGTH).toBe(256);
     expect([...RESERVED_LINK_PARAMS]).toEqual(["v", "url"]);
-    expect([...KNOWN_LINK_PARAMS]).toEqual([]);
+    expect([...KNOWN_LINK_PARAMS]).toEqual(["pair"]);
     expect(Object.isFrozen(KNOWN_LINK_PARAMS)).toBe(true);
     expect(Object.isFrozen(RESERVED_LINK_PARAMS)).toBe(true);
     expect(LINK_PARAM_NAME_PATTERN.flags).toBe("");

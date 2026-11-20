@@ -155,6 +155,17 @@ describe("FINDING_CODES coverage (anti-rot guard, 07 §4)", () => {
     // Produced by the `pulse connect-link` CLI; covered by that command's own tests in apps/cli.
     FINDING_CODES.CONNECT_LINK_NO_ADDRESS,
     FINDING_CODES.CONNECT_LINK_REFUSED,
+    // Produced by the `pulse push` CLI; covered by that command's own tests in apps/cli.
+    FINDING_CODES.PUSH_SERVER_MISSING,
+    FINDING_CODES.PUSH_SERVER_UNREACHABLE,
+    FINDING_CODES.PUSH_OPERATOR_SECRET_MISSING,
+    FINDING_CODES.PUSH_OPERATOR_REFUSED,
+    FINDING_CODES.PUSH_NOT_CONFIGURED,
+    FINDING_CODES.PUSH_MISCONFIGURED,
+    FINDING_CODES.PUSH_PAIR_NO_ADDRESS,
+    FINDING_CODES.PUSH_DEVICE_NOT_FOUND,
+    FINDING_CODES.PUSH_NO_DEVICES,
+    FINDING_CODES.PUSH_TEST_FAILED,
   ]);
 
   test("every core-produced FINDING_CODES value has a covering case", () => {

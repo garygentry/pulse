@@ -12,10 +12,10 @@ import {
 } from "../../src/contract/version.js";
 
 describe("CONTRACT_VERSION", () => {
-  test("is frozen and equals 1.0", () => {
-    expect(CONTRACT_VERSION).toEqual({ major: 1, minor: 0 });
+  test("is frozen and equals 1.1", () => {
+    expect(CONTRACT_VERSION).toEqual({ major: 1, minor: 1 });
     expect(Object.isFrozen(CONTRACT_VERSION)).toBe(true);
-    expect(formatContractVersion(CONTRACT_VERSION)).toBe("1.0");
+    expect(formatContractVersion(CONTRACT_VERSION)).toBe("1.1");
   });
 
   test("the grammar pattern is stateless", () => {

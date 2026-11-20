@@ -138,6 +138,29 @@ export const ENUM_FALLBACKS: readonly EnumFallbackEntry[] = Object.freeze([
     "EndpointHistoryPayload.incidents[].provenance",
     "IntervalHistoryPayload.lanes[].intervals[].provenance",
   ], { kind: "display-rule", rule: "Show the value as text." }),
+  entry("push-alert-status", [
+    "PushPayload.pulse.alert.status",
+  ], { kind: "as-member", member: "firing" }),
+  entry("push-category", [
+    "PushPayload.aps.category",
+  ], { kind: "display-rule", rule: "Use the default category, with no actions." }),
+  entry("push-environment", [
+    "DeviceRegistrationRequest.environment",
+    "DeviceRegistrationResponse.environment",
+  ], { kind: "display-rule", rule: "In a response, treat the registration as needing a refresh. In a request, the server refuses the value with 400 INVALID_REQUEST." }),
+  entry("push-interruption-level", [
+    "PushPayload.aps.interruption-level",
+  ], { kind: "as-member", member: "active" }),
+  entry("push-kind", [
+    "PushPayload.pulse.kind",
+  ], { kind: "display-rule", rule: "Ignore the pulse object, show aps.alert as is, and open the home screen on tap." }),
+  entry("push-severity", [
+    "PushPayload.pulse.alert.severity",
+    "PushPayload.pulse.summary.severity",
+  ], { kind: "as-member", member: "unknown" }),
+  entry("push-target-screen", [
+    "PushPayload.pulse.target.screen",
+  ], { kind: "as-member", member: "home" }),
   entry("query-id", [
     "HistoryPayload.queryId",
     "TimelinePayload.targets[].queryIds[]",

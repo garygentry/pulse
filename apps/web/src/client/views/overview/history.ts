@@ -226,6 +226,12 @@ export function historyErrorCode(code: ApiErrorCode | string): HistoryErrorCode 
     case "ESTATE_BUNDLE_VERSION":
     case "ESTATE_BUNDLE_STRUCTURE":
     case "ESTATE_BUNDLE_INCOHERENT":
+    case "PAIRING_REFUSED":
+    case "DEVICE_CAP_REACHED":
+    case "RATE_LIMITED":
+    case "UNAUTHORIZED":
+    case "PAYLOAD_TOO_LARGE":
+    case "PUSH_UNAVAILABLE":
       return "INTERNAL_ERROR";
     default: {
       const _exhaustive: never = known;

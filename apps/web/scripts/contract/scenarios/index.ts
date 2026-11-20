@@ -19,6 +19,9 @@ import { historyChecksScenarios } from "./history-checks.js";
 import { historyEstateScenarios } from "./history-estate.js";
 import { historyTargetScenarios } from "./history-target.js";
 import { overviewScenarios } from "./overview.js";
+import { pushDeviceScenarios } from "./push-device.js";
+import { pushPairingScenarios } from "./push-pairing.js";
+import { pushPayloadScenarios } from "./push-payload.js";
 import { sessionScenarios } from "./session.js";
 import { timelineScenarios } from "./timeline.js";
 
@@ -62,6 +65,9 @@ export const SCENARIO_MODULES: readonly ScenarioModule[] = Object.freeze([
   errorScenarios,
   handshakeScenarios,
   connectLinkScenarios,
+  pushPairingScenarios,
+  pushDeviceScenarios,
+  pushPayloadScenarios,
 ]);
 
 /** The value written where a client knows no such enum member. */
@@ -70,7 +76,7 @@ const FUTURE_VALUE = "future-value";
 const FUTURE_NUMBER = 987_654;
 
 /** Which fixture a root type's unknown-enum variants are derived from. */
-const UNKNOWN_ENUM_BASE: Readonly<Record<string, { readonly group: FixtureGroup; readonly scenario: string }>> = {
+const UNKNOWN_ENUM_BASE = {
   SessionPayload: { group: "session", scenario: "all-optional" },
   OverviewSnapshotV2: { group: "overview", scenario: "all-optional" },
   AlertsPayload: { group: "alerts", scenario: "all-optional" },
@@ -82,7 +88,13 @@ const UNKNOWN_ENUM_BASE: Readonly<Record<string, { readonly group: FixtureGroup;
   LiveTick: { group: "events", scenario: "tick-typical" },
   ErrorEnvelope: { group: "errors", scenario: "invalid-request" },
   BundleErrorBody: { group: "errors", scenario: "bundle-error-missing" },
-};
+  PushPayload: { group: "push-payload", scenario: "firing-critical" },
+  // No literal union in these roots yet; the bases are ready for a future enum member.
+  PairingRedeemResponse: { group: "push-pairing", scenario: "redeemed" },
+  DeviceRegistrationResponse: { group: "push-device", scenario: "registered" },
+  PairingRedeemRequest: { group: "push-pairing", scenario: "typical" },
+  DeviceRegistrationRequest: { group: "push-device", scenario: "typical" },
+} as const satisfies Readonly<Record<string, { readonly group: FixtureGroup; readonly scenario: string }>>;
 
 /** One step of a shape path below its root. */
 type PathStep =
@@ -199,7 +211,10 @@ export function buildUnknownEnumFixtures(
     };
     const path = paths[0] ?? fail("enum fallback entry has no path");
     const parsed = parseShapePath(path) ?? fail(`cannot parse shape path ${path}`);
-    const baseRef = UNKNOWN_ENUM_BASE[parsed.root] ?? fail(`no fixture group for root ${parsed.root}`);
+    const baseRef =
+      (UNKNOWN_ENUM_BASE as Readonly<Record<string, { readonly group: FixtureGroup; readonly scenario: string }>>)[
+        parsed.root
+      ] ?? fail(`no fixture group for root ${parsed.root}`);
     const base =
       built.find(({ entry }) => entry.group === baseRef.group && entry.scenario === baseRef.scenario) ??
       fail(`base fixture ${baseRef.group}/${baseRef.scenario} was not built`);
@@ -229,6 +244,7 @@ export function buildUnknownEnumFixtures(
 
     if (base.entry.kind === "stream") fail(`base fixture ${baseRef.group}/${baseRef.scenario} is a transcript`);
     const kind = base.entry.kind as Exclude<ScenarioFixture["entry"]["kind"], "stream">;
+    const isRequest = kind === "request";
     fixtures.push({
       entry: {
         group: base.entry.group,
@@ -236,7 +252,9 @@ export function buildUnknownEnumFixtures(
         scenario: subject,
         kind,
         status: base.entry.status,
-        expect: "accept",
+        // A request carrying a value the server does not know is refused: pin that it is.
+        expect: isRequest ? "reject" : "accept",
+        ...(isRequest ? { rejection: "INVALID_REQUEST" as const } : {}),
         webValidator: null,
       },
       body,

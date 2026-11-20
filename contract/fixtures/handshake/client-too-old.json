@@ -1,1 +1,1 @@
-{"client":{"major":0,"minMinor":0},"expectedOutcome":"client-too-old","session":{"authMode":"none","capabilities":{"ack":false,"proposeEstateEdit":false,"silence":false},"contract":{"capabilities":[],"major":1,"minor":0},"identity":null}}
+{"client":{"major":0,"minMinor":0},"expectedOutcome":"client-too-old","session":{"authMode":"none","capabilities":{"ack":false,"proposeEstateEdit":false,"silence":false},"contract":{"capabilities":[],"major":1,"minor":1},"identity":null}}

@@ -101,6 +101,10 @@ afterAll(() => {
 });
 
 describe("frozen shape snapshots", () => {
+  test("the request roots are the request bodies the operations table names", () => {
+    expect(REQUEST_ROOTS).toEqual(new Set(["PairingRedeemRequest", "DeviceRegistrationRequest"]));
+  });
+
   test("the current extraction equals the snapshot frozen for CONTRACT_VERSION", async () => {
     const problem = frozenDrift(readFrozen(CONTRACT_VERSION), await currentShape());
     if (problem !== null) throw new Error(problem);
