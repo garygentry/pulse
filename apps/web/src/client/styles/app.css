@@ -23,7 +23,7 @@
 
 /*
  * shadcn's base defaults (Tailwind v4 borders are `currentColor` unless told
- * otherwise), plus deck's document defaults: 14px body text (13px on narrow
+ * otherwise), `touch-action` on controls, plus deck's document defaults: 14px body text (13px on narrow
  * phones) on the theme background.
  */
 @layer base {
@@ -32,6 +32,11 @@
   }
   html {
     -webkit-text-size-adjust: 100%;
+  }
+  /* Controls opt out of double-tap zoom, so a tap acts at once on touch screens. */
+  :where(a[href], button, summary, select, label, input:is([type="checkbox"], [type="radio"], [type="submit"], [type="button"]),
+    [role="button"], [role="tab"], [role="link"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], [role="radio"]) {
+    touch-action: manipulation;
   }
   body {
     @apply bg-background font-sans text-foreground antialiased;

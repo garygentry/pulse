@@ -2,8 +2,8 @@
   "$comment": "Vendored @/ui manifest, checked by apps/web/scripts/ui-drift.ts (bun run ui:drift). Edit notes, files, excluded and localOnly by hand; let `bun run ui:drift --record` write the blob ids and the generated sections of VENDORED.md. See VENDORED.md for the sync procedure.",
   "upstream": {
     "repo": "https://github.com/garygentry/deck.git",
-    "commit": "209c6359336e8a6d70223ed37efcf687421edabc",
-    "describe": "deck v0.5.0",
+    "commit": "6c7825258739fe8b1a2cf17c5e8d175da5fd25bf",
+    "describe": "deck v0.6.0",
     "defaultRef": "main"
   },
   "docs": "apps/web/src/client/ui/VENDORED.md",
@@ -55,8 +55,8 @@
     {
       "local": "apps/web/src/client/styles/app.css",
       "upstream": "apps/web/src/styles/app.css",
-      "upstreamBlob": "cf539e939fb3d00078a4c77b1f9f58d15091f892",
-      "localBlob": "30cf9da8654bf1c36e39bce624ba46c48ada4a64",
+      "upstreamBlob": "d6d2dfef3b0e24826ddc2f2bf5913fa5cfaf0816",
+      "localBlob": "974f3458b35add1552806558893d64aa69bdc4c6",
       "notes": [
         "app-css"
       ]
@@ -154,8 +154,8 @@
     {
       "local": "apps/web/src/client/ui/index.ts",
       "upstream": "apps/web/src/ui/index.ts",
-      "upstreamBlob": "09e8e5526faa900e95736da02523ecb9b8469d17",
-      "localBlob": "f1abce74f6fb49e422521036f8a7494e516cf706",
+      "upstreamBlob": "86ed7536bb163d8086b0edae17eb2a36b169ef4c",
+      "localBlob": "3525bf3a8148fca78b1468eaa7d1323e750bb829",
       "notes": [
         "barrel-exports"
       ]
@@ -316,8 +316,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/data-table.tsx",
       "upstream": "apps/web/src/ui/patterns/data-table.tsx",
-      "upstreamBlob": "eeaab61e757853446a1f078a90aa69035c17a4ce",
-      "localBlob": "b1c98fc612358c9a8f73bcd01dfd0f35443904c0",
+      "upstreamBlob": "ca4787cb8dae666271ce6ec5a885cfd592383f2f",
+      "localBlob": "fd4da884b24ded369c8670b69e6ef13588723125",
       "notes": [
         "data-table-scroll-completed"
       ]
@@ -387,8 +387,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/health-pill.tsx",
       "upstream": "apps/web/src/ui/patterns/health-pill.tsx",
-      "upstreamBlob": "a0f5b57f159b1c5290a8ce2dcfbfa9cb4799eb34",
-      "localBlob": "a0f5b57f159b1c5290a8ce2dcfbfa9cb4799eb34",
+      "upstreamBlob": "302c286bb0f543b8ee9b91e539778bc7b489f131",
+      "localBlob": "302c286bb0f543b8ee9b91e539778bc7b489f131",
       "notes": []
     },
     {
@@ -490,8 +490,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/search-input.tsx",
       "upstream": "apps/web/src/ui/patterns/search-input.tsx",
-      "upstreamBlob": "f6f8eaaebf206a60275ad32a9f1c5782fd8fcc42",
-      "localBlob": "8713f0a53b0563a672d9ebfc3b5d699296e51206",
+      "upstreamBlob": "a17104c2895f4ddee3fad58702369826ad107914",
+      "localBlob": "5a2496ffb01fc3e43665bd5f4efdb8aaf206cd08",
       "notes": [
         "text-entry-guard"
       ]
@@ -524,8 +524,8 @@
     {
       "local": "apps/web/src/client/ui/patterns/stat-tile.tsx",
       "upstream": "apps/web/src/ui/patterns/stat-tile.tsx",
-      "upstreamBlob": "18c69a61154c990757005aa014500e6f1a4b651d",
-      "localBlob": "fe2803f2ad8504618ecd04063e09cbd33fa4a04a",
+      "upstreamBlob": "7977395b568119bf366435fc3d25487fd52c3a62",
+      "localBlob": "25ddca02724eb81238e571bec4ba4d39669ced58",
       "notes": [
         "stat-tile-absent"
       ]
@@ -586,8 +586,8 @@
     {
       "local": "apps/web/src/client/ui/primitives/button.tsx",
       "upstream": "apps/web/src/ui/primitives/button.tsx",
-      "upstreamBlob": "523bb66d8e98a278934f3d9089996bb7bd8c9053",
-      "localBlob": "523bb66d8e98a278934f3d9089996bb7bd8c9053",
+      "upstreamBlob": "0e07b7af0cca8725aaac085e4ae4bd25069e0102",
+      "localBlob": "0e07b7af0cca8725aaac085e4ae4bd25069e0102",
       "notes": []
     },
     {
@@ -672,7 +672,7 @@
     {
       "local": "apps/web/src/client/ui/primitives/scroll-area.tsx",
       "upstream": "apps/web/src/ui/primitives/scroll-area.tsx",
-      "upstreamBlob": "bfd63c9f461c789fac838010c1d0165c2b6246b9",
+      "upstreamBlob": "c644fffc4bebd1059a3c66518e7ae74be407cd89",
       "localBlob": "d2b06c0b5485b45ba623631ad05ba06ca68c13df",
       "notes": [
         "style-nonce"
@@ -681,7 +681,7 @@
     {
       "local": "apps/web/src/client/ui/primitives/select.tsx",
       "upstream": "apps/web/src/ui/primitives/select.tsx",
-      "upstreamBlob": "98dbcfdf0b8b531c38d6f3d915b4946ad98d0ce0",
+      "upstreamBlob": "593e528ac6d0eacc94c1259377d17b9ffcf4237a",
       "localBlob": "a304e8154a6edd3c4316799513a82a6fd251f442",
       "notes": [
         "style-nonce"
@@ -704,8 +704,8 @@
     {
       "local": "apps/web/src/client/ui/primitives/sidebar.tsx",
       "upstream": "apps/web/src/ui/primitives/sidebar.tsx",
-      "upstreamBlob": "75da3ec621511dd1f650135c27722f66194ded41",
-      "localBlob": "b7e689ece73cc0771631cd21b44c1467bdce79e7",
+      "upstreamBlob": "e385ccc61c715f347d262ba93f468822d4f8dd69",
+      "localBlob": "2e25164a4a701effd1648698e07eca7b4e30db72",
       "notes": [
         "sidebar-text-entry"
       ]
@@ -727,8 +727,8 @@
     {
       "local": "apps/web/src/client/ui/primitives/tabs.tsx",
       "upstream": "apps/web/src/ui/primitives/tabs.tsx",
-      "upstreamBlob": "73e62f1b56d5b8b9b70fece22c3d9184b2c0985a",
-      "localBlob": "73e62f1b56d5b8b9b70fece22c3d9184b2c0985a",
+      "upstreamBlob": "38fe4d36ff601e753f5d3fe5547ebd3647af36f8",
+      "localBlob": "38fe4d36ff601e753f5d3fe5547ebd3647af36f8",
       "notes": []
     },
     {
@@ -762,8 +762,8 @@
     {
       "local": "apps/web/src/client/ui/viz/gauge.tsx",
       "upstream": "apps/web/src/ui/viz/gauge.tsx",
-      "upstreamBlob": "3c3822f65d60c23310845433a32ec1e57407dc85",
-      "localBlob": "3c3822f65d60c23310845433a32ec1e57407dc85",
+      "upstreamBlob": "1ac7db93d6246afc2309f752ee1694c2aa13f666",
+      "localBlob": "1ac7db93d6246afc2309f752ee1694c2aa13f666",
       "notes": []
     },
     {
@@ -776,22 +776,22 @@
     {
       "local": "apps/web/src/client/ui/viz/sparkline.tsx",
       "upstream": "apps/web/src/ui/viz/sparkline.tsx",
-      "upstreamBlob": "fc8db0ef754fc54e8b001b6e493bbb36c3da7960",
-      "localBlob": "fc8db0ef754fc54e8b001b6e493bbb36c3da7960",
+      "upstreamBlob": "c82bde0735d634ca8a052c7324bfd1f1aad4ce0a",
+      "localBlob": "c82bde0735d634ca8a052c7324bfd1f1aad4ce0a",
       "notes": []
     },
     {
       "local": "apps/web/src/client/ui/viz/status-marks.ts",
       "upstream": "apps/web/src/ui/viz/status-marks.ts",
-      "upstreamBlob": "afe562dd6b1f0b1e92a4752fcb6b5ed5dae5daea",
-      "localBlob": "afe562dd6b1f0b1e92a4752fcb6b5ed5dae5daea",
+      "upstreamBlob": "86da27006c856672ec1d6211f33b775cdef2c564",
+      "localBlob": "86da27006c856672ec1d6211f33b775cdef2c564",
       "notes": []
     },
     {
       "local": "apps/web/src/client/ui/viz/status-timeline.tsx",
       "upstream": "apps/web/src/ui/viz/status-timeline.tsx",
-      "upstreamBlob": "5c1d07c002407a7f3f19df2a7d0ff3a13c15c417",
-      "localBlob": "5c1d07c002407a7f3f19df2a7d0ff3a13c15c417",
+      "upstreamBlob": "b3982329659e5d4d9f11f0fd790ed7a6a1321fba",
+      "localBlob": "b3982329659e5d4d9f11f0fd790ed7a6a1321fba",
       "notes": []
     }
   ],
@@ -819,6 +819,14 @@
     {
       "upstream": "apps/web/src/ui/lib/markdown-it-task-lists.d.ts",
       "reason": "types for deck's markdown renderer, which pulse does not vendor."
+    },
+    {
+      "upstream": "apps/web/src/ui/lib/inline-style-markup.ts",
+      "reason": "deck's inline-style rewriting for untrusted markdown under its CSP; pulse renders no markdown."
+    },
+    {
+      "upstream": "apps/web/src/ui/lib/style-nonce.ts",
+      "reason": "deck's style-nonce reader, built on `@deck/contract`'s `readStyleNonce`; pulse keeps its own `lib/style-nonce.ts` over `get-nonce` (pulse-only, note `style-nonce`)."
     }
   ],
   "localOnly": [

@@ -12,14 +12,17 @@ export interface VizStatusMark {
   pattern: VizMarkPattern;
 }
 
-/** What a mark is drawn from: a status-map entry, or just a tone (and badge variant). */
-export type VizMarkSource = Pick<StatusPresentation, "tone" | "variant">;
+/**
+ * A chart's `status` prop, what a mark is drawn from: a status-map entry (`MAP[state]`), or just
+ * a tone (and badge variant).
+ */
+export type ChartStatus = Pick<StatusPresentation, "tone" | "variant">;
 
 /**
  * The mark for a status-map entry: its tone, hatched/dashed when the entry is shown as an
  * outline badge, solid otherwise.
  */
-export function presentationMark(source: VizMarkSource): VizStatusMark {
+export function presentationMark(source: ChartStatus): VizStatusMark {
   return { tone: source.tone, pattern: source.variant === "outline" ? "hatched" : "solid" };
 }
 

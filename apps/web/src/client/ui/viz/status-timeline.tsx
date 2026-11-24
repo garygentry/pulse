@@ -32,7 +32,7 @@ export interface TimelineLane<S extends string = string> {
  * Lanes of status intervals over a shared time domain. Segments are drawn from `statusMap` (the
  * entry's tone, hatched for an outline entry).
  */
-export interface StatusTimelineProps<S extends string> {
+export interface StatusTimelineProps<S extends string = string> {
   /** Rows, top → bottom. Empty renders an empty chart. */
   lanes: readonly TimelineLane<S>[];
   /** Start of the shared time domain (x = 0). */

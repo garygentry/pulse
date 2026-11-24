@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/primitives/tooltip
 export interface HealthPillProps extends Omit<ComponentProps<"a">, "href" | "children" | "title"> {
   tone: Tone;
   icon: IconName | (string & {});
-  /** Short visible text; truncates in narrow headers (the tooltip shows it in full). */
+  /** Short visible text; truncates in narrow headers, with more room from `xl` (the tooltip shows it in full). */
   label: string;
   /** The owning page. */
   href: string;
@@ -50,7 +50,7 @@ export function HealthPill({
           data-tone={tone}
           href={href}
           className={cn(
-            "inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2.5 text-xs font-medium text-foreground",
+            "inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-full border border-border bg-background px-2.5 text-xs font-medium text-foreground xl:max-w-md",
             "outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
             className,
           )}

@@ -8,7 +8,7 @@ the blob id of pulse's copy as last reviewed, and the divergence notes that expl
 difference. `bun run ui:drift` checks the record, and `bun test` runs the same check in CI.
 
 <!-- ui-drift:begin source (generated from VENDORED.json by `bun run ui:drift --record`; do not edit) -->
-Pinned upstream: https://github.com/garygentry/deck at `209c635` (deck v0.5.0). Vendored files: 99, 28 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 6.
+Pinned upstream: https://github.com/garygentry/deck at `6c78252` (deck v0.6.0). Vendored files: 99, 28 of them with pulse divergences. Upstream files in scope that are deliberately not vendored: 8.
 <!-- ui-drift:end source -->
 
 The library is imported as `@/ui` (tsconfig `paths` `@/*` → `src/client/*`, Bundler resolution, so
@@ -202,6 +202,8 @@ Not vendored:
 - `apps/web/src/ui/lib/highlight.ts`: deck's highlight.js setup for its markdown renderer; pulse ships no syntax highlighting.
 - `apps/web/src/ui/lib/markdown.ts`: deck's markdown renderer (markdown-it + DOMPurify); pulse renders no markdown.
 - `apps/web/src/ui/lib/markdown-it-task-lists.d.ts`: types for deck's markdown renderer, which pulse does not vendor.
+- `apps/web/src/ui/lib/inline-style-markup.ts`: deck's inline-style rewriting for untrusted markdown under its CSP; pulse renders no markdown.
+- `apps/web/src/ui/lib/style-nonce.ts`: deck's style-nonce reader, built on `@deck/contract`'s `readStyleNonce`; pulse keeps its own `lib/style-nonce.ts` over `get-nonce` (pulse-only, note `style-nonce`).
 <!-- ui-drift:end mapping -->
 
 ### Divergence notes
