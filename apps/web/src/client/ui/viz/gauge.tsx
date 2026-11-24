@@ -2,7 +2,7 @@ import type { StatusPresentation } from "@/ui/lib/status";
 import { TONE_SVG_STROKE } from "@/ui/lib/tone";
 import { cn } from "@/ui/lib/utils";
 import { clamp, round2 } from "@/ui/viz/geometry";
-import { MARK_DASH, presentationMark, type VizMarkSource } from "@/ui/viz/status-marks";
+import { MARK_DASH, presentationMark, type ChartStatus } from "@/ui/viz/status-marks";
 
 /** A single-value 270° radial gauge, exposed as a `meter`. */
 export interface GaugeProps {
@@ -18,7 +18,7 @@ export interface GaugeProps {
    * A status-map entry (`MAP[state]`): tints the value arc with its tone (dashed for an outline
    * entry) and shows its label under the value, so the reading never depends on colour.
    */
-  status?: VizMarkSource & Pick<StatusPresentation, "label">;
+  status?: ChartStatus & Pick<StatusPresentation, "label">;
   /** Square size in px. Default 96. */
   size?: number;
   /** Arc thickness in px. Default 8. */

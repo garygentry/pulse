@@ -41,6 +41,8 @@ declare module "@tanstack/react-table" {
     headerClassName?: string;
     /** `"end"` right-aligns (numbers). */
     align?: "start" | "end";
+    /** The column's label in a stacked phone layout; defaults to a string `header`. */
+    label?: string;
   }
 }
 
@@ -140,6 +142,13 @@ export interface DataTableProps<T> {
   density?: "comfortable" | "compact";
   /** Header cells stick to the top of the scroll region (bound its height via `className`). Default `true`. */
   stickyHeader?: boolean;
+  /**
+   * How the table fits a phone (480 px wide or less). `"stack"` (the default) shows each row as a
+   * block: the first cell as its heading, then each other cell under its column's label, so no
+   * column hides off the edge. `"scroll"` keeps the columns and scrolls sideways, for a matrix
+   * that reads only as a grid. A virtualized table always scrolls (its rows need a steady height).
+   */
+  phoneLayout?: "stack" | "scroll";
   /**
    * Classes for the root (`data-slot="data-table"`), which is the scroll region with or
    * without `virtualize`, e.g. `max-h-96` for a sticky header.
@@ -287,6 +296,21 @@ const ROOT_CLASS =
   "relative w-full overflow-auto rounded-md border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 /**
+ * `phoneLayout="stack"`: at 480 px and below, the table, its body and rows become blocks, the
+ * header row is kept for assistive technology only, and each labelled cell is a two-column grid
+ * of its column's label (`data-label`, shown by `::before` with an empty alternative, since
+ * assistive technology already has the column header) and its value. The width matches the
+ * phone width ui-floors checks.
+ */
+const STACK_ROOT_CLASS = cn(
+  "max-[480px]:[&_table]:block max-[480px]:[&_caption]:block max-[480px]:[&_tbody]:block max-[480px]:[&_thead]:sr-only",
+  "max-[480px]:[&_tbody>tr]:block max-[480px]:[&_tbody>tr]:py-1.5",
+  "max-[480px]:[&_tbody>tr>*]:block max-[480px]:[&_tbody>tr>*]:h-auto max-[480px]:[&_tbody>tr>*]:min-w-0 max-[480px]:[&_tbody>tr>*]:py-1 max-[480px]:[&_tbody>tr>*]:whitespace-normal",
+  "max-[480px]:[&_tbody>tr>[data-stack-cell]]:grid max-[480px]:[&_tbody>tr>[data-stack-cell]]:grid-cols-[minmax(6rem,38%)_minmax(0,1fr)] max-[480px]:[&_tbody>tr>[data-stack-cell]]:items-baseline max-[480px]:[&_tbody>tr>[data-stack-cell]]:gap-x-3 max-[480px]:[&_tbody>tr>[data-stack-cell]]:text-left",
+  "max-[480px]:[&_tbody>tr>[data-stack-cell]]:before:content-[attr(data-label)_/_''] [&_tbody>tr>[data-stack-cell]]:before:text-xs [&_tbody>tr>[data-stack-cell]]:before:font-medium [&_tbody>tr>[data-stack-cell]]:before:text-muted-foreground",
+);
+
+/**
  * A data table over TanStack Table (headless) and the shadcn table primitives.
  * It owns the caption, grouped headers with `scope`, row headers, the row-link
  * convention, the empty row and horizontal scrolling in a focusable, labelled
@@ -305,6 +329,7 @@ export function DataTable<T>({
   empty,
   density = "compact",
   stickyHeader = true,
+  phoneLayout = "stack",
   className,
   focusable = true,
   virtualize,
@@ -358,6 +383,16 @@ export function DataTable<T>({
   // Derived state from the previous render (React re-runs this render before committing).
   if (virtualized !== wasVirtualized) setWasVirtualized(virtualized);
 
+  // Phones: each row stacks into a block, its cells under their columns' labels (`phoneLayout`).
+  const stacked = phoneLayout === "stack" && !virtualized;
+  const stackLabel = (column: Column<T, unknown>): string | undefined => {
+    const { meta, header } = column.columnDef;
+    return meta?.label ?? (typeof header === "string" ? header : undefined);
+  };
+  // A table whose parts change `display` can lose its table semantics in some browsers (Safari),
+  // so a stacked table states each part's role, the same role the element has natively.
+  const stackRole = (role: string): { role?: string } => (stacked ? { role } : {});
+
   const rootRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -410,13 +445,14 @@ export function DataTable<T>({
       <TableHead
         key={header.id}
         scope={leaf ? "col" : "colgroup"}
+        {...stackRole("columnheader")}
         colSpan={header.colSpan > 1 ? header.colSpan : undefined}
         rowSpan={rowSpan > 1 ? rowSpan : undefined}
         className={cn(
           cellPad,
           "bg-muted text-xs font-medium text-muted-foreground",
           stickyHeader && "sticky top-0 z-10",
-          !leaf && "border-x text-center",
+          !leaf && "border-x",
           leaf && alignClass(column),
           column.columnDef.meta?.headerClassName,
         )}
@@ -445,6 +481,7 @@ export function DataTable<T>({
             }
           : {})}
         className="outline-none focus-visible:bg-muted/50"
+        {...stackRole("row")}
       >
         {row.getVisibleCells().map((cell) => {
           const { column } = cell;
@@ -470,13 +507,33 @@ export function DataTable<T>({
             );
           }
           const cellClass = cn(cellPad, "text-left", alignClass(column), column.columnDef.meta?.className);
-          return isFirst && rowHeader ? (
-            <th key={cell.id} scope="row" data-slot="table-cell" className={cn("align-middle font-normal whitespace-nowrap", cellClass)}>
-              {content}
-            </th>
-          ) : (
-            <TableCell key={cell.id} className={cellClass}>
-              {content}
+          if (isFirst && rowHeader) {
+            return (
+              <th
+                key={cell.id}
+                scope="row"
+                data-slot="table-cell"
+                className={cn("align-middle font-normal whitespace-nowrap", cellClass, stacked && "max-[480px]:font-medium")}
+                {...stackRole("rowheader")}
+              >
+                {content}
+              </th>
+            );
+          }
+          const label = stacked ? stackLabel(column) : undefined;
+          return (
+            <TableCell
+              key={cell.id}
+              className={cellClass}
+              {...(label !== undefined ? { "data-stack-cell": "", "data-label": label } : {})}
+              {...stackRole("cell")}
+            >
+              {label !== undefined ? (
+                // One grid item for the value beside the label; `contents` leaves the desktop layout as it was.
+                <span className="contents max-[480px]:block max-[480px]:min-w-0">{content}</span>
+              ) : (
+                content
+              )}
             </TableCell>
           );
         })}
@@ -528,9 +585,10 @@ export function DataTable<T>({
       aria-labelledby={captionId}
       // Focusable so keyboard users can scroll it horizontally.
       tabIndex={focusable ? 0 : undefined}
-      className={cn(ROOT_CLASS, className)}
+      data-phone-layout={stacked ? "stack" : "scroll"}
+      className={cn(ROOT_CLASS, stacked && STACK_ROOT_CLASS, className)}
     >
-      <table className="w-full caption-top border-collapse text-sm tabular-nums">
+      <table className="w-full caption-top border-collapse text-sm tabular-nums" {...stackRole("table")}>
         <caption
           id={captionId}
           className={cn(captionHidden ? "sr-only" : "px-3 py-2 text-left text-sm text-muted-foreground")}
@@ -544,17 +602,17 @@ export function DataTable<T>({
             ))}
           </>
         ) : null}
-        <TableHeader>
+        <TableHeader {...stackRole("rowgroup")}>
           {headerGroups.map((group, g) => (
-            <TableRow key={group.id} className="hover:bg-transparent">
+            <TableRow key={group.id} className="hover:bg-transparent" {...stackRole("row")}>
               {group.headers.map((header) => renderHeader(header, g))}
             </TableRow>
           ))}
         </TableHeader>
-        <TableBody>
+        <TableBody {...stackRole("rowgroup")}>
           {rows.length === 0 ? (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={Math.max(1, leafColumns.length)} className="px-(--table-cell-px)">
+            <TableRow className="hover:bg-transparent" {...stackRole("row")}>
+              <TableCell colSpan={Math.max(1, leafColumns.length)} className="px-(--table-cell-px)" {...stackRole("cell")}>
                 <EmptyState compact {...emptyProps} />
               </TableCell>
             </TableRow>

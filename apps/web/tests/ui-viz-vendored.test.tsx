@@ -155,7 +155,7 @@ describe("ui/viz geometry", () => {
 describeUi("ui/viz render", () => {
   describe("Sparkline", () => {
     it("renders a labelled img with one path and no tone by default", () => {
-      render(<Sparkline values={[1, 2, 3, 2, 4]} />);
+      render(<Sparkline values={[1, 2, 3, 2, 4]} ariaLabel="sparkline" />);
       const svg = screen.getByRole("img", { name: "sparkline" });
       expect(svg).toHaveAttribute("data-slot", "sparkline");
       expect(svg).toHaveAttribute("viewBox", "0 0 120 32");
@@ -165,18 +165,18 @@ describeUi("ui/viz render", () => {
     });
 
     it("carries the status tone; an outline entry draws dashed", () => {
-      const { rerender } = render(<Sparkline values={[1, 5, 3]} status={HEALTH.down} />);
+      const { rerender } = render(<Sparkline values={[1, 5, 3]} status={HEALTH.down} ariaLabel="sparkline" />);
       let svg = screen.getByRole("img", { name: "sparkline" });
       expect(svg).toHaveAttribute("data-tone", "danger");
       expect(svg.querySelector("path")).not.toHaveAttribute("stroke-dasharray");
 
-      rerender(<Sparkline values={[1, 5, 3]} status={HEALTH.suppressed} />);
+      rerender(<Sparkline values={[1, 5, 3]} status={HEALTH.suppressed} ariaLabel="sparkline" />);
       svg = screen.getByRole("img", { name: "sparkline" });
       expect(svg).toHaveAttribute("data-tone", "neutral");
       expect(svg).toHaveAttribute("data-mark", "hatched");
       expect(svg.querySelector("path")).toHaveAttribute("stroke-dasharray", "4 3");
 
-      rerender(<Sparkline values={[1, 5, 3]} status={HEALTH.unknown} />);
+      rerender(<Sparkline values={[1, 5, 3]} status={HEALTH.unknown} ariaLabel="sparkline" />);
       svg = screen.getByRole("img", { name: "sparkline" });
       expect(svg).toHaveAttribute("data-mark", "solid");
       expect(svg.querySelector("path")).not.toHaveAttribute("stroke-dasharray");
@@ -192,6 +192,7 @@ describeUi("ui/viz render", () => {
             { at: 3, value: 3 },
             { at: 4, value: 4 },
           ]}
+          ariaLabel="sparkline"
         />,
       );
       expect(screen.getByRole("img").querySelectorAll("path")).toHaveLength(2);
@@ -210,14 +211,14 @@ describeUi("ui/viz render", () => {
     });
 
     it("marks a single plain value, as a single sample is marked", () => {
-      render(<Sparkline values={[42]} />);
+      render(<Sparkline values={[42]} ariaLabel="sparkline" />);
       const svg = screen.getByRole("img");
       expect(svg.querySelectorAll("path")).toHaveLength(0);
       expect(svg.querySelectorAll('[data-spark-point="single"]')).toHaveLength(1);
     });
 
     it("splits plain values at a non-finite gap", () => {
-      render(<Sparkline values={[1, 2, Number.NaN, 3, 4]} />);
+      render(<Sparkline values={[1, 2, Number.NaN, 3, 4]} ariaLabel="sparkline" />);
       const svg = screen.getByRole("img");
       expect(svg.querySelectorAll("path")).toHaveLength(2);
       expect(svg.outerHTML).not.toContain("NaN");

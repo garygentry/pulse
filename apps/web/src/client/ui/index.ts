@@ -222,7 +222,8 @@ export {
 
 // Viz: dependency-free SVG charts
 export { Gauge, type GaugeProps } from "./viz/gauge";
-export { Sparkline, type SparklineProps, type SparklineSample } from "./viz/sparkline";
+export { Sparkline, type SparklineData, type SparklineProps, type SparklineSample } from "./viz/sparkline";
+export type { ChartStatus } from "./viz/status-marks";
 export {
   StatusTimeline,
   timelineHeight,

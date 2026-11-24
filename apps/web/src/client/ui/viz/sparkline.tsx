@@ -1,7 +1,7 @@
 import { TONE_SVG_FILL, TONE_SVG_STROKE } from "@/ui/lib/tone";
 import { cn } from "@/ui/lib/utils";
 import { clamp, round2 } from "@/ui/viz/geometry";
-import { MARK_DASH, presentationMark, type VizMarkSource } from "@/ui/viz/status-marks";
+import { MARK_DASH, presentationMark, type ChartStatus } from "@/ui/viz/status-marks";
 
 /** One timestamped sample. A null value is an explicit gap and is never bridged. */
 export interface SparklineSample {
@@ -9,15 +9,24 @@ export interface SparklineSample {
   readonly value: number | null;
 }
 
+/** What a Sparkline plots: plain `values` or timestamped `samples`, never both. */
+export type SparklineData =
+  | {
+      /**
+       * Values ordered oldest → newest, one per evenly spaced slot. A non-finite value is a gap,
+       * as a null sample is.
+       */
+      values: readonly number[];
+      samples?: never;
+    }
+  | {
+      /** Timestamped input with explicit gaps. */
+      samples: readonly SparklineSample[];
+      values?: never;
+    };
+
 /** A compact, dependency-free SVG trend line, coloured by status tone. */
-export interface SparklineProps {
-  /**
-   * Values ordered oldest → newest, one per evenly spaced slot. A non-finite value is a gap, as
-   * a null sample is. Do not combine with `samples`.
-   */
-  values?: readonly number[];
-  /** Timestamped input with explicit gaps. Do not combine with `values`. */
-  samples?: readonly SparklineSample[];
+export type SparklineProps = SparklineData & {
   width?: number;
   height?: number;
   /** Domain lower bound; lower values are drawn on the bottom edge. Default: the data minimum. */
@@ -30,10 +39,11 @@ export interface SparklineProps {
    * dashed. The line is decorative next to the state's text: say the state in `ariaLabel` or
    * beside the chart, never by colour alone.
    */
-  status?: VizMarkSource;
-  ariaLabel?: string;
+  status?: ChartStatus;
+  /** The image's accessible name: what the trend shows, and its state (e.g. "Latency, degraded"). */
+  ariaLabel: string;
   className?: string;
-}
+};
 
 /** One plotted point in SVG coordinate space. */
 export interface SparkPoint {
@@ -113,7 +123,7 @@ export function Sparkline({
   max,
   strokeWidth = 1.5,
   status,
-  ariaLabel = "sparkline",
+  ariaLabel,
   className,
 }: SparklineProps) {
   const mark = status !== undefined ? presentationMark(status) : null;

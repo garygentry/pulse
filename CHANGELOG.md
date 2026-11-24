@@ -8,6 +8,15 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Changed
+
+- The vendored `@/ui` library syncs with deck v0.6.0 (was v0.5.0). Controls opt out of double-tap
+  zoom, the search input turns off autocomplete and spellcheck, buttons and tabs name the
+  properties they animate, table group headers start-align, stat-tile values line up across a
+  row, and data tables stack their rows on phones instead of hiding columns in a sideways scroll.
+  `Sparkline` now requires an `ariaLabel`, and `VizMarkSource` is renamed `ChartStatus`. Pulse
+  keeps its own style nonce; deck's new nonce and markup helpers are excluded.
+
 ## [0.3.3] - 2026-11-18
 
 ### Added
