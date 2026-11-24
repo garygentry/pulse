@@ -59,6 +59,15 @@ export interface RenderResult {
 }
 
 /**
+ * Every tree `mount` and `renderWithStore` rendered and not yet unmounted. `describeDom` unmounts
+ * what is left before it closes happy-dom: test files share one process and its module state (the
+ * shortcut registry among it), so a tree a file forgot would otherwise outlive the file. A leaked
+ * `App` kept its command palette's Ctrl+K handler, so a later file's Ctrl+K opened that palette
+ * too: an extra dialog, and two focus traps passing focus back and forth forever (CI hung).
+ */
+const live = new Set<() => void>();
+
+/**
  * `describe()` whose `beforeAll`/`afterAll` register and close happy-dom for THIS file
  * (REQ-TEST-01, regression `8f7d560`). `DomContext.win` is a getter, so a body that captures
  * `dom.win` at declaration time still reads the window registered later in `beforeAll`.
@@ -79,6 +88,7 @@ export function describeDom(name: string, body: (dom: DomContext) => void): void
       win = registerHappyDom();
     });
     afterAll(async () => {
+      for (const unmount of [...live]) unmount();
       await unregisterHappyDom();
       win = null;
     });
@@ -95,15 +105,15 @@ async function mount(vnode: ReactElement): Promise<{ container: HTMLElement; unm
   document.body.appendChild(container);
   render(vnode, container as unknown as Element);
   let done = false;
-  return {
-    container: container as unknown as HTMLElement,
-    unmount(): void {
-      if (done) return;
-      done = true;
-      render(null, container as unknown as Element);
-      container.remove();
-    },
+  const unmount = (): void => {
+    if (done) return;
+    done = true;
+    live.delete(unmount);
+    render(null, container as unknown as Element);
+    container.remove();
   };
+  live.add(unmount);
+  return { container: container as unknown as HTMLElement, unmount };
 }
 
 /**
@@ -137,17 +147,20 @@ export async function renderWithStore(
   render(vnode, container as unknown as Element);
 
   let done = false;
+  const unmount = (): void => {
+    if (done) return;
+    done = true;
+    live.delete(unmount);
+    render(null, container as unknown as Element);
+    container.remove();
+    router.stop();
+  };
+  live.add(unmount);
   return {
     container: container as unknown as HTMLElement,
     store,
     router,
-    unmount(): void {
-      if (done) return;
-      done = true;
-      render(null, container as unknown as Element);
-      container.remove();
-      router.stop();
-    },
+    unmount,
   };
 }
 
